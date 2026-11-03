@@ -809,7 +809,7 @@
   function tierHintHtml() { var h = S.tierHint, co = S.ctype === "company"; if (!h || !S.price) return "";
     return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0Stk.</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro Stück (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
   /* ── Verkaufshilfen (Wunsch Simon 03.11.2026) – nur ehrliche, echte Angaben ──
-     1 Tab-Titel im Hintergrund · 2 Angebot per Mail · 3 Liefertermin mit Annahmeschluss 14:00 · 4 Erstbesteller-Gutschein beim Verlassen (Computer, einmal)
+     1 Tab-Titel im Hintergrund · 2 Angebot per Mail · 3 Liefertermin mit Annahmeschluss 14:00
      5 echte Live-/Bestellzahlen · 6 Chat-Hinweis nach 60 s · 7 Vertrauens-Zeile beim Preis */
   var TT = { base: "", icon: null, on: false };
   function favDot(on) { try { var l = document.querySelector('link[rel~="icon"]'); if (!l) return; if (!TT.icon) TT.icon = l.href; if (!on) { l.href = TT.icon; return; }
@@ -833,7 +833,7 @@
     return a || b ? '<p class="ps-social">' + [a, b].filter(Boolean).join(" · ") + "</p>" : ""; }
   function trustHtml() { return '<ul class="ps-trust"><li>✓ Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>✓ Datencheck inklusive</li><li>✓ Persönlich erreichbar – aus dem Montafon</li></ul>' +
     '<button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button>'; }
-  function rememberPop(exit) {
+  function rememberPop() { var exit = false;
     var p = S.prod, pr = S.price; if (!p) return; var co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "", link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
     var labels = (pr && pr.labels ? pr.labels : []).map(function (l) { return l[0] + ": " + l[1]; }), me = S.me || {}, cu = S.customer || {}, back = document.activeElement;
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Angebot per Mail");
@@ -856,13 +856,6 @@
       }).catch(function () { b.disabled = false; b.textContent = "Angebot schicken"; err("Keine Verbindung – bitte erneut versuchen."); }); });
     document.body.appendChild(m); document.addEventListener("keydown", k0); setTimeout(function () { q("rmMail").focus(); }, 30);
   }
-  /* 4: beim Verlassen (Maus zur Tab-Leiste, nur Computer, einmal je Besuch): KEIN Rabatt (Simon 03.11.2026) – Angebot per Mail mitnehmen */
-  document.addEventListener("mouseout", function (e) {
-    if (e.relatedTarget || e.clientY > 0 || !window.matchMedia || !window.matchMedia("(pointer:fine)").matches) return;
-    if (!S.prod || !S.price || S.step < 2 || S.step > 3 || document.querySelector(".ps-pop")) return;
-    try { if (sessionStorage.getItem("psExit")) return; sessionStorage.setItem("psExit", "1"); } catch (x) { return; }
-    rememberPop(true);
-  });
   /* 6: Chat-Hinweis nach 60 s in „Ausführung“ (einmal je Besuch) */
   var chatNudgeT = setInterval(function () {
     if (document.hidden || !S.prod || S.step !== 2) { S.__st2 = 0; return; } S.__st2 = (S.__st2 || 0) + 5; if (S.__st2 < 60) return;
@@ -871,6 +864,24 @@
     var n = document.createElement("button"); n.type = "button"; n.className = "ps-chatnudge"; n.innerHTML = "Unsicher bei Papier oder Format? <b>Frag mich einfach</b> 💬<span aria-hidden=\"true\">×</span>";
     n.addEventListener("click", function (e) { n.remove(); if (e.target.tagName !== "SPAN") cb.click(); }); document.body.appendChild(n); setTimeout(function () { if (n.parentNode) n.remove(); }, 20000);
   }, 5000);
+  /* Produktpunkte auf den Weihnachts-Aktionsbildern (nur Computer): Bild ist per object-fit:cover beschnitten → Prozent des Originalbilds auf den sichtbaren Ausschnitt umrechnen;
+     Punkte außerhalb des Ausschnitts oder unter dem Text-Kasten werden ausgeblendet */
+  function xmHotspots() {
+    var desk = window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine) and (min-width: 900px)").matches;
+    [].forEach.call(document.querySelectorAll(".xm-hsl"), function (L) {
+      var box = L.parentNode, cw = box.clientWidth, ch = box.clientHeight, r = parseFloat(L.getAttribute("data-ratio")) || 2, px = (parseFloat(L.getAttribute("data-px")) || 50) / 100;
+      if (!desk || !cw || !ch) { L.hidden = true; return; } L.hidden = false;
+      var sc = Math.max(cw / r, ch) , dw = sc * r, dh = sc, ox = (cw - dw) * px, oy = (ch - dh) / 2;
+      var tb = box.querySelector(".xm-hero-t, .xm-band-t"), br = box.getBoundingClientRect(), tr = tb ? tb.getBoundingClientRect() : null;
+      [].forEach.call(L.querySelectorAll(".xm-hs"), function (a) {
+        var x = ox + dw * (+a.getAttribute("data-x")) / 100, y = oy + dh * (+a.getAttribute("data-y")) / 100;
+        var under = tr && x + br.left > tr.left - 16 && x + br.left < tr.right + 16 && y + br.top > tr.top - 16 && y + br.top < tr.bottom + 16;
+        var off = x < 14 || y < 14 || x > cw - 14 || y > ch - 14 || under; a.hidden = off; if (off) return;
+        a.style.left = x + "px"; a.style.top = y + "px"; a.classList.toggle("up", y > ch * 0.55); a.classList.toggle("lft", x > cw * 0.7);
+      });
+    });
+  }
+  window.addEventListener("resize", function () { clearTimeout(xmHotspots.t); xmHotspots.t = setTimeout(xmHotspots, 120); });
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
@@ -959,7 +970,7 @@
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
     var xnl = document.querySelector(".nav-links [data-xnav]"); if (xnl) { xnl.classList.toggle("active", S.view === "xmas"); if (S.view === "xmas") xnl.setAttribute("aria-current", "page"); else xnl.removeAttribute("aria-current"); }
-    if (S.view === "xmas" && XM_HTML) { root.innerHTML = XM_HTML; headUpdate(); try { document.title = document.title; } catch (e) {} return; }
+    if (S.view === "xmas" && XM_HTML) { root.innerHTML = XM_HTML; headUpdate(); try { document.title = document.title; } catch (e) {} xmHotspots(); return; }
     if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }

@@ -158,9 +158,10 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
       const p = await prod("slider-boxes"); assert.ok(p.tiers.length && p.tiers.every(n => n >= 50), "Auflagen " + p.tiers.join("/"));
       assert.ok(p.tiers.indexOf(p.start.copies) > -1); const r = await post("/print/api/price", { product: p.key, copies: p.start.copies, sel: p.start.sel, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     });
+    const NONE = /^(__none|none|no|geen|without.*|no_.*|0)$/;
     await t("Nie mitgeschickte Personalisierung zählt als „ohne“: Saatpapier-Kuverts starten unbedruckt mit Preis, bedruckt = nicht lieferbar, „personalize“ wird nie gesendet", async () => {
       const p = await prod("growing-paper-envelopes"); assert.strictEqual(p.start.sel.printtype, "00"); assert.strictEqual(p.defaults.printtype, "00");
-      assert.ok(!p.props.some(x => x.slug === "personalize"), "Personalisierung nicht wählbar");
+      const pz = p.props.find(x => x.slug === "personalize"); assert.ok(!pz || NONE.test(p.defaults.personalize), "Personalisierung wählbar (Wunsch Simon: nichts ausblenden), Vorauswahl immer „Ohne“: " + JSON.stringify(p.defaults));
       const n0 = M.log.length, r = await post("/print/api/price", { product: p.key, copies: p.start.copies, sel: p.start.sel, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
       assert.ok(M.log.slice(n0).filter(l => /\/price$/.test(l.path)).every(l => !("personalize" in (l.body.options || {}))), "personalize nie an den Druckpartner");
       const r2 = await post("/print/api/price", { product: p.key, copies: 250, sel: Object.assign({}, p.start.sel, { printtype: "10_black" }), country: "AT" }); assert.ok(r2.status === 400 && /nicht lieferbar/.test(r2.j.error), JSON.stringify(r2.j));

@@ -224,6 +224,28 @@ function cardHtml(it, x, sea, i) {
     '<span class="xm-ph"><img src="' + escH(img(it[2], it[3] ? 800 : 400)) + '" srcset="' + escH(srcset(it[2], it[3] ? [600, 800, 1200] : [300, 400, 600, 800])) + '" sizes="' + (it[3] ? "(max-width: 760px) 92vw, 520px" : "(max-width: 760px) 46vw, 260px") + '" width="' + (it[3] ? 800 : 400) + '" height="400" alt="' + escH("Beispielfoto: " + name) + '" loading="lazy" decoding="async"></span>' +
     '<span class="xm-bd"><b>' + escH(name) + "</b>" + priceHtml(x) + shipHtml(x, sea) + "</span></a>";
 }
+// Produktpunkte auf den Aktionsbildern (nur Computer): [Produkt-Key, x, y] in Prozent des Originalbilds – nur eindeutig erkennbare
+// Produkte aus dem Sortiment (Deko wie Radio, Kassette, Fondue, Zuckerstange, Stiefel, Feuer usw. bewusst ohne Punkt). Geprüft 03.11.2026.
+const HOTSPOTS = {
+  hero: [["wire-o-desk-calendars", 70.8, 25], ["christmas-baubles", 73.8, 58.4], ["luxurious-labels", 86, 63], ["wine-hang-tags", 90.8, 53.6], ["labels-on-roll", 61.3, 79.5], ["ribbon", 58.3, 64], ["beer-mats", 79.8, 86.2]],
+  planen: [["hexagon-pen-holder", 58.1, 36.4], ["wire-o-desk-calendars", 75.4, 38.3], ["sticky-notes", 64, 64.2], ["ribbon", 73.3, 86.2]],
+  karten: [["luxurious-postcards", 63.5, 51]],
+  verpacken: [["letterbox-box-with-lid", 72.5, 38.3], ["labels-on-roll", 80.4, 52.7], ["gift-wrapping", 91.7, 57.5], ["ribbon", 78.3, 78.5]],
+  dekorieren: [["re-board-christmas", 47, 61.3]],
+  verschenken: [["christmas-baubles", 67.3, 63.2]],
+  geniessen: [["wine-hang-tags", 60.8, 54.6], ["luxurious-labels", 57.9, 70.9], ["wine-bags", 65.8, 42], ["wine-packaging", 49.2, 69], ["beer-mats", 58.3, 84.3]],
+  winterlook: [["glove-touch", 53.3, 42.7]],
+  kundengeschenke: [["giftcard-holders", 54.2, 23], ["pvc-cards", 49.2, 49], ["gift-bag", 79.2, 38.3], ["scratch-off", 50.4, 86.2], ["postcards", 80, 78.5]]
+};
+// Punkte-HTML: Position wird im Browser auf das (beschnittene) Bild umgerechnet (app.js xmHotspots); Name/Foto aus dem Thema, sonst aus einem anderen Thema
+function hotspotsHtml(id, ratio, posX, data, shown, prefer, allowed) {
+  const list = (HOTSPOTS[id] || []).filter(h => allowed[h[0]] && !OFF[h[0]] && !(shown && !shown[h[0]]));   // nur Produkte, die auf der Seite auch als Vorschlag stehen
+  if (!list.length) return "";
+  const itemFor = k => { const own = prefer && prefer.items.find(i => i[0] === k); if (own) return own; for (const t of THEMES) { const i = t.items.find(z => z[0] === k); if (i) return i; } return null; };
+  return '<div class="xm-hsl" data-ratio="' + ratio + '" data-px="' + posX + '">' + list.map(h => { const it = itemFor(h[0]); if (!it) return ""; const x = data[h[0]];
+    return '<a class="xm-hs" href="/print?produkt=' + encodeURIComponent(h[0]) + '" data-prod="' + escH(h[0]) + '" data-x="' + h[1] + '" data-y="' + h[2] + '" aria-label="' + escH(it[1]) + '"><i aria-hidden="true"></i>' +
+      '<span class="xm-hsc"><img src="' + escH(img(it[2], 300)) + '" width="160" height="120" alt="" loading="lazy" decoding="async"><b>' + escH(it[1]) + "</b>" + (x && x.gross > 0 ? "<small>" + priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() + "</small>" : "") + "</span></a>"; }).join("") + "</div>";
+}
 // Am Handy je Thema zuerst nur so viele Karten (Rest über „Alle … zeigen“), am Computer alle
 const MOB = 6;
 // Bewusst nicht vorgeschlagen (Prüfung 28.10.2026): Weihnachtspullover – Print.com verlangt eine Eigenschaft „size“, die das Produkt im Shop nicht hat → nie ein Preis
@@ -240,9 +262,9 @@ const pick = (data, shown) => THEMES.map(t => ({ t, items: visible(t, data || {}
 const count = (data, shown) => new Set([].concat.apply([], pick(data, shown).map(x => x.items.map(i => i[0])))).size;
 function render(data, shown, sea, opts) {
   data = data || {}; opts = opts || {};
-  const themes = pick(data, shown);
+  const themes = pick(data, shown), allowed = {}; themes.forEach(x => x.items.forEach(i => { allowed[i[0]] = 1; }));
   const hero = '<section class="xm-hero" aria-labelledby="xmH"><picture><source media="(max-width: 700px)" srcset="' + escH(img(HERO.img, 900)) + '">' +
-    '<img src="' + escH(img(HERO.img, 1600)) + '" srcset="' + escH(srcset(HERO.img, [1000, 1600, 2000])) + '" sizes="(max-width: 1760px) 96vw, 1680px" width="1600" height="696" alt="' + escH(HERO.alt) + '" fetchpriority="high" decoding="async"></picture>' +
+    '<img src="' + escH(img(HERO.img, 1600)) + '" srcset="' + escH(srcset(HERO.img, [1000, 1600, 2000])) + '" sizes="(max-width: 1760px) 96vw, 1680px" width="1600" height="696" alt="' + escH(HERO.alt) + '" fetchpriority="high" decoding="async"></picture>' + hotspotsHtml("hero", HERO.ratio, 72, data, shown, null, allowed) +
     '<div class="xm-hero-t"><span class="xm-eb">Weihnachten ' + sea.year + "</span><h1 id=\"xmH\">Weihnachten mit deinem Design</h1>" +
     "<p>Karten, Kalender, Verpackung und kleine Geschenke – mit Logo, Foto oder eigenem Motiv gedruckt und in ganz Österreich geliefert.</p>" +
     (sea.before ? '<p class="xm-note">Bei jedem Produkt steht, wann es voraussichtlich ankommt. Für Lieferung vor dem 24.&nbsp;Dezember: rechtzeitig bestellen und die Druckdaten gleich mitschicken.</p>' : "") +
@@ -251,7 +273,7 @@ function render(data, shown, sea, opts) {
   const secs = themes.map(x => {
     const b = x.t.banner, collage = !b ? x.items.slice(-3).map(i => '<img src="' + escH(img(i[2], 600)) + '" srcset="' + escH(srcset(i[2], [400, 600, 800])) + '" sizes="(max-width: 700px) 33vw, 400px" width="400" height="400" alt="" loading="lazy" decoding="async">').join("") : "";
     return '<section class="xm-sec" id="' + x.t.slug + '" aria-labelledby="xm-h-' + x.t.slug + '">' +
-      '<div class="xm-band' + (b ? "" : " collage") + '">' + (b ? '<img src="' + escH(img(b[0], 1600)) + '" srcset="' + escH(srcset(b[0], [800, 1200, 1600, 2000])) + '" sizes="(max-width: 1760px) 96vw, 1680px" width="1600" height="' + Math.round(1600 / b[1]) + '" alt="' + escH(x.t.alt) + '" loading="lazy" decoding="async">' : '<div class="xm-col" role="img" aria-label="' + escH(x.t.alt) + '">' + collage + "</div>") +
+      '<div class="xm-band' + (b ? "" : " collage") + '">' + (b ? '<img src="' + escH(img(b[0], 1600)) + '" srcset="' + escH(srcset(b[0], [800, 1200, 1600, 2000])) + '" sizes="(max-width: 1760px) 96vw, 1680px" width="1600" height="' + Math.round(1600 / b[1]) + '" alt="' + escH(x.t.alt) + '" loading="lazy" decoding="async">' + hotspotsHtml(x.t.slug, b[1], 100, data, shown, x.t, allowed) : '<div class="xm-col" role="img" aria-label="' + escH(x.t.alt) + '">' + collage + "</div>") +
       '<div class="xm-band-t"><h2 id="xm-h-' + x.t.slug + '">' + escH(x.t.title) + "</h2><p>" + escH(x.t.text) + "</p></div></div>" +
       '<div class="xm-grid">' + x.items.map((it, i) => cardHtml(it, data[it[0]], sea, i)).join("") + "</div>" +
       (x.items.length > MOB ? '<button type="button" class="ps-btn xm-allb" data-act="xmall">Alle ' + x.items.length + " Ideen zu „" + escH(x.t.nav) + "“ zeigen</button>" : "") + "</section>";

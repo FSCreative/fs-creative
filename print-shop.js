@@ -643,7 +643,8 @@ module.exports = function (D) {
     const base = Object.assign({}, implicit); Object.keys(fixed).forEach(k => { if (!auto[k]) base[k] = fixed[k]; });
     // Druckverfahren passend zur Startauflage – sonst wird z. B. das unbedruckte 1-Stück-Muster (eigenes Verfahren „sample“) zur Vorauswahl
     const pm0 = kind === "textile" ? null : pmsFor(prod, startCopies(prod)), autoL = k => k === "printingmethod" && pm0 ? auto[k].filter(x => pm0.indexOf(x) > -1) : auto[k];
-    const solve0 = lim => solveSel(exposed.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => { const l = lim ? autoL(k) : auto[k]; return [k, OMITTABLE.test(k) ? l.concat([null]) : l]; })), base, prod.excludes, aliasOf(prod));
+    const exOrd = exposed.filter(pr => OPT_EXTRA.test(pr.slug)).concat(exposed.filter(pr => !OPT_EXTRA.test(pr.slug)));   // Zusatzoptionen zuerst festlegen: „Ohne“ hat Vorrang (z. B. Saatpapier-Kuverts: lieber unbedruckt als still mit Excel-Personalisierung)
+    const solve0 = lim => solveSel(exOrd.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => { const l = lim ? autoL(k) : auto[k]; return [k, OMITTABLE.test(k) ? l.concat([null]) : l]; })), base, prod.excludes, aliasOf(prod));
     const sol = (pm0 && solve0(true)) || solve0(false);
     exposed.forEach(pr => { prod.defaults[pr.slug] = sol && sol[pr.slug] != null ? sol[pr.slug] : order(pr)[0]; });
     return prod;
@@ -992,7 +993,7 @@ module.exports = function (D) {
     if (!all) all = Object.assign({}, prod.fixed, base);
     Object.keys(imp).forEach(k => { if (all[k] === imp[k] && !(extra && extra[k] != null)) delete all[k]; });
     prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });
-    Object.keys(all).forEach(k => { if (all[k] === NONE_OPT) delete all[k]; });
+    Object.keys(all).forEach(k => { if (all[k] === NONE_OPT || (k === "personalize" && NONE_SLUG.test(String(all[k])))) delete all[k]; });   // Personalisierung „ohne“ nie mitschicken (wie früher implizit)
     return { all, excluded: excl };
   }
   const bad = m => Object.assign(new Error(m), { status: 400 });
@@ -1113,7 +1114,9 @@ module.exports = function (D) {
   // gefragt (abgelehnte Kombinationen merkt NOPRICE 10 min, damit das nicht jedes Mal eine Anfrage kostet). Was gerechnet wurde (pcOpts), wird genau so bestellt.
   function filledOf(prod, opts) {
     const o = Object.assign({}, opts), al = aliasOf(prod); let ch = false;
-    Object.keys(prod.auto || {}).filter(k => OMITTABLE.test(k) && o[k] === undefined).forEach(k => { const v = prod.auto[k].find(x => !hitRules(prod.excludes, Object.assign({}, prod.implicit || {}, o, { [k]: x }), al)); if (v != null) { o[k] = v; ch = true; } });
+    // auch wählbare Logistik-Angaben (Bündelung, Palette … – seit 02.11. sichtbar), wenn „Ohne“ gewählt ist: wie bisher nur als Ausweich-Variante nach echter Ablehnung
+    const cand = Object.assign({}, prod.auto || {}); (prod.props || []).forEach(pr => { if (OMITTABLE.test(pr.slug) && !cand[pr.slug]) cand[pr.slug] = pr.options.map(x => x.slug).filter(x => x !== NONE_OPT && !NONE_SLUG.test(String(x))); });
+    Object.keys(cand).filter(k => OMITTABLE.test(k) && o[k] === undefined).forEach(k => { const v = cand[k].find(x => !hitRules(prod.excludes, Object.assign({}, prod.implicit || {}, o, { [k]: x }), al)); if (v != null) { o[k] = v; ch = true; } });
     return ch ? o : null;
   }
   async function buyFilled(prod, n, opts, country, postcode, e0) {
