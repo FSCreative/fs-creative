@@ -833,11 +833,11 @@
     return a || b ? '<p class="ps-social">' + [a, b].filter(Boolean).join(" · ") + "</p>" : ""; }
   function trustHtml() { return '<ul class="ps-trust"><li>✓ Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>✓ Datencheck inklusive</li><li>✓ Persönlich erreichbar – aus dem Montafon</li></ul>' +
     '<button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button>'; }
-  function rememberPop() {
+  function rememberPop(exit) {
     var p = S.prod, pr = S.price; if (!p) return; var co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "", link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
     var labels = (pr && pr.labels ? pr.labels : []).map(function (l) { return l[0] + ": " + l[1]; }), me = S.me || {}, cu = S.customer || {}, back = document.activeElement;
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Angebot per Mail");
-    m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">Angebot merken</span><h3>Angebot per Mail schicken</h3><p>Du bekommst deine Konfiguration mit Preis und einem Link, mit dem du sie jederzeit wieder öffnen und bestellen kannst.</p>' +
+    m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">' + (exit ? "Noch am Vergleichen?" : "Angebot merken") + '</span><h3>' + (exit ? "Nimm dein Angebot mit" : "Angebot per Mail schicken") + '</h3><p>Du bekommst deine Konfiguration mit Preis und einem Link, mit dem du sie jederzeit wieder öffnen und bestellen kannst.' + (exit ? " Versand in Österreich und Datencheck sind schon inklusive." : "") + '</p>' +
       '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b>" + (priceTxt ? "<span>" + esc(priceTxt) + " · Versand inklusive</span>" : "") + "</div>" +
       '<label class="ps-bf"><span>E-Mail *</span><input id="rmMail" type="email" autocomplete="email" value="' + esc(cu.email || me.email || "") + '"></label>' +
       '<label class="ps-cb"><input type="checkbox" id="rmRem"><span>Erinnere mich morgen einmal daran (optional)</span></label>' +
@@ -856,17 +856,12 @@
       }).catch(function () { b.disabled = false; b.textContent = "Angebot schicken"; err("Keine Verbindung – bitte erneut versuchen."); }); });
     document.body.appendChild(m); document.addEventListener("keydown", k0); setTimeout(function () { q("rmMail").focus(); }, 30);
   }
-  /* 4: beim Verlassen (Maus zur Tab-Leiste, nur Computer, einmal je Besuch) – Gutschein für die erste Bestellung */
-  var EXIT_CODE = "ERSTBESTELLUNG5";
+  /* 4: beim Verlassen (Maus zur Tab-Leiste, nur Computer, einmal je Besuch): KEIN Rabatt (Simon 03.11.2026) – Angebot per Mail mitnehmen */
   document.addEventListener("mouseout", function (e) {
     if (e.relatedTarget || e.clientY > 0 || !window.matchMedia || !window.matchMedia("(pointer:fine)").matches) return;
-    if (!S.prod || S.step < 2 || S.step > 4 || S.me || document.querySelector(".ps-pop")) return;
-    try { if (sessionStorage.getItem("psExit") || localStorage.getItem("psExitSeen")) return; sessionStorage.setItem("psExit", "1"); localStorage.setItem("psExitSeen", String(Date.now())); } catch (x) { return; }
-    var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Gutschein");
-    m.innerHTML = '<div class="ps-pop-c"><div class="ps-pop-b"><span class="ps-pop-k">Bevor du gehst</span><h3>5 % auf deine erste Bestellung</h3><p>Mit dem Code <b class="ps-code">' + EXIT_CODE + "</b> sparst du 5 % – einfach an der Kasse eingeben. Versand in Österreich ist sowieso inklusive.</p>" +
-      '<div class="ps-pop-a"><button type="button" class="ps-btn primary" data-act="exituse">Code übernehmen</button><button type="button" class="ps-btn" data-popx="1">Nein danke</button></div></div><button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
-    m.addEventListener("click", function (ev) { if (ev.target === m || ev.target.closest("[data-popx]")) m.remove(); if (ev.target.closest('[data-act="exituse"]')) { S.voucher = EXIT_CODE; S.voucherErr = ""; m.remove(); toast("Code " + EXIT_CODE + " gemerkt – wird an der Kasse abgezogen"); } });
-    document.body.appendChild(m);
+    if (!S.prod || !S.price || S.step < 2 || S.step > 3 || document.querySelector(".ps-pop")) return;
+    try { if (sessionStorage.getItem("psExit")) return; sessionStorage.setItem("psExit", "1"); } catch (x) { return; }
+    rememberPop(true);
   });
   /* 6: Chat-Hinweis nach 60 s in „Ausführung“ (einmal je Besuch) */
   var chatNudgeT = setInterval(function () {
