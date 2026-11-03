@@ -2925,7 +2925,7 @@ module.exports = function (D) {
   function designerPage(req, res) {
     let html = "", main = "";
     try { html = xmasNav(printHtmlRaw()); main = fs.readFileSync(path.join(__dirname, "print", "online-designer.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
-    const url = SITE + "/print/online-designer", title = "Kostenloser Online-Designer für Drucksachen | FS Creative", desc = "Grafikprogramm im Browser, gratis: Ebenen, Bildbearbeitung, Verläufe, Bogentext, Vorlagen und KI – Visitenkarten, Flyer & mehr als druckfertiges PDF.";
+    const url = SITE + "/print/online-designer", title = "Kostenloser Online-Designer für Drucksachen", desc = "Grafikprogramm im Browser, gratis: Ebenen, Bildbearbeitung, Verläufe, Bogentext, Vorlagen und KI – Visitenkarten, Flyer & mehr als druckfertiges PDF.";
     const faq = [...main.matchAll(/<details[^>]*><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)].map(m => [m[1], m[2].replace(/<[^>]+>/g, "")]);
     const ld = [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], ["Online-Designer", url]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
       { "@type": "WebApplication", name: "FS Creative Online-Designer", url, applicationCategory: "DesignApplication", operatingSystem: "Webbrowser", inLanguage: "de-AT", description: desc, isAccessibleForFree: true,
