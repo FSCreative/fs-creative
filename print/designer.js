@@ -8,7 +8,7 @@
    Erweiterungen: Text (Unter-/Durchgestrichen, Kontur, Box mit Innenabstand/Radius, Bogentext als Buchstaben-Gruppe), Verläufe (linear/radial,
    als SVG-<linearGradient>/<radialGradient>), Linienart (gestrichelt/gepunktet), Bild-Zuschnitt interaktiv, Masken (clipPath), Bildfilter
    (in die Pixel gerechnet – keine SVG-Filter, die das PDF nicht kann), weitere Formen + Icon-Bibliothek (eigene Pfade), Raster, Seite kopieren/tauschen,
-   Farbwahl mit zuletzt verwendeten/CMYK-sicheren Farben und Pipette. Alles exportiert als einfaches SVG (nur #id-Verweise und data:-Bilder). */
+   Farbwahl mit zuletzt verwendeten/CMYK-sicheren Farben und Pipette. Rechtsklick-Menü (Handy: lange drücken) mit Stil kopieren/einfügen, auf Seite zentrieren/ausfüllen, Deckkraft, Alles entsperren. Alles exportiert als einfaches SVG (nur #id-Verweise und data:-Bilder). */
 (function () {
   "use strict";
   var LIB = {
@@ -246,6 +246,13 @@
     D.resizeH = function () { var w = D.cv.clientWidth, h = D.cv.clientHeight; if (!w || !h) return; c.setDimensions({ width: w, height: h }); if (!D.userZoom) fit(); else afterView(); };
     if (window.ResizeObserver) { D.ro = new ResizeObserver(D.resizeH); D.ro.observe(D.cv); } window.addEventListener("resize", D.resizeH);
     root.addEventListener("click", onClick); root.addEventListener("input", onInput); root.addEventListener("change", onChange);
+    // Rechtsklick-Menü (am Handy: lange drücken) – Wunsch Simon 03.11.2026
+    D.cv.addEventListener("contextmenu", function (e) { e.preventDefault(); ctxOpen(e.clientX, e.clientY, e); }, true);   // capture: Fabric stoppt das Ereignis sonst (stopContextMenu)
+    var lp = null; D.cv.addEventListener("touchstart", function (e) { if (e.touches.length !== 1) { clearTimeout(lp); return; } var t0 = e.touches[0], x0 = t0.clientX, y0 = t0.clientY; clearTimeout(lp);
+      lp = setTimeout(function () { if (!D || D.pinch || D.crop) return; ctxOpen(x0, y0, { clientX: x0, clientY: y0 }); }, 600);
+      var mv = function (ev) { var t1 = ev.touches[0]; if (!t1 || Math.hypot(t1.clientX - x0, t1.clientY - y0) > 10) { clearTimeout(lp); D.cv.removeEventListener("touchmove", mv); } }; D.cv.addEventListener("touchmove", mv, { passive: true }); }, { passive: true });
+    D.cv.addEventListener("touchend", function () { clearTimeout(lp); }, { passive: true });
+    document.addEventListener("pointerdown", function cd(e) { if (!D) { document.removeEventListener("pointerdown", cd, true); return; } var m = D.root.querySelector(".pd-ctx"); if (m && !m.contains(e.target)) m.remove(); }, true);
     D.keyH = onKey; document.addEventListener("keydown", D.keyH, true);
     document.addEventListener("keyup", function ku(e) { if (!D) { document.removeEventListener("keyup", ku); return; } if (e.code === "Space") D.space = false; });
   }
@@ -978,6 +985,7 @@
       case "lock": if (o) { objsOf(o).forEach(function (x) { setLock(x, true); }); c.discardActiveObject(); c.requestRenderAll(); changed(); toast("Gesperrt – über „Ebenen“ wieder entsperren"); } break;
       case "unlock": if (o) { setLock(o, false); c.requestRenderAll(); changed(); renderPanel(); } break;
       case "dup": duplicate(); break; case "del": delSel(); break;
+      case "cm": ctxAct(v); break;
       case "brand": var b = brand();
         if (v === "add") { var col = D.root.querySelector("#pdBrandC").value; if (b.colors.indexOf(col) < 0) b.colors.push(col); b.colors = b.colors.slice(-12); brand(b); renderPanel(); }
         else if (v === "logo") pickFile().then(function (f) { if (!f) return; readImage(f).then(function (im) { if (im.src.length > 2.5e6) { toast("Logo ist zu groß zum Merken (max. ca. 1,8 MB)", true); return; } b.logo = im.src; brand(b); renderPanel(); toast("Logo gemerkt"); }).catch(function (er) { toast(er.message, true); }); });
@@ -1004,6 +1012,64 @@
     var o = act(); if (!o) return;
     if (t.hasAttribute("data-fx") && o.type === "image") { var fx = Object.assign({}, o.fx); fx[t.getAttribute("data-fx")] = parseFloat(t.value) || 0; o.fx = fx; runFx(o); return; }
     if (o.role === "curve") { if (t.hasAttribute("data-cvt")) updCurve(o, { text: t.value.slice(0, 200) || " " }); else if (t.hasAttribute("data-cvr")) updCurve(o, { r: Math.max(5, parseFloat(t.value) || 30) }); else if (t.hasAttribute("data-cvls")) updCurve(o, { ls: parseFloat(t.value) || 0 }); return; }
+  }
+  // ── Rechtsklick-Menü ──
+  function ctxOpen(x, y, ev) {
+    var c = D.c, old = D.root.querySelector(".pd-ctx"); if (old) old.remove(); if (D.crop) return;
+    var tg = ev && ev.clientX != null ? c.findTarget(ev, false) : null, o = act();
+    if (tg && !tg.__bg && tg.selectable !== false && (!o || objsOf(o).indexOf(tg) < 0)) { c.setActiveObject(tg); c.requestRenderAll(); o = tg; }
+    if (tg && tg.locked) o = null;
+    var mac = /Mac|iPhone|iPad/.test(navigator.platform || ""), K = function (k) { return isTouch ? "" : '<kbd>' + (mac ? "⌘" : "Strg+") + k + "</kbd>"; };
+    var it = function (a, label, kb, dis) { return '<button type="button" role="menuitem" data-a="' + a + '"' + (dis ? " disabled" : "") + "><span>" + label + "</span>" + (kb || "") + "</button>"; }, sep = '<hr>';
+    var h = "";
+    if (o) {
+      var one = objsOf(o).length === 1 ? objsOf(o)[0] : null, img = one && one.type === "image", txt = one && (one.type === "textbox" || one.role === "curve");
+      h = it("cm:copy", "Kopieren", K("C")) + it("cm:cut", "Ausschneiden", K("X")) + it("cm:paste", "Einfügen", K("V"), !D.clip) + it("dup", "Duplizieren", K("D")) + it("del", "Löschen", isTouch ? "" : "<kbd>Entf</kbd>") + sep +
+        it("cm:stcopy", "Stil kopieren") + it("cm:stpaste", "Stil einfügen", "", !D.style) + sep +
+        it("front", "Ganz nach vorne") + it("fwd", "Eine Ebene nach vorne") + it("bwd", "Eine Ebene nach hinten") + it("back", "Ganz nach hinten") + sep +
+        it("cm:pc", "Auf der Seite zentrieren") + it("cm:ph", "Waagrecht zentrieren") + it("cm:pv", "Senkrecht zentrieren") +
+        (one ? it("cm:pfill", img ? "Seite ausfüllen (bis in den Beschnitt)" : "Auf Seitengröße ziehen") : "") + sep +
+        it("flipx", "Waagrecht spiegeln") + it("flipy", "Senkrecht spiegeln") + it("rot:90", "90° drehen") + it("cm:rot0", "Drehung zurücksetzen") + sep +
+        (o.type === "activeSelection" ? it("group", "Gruppieren", K("G")) + it("align:al", "Links ausrichten") + it("align:ac", "Mittig ausrichten") + it("align:ar", "Rechts ausrichten") : "") +
+        (one && one.type === "group" && !one.role ? it("ungroup", "Gruppierung aufheben") : "") +
+        (img ? it("img:replace", "Bild ersetzen") + it("crop", "Zuschneiden") : "") +
+        (txt && one.type === "textbox" ? it("upper", "GROSS / klein umschalten") : "") +
+        it("cm:op100", "Deckkraft 100 %", "", (o.opacity == null ? 1 : o.opacity) === 1) + it("cm:op50", "Deckkraft 50 %") + sep +
+        it("lock", "Sperren") + it("zsel", "Heranzoomen");
+    } else {
+      var locked = c.getObjects().some(function (x) { return x.locked; });
+      h = it("cm:paste", "Einfügen", K("V"), !D.clip) + it("cm:all", "Alles auswählen", K("A")) + sep + it("img:add", "Bild hinzufügen") + it("qr", "QR-Code hinzufügen") + sep +
+        it("grid", (D.grid ? "Raster ausblenden" : "Raster einblenden")) + it("guides", (D.showGuides ? "Hilfslinien ausblenden" : "Hilfslinien einblenden")) + it("snap", (D.snap ? "Einrasten aus" : "Einrasten an")) + it("fit", "Ganze Seite zeigen", isTouch ? "" : "<kbd>0</kbd>") +
+        (locked ? sep + it("cm:unlockall", "Alles entsperren") : "") + sep + it("undo", "Rückgängig", K("Z")) + it("redo", "Wiederholen", K("⇧Z"));
+    }
+    var m = document.createElement("div"); m.className = "pd-ctx"; m.setAttribute("role", "menu"); m.innerHTML = h.replace(/(<hr>)+$/, ""); D.root.appendChild(m);
+    var r = m.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+    m.style.left = Math.max(8, Math.min(x, vw - r.width - 8)) + "px"; m.style.top = Math.max(8, Math.min(y, vh - r.height - 8)) + "px";
+    m.addEventListener("click", function () { setTimeout(function () { m.remove(); }, 0); });
+    var b0 = m.querySelector("button:not([disabled])"); if (b0 && !isTouch) b0.focus();
+    m.addEventListener("keydown", function (e) { var bs = [].slice.call(m.querySelectorAll("button:not([disabled])")), i = bs.indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); var n = bs[(i + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length]; if (n) n.focus(); } else if (e.key === "Escape") { e.stopPropagation(); m.remove(); } });
+  }
+  // Stil eines Elements merken und auf andere übertragen (Farbe, Kontur, Schrift, Deckkraft, Schatten …)
+  var STYLE_KEYS = ["fill", "stroke", "strokeWidth", "strokeDashArray", "opacity", "fontFamily", "fontSize", "fontWeight", "fontStyle", "underline", "linethrough", "textAlign", "lineHeight", "charSpacing", "shadow", "rx", "ry", "boxBg", "grad"];
+  function ctxAct(v) {
+    var c = D.c, o = act();
+    if (v === "copy" && o) { cloneObj(o).then(function (cl) { D.clip = cl; toast("Kopiert"); }); return; }
+    if (v === "cut" && o) { cloneObj(o).then(function (cl) { D.clip = cl; delSel(); changed(); }); return; }
+    if (v === "paste" && D.clip) { duplicate(D.clip, 4 * U); return; }
+    if (v === "all") { var all = c.getObjects().filter(function (x) { return !x.__bg && !x.locked && x.visible; }); if (all.length) reselect(all); return; }
+    if (v === "unlockall") { c.getObjects().forEach(function (x) { if (x.locked) setLock(x, false); }); c.requestRenderAll(); changed(); toast("Alles entsperrt"); return; }
+    if (!o) return;
+    var list = objsOf(o);
+    if (v === "stcopy") { var src = list[0], st = {}; STYLE_KEYS.forEach(function (k) { if (src[k] !== undefined) st[k] = src[k] && typeof src[k] === "object" && k !== "shadow" ? JSON.parse(JSON.stringify(src[k])) : src[k]; }); D.style = { st: st, text: src.type === "textbox" }; toast("Stil kopiert – jetzt anderes Element wählen und „Stil einfügen“"); return; }
+    if (v === "stpaste" && D.style) { list.forEach(function (x) { var st = D.style.st; Object.keys(st).forEach(function (k) { if (/^(font|underline|linethrough|textAlign|lineHeight|charSpacing)/.test(k) && x.type !== "textbox") return; if (k === "fill" && x.type === "image") return; x.set(k, st[k] && typeof st[k] === "object" && k !== "shadow" ? JSON.parse(JSON.stringify(st[k])) : st[k]); }); if (x.dirty !== undefined) x.dirty = true; x.setCoords(); }); c.requestRenderAll(); changed(); renderPanel(); toast("Stil übernommen"); return; }
+    if (v === "rot0") { list.forEach(function (x) { x.rotate(0); x.setCoords(); }); c.requestRenderAll(); changed(); renderPanel(); return; }
+    if (v === "op100" || v === "op50") { list.forEach(function (x) { x.set("opacity", v === "op50" ? 0.5 : 1); }); c.requestRenderAll(); changed(); renderPanel(); return; }
+    if (v === "pc" || v === "ph" || v === "pv") { var b = o.getBoundingRect(true, true); moveBy(o, v === "pv" ? 0 : D.W / 2 - b.left - b.width / 2, v === "ph" ? 0 : D.H / 2 - b.top - b.height / 2); if (o.type === "activeSelection") o.setCoords(); c.requestRenderAll(); changed(); return; }
+    if (v === "pfill" && list.length === 1) { var x = list[0]; x.rotate(0); var bw = x.width * x.scaleX, bh = x.height * x.scaleY;
+      if (x.type === "image" || x.type === "group") { var k2 = Math.max(D.W / bw, D.H / bh); x.set({ scaleX: x.scaleX * k2, scaleY: x.scaleY * k2 }); }
+      else x.set({ scaleX: x.scaleX * D.W / bw, scaleY: x.scaleY * D.H / bh });
+      x.setCoords(); var b3 = x.getBoundingRect(true, true); moveBy(x, (D.W - b3.width) / 2 - b3.left, (D.H - b3.height) / 2 - b3.top); c.requestRenderAll(); changed(); renderPanel(); return; }
   }
   function onKey(e) {
     if (!D) return; var tg = e.target, typing = tg && (tg.tagName === "INPUT" || tg.tagName === "TEXTAREA" || tg.isContentEditable), o = act(), editing = o && o.isEditing, mod = e.metaKey || e.ctrlKey, k = e.key;

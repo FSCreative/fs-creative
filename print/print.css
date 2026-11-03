@@ -1919,3 +1919,12 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .xm-hs.up .xm-hsc{top:auto;bottom:34px;transform:translate(-50%,-6px)}.xm-hs.lft .xm-hsc{left:auto;right:-8px;transform:translate(0,6px)}.xm-hs.up.lft .xm-hsc{transform:translate(0,-6px)}
 .xm-hs:hover,.xm-hs:focus-visible{z-index:4}.xm-hs:hover .xm-hsc,.xm-hs:focus-visible .xm-hsc{opacity:1;visibility:visible;transform:translate(-50%,0)}.xm-hs.lft:hover .xm-hsc,.xm-hs.lft:focus-visible .xm-hsc{transform:none}
 @media not all and (hover:hover) and (pointer:fine) and (min-width:900px){.xm-hsl{display:none}}
+
+/* Designer: Rechtsklick-Menü */
+.pd-ctx{position:fixed;z-index:1200;min-width:230px;max-height:calc(100vh - 16px);overflow:auto;padding:6px;border-radius:12px;background:#1c1c24;border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 50px rgba(0,0,0,.55);color:#f5f5f7}
+.pd-ctx button{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%;padding:7px 10px;border:0;border-radius:7px;background:none;color:inherit;font:inherit;font-size:13.5px;text-align:left;cursor:pointer}
+.pd-ctx button:hover:not([disabled]),.pd-ctx button:focus-visible{background:#0a84ff;color:#fff;outline:none}
+.pd-ctx button[disabled]{opacity:.38;cursor:default}
+.pd-ctx kbd{font:inherit;font-size:12px;opacity:.6}
+.pd-ctx hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:5px 4px}
+@media (pointer:coarse){.pd-ctx button{padding:11px 12px;font-size:15px}}

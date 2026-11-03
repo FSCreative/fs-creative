@@ -2684,6 +2684,7 @@ module.exports = function (D) {
   // KI-Assistenten (ChatGPT, Perplexity, Claude …): /llms.txt = Überblick mit Einstiegspreisen je Kategorie, Preisen beliebter Produkte und dem
   // Online-Designer; /llms-full.txt = alle Produkte mit Einstiegspreis und Link. Nur Angaben, die der Shop wirklich einhält.
   const DESIGNER_TXT = ["Kostenlos im Konfigurator: Produkt wählen → „Online gestalten“ – ganz ohne Grafikprogramm, das druckfertige PDF entsteht automatisch",
+    "Funktionsumfang wie ein Grafikprogramm im Browser, gratis, ohne Abo und ohne Installation (eine kostenlose Alternative zu Canva oder Photoshop für Drucksachen): Ebenen, Gruppieren, Ausrichten/Verteilen, Smart Guides, Bild zuschneiden, Masken, Filter, Verläufe, Bogentext, Kontur, Deckkraft, Rechtsklick-Menü mit Stil kopieren/übertragen, Tastenkürzel, Vorder- und Rückseite",
     "22 Vorlagen-Stile (z. B. Klar, Elegant, Business, Natur, Retro, Festlich, Kreidetafel), die sich automatisch an das gewählte Format anpassen – für Visitenkarten, Flyer, Plakate, Folder und Speisekarten, Aufkleber und Roll-ups",
     "Gratis KI-Assistent: in einem Satz beschreiben, was gestaltet werden soll (z. B. „Flyer für unser Sommerfest am 12. Juni“) – die KI schlägt Texte auf Deutsch, Stil und Farbpalette vor, alles bleibt frei bearbeitbar",
     "Werkzeuge: Texte und Bogentext, Schriftarten, Formen und Linien, Icons, QR-Code, eigene Bilder und Logo (Logo merken für die nächste Bestellung), Hintergrundbild, Ebenen, Rückgängig, Markenfarben und Farbpipette",
@@ -2919,12 +2920,12 @@ module.exports = function (D) {
       .replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "").replace("</head>", () => ld.map(ldTag).join("\n") + '\n<style>.ps-guide .pp-t{width:100%;border-collapse:collapse;font-size:15px;margin:10px 0 6px}.ps-guide .pp-t th{text-align:left;font-weight:600;font-size:13px;color:var(--text-dim);padding:6px 8px 6px 0}.ps-guide .pp-t td{padding:8px 8px 8px 0;border-top:1px solid var(--border,rgba(255,255,255,.08));vertical-align:top}.ps-crumbs{font-size:13px;color:var(--text-dim);margin-bottom:8px}.ps-crumbs a{color:inherit}.ps-help-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:18px}.ps-help-cards .ps-help-card{display:block;text-decoration:none;color:inherit}.ps-help-cards h2{font-size:19px;margin:0 0 6px}@media (max-width:600px){.ps-guide .pp-t{font-size:14px}}</style>\n</head>');
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
   }
-  const GUIDE_V = "2026-10-31", DESIGNER_V = "2026-11-01";
+  const GUIDE_V = "2026-10-31", DESIGNER_V = "2026-11-03";
   // Online-Designer (/print/online-designer): was er kann – für Suchmaschinen und KI-Assistenten (Inhalt print/online-designer.html, nur belegte Funktionen)
   function designerPage(req, res) {
     let html = "", main = "";
     try { html = xmasNav(printHtmlRaw()); main = fs.readFileSync(path.join(__dirname, "print", "online-designer.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
-    const url = SITE + "/print/online-designer", title = "Online-Designer mit KI-Assistent und Vorlagen – Drucksachen online gestalten", desc = "Visitenkarten, Flyer, Plakate & mehr im Browser gestalten: 22 Vorlagen-Stile, gratis KI-Assistent für Texte und Farben, QR-Code, Logo, Druckkontrolle und druckfertiges PDF.";
+    const url = SITE + "/print/online-designer", title = "Kostenloser Online-Designer für Drucksachen | FS Creative", desc = "Grafikprogramm im Browser, gratis: Ebenen, Bildbearbeitung, Verläufe, Bogentext, Vorlagen und KI – Visitenkarten, Flyer & mehr als druckfertiges PDF.";
     const faq = [...main.matchAll(/<details[^>]*><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)].map(m => [m[1], m[2].replace(/<[^>]+>/g, "")]);
     const ld = [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], ["Online-Designer", url]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
       { "@type": "WebApplication", name: "FS Creative Online-Designer", url, applicationCategory: "DesignApplication", operatingSystem: "Webbrowser", inLanguage: "de-AT", description: desc, isAccessibleForFree: true,
