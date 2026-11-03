@@ -3191,13 +3191,13 @@ module.exports = function (D) {
     const d = today(); if (VISITS && VISITS.date === d) return Promise.resolve(VISITS);
     if (visitsP) return visitsP;
     return visitsP = store.getMeta("print_visits").catch(() => null).then(m => { visitsP = null; const d2 = today();
-      if (VISITS && VISITS.date !== d2) VISITS = { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: { date: VISITS.date, n: VISITS.ids.size }, dirty: true };
-      else if (!VISITS) VISITS = m && m.date === d2 ? { date: d2, ids: new Set(m.ids || []), salt: m.salt || crypto.randomBytes(16).toString("hex"), prev: m.prev || null, dirty: false } : { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: m && m.date ? { date: m.date, n: (m.ids || []).length } : null, dirty: true };
+      if (VISITS && VISITS.date !== d2) VISITS = { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: { date: VISITS.date, n: VISITS.ids.size }, dirty: true, since: null };   // Tageswechsel: ganzer Tag gezählt
+      else if (!VISITS) VISITS = m && m.date === d2 ? { date: d2, ids: new Set(m.ids || []), salt: m.salt || crypto.randomBytes(16).toString("hex"), prev: m.prev || null, dirty: false, since: m.since || (!m.prev && m.date === "2026-11-03" ? "2026-11-03T11:00:00.000Z" : null) } : { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: m && m.date ? { date: m.date, n: (m.ids || []).length } : null, dirty: true, since: m && m.date ? null : nowIso() };   // erster Start überhaupt: Zählung beginnt jetzt
       return VISITS; });
   }
   function visitCount(ip, ua) { visitsLoad().then(v => { const id = crypto.createHash("sha256").update(v.salt + "|" + v.date + "|" + ip + "|" + String(ua || "").slice(0, 200)).digest("hex").slice(0, 16);
     if (!v.ids.has(id) && v.ids.size < 100000) { v.ids.add(id); v.dirty = true; livePush(); } }).catch(() => {}); }
-  const visitsTimer = setInterval(() => { if (VISITS && VISITS.dirty) { VISITS.dirty = false; store.setMeta("print_visits", { date: VISITS.date, salt: VISITS.salt, ids: Array.from(VISITS.ids), prev: VISITS.prev }).catch(() => { VISITS.dirty = true; }); } if (VISITS && VISITS.date !== today()) visitsLoad(); }, 30000);
+  const visitsTimer = setInterval(() => { if (VISITS && VISITS.dirty) { VISITS.dirty = false; store.setMeta("print_visits", { date: VISITS.date, salt: VISITS.salt, ids: Array.from(VISITS.ids), prev: VISITS.prev, since: VISITS.since || null }).catch(() => { VISITS.dirty = true; }); } if (VISITS && VISITS.date !== today()) visitsLoad(); }, 30000);
   if (visitsTimer.unref) visitsTimer.unref();
   // Live-Anzeige im Cockpit ohne Abfrage-Takt: Server-Sent Events, Änderungen gehen sofort raus (Wunsch Simon 03.11.2026)
   const LIVE_SUBS = new Set(); let liveSig = "", livePushT = null;
@@ -3213,7 +3213,7 @@ module.exports = function (D) {
     const pages = {}, steps = {}, prods = {}; let cart = 0, bg = 0;
     for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
-    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };

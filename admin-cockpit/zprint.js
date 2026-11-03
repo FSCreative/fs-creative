@@ -412,7 +412,7 @@ function liveHtml(L){
   var pill=function(a){ return '<span class="tag">'+esc(a[0])+' <b>'+a[1]+'</b></span>'; };
   return '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline"><div><div class="muted small">gerade im Shop</div><div style="font-size:30px;font-weight:700">'+L.total+'</div>'+(L.bg?'<div class="muted small">davon '+L.bg+' im Hintergrund-Tab</div>':'')+'</div>'+
     '<div><div class="muted small">mit Warenkorb</div><div style="font-size:30px;font-weight:700">'+L.cart+'</div></div>'+
-    '<div><div class="muted small">heute im Shop</div><div style="font-size:30px;font-weight:700">'+(L.today||0)+'</div>'+(L.yesterday!=null?'<div class="muted small">gestern '+L.yesterday+'</div>':'')+'</div></div>'+
+    '<div><div class="muted small">heute im Shop</div><div style="font-size:30px;font-weight:700">'+(L.today||0)+'</div>'+(L.todaySince?'<div class="muted small">gezählt seit '+new Date(L.todaySince).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})+'</div>':'')+(L.yesterday!=null?'<div class="muted small">gestern '+L.yesterday+'</div>':'')+'</div></div>'+
     (L.total?'<div style="margin-top:10px"><div class="muted small">Schritt</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.steps.map(pill).join("")+'</div></div>'+
     (L.prods.length?'<div style="margin-top:10px"><div class="muted small">Produkte</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.prods.map(pill).join("")+'</div></div>':'')+
     '<div style="margin-top:10px"><div class="muted small">Seiten</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.pages.map(pill).join("")+'</div></div>':'<div class="muted" style="margin-top:8px">Gerade niemand im Shop.</div>');
