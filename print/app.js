@@ -858,14 +858,18 @@
       }).catch(function () { b.disabled = false; b.textContent = "Angebot schicken"; err("Keine Verbindung – bitte erneut versuchen."); }); });
     document.body.appendChild(m); document.addEventListener("keydown", k0); setTimeout(function () { q("rmMail").focus(); }, 30);
   }
-  /* 6: Chat-Hinweis nach 60 s in „Ausführung“ (einmal je Besuch) */
+  /* 6: Chat-Hinweis 60 s nach dem Öffnen – überall im Druckshop, Zeit läuft auch bei Schritt- oder Tabwechsel weiter (Wunsch Simon 03.11.2026);
+     einmal je Besuch; ist der Tab gerade im Hintergrund, erscheint er beim Zurückkommen */
+  var chatNudgeAt = Date.now() + 60000; try { var cs0 = +sessionStorage.getItem("psChatStart"); if (cs0 > 0) chatNudgeAt = cs0 + 60000; else sessionStorage.setItem("psChatStart", String(Date.now())); } catch (x) {}   // Zeit zählt über Seitenwechsel im Shop hinweg
   var chatNudgeT = setInterval(function () {
-    if (document.hidden || !S.prod || S.step !== 2) { S.__st2 = 0; return; } S.__st2 = (S.__st2 || 0) + 5; if (S.__st2 < 60) return;
-    clearInterval(chatNudgeT); try { if (sessionStorage.getItem("psChatNudge")) return; sessionStorage.setItem("psChatNudge", "1"); } catch (x) { return; }
-    var cb = document.querySelector(".fscc-b"); if (!cb || document.querySelector(".fscc-panel.open, .ps-pop")) return;
-    var n = document.createElement("button"); n.type = "button"; n.className = "ps-chatnudge"; n.innerHTML = "Unsicher bei Papier oder Format? <b>Frag mich einfach</b> 💬<span aria-hidden=\"true\">×</span>";
+    if (Date.now() < chatNudgeAt || document.hidden) return;
+    var cb = document.querySelector(".fscc-b"); if (!cb) return;   // Chat-Knopf noch nicht geladen → weiter warten
+    if (document.querySelector(".fscc-panel.open, .ps-pop")) { chatNudgeAt = Date.now() + 15000; return; }   // Chat oder Fenster offen → kurz später
+    clearInterval(chatNudgeT); try { if (sessionStorage.getItem("psChatNudge")) return; sessionStorage.setItem("psChatNudge", "1"); } catch (x) {}
+    var n = document.createElement("button"); n.type = "button"; n.className = "ps-chatnudge";
+    n.innerHTML = (S.prod && S.step === 2 ? "Unsicher bei Papier oder Format?" : S.prod ? "Fragen zu deiner Bestellung?" : "Suchst du etwas Bestimmtes?") + " <b>Frag mich einfach</b> 💬<span aria-hidden=\"true\">×</span>";
     n.addEventListener("click", function (e) { n.remove(); if (e.target.tagName !== "SPAN") cb.click(); }); document.body.appendChild(n); setTimeout(function () { if (n.parentNode) n.remove(); }, 20000);
-  }, 5000);
+  }, 2000);
   /* Produktpunkte auf den Weihnachts-Aktionsbildern (nur Computer): Bild ist per object-fit:cover beschnitten → Prozent des Originalbilds auf den sichtbaren Ausschnitt umrechnen;
      Punkte außerhalb des Ausschnitts oder unter dem Text-Kasten werden ausgeblendet */
   function xmHotspots() {
