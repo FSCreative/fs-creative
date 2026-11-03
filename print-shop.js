@@ -1202,11 +1202,15 @@ module.exports = function (D) {
     // Mindestmarge immer NACH Zahlungsgebühr (Mollie, konservativ: Kreditkarte) – netto ≥ (Einkauf × (1 + min %) + Fixgebühr) / (1 − (1 + USt) × Gebühr %)
     const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (gmUp != null ? gmUp : s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
+    let ancX = false;
     const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
       // Zusatzoptionen (Stanzung, Veredelung, Bohrloch, Bündelung …), die der Vergleich nicht kennt: Vergleichspreis gilt nicht (sonst drückt der Standardpreis z. B. die Stanzung auf die Mindestmarge)
       if (Object.keys(n.sel).some(k => (OPT_EXTRA.test(k) || EXTRA_PROPS.test(k)) && !(k in a.sig) && n.sel[k] != null && String(n.sel[k]) !== NONE_OPT && !NONE_SLUG.test(String(n.sel[k])))) return 0;
-      const c = +n.copies, at = t => { const cs = Object.keys(t || {}).map(Number).sort((x, y) => x - y); if (!cs.length || c < cs[0] || c > cs[cs.length - 1]) return 0;
+      // Über der größten verglichenen Auflage: mit deren Stückpreis weiterrechnen – sonst fällt der Anker weg und 750 Stk. kosten mehr als 3 × 250 (Simon 03.11.2026).
+      // So gerechnet darf der Anker den Preis nur senken, nie über den normalen Aufschlag heben (ancX)
+      const c = +n.copies, at = t => { const cs = Object.keys(t || {}).map(Number).sort((x, y) => x - y); if (!cs.length || c < cs[0]) return 0;
+        const top = cs[cs.length - 1]; if (c > top) { if (!(t[top] > 0)) return 0; ancX = true; return t[top] * c / top; }
         if (t[c]) return t[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo); };
       if (a.area) {   // Wunschgröße: Preis über die Fläche interpolieren (gleiche Fläche → günstigster Mitbewerberpreis), nur innerhalb der verglichenen Flächen
         if (!n.size) return 0; const m2 = n.size.w * n.size.h / 1e6, by = {};
@@ -1234,7 +1238,7 @@ module.exports = function (D) {
     const ancOf = b => ancNetW && ancNetW >= floorOf(b) ? ancNetW : ancNet;
     // Ein Mitbewerberpreis hebt unseren Preis höchstens anchorRaiseMaxPct (Standard 25 %) über den normalen Aufschlag – eine teure Einzelquelle soll uns nicht teuer machen
     const mkp = b => Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping, raiseMax = s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25;
-    const ancCap = b => { const a = ancOf(b); return a ? Math.min(a, mkp(b) * (1 + raiseMax / 100)) : 0; };
+    const ancCap = b => { const a = ancOf(b); return a ? Math.min(a, mkp(b) * (1 + (ancX ? 0 : raiseMax) / 100)) : 0; };
     const netOf0 = b => Math.max(floorA(b), ancCap(b) || mkp(b));
     const capOf = b => Math.max(b.product * (1 + promoCap / 100) + b.shipping, (b.product + b.shipping + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100));
     // auf 10 Cent: aufrunden – nur ein Preis knapp unter dem Mitbewerber wird abgerundet, damit der Abstand nicht unter anchorGap fällt (Mindestmarge sichert netFin)
