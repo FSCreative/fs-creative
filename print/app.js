@@ -103,7 +103,7 @@
   function cfgShare() { shareLink(cfgLink(S.prod.key, cfgPack()), S.prod.title + " – FS Creative Druckshop", S.prod.title + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "" + (cfgSum() ? " · " + cfgSum() : "") + (S.price ? " · " + eur(S.price.gross) + " inkl. USt & Versand" : "")); }
   function cfgSave() {
     var had = cfgSavedNow(); if (had) { savDel(had.id); return; }   // zweiter Klick = wieder entfernen
-    var it = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), product: S.prod.key, title: S.prod.title, img: imgOk(S.prod.img) ? S.prod.img : "", sum: cfgSum(), n: totalCopies(), gross: S.price ? S.price.gross : null, c: cfgPack(), at: new Date().toISOString() };
+    var it = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), product: S.prod.key, title: S.prod.title, unit: S.prod.unit || "", img: imgOk(S.prod.img) ? S.prod.img : "", sum: cfgSum(), n: totalCopies(), gross: S.price ? S.price.gross : null, c: cfgPack(), at: new Date().toISOString() };
     if (S.me) api("/print/api/account/saved", { op: "add", item: it }).then(function (j) { if (!j.ok) { toast(j.error || "Merken hat nicht geklappt", true); return; } S.me = j.customer; toast("Gemerkt – in deinem Konto unter „Merkliste“"); cfgBarUpd(); }).catch(function () { toast("Keine Verbindung", true); });
     else { var l = savedLocal(); l.unshift(it); savedLocal(l); toast("Gemerkt – auf diesem Gerät. Mit Kundenkonto auf allen Geräten."); cfgBarUpd(); }
   }
@@ -115,7 +115,7 @@
     return '<div class="ps-cfgbar"><button type="button" class="ps-cfgb' + (on ? " on" : "") + '" data-act="cfgsave" aria-pressed="' + on + '"><span aria-hidden="true">' + (on ? "♥" : "♡") + "</span>" + (on ? "Gemerkt" : "Merken") + '</button><button type="button" class="ps-cfgb" data-act="cfgshare"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Teilen</button></div>'; }
   function cfgBarUpd() { [].forEach.call(document.querySelectorAll(".ps-cfgbar"), function (b) { b.outerHTML = cfgBarHtml(); }); }
   function savedCard(x) { var url = cfgLink(x.product, x.c);
-    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || 0).toLocaleString("de-AT") + "\u00a0Stk."].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
+    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + ""].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
       (x.gross != null ? '<small>beim Merken ' + eur(x.gross) + " · aktueller Preis beim Öffnen</small>" : "") + '</div><div class="ac"><a class="ps-btn primary small" href="' + esc(url) + '">Öffnen</a><button type="button" class="ps-link" data-act="savshare:' + esc(x.id) + '">Teilen</button><button type="button" class="ps-link" data-act="savdel:' + esc(x.id) + '">Entfernen</button></div></div>'; }
 
   // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
@@ -139,7 +139,7 @@
   function cartAdd() {
     var pr = S.price || {}, pv = S.previews && S.previews[0];
     var it = JSON.parse(JSON.stringify(cfgOf()));
-    Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, tiers: (S.prod.tiers || []).slice(0, 30), img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
+    Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, unit: S.prod.unit || "", tiers: (S.prod.tiers || []).slice(0, 30), img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
       fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), checks: (S.file.checks || []).filter(function (c) { return c.level !== "ok"; }).map(function (c) { return { level: c.level, text: String(c.text || "").slice(0, 400) }; }).slice(0, 10), at: Date.now() });
@@ -166,7 +166,7 @@
       }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
     });
   }
-  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + "\u00a0Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
+  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + ""].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
     var mp = (x.motifs || []).filter(function (m) { return m.preview; }).slice(0, 4);   // mehrere Motive: aufgefächerter Stapel aller Motive
     if (mp.length > 1) return '<span class="ps-ci-img ps-ci-stack" title="' + x.motifs.length + ' Motive">' + mp.map(function (m, i) { return '<img src="' + esc(m.preview) + '" alt="" loading="lazy" style="--i:' + i + ";--n:" + mp.length + '">'; }).join("") + '<b>' + x.motifs.length + "</b></span>";
@@ -376,7 +376,7 @@
     if (!motOk()) return "";
     var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
     var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="50" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
-    var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>Stk.</small></label>'; }).join("") +
+    var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>' + U() + '</small></label>'; }).join("") +
       '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + "" + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
     return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
       (n > 1 && sides() === 2 ? '<label class="ps-cb sm ps-msb"><input type="checkbox" data-motsb="1"' + (S.mot.sameBack !== false ? " checked" : "") + '><span>' + sideNames()[1] + " für alle Motive gleich – nur einmal hochladen</span></label>" : "") +
@@ -888,7 +888,7 @@
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
     var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + "\u00a0" + U() + "" + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
-    if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + "\u00a0Stk." : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
+    if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + "\u00a0" + U() + "" : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
     what += wishHtml();
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
@@ -915,7 +915,7 @@
       (S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
       '<ul class="ps-ptrust"><li>Automatischer Datencheck, Profi-Check optional</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
-    var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + "\u00a0Stk." + (szl ? " · " + szl : "");
+    var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "" + (szl ? " · " + szl : "");
       var u0 = p && unitOf(); if (u0 && u0.div > 0) sm = eur((S.ctype === "company" ? p.net : p.gross) / u0.div) + "/" + u0.unit + " · " + sm;
       m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
     var nx = document.getElementById("psNext2"); if (nx) nx.disabled = !S.price || S.priceBusy;
@@ -1062,9 +1062,9 @@
     if (bd && (pp.kind === "banner" || /banner|plane|bauzaun|mesh|vlies/i.test(pp.key + " " + pp.title)) && !/roll|aufsteller|display/i.test(pp.key + " " + pp.title)) {
       var L = Math.max(bd.w, bd.h), K = Math.min(bd.w, bd.h), lm = L >= 3000 && L / K >= 8, n = +f.copies || 1, dv = lm ? L / 1000 * n : bd.w * bd.h / 1e6 * n;
       return "<b>" + eur(g0 / dv).replace(/(,\d\d)\d*/, "$1") + "</b>/" + (lm ? "lfm" : "m²") + " <small>(" + (n > 1 ? n + " × " : "") + fmtSize(bd.w, bd.h) + " · " + eur(g0) + ")</small>"; }
-    return f ? (+f.copies).toLocaleString("de-AT") + "\u00a0Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
+    return f ? (+f.copies).toLocaleString("de-AT") + "\u00a0" + U(pp) + " <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
-    if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + "\u00a0Stk.");
+    if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + "\u00a0" + U(p) + "");
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer");
     var rv = S.cat && S.cat.ratings && S.cat.ratings[p.key]; if (rv) l.unshift("★ " + String(rv.avg).replace(".", ",") + " · " + rv.n + " Bewertungen");   // echte Kundenbewertungen (ab 3)
     return l.slice(0, 4); }
@@ -1715,10 +1715,10 @@
     var spec = sz ? (cl ? "offen " : "") + sz.w + " × " + sz.h + " mm" + (cl ? ", gefalzt " + cl.w + " × " + cl.h + " mm" : "") + (b ? " (Datei mit Beschnitt " + (sz.w + 2 * b) + " × " + (sz.h + 2 * b) + " mm)" : "") : "";
     var mtabs = "";
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = cbackHtml() + '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
-      return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
+      return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0" + U() + " · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
     var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
-      var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : []).join(" · ");
+      var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
       var left = '<div class="ps-upv-l">' + mtabs + "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) : f.kind === "design" ? "Deine Gestaltung" : "Deine Datei") + '</h2><p class="sub">' + esc(sum) + "</p>" +
         '<div class="ps-upv-st"><div class="ps-upv-tabs" role="tablist" aria-label="Vorschau"><button type="button" role="tab" data-pvtab="mock" aria-selected="' + (tab === "mock") + '">Auf dem Produkt</button><button type="button" role="tab" data-pvtab="pfv" aria-selected="' + (tab === "pfv") + '">Mit Druckrändern</button></div>' +
@@ -1985,7 +1985,7 @@
   }
   function cartAside() {
     var co = S.ctype === "company", t = cartTotals();
-    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + "\u00a0Stk.</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
+    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + "</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
       '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p>' +
       (S.step === 5 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next4">Weiter zur Zahlung →</button>' : S.step === 6 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + "Zahlungspflichtig bestellen</button>" : "") + "</aside>";   // Button-Lösung (§ 8 FAGG): Beschriftung muss die Zahlungspflicht nennen
   }
@@ -2125,7 +2125,7 @@
     if (k === "cfgsave") { cfgSave(); return; }
     if (k === "cfgshare") { cfgShare(); return; }
     if (k === "savdel") { savDel(v); return; }
-    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0Stk." + (sx.sum ? " · " + sx.sum : "")); return; }
+    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0" + (sx.unit || "Stk.") + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
