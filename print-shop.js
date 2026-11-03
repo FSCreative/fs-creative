@@ -1852,18 +1852,33 @@ module.exports = function (D) {
   }
 
   // ───────────────────────── Mails ─────────────────────────
-  function mailHtml(title, intro, rows, outro) {
-    return '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1d1d1f;max-width:600px">' +
-      "<h2 style=\"font-size:20px;margin:0 0 12px\">" + escH(title) + "</h2>" + intro.map(p => "<p style=\"margin:0 0 12px;line-height:1.5\">" + escH(p) + "</p>").join("") +
-      (rows && rows.some(r => r[2] !== "button") ? '<table cellpadding="5" style="border-collapse:collapse;margin:8px 0 14px">' + rows.filter(r => r[2] !== "button").map(r => "<tr><td style=\"color:#6e6e73;vertical-align:top\">" + escH(r[0]) + "</td><td><b>" + escH(r[1]) + "</b></td></tr>").join("") + "</table>" : "") +
-      (rows || []).filter(r => r[2] === "button" && /^https?:\/\//.test(String(r[1]))).map(r => '<p style="margin:14px 0 18px"><a href="' + escH(r[1]) + '" style="display:inline-block;background:#0a84ff;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:999px">' + escH(r[0]) + "</a></p>").join("") +
-      (outro || []).map(p => "<p style=\"margin:0 0 12px;line-height:1.5\">" + escH(p) + "</p>").join("") +
-      '<p style="margin:18px 0 0;color:#6e6e73;font-size:13px">FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn · <a href="https://www.fs-creative.at">fs-creative.at</a></p></div>';
+  // Shop-Mails (Bestellbestätigung, Versand, Tracking …): Karte mit Kopfzeile, optional Fortschritt (prog: 0 Bestellt … 3 Zugestellt),
+  // Links als Knopf statt langer URL – tabellenbasiert, damit Outlook/Gmail/Apple Mail gleich aussehen (Wunsch Simon 03.11.2026: „schöner“)
+  const MAIL_STEPS = ["Bestellt", "In Produktion", "Unterwegs", "Zugestellt"];
+  function mailHtml(title, intro, rows, outro, prog) {
+    const F = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", P = t => '<p style="margin:0 0 14px;line-height:1.55;font-size:15px;color:#1d1d1f">' + escH(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#0a66d8">$1</a>') + "</p>";
+    const isUrl = v => /^https?:\/\/\S+$/.test(String(v || "").trim());
+    const btn = (label, url, ghost) => '<a href="' + escH(url) + '" style="display:inline-block;' + (ghost ? "background:#ffffff;color:#0a66d8;border:1px solid #c9d8f0;" : "background:#0a66d8;color:#ffffff;") + 'text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:999px;margin:0 8px 8px 0">' + escH(label) + "</a>";
+    const data = (rows || []).filter(r => r[2] !== "button" && !isUrl(r[1])), links = (rows || []).filter(r => r[2] === "button" ? isUrl(r[1]) : isUrl(r[1]));
+    const steps = prog != null ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 22px"><tr>' + MAIL_STEPS.map((t, k) => {
+      const done = k <= prog, cur = k === prog;
+      return '<td align="center" style="width:25%;font-family:' + F + ';font-size:12px;color:' + (done ? "#1d1d1f" : "#a1a1a6") + ';font-weight:' + (cur ? 700 : 500) + '"><div style="height:6px;border-radius:3px;margin:0 3px 8px;background:' + (done ? "#0a66d8" : "#e5e5ea") + '"></div>' + (done && !cur ? "✓ " : "") + t + "</td>"; }).join("") + "</tr></table>" : "";
+    const table = data.length ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 20px;border:1px solid #e5e5ea;border-radius:14px;border-collapse:separate;overflow:hidden">' + data.map((r, k) =>
+      '<tr><td style="padding:10px 14px;' + (k ? "border-top:1px solid #f0f0f2;" : "") + 'font-family:' + F + ';font-size:13px;color:#6e6e73;vertical-align:top;width:34%">' + escH(r[0]) + '</td><td style="padding:10px 14px;' + (k ? "border-top:1px solid #f0f0f2;" : "") + 'font-family:' + F + ';font-size:14px;color:#1d1d1f;font-weight:600">' + escH(r[1]) + "</td></tr>").join("") + "</table>" : "";
+    const lk = links.length ? '<div style="margin:4px 0 18px">' + links.map((r, k) => btn(/sendungsverfolgung|fedex|ups|dhl|dpd|gls|post/i.test(r[0] + " " + r[1]) ? (links.length > 1 ? "Sendung " + (k + 1) + " verfolgen" : "Sendung verfolgen") : r[0], String(r[1]).trim(), k > 0)).join("") + "</div>" : "";
+    return '<div style="margin:0;padding:24px 12px;background:#f2f2f5"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e8e8ed">' +
+      '<tr><td style="background:#0d1b3d;padding:18px 26px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="vertical-align:middle"><img src="https://www.fs-creative.at/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" width="34" height="34" alt="" style="display:block;border:0"></td>' +
+      '<td style="vertical-align:middle;padding-left:10px;font-family:' + F + ';color:#ffffff;font-size:16px;font-weight:700;letter-spacing:-.01em">FS Creative <span style="font-weight:500;color:#aab6d3">Druckshop</span></td></tr></table></td></tr>' +
+      '<tr><td style="padding:28px 26px 8px;font-family:' + F + '"><h1 style="margin:0 0 16px;font-size:24px;line-height:1.2;letter-spacing:-.02em;color:#1d1d1f">' + escH(title) + "</h1>" + steps +
+      intro.map(P).join("") + table + lk + (outro || []).map(t => P(t).replace("font-size:15px;color:#1d1d1f", "font-size:14px;color:#3a3a3c")).join("") + "</td></tr>" +
+      '<tr><td style="padding:16px 26px 22px;border-top:1px solid #f0f0f2;font-family:' + F + ';font-size:12.5px;line-height:1.6;color:#86868b">FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn, Österreich<br>Fragen? Einfach auf diese Mail antworten · <a href="https://www.fs-creative.at/print" style="color:#0a66d8;text-decoration:none">fs-creative.at/print</a></td></tr>' +
+      "</table></td></tr></table></div>";
   }
-  async function mail(to, subject, title, intro, rows, outro, replyTo) {
+  async function mail(to, subject, title, intro, rows, outro, replyTo, prog) {
     if (!D.mailSend) return false;
     const text = [title, ""].concat(intro, [""], (rows || []).map(r => r[0] + ": " + r[1]), [""], outro || [], ["", "FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn"]).join("\n");
-    try { await D.mailSend({ to, subject, text, html: mailHtml(title, intro, rows, outro), replyTo }); return true; } catch (e) { log("Mail an " + String(to).replace(/^[^@]+/, "…") + " fehlgeschlagen:", e.message); return false; }
+    try { await D.mailSend({ to, subject, text, html: mailHtml(title, intro, rows, outro, prog), replyTo }); return true; } catch (e) { log("Mail an " + String(to).replace(/^[^@]+/, "…") + " fehlgeschlagen:", e.message); return false; }
   }
   const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) + " (ggf. auch am darauffolgenden Werktag)" : "")],
     ["Lieferadresse", [o.customer.company, o.customer.firstName + " " + o.customer.lastName, o.customer.street, o.customer.zip + " " + o.customer.city, COUNTRIES[o.customer.country]].filter(Boolean).join(", ")],
@@ -2232,7 +2247,7 @@ module.exports = function (D) {
         orderRows(o), ["Den Versand bestätigen wir dir mit Sendungsverfolgung per E-Mail.",
           "Es gelten unsere AGB für den Druckshop (Stand " + deDate(AGB_VERSION) + "), die du bei der Bestellung akzeptiert hast: " + cfg().publicUrl + "/print/agb",
           "Hinweis: Da die Drucksachen nach deinen Vorgaben angefertigt werden, besteht kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG).",
-          "Bei Fragen antworte einfach auf diese Mail."], D.notifyTo) ? nowIso() : null;
+          "Bei Fragen antworte einfach auf diese Mail."], D.notifyTo, 0) ? nowIso() : null;
       if (D.notifyTo) await mail(D.notifyTo, "Druckshop: neue Bestellung " + o.nr + " – " + eur(o.price.gross), "Neue Bestellung im Druckshop", ["Bitte im Cockpit unter „Druckaufträge“ prüfen und bei Print.com bestellen. Einkauf " + eur(o.price.purchase.total) + ", Marge " + eur(o.price.margin) + "."], orderRows(o).concat([["E-Mail", o.customer.email], ["Telefon", o.customer.phone]].concat(o.customer.uid ? [["UID", o.customer.uid + (o.customer.uidValid ? " (gültig)" : " (nicht bestätigt)")]] : [])), [], o.customer.email);
       await store.putOrder(o);
     }
@@ -2398,12 +2413,12 @@ module.exports = function (D) {
     if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) {
       o.mails.shipped = await mail(o.customer.email, "Deine Drucksachen sind unterwegs · " + o.nr, "Deine Bestellung ist versendet",
         ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) ist gedruckt und auf dem Weg zu dir."],
-        tracks.map((t, i) => ["Sendungsverfolgung" + (tracks.length > 1 ? " " + (i + 1) : ""), t]), tracks.length ? [] : ["Die Sendungsverfolgung schicken wir dir nach, sobald sie verfügbar ist."], D.notifyTo) ? nowIso() : null;
+        [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(tracks.map((t, i) => ["Sendungsverfolgung" + (tracks.length > 1 ? " " + (i + 1) : ""), t])), tracks.length ? ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."] : ["Die Sendungsverfolgung schicken wir dir nach, sobald sie verfügbar ist."], D.notifyTo, 2) ? nowIso() : null;
       if (o.mails.shipped) { hist(o, "Versandmail gesendet"); if (tracks.length) o.mails.tracking = o.mails.shipped; }
     } else if (o.mails.shipped && !o.mails.tracking && tracks.length) {   // Versandmail ging ohne Tracking raus → Tracking nachschicken
       o.mails.tracking = await mail(o.customer.email, "Sendungsverfolgung zu deiner Bestellung · " + o.nr, "Hier kannst du dein Paket verfolgen",
         ["Hallo " + o.customer.firstName + ",", "für deine Bestellung " + o.nr + " (" + o.product.title + ") ist jetzt die Sendungsverfolgung verfügbar."],
-        info.map((t, i) => [(t.carrier || "Sendungsverfolgung") + (t.code ? " · " + t.code : "") + (info.length > 1 ? " (" + (i + 1) + ")" : ""), t.url]), ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."], D.notifyTo) ? nowIso() : null;
+        info.map((t, i) => [(t.carrier || "Sendungsverfolgung") + (t.code ? " · " + t.code : "") + (info.length > 1 ? " (" + (i + 1) + ")" : ""), t.url]), ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."], D.notifyTo, 2) ? nowIso() : null;
       if (o.mails.tracking) hist(o, "Sendungsverfolgung per Mail nachgeschickt");
     }
     await store.putOrder(o);
