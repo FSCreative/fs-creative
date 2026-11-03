@@ -3593,11 +3593,12 @@ module.exports = function (D) {
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         const busy = pcLow.length > 24 || pcWait.length > 6;   // Andrang: Aufpreise nur aus dem Zwischenspeicher, der Rest kommt ein paar Sekunden später (Client fragt nach)
-        const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel, wish: "" }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
+        const run = (sel, urg, cp) => { const n = normalizeSel(prod, Object.assign({}, b, { sel, wish: "" }, urg ? { urgency: String(urg) } : {}, cp ? { copies: cp } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
         let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!(e.busy || e.shipping) }); }
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
         await Promise.all([0, 1, 2, 3].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
-          try { const q = await run(a.sel, a.urgency); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency ? { an: q.net, ag: q.gross, days: q.days || [] } : {}); } catch (e) { d[k] = e.busy || e.shipping ? { busy: true } : { off: e.status === 400 }; } } }));   // Versand-Ablehnung: später nochmal statt „nicht lieferbar“
+          const cp = +a.copies > 0 && +a.copies <= 1e6 ? Math.round(+a.copies) : 0;   // andere Auflage (Mengenhinweis „ab N Stk. nur … pro Stück“)
+          try { const q = await run(a.sel, a.urgency, cp); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency || cp ? { an: q.net, ag: q.gross, days: q.days || [] } : {}, cp ? { copies: cp } : {}); } catch (e) { d[k] = e.busy || e.shipping ? { busy: true } : { off: e.status === 400 }; } } }));   // Versand-Ablehnung: später nochmal statt „nicht lieferbar“
         return J(res, 200, { ok: true, d, busy });
       }
       if (p === "/print/api/ai/search" && req.method === "POST") {   // KI-Produktsuche (Claude): Kunde sucht etwas, das bei uns anders heißt

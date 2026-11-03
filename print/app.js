@@ -750,7 +750,7 @@
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
         if (j.ok) { S.undo = null; S.autoFix = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
-        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); }
+        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); tierKick(); }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
       }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); });
@@ -794,6 +794,20 @@
     if (L >= 3000 && L / K >= 8) return { div: L / 1000 * n, unit: "lfm", label: "Laufmeter" };
     return { div: sz.w * sz.h / 1e6 * n, unit: "m²", label: "m²" };
   }
+  /* Mengenhinweis (alle Produkte): nächste 1–2 größeren Auflagen rechnen; ist der Stückpreis dort ≥ 8 % günstiger → „Ab N Stk. nur … pro Stück“ (Versand fällt dann kaum ins Gewicht) */
+  var tierSeq = 0;
+  function tierKick() {
+    S.tierHint = null; var p = S.prod, n = +S.copies || 0, my = ++tierSeq;
+    if (!p || !S.price || !n || kind() === "textile" || (S.mot && S.mot.n > 1)) return;
+    var next = (p.tiers || []).filter(function (t) { return t > n; }).slice(0, 2); if (!next.length) return;
+    api("/print/api/deltas", Object.assign(cfgOf(), { country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", alts: next.map(function (t) { return { k: "q" + t, sel: S.sel, copies: t }; }) })).then(function (j) {
+      if (my !== tierSeq || !j.ok || !S.price) return; var co = S.ctype === "company", cur = (co ? S.price.net : S.price.gross) / n, best = null;
+      next.forEach(function (t) { var d = j.d && j.d["q" + t]; if (!d || d.off || d.busy || !(d.ag > 0)) return; var u = (co ? d.an : d.ag) / t, sv = 1 - u / cur; if (sv >= 0.08 && (!best || sv > best.sv + 0.04)) best = { n: t, unit: u, sv: sv, total: co ? d.an : d.ag }; });
+      if (best) { S.tierHint = best; var b = document.getElementById("psPrice"); if (b) renderPrice(); }
+    }).catch(function () {});
+  }
+  function tierHintHtml() { var h = S.tierHint, co = S.ctype === "company"; if (!h || !S.price) return "";
+    return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0Stk.</b> nur <b>" + eur(h.unit) + "</b> pro Stück (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
@@ -807,12 +821,12 @@
     var u = unitOf();
     if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0Stk." : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0Stk. · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() +
       (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>Stückpreis</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() +
       (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
@@ -1962,6 +1976,7 @@
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
+    if (k === "settier") { var tn = +v; if (tn > 0) { S.copies = tn; S.tierHint = null; var qx2 = document.getElementById("psQty"); if (qx2) qx2.value = ""; render(); loadPrice(); toast(tn.toLocaleString("de-AT") + "\u00a0Stück übernommen"); } return; }
     if (k === "xmall") { var xs = t.closest(".xm-sec"); if (xs) xs.classList.add("open"); t.remove(); return; }   // Weihnachtsabteilung (Handy): alle Ideen eines Themas
     if (k === "cwarn") { warnPop(v); return; }
     if (k === "brief") { briefPop(); return; }

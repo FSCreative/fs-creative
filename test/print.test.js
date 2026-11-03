@@ -250,6 +250,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const b = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); assert.strictEqual(b.j.price.net, 32, "andere Produkte unverändert");
   });
   await t("Aufpreise je Option: Differenz zur aktuellen Auswahl, nicht lieferbare/ungültige → off", async () => {
+    const tq = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "q500", sel: Object.assign({}, BC.sel), copies: 500 }] })); const d5 = tq.j.d.q500;
+    assert.ok(d5 && d5.copies === 500 && d5.ag > 0 && d5.an > 0, "Mengenhinweis: absolute Preise der größeren Auflage " + JSON.stringify(tq.j));
     const r = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "44", sel: Object.assign({}, BC.sel) }, { k: "x", sel: Object.assign({}, BC.sel, { material: "400gr_uncoated", finish: "gloss_laminate" }) }, { k: "gold", sel: Object.assign({}, BC.sel, { material: "gold" }) }] }));
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.d["44"].net, 0); assert.strictEqual(r.j.d["44"].gross, 0); assert.strictEqual(r.j.d.x.off, true); assert.strictEqual(r.j.d.gold.off, true);
     const u = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "quick", sel: BC.sel, urgency: "quick" }, { k: "bad", sel: BC.sel, urgency: "warp" }] }));

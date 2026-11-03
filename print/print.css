@@ -1893,3 +1893,4 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .ps-offer{display:flex;gap:12px;align-items:flex-start;margin:0 0 14px;padding:12px 16px;border-radius:14px;background:color-mix(in srgb,var(--ps-focus,#0a84ff) 10%,transparent);border:1px solid color-mix(in srgb,var(--ps-focus,#0a84ff) 30%,transparent)}
 .ps-offer .ic{font-size:22px;line-height:1}.ps-offer b{display:block;margin-bottom:2px}.ps-offer span{font-size:14px;line-height:1.45}
 .ps-ci-fee{display:block;font-size:13px;margin-top:4px;color:inherit;opacity:.85}
+.ps-tierhint{margin:8px 0 0;padding:8px 12px;border-radius:10px;font-size:13.5px;line-height:1.45;background:color-mix(in srgb,var(--ps-ok,#30d158) 12%,transparent)}.ps-tierhint .ps-link{margin-left:4px}
