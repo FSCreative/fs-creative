@@ -515,7 +515,8 @@ button,.btn,.nav-btn,.chip,.tag,.count,.link,th,kbd,code,pre,input,select,textar
 
 /* Bergfoto als feste Ebene unter allem (kein background-attachment:fixed – iOS); winziges Vorschaubild darunter, dunkler Verlauf darüber */
 :root[data-theme="glas"] body{background:var(--ground)}
-:root[data-theme="glas"] body::before{content:"";position:fixed;left:0;right:0;top:0;height:100vh;height:100lvh;z-index:-1;pointer-events:none;
+/* eigene GPU-Ebene: nach Tab-/Space-Wechsel (Vollbild-App am Mac) nicht neu rastern – sonst kurz dunkel und langsam wieder hell */
+:root[data-theme="glas"] body::before{content:"";position:fixed;left:0;right:0;top:0;height:100vh;height:100lvh;z-index:-1;pointer-events:none;will-change:transform;transform:translateZ(0);backface-visibility:hidden;contain:strict;
   background:linear-gradient(180deg,rgba(5,10,20,.34),rgba(5,10,20,.14) 38%,rgba(5,10,20,.6)),url("/logos/cockpit-bg.jpg?v=1") 50% 35%/cover no-repeat,var(--bg-ph) 50% 35%/cover no-repeat,var(--ground)}
 @media (max-width:700px),(orientation:portrait) and (max-width:1100px){
   :root[data-theme="glas"] body::before{background:linear-gradient(180deg,rgba(5,10,20,.44),rgba(5,10,20,.12) 34%,rgba(5,10,20,.62)),url("/logos/cockpit-bg-m.jpg?v=1") 50% 30%/cover no-repeat,var(--bg-ph) 50% 30%/cover no-repeat,var(--ground)}
