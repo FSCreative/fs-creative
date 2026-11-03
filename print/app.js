@@ -1851,7 +1851,9 @@
             if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden können weiße Ränder (Blitzer) entstehen."); }
         } catch (e) {}
         var dp = r.deep || {}, lab2 = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
-        if (dp.imgs && dp.imgs.length) { var lo = Math.min.apply(null, dp.imgs); if (lo < 150) warns.push("!" + lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen 300 dpi)."); else if (lo < 250) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße (empfohlen 300 dpi) – kann leicht unscharf wirken."); else okNotes.push(lab2 + dp.imgs.length + " Bild(er) mit ausreichender Auflösung (ab " + lo + " dpi)."); }
+        if (dp.imgs && dp.imgs.length) { var lo = Math.min.apply(null, dp.imgs), D0 = +S.prod.dpi || 300, fq = D0 / 300;   // gleiche Grenzen wie die Prüfung am Server: Großformat (Banner, D0 100 dpi) braucht weniger Auflösung – wird aus der Ferne betrachtet
+          if (lo < Math.round(150 * fq)) warns.push("!" + lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen " + D0 + " dpi).");
+          else if (lo < Math.round(250 * fq)) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße (empfohlen " + D0 + " dpi) – kann leicht unscharf wirken."); else okNotes.push(lab2 + dp.imgs.length + " Bild(er) mit ausreichender Auflösung (ab " + lo + " dpi)."); }
         if (dp.fonts && dp.fonts.length) warns.push(lab2 + "Schrift nicht eingebettet: " + dp.fonts.slice(0, 3).join(", ") + " – beim Export „Schriften einbetten“ aktivieren oder Text in Pfade umwandeln.");
         var rnd = /rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"));   // runde Aufkleber/Buttons: Schnittlinie als Kreis
         if (!S.pfvOff && rnd) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2, true); x.fill("evenodd");
