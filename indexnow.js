@@ -65,7 +65,10 @@ module.exports = function (D) {
       // Entfernte Adressen melden – außer die Sitemap ist plötzlich viel kleiner (Shop offline, Katalog-Störung): dann nichts als entfernt melden
       let gone = prev ? Object.keys(prev).filter(u => !(u in cur)) : [];
       if (gone.length && keys.length < nPrev / 2) { log("Sitemap viel kleiner als zuletzt (" + keys.length + " statt " + nPrev + ") – entfernte Adressen werden nicht gemeldet"); gone = []; }
-      const urls = changed.concat(gone), next = Object.assign({}, prev || {});
+      // höchstens INDEXNOW_DAILY (Standard 150) je Tag – neue Adressen zuerst; der Rest folgt an den nächsten Tagen (Bing rät von großen Sammelmeldungen ab)
+      const dv = parseInt(process.env.INDEXNOW_DAILY, 10), cap = isFinite(dv) && dv > 0 ? dv : 150;
+      const fresh = changed.filter(u => !prev || !(u in prev)), upd = changed.filter(u => prev && u in prev);
+      const all0 = fresh.concat(gone, upd), urls = prev ? all0.slice(0, cap) : all0, next = Object.assign({}, prev || {});
       let sent = 0, error = "";
       for (let i = 0; i < urls.length; i += MAX_URLS) {
         const batch = urls.slice(i, i + MAX_URLS);

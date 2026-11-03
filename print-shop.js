@@ -2964,7 +2964,7 @@ module.exports = function (D) {
     out[catUrl("", "", true)] = h(groups.map(g => [g.slug, g.name, g.subs.map(x => x.slug)]));
     groups.forEach(g => { out[catUrl(g.slug, "", true)] = h(inG(g.slug)); g.subs.forEach(su => { out[catUrl(g.slug, su.slug, true)] = h(inG(g.slug, su.slug)); }); });
     const EN = await entryState().catch(() => ({ by: {} }));
-    pub.forEach(x => { const e = EN.by[x.key]; out[prodUrl(x.key, true)] = h([x.title, x.desc, x.img, price[x.key] || (e ? [e.copies, e.gross, e.min] : null)]); });
+    pub.forEach(x => { const e = EN.by[x.key]; out[prodUrl(x.key, true)] = h([x.title, x.desc, x.img, price[x.key] || (e ? [e.copies, Math.round(+e.gross || 0), e.min] : null)]); });   // Einstiegspreis auf ganze Euro: Tagesschwankungen von Print.com sind keine Seitenänderung (Bing: „kein IndexNow-Sammelmodus“)
     return out;
   }
   // ── Google-Merchant-Center-Produktfeed /print/merchant.xml (kostenlose Einträge in Google Shopping) ──

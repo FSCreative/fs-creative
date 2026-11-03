@@ -119,6 +119,11 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
       const d3 = fs.mkdtempSync(path.join(tmp, "d-")), many = Array.from({ length: 10001 }, (x, i) => ({ loc: SITE + "/print?produkt=p" + i, sig: "1" }));
       im.calls.length = 0; const r3 = await mk({ DATA_DIR: d3, entries: async () => many }).run();
       assert.strictEqual(r3.sent, 10001); assert.deepStrictEqual(im.calls.map(c => c.body.urlList.length), [10000, 1]);
+      // danach höchstens 150 je Tag, neue Adressen zuerst – der Rest am nächsten Tag
+      const many2 = many.map((e, i) => ({ loc: e.loc, sig: i < 200 ? "2" : "1" })).concat([{ loc: SITE + "/print/neu", sig: "1" }]);
+      im.calls.length = 0; const m3 = mk({ DATA_DIR: d3, entries: async () => many2 }), r4 = await m3.run({ force: true });
+      assert.strictEqual(r4.sent, 150); assert.strictEqual(im.calls[0].body.urlList[0], SITE + "/print/neu", "neue Adresse zuerst");
+      assert.strictEqual((await m3.run({ force: true })).sent, 51, "Rest beim nächsten Lauf");
     });
     im.status = 200;
   });
