@@ -3165,6 +3165,16 @@ module.exports = function (D) {
   const LIVE = new Map(), LIVE_MS = 70e3;
   const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) LIVE.delete(k); };   // Hintergrund-Tab meldet sich nur jede Minute
   const STEP_DE = ["Übersicht", "Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
+  // Live-Anzeige im Cockpit ohne Abfrage-Takt: Server-Sent Events, Änderungen gehen sofort raus (Wunsch Simon 03.11.2026)
+  const LIVE_SUBS = new Set(); let liveSig = "", livePushT = null;
+  function livePush() {
+    if (!LIVE_SUBS.size || livePushT) return;
+    livePushT = setTimeout(() => { livePushT = null; liveGc(); const st = liveState(), k = JSON.stringify([st.total, st.bg, st.cart, st.pages, st.steps, st.prods]); if (k === liveSig) return; liveSig = k;
+      const msg = "data: " + JSON.stringify(Object.assign({ ok: true }, st)) + "\n\n"; for (const r of LIVE_SUBS) { try { r.write(msg); } catch (e) { LIVE_SUBS.delete(r); } } }, 300);
+  }
+  let livePing = 0;
+  const liveTimer = setInterval(() => { if (!LIVE_SUBS.size) return; livePush(); if (++livePing % 4 === 0) for (const r of LIVE_SUBS) { try { r.write(": ping\n\n"); } catch (e) { LIVE_SUBS.delete(r); } } }, 5000);   // abgelaufene Besucher rausnehmen, Verbindung offen halten
+  if (liveTimer.unref) liveTimer.unref();
   function liveState() {
     const pages = {}, steps = {}, prods = {}; let cart = 0, bg = 0;
     for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
@@ -3351,6 +3361,7 @@ module.exports = function (D) {
         const b = await readJson(req, 1000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
         if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), bg: b.bg === true }); }
         if (LIVE.size > 5000) liveGc();
+        livePush();
         return J(res, 200, { ok: true });
       }
       if (p === "/print/api/brief" && req.method === "POST") {
@@ -3903,6 +3914,12 @@ module.exports = function (D) {
         const ab = req.method === "POST" ? await readJson(req, 1000) : {};
         if (ab.op === "run" && cfg().pcKey) auditRun(+ab.max > 0 ? +ab.max : 0, ab.resume === true).catch(e => log("Sortiments-Prüfung:", e.message));
         return J(res, 200, Object.assign({ ok: true }, await auditState()));
+      }
+      if (p === "/admin/api/print/live/stream" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no", "X-Robots-Tag": "noindex" });
+        liveGc(); res.write("retry: 3000\n\ndata: " + JSON.stringify(Object.assign({ ok: true }, liveState())) + "\n\n");
+        LIVE_SUBS.add(res); if (LIVE_SUBS.size > 50) { const f = LIVE_SUBS.values().next().value; LIVE_SUBS.delete(f); try { f.end(); } catch (e) {} }
+        req.on("close", () => LIVE_SUBS.delete(res)); return;
       }
       if (p === "/admin/api/print/live" && req.method === "GET") { liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen

@@ -58,7 +58,7 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
-  stat+='<section class="panel" id="prLiveBox"><div class="panel-h"><h2><span class="pr-livedot"></span> Live im Shop</h2><span class="muted">echte Browser auf /print in der letzten Minute · anonym, ohne Cookies · alle 15 s</span></div><div class="panel-b" id="prLiveB">'+(PRLIVE?liveHtml(PRLIVE):'<span class="muted">wird geladen …</span>')+'</div></section>';
+  stat+='<section class="panel" id="prLiveBox"><div class="panel-h"><h2><span class="pr-livedot"></span> Live im Shop</h2><span class="muted">echte Browser auf /print in der letzten Minute · anonym, ohne Cookies · in Echtzeit</span></div><div class="panel-b" id="prLiveB">'+(PRLIVE?liveHtml(PRLIVE):'<span class="muted">wird geladen …</span>')+'</div></section>';
   var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["anfragen","Gestaltungsanfragen"+(ST.briefsNew?" ("+ST.briefsNew+" neu)":"")],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["pruefung","Sortiments-Prüfung"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="anfragen") return head+stat+tabs+briefView();
   if(FILTER==="settings") return head+stat+tabs+settings();
@@ -416,11 +416,22 @@ function liveHtml(L){
     (L.prods.length?'<div style="margin-top:10px"><div class="muted small">Produkte</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.prods.map(pill).join("")+'</div></div>':'')+
     '<div style="margin-top:10px"><div class="muted small">Seiten</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.pages.map(pill).join("")+'</div></div>':'<div class="muted" style="margin-top:8px">Gerade niemand im Shop.</div>');
 }
+function livePaint(L){ if(!L||!L.ok) return; PRLIVE=L; var b2=document.getElementById("prLiveB"); if(b2) b2.innerHTML=liveHtml(L); }
 function liveTick(){
   var b=document.getElementById("prLiveB"); if(!b||document.hidden) return;
-  fetch("/admin/api/print/live",{credentials:"same-origin"}).then(function(r){ return r.json(); }).then(function(L){ if(!L||!L.ok) return; PRLIVE=L; var b2=document.getElementById("prLiveB"); if(b2) b2.innerHTML=liveHtml(L); }).catch(function(){});
+  fetch("/admin/api/print/live",{credentials:"same-origin"}).then(function(r){ return r.json(); }).then(livePaint).catch(function(){});
 }
-setInterval(liveTick,15000); setTimeout(liveTick,800);
+/* Echtzeit: offene Verbindung (Server-Sent Events) solange die Druck-Seite sichtbar ist – jede Änderung sofort; ohne EventSource bzw. bei Störung alle 15 s abfragen */
+var LES=null, lesFail=0;
+function liveSync(){
+  var want=!!document.getElementById("prLiveB")&&!document.hidden;
+  if(!want){ if(LES){ LES.close(); LES=null; } return; }
+  if(LES||!window.EventSource||lesFail>5) return;
+  LES=new EventSource("/admin/api/print/live/stream");
+  LES.onmessage=function(e){ lesFail=0; try{ livePaint(JSON.parse(e.data)); }catch(x){} };
+  LES.onerror=function(){ lesFail++; if(LES&&LES.readyState===2){ LES=null; } };
+}
+setInterval(function(){ liveSync(); if(!LES) liveTick(); },15000); setInterval(liveSync,1500); setTimeout(function(){ liveSync(); if(!LES) liveTick(); },800);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) liveTick(); });
 
 /* Gestaltungsanfragen („Wir gestalten für dich“ im Shop): eigene Liste statt Lead/Aufgabe/Mail – mit Kontakt-Links, Konfiguration und Dateien */

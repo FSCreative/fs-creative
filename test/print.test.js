@@ -210,6 +210,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pg = await (await fetch(B + "/print")).text(); assert.ok(/"marketing":\["Google Ads"\]/.test(pg), "Banner fragt nach Marketing");
     await admin("/admin/api/print/settings", { gtagId: "" }); assert.ok(!(await (await fetch(B + "/print/api/catalog")).json()).gtag, "Feld leer = aus");
   });
+  await t("Live-Besucher in Echtzeit: Stream liefert sofort den Stand und jede Änderung (Lebenszeichen, Hintergrund-Tab, Abschied)", async () => {
+    const ctl = new AbortController(), r = await fetch(B + "/admin/api/print/live/stream", { headers: { cookie: COOKIE }, signal: ctl.signal });
+    assert.match(r.headers.get("content-type") || "", /text\/event-stream/);
+    const rd = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    const next = async (pred) => { const t0 = Date.now(); while (Date.now() - t0 < 5000) { const m = buf.match(/data: (.*)\n\n/); if (m) { buf = buf.slice(buf.indexOf(m[0]) + m[0].length); const j = JSON.parse(m[1]); if (pred(j)) return j; continue; } const { value } = await rd.read(); buf += dec.decode(value); } return null; };
+    assert.ok(await next(j => j.ok), "Startstand");
+    const hb = b => fetch(B + "/print/api/hb", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/json" }, body: JSON.stringify(b) });
+    await hb({ sid: "livetest001", path: "/print/flyer", step: 2, prod: "Flyer" });
+    assert.ok(await next(j => j.total >= 1 && j.prods.some(p => p[0] === "Flyer")), "neuer Besucher sofort");
+    await hb({ sid: "livetest002", path: "/print", bg: true }); assert.ok(await next(j => j.bg >= 1), "Hintergrund-Tab gezählt");
+    await hb({ sid: "livetest001", bye: true }); assert.ok(await next(j => !j.prods.some(p => p[0] === "Flyer")), "Abschied sofort");
+    ctl.abort();
+  });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     // Einkauf 20 + 5 Versand: 20 × 1,15 + 5 = 28,00 netto (mit 35 % wären es 32,00)
