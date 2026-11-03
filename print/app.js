@@ -807,7 +807,7 @@
     }).catch(function () {});
   }
   function tierHintHtml() { var h = S.tierHint, co = S.ctype === "company"; if (!h || !S.price) return "";
-    return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0Stk.</b> nur <b>" + eur(h.unit) + "</b> pro Stück (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
+    return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0Stk.</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro Stück (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
