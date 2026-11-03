@@ -59,7 +59,8 @@ function render(){
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
   stat+='<section class="panel" id="prLiveBox"><div class="panel-h"><h2><span class="pr-livedot"></span> Live im Shop</h2><span class="muted">echte Browser auf /print in der letzten Minute · anonym, ohne Cookies · alle 15 s</span></div><div class="panel-b" id="prLiveB">'+(PRLIVE?liveHtml(PRLIVE):'<span class="muted">wird geladen …</span>')+'</div></section>';
-  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["pruefung","Sortiments-Prüfung"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["anfragen","Gestaltungsanfragen"+(ST.briefsNew?" ("+ST.briefsNew+" neu)":"")],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["pruefung","Sortiments-Prüfung"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  if(FILTER==="anfragen") return head+stat+tabs+briefView();
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
   if(FILTER==="kunden") return head+stat+tabs+customers();
@@ -398,7 +399,7 @@ F.searcher(function(q){
   return (ST.orders||[]).filter(function(o){ return [o.nr,o.customer,o.email,o.product,o.pcOrder,o.invoice&&o.invoice.nr].join(" ").toLowerCase().indexOf(q)>-1; }).slice(0,6)
     .map(function(o){ return {group:"Druckaufträge",label:o.nr+" · "+o.customer,sub:[o.product,o.copies?o.copies+" Stk.":"",eur(o.gross),o.statusText].filter(Boolean).join(" · "),icon:"print",act:"prord:"+o.id}; });
 });
-F.view({id:"print",label:"Druckaufträge",short:"Druck",icon:"print",order:36,count:function(){ return ST&&ST.ok?ST.review:0; },render:render,after:function(){ if(!ST||Date.now()-at>60000) load(); }});
+F.view({id:"print",label:"Druckaufträge",short:"Druck",icon:"print",order:36,count:function(){ return ST&&ST.ok?(ST.review||0)+(ST.briefsNew||0):0; },render:render,after:function(){ if(!ST||Date.now()-at>60000) load(); }});
 /* Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): /admin/api/print/live alle 15 s, solange die Druck-Seite offen ist */
 var PRLIVE=null;
 function liveHtml(L){
@@ -415,4 +416,45 @@ function liveTick(){
 }
 setInterval(liveTick,15000); setTimeout(liveTick,800);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) liveTick(); });
+
+/* Gestaltungsanfragen („Wir gestalten für dich“ im Shop): eigene Liste statt Lead/Aufgabe/Mail – mit Kontakt-Links, Konfiguration und Dateien */
+var BR=null, brBusy=false;
+function brLoad(){ if(brBusy) return; brBusy=true; F.api("/admin/api/print/briefs").then(function(j){ brBusy=false; BR=j&&j.ok?j.briefs:{error:(j&&j.error)||"Fehler"}; F.render(); }).catch(function(){ brBusy=false; BR={error:"Nicht erreichbar"}; F.render(); }); }
+var BRST={neu:["Neu","warn"],arbeit:["In Arbeit","info"],erledigt:["Erledigt","ok"]};
+function kb(n){ n=+n||0; return n>=1048576?(Math.round(n/104857.6)/10).toString().replace(".",",")+" MB":Math.max(1,Math.round(n/1024))+" KB"; }
+function brCard(b){
+  var st=BRST[b.status]||BRST.neu, dt=new Date(b.at), when=isNaN(dt)?"":dt.toLocaleDateString("de-AT",{day:"numeric",month:"numeric",year:"numeric"})+" "+dt.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
+  var subj="Deine Gestaltungsanfrage"+(b.product?" – "+b.product:""), tel=String(b.phone||"").replace(/[^\d+]/g,"");
+  var files=(b.files||[]).map(function(f){ var u="/admin/api/print/brief-file?id="+encodeURIComponent(f.id), img=/^(jpe?g|png|gif|webp)$/i.test(f.ext||""), pdf=/^pdf$/i.test(f.ext||"");
+    if(f.ok===false) return '<li class="muted">'+esc(f.name)+' · nicht mehr vorhanden</li>';
+    return '<li class="pr-bf">'+(img?'<a href="'+u+'&view=1" target="_blank" rel="noopener"><img src="'+u+'&view=1" alt="" loading="lazy"></a>':'<span class="pr-bf-x">'+esc(String(f.ext||"datei").toUpperCase())+'</span>')+
+      '<span class="t"><b>'+esc(f.name)+'</b><span class="muted small">'+kb(f.bytes)+'</span></span><span class="a">'+(img||pdf?'<a class="btn sm" href="'+u+'&view=1" target="_blank" rel="noopener">Ansehen</a>':'')+'<a class="btn sm primary" href="'+u+'" download="'+esc(f.name)+'">Download</a></span></li>'; }).join("");
+  return '<section class="panel pr-brief"><div class="panel-h"><h2>'+esc(b.company||b.name)+(b.company&&b.name?' <span class="muted" style="font-weight:400">· '+esc(b.name)+'</span>':'')+'</h2><span class="tag '+st[1]+'">'+st[0]+'</span><span class="muted">'+esc(when)+'</span></div><div class="panel-b" style="display:grid;gap:12px">'+
+    '<div class="pr-kv"><span>E-Mail</span><b>'+(b.email?'<a href="mailto:'+esc(b.email)+'?subject='+encodeURIComponent(subj)+'">'+esc(b.email)+'</a>':'–')+'</b>'+
+      '<span>Telefon</span><b>'+(b.phone?'<a href="tel:'+esc(tel)+'">'+esc(b.phone)+'</a>':'–')+'</b>'+
+      '<span>Produkt</span><b>'+esc(b.product||"–")+(b.copies?' · '+esc(b.copies)+' Stk.':'')+(b.price?' · Druckpreis '+esc(b.price):'')+'</b>'+
+      ((b.labels||[]).length?'<span>Ausführung</span><b style="font-weight:500">'+b.labels.map(esc).join(' · ')+'</b>':'')+
+      (b.link?'<span>Konfiguration</span><b><a href="'+esc(b.link)+'" target="_blank" rel="noopener">Im Shop öffnen ↗</a></b>':'')+'</div>'+
+    '<div><div class="muted small" style="margin-bottom:4px">Wünsche / Briefing</div><div style="white-space:pre-wrap;overflow-wrap:anywhere">'+(b.text?esc(b.text):'<span class="muted">kein Text – siehe Dateien</span>')+'</div></div>'+
+    '<div><div class="muted small" style="margin-bottom:4px">Dateien ('+(b.files||[]).length+')</div>'+(files?'<ul class="pr-bfl">'+files+'</ul>':'<span class="muted">keine Dateien hochgeladen</span>')+'</div>'+
+    '<div class="pr-acts">'+(b.email?'<a class="btn primary" href="mailto:'+esc(b.email)+'?subject='+encodeURIComponent(subj)+'">Antworten</a>':'')+
+      Object.keys(BRST).filter(function(k){ return k!==b.status; }).map(function(k){ return '<button type="button" class="btn" data-act="prbrst:'+esc(b.id)+':'+k+'">'+(k==="erledigt"?"✓ ":"")+BRST[k][0]+'</button>'; }).join("")+'</div></div></section>';
+}
+var BRF="offen";
+function briefView(){
+  if(!BR){ brLoad(); return '<div class="empty">Lade Gestaltungsanfragen …</div>'; }
+  if(BR.error) return '<div class="notice">'+esc(BR.error)+' <button class="btn" data-act="prbrre">Neu laden</button></div>';
+  var L=BR.filter(function(b){ return BRF==="alle"||(BRF==="offen"?b.status!=="erledigt":b.status==="erledigt"); });
+  return '<div class="subnav" style="margin-top:4px">'+[["offen","Offen ("+BR.filter(function(b){ return b.status!=="erledigt"; }).length+")"],["erledigt","Erledigt"],["alle","Alle"]].map(function(t){ return '<button type="button" data-act="prbrf:'+t[0]+'" aria-current="'+(BRF===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+
+    '<button type="button" data-act="prbrre">Aktualisieren</button></div>'+
+    (L.length?L.map(brCard).join(""):'<div class="empty">'+(BRF==="offen"?"Keine offenen Gestaltungsanfragen.":"Keine Anfragen.")+'<br><span class="muted small">Anfragen über „Wir gestalten für dich“ im Shop erscheinen hier – mit Kontakt, Konfiguration und Dateien.</span></div>');
+}
+F.action("prbrf",function(k){ BRF=k; F.render(); });
+F.action("prbrre",function(){ BR=null; F.render(); });
+F.action("prbrst",function(a){ var p=String(a).split(":"); F.api("/admin/api/print/brief",{body:{id:p[0],status:p[1]}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; }
+  (BR||[]).forEach(function(b){ if(b.id===p[0]) b.status=j.brief.status; }); if(ST) ST.briefsNew=(BR||[]).filter(function(b){ return b.status==="neu"; }).length; F.renderNav&&F.renderNav(); F.render(); }); });
+F.css('.pr-brief .panel-h{gap:10px;flex-wrap:wrap}.pr-brief .panel-h h2{flex:1 1 240px;min-width:0;overflow-wrap:anywhere}.pr-bfl{list-style:none;margin:0;padding:0;display:grid;gap:8px}'+
+  '.pr-bf{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px;border:1px solid var(--line);border-radius:10px}.pr-bf img{width:56px;height:56px;object-fit:cover;border-radius:8px;background:#fff;display:block}'+
+  '.pr-bf-x{width:56px;height:56px;border-radius:8px;background:var(--sunk);display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--ink-3)}.pr-bf .t{display:grid;min-width:0}.pr-bf .t b{overflow-wrap:anywhere;font-weight:600}.pr-bf .a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}'+
+  '@media(max-width:600px){.pr-bf{grid-template-columns:48px minmax(0,1fr)}.pr-bf img,.pr-bf-x{width:48px;height:48px}.pr-bf .a{grid-column:1/-1;justify-content:flex-start}}');
 })();

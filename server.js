@@ -5350,7 +5350,7 @@ function googleReviewUrl() {
   return GREVIEW.url;
 }
 const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, ki: KI,
-  saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
+  saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; }, leads: () => readLeads(),
   mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,
   uidValid: v => STEUER_CALC.uidValid(v), viesCheck: v => viesCheck(v),
   createInvoice: pl => sevCreateInvoice(pl),

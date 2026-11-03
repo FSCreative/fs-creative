@@ -184,7 +184,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const sm2 = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(sm2.indexOf("/print?produkte&amp;kategorie=" + main + "</loc>") > -1, "Sitemap mit Kategorien");
     assert.ok(/"@type":"BreadcrumbList"[^<]*Visitenkarten/.test(pr) && /<nav class="ps-crumbs"/.test(pr) && /og:image" content="https:/.test(pr), "Produktseite mit Brotkrumen und Vorschaubild");
   });
-  await t("Gestaltung anfragen: Datei-Upload, Anfrage mit Konfiguration → Lead, Datei nur fürs Cockpit", async () => {
+  await t("Gestaltung anfragen: Datei-Upload, Anfrage mit Konfiguration → Cockpit Druck (kein Lead), Datei nur fürs Cockpit, Ansehen nur Bild/PDF", async () => {
     const upf = (name, body) => fetch(B + "/print/api/brief/file", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) }, body });
     assert.strictEqual((await upf("virus.exe", Buffer.from("MZ...binary...."))).status, 415, "Dateityp gesperrt");
     const f = await (await upf("logo.txt", Buffer.from("Mein Logo-Text – bitte groß"))).json(); assert.ok(f.ok && f.id && f.token, JSON.stringify(f));
@@ -194,6 +194,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     assert.strictEqual((await fetch(B + "/admin/api/print/brief-file?id=" + f.id, { redirect: "manual" })).status, 302, "ohne Anmeldung kein Zugriff");
     const dl = await fetch(B + "/admin/api/print/brief-file?id=" + f.id, { headers: { cookie: COOKIE } }); assert.strictEqual(dl.status, 200); assert.match(dl.headers.get("content-disposition") || "", /attachment/); assert.match(await dl.text(), /Logo-Text/);
+    const vw = await fetch(B + "/admin/api/print/brief-file?view=1&id=" + f.id, { headers: { cookie: COOKIE } }); assert.match(vw.headers.get("content-disposition") || "", /attachment/, "TXT nie inline");
+    const bl = await (await fetch(B + "/admin/api/print/briefs", { headers: { cookie: COOKIE } })).json(); const br = bl.briefs[0];
+    assert.ok(br && br.name === "Anna Test" && br.email === "anna@example.com" && br.product === "Flyer" && br.status === "neu" && br.files.length === 1 && br.files[0].ok, JSON.stringify(bl));
+    assert.ok(!fs.existsSync(path.join(dir, "leads.json")) || !/Anna Test/.test(fs.readFileSync(path.join(dir, "leads.json"), "utf8")), "kein Lead");
+    const st = await (await fetch(B + "/admin/api/print/state", { headers: { cookie: COOKIE } })).json(); assert.strictEqual(st.briefsNew, 1);
+    const up = await (await fetch(B + "/admin/api/print/brief", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify({ id: br.id, status: "erledigt" }) })).json(); assert.strictEqual(up.brief.status, "erledigt");
   });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));

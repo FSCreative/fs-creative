@@ -2592,6 +2592,26 @@ module.exports = function (D) {
   // Kurzfassung für den Website-Chat (Systemkontext) und llms.txt
   function pubLines(max) { const P = PUB; if (!P || !P.items) return [];
     return P.items.slice(0, max || 40).map(it => "- " + it.title + (it.label ? " (" + it.label + ")" : "") + ": " + it.rows.map(r => r.copies.toLocaleString("de-AT") + " Stk. " + eurDe(r.gross)).join(" · ") + " – " + prodUrl(it.key, true)); }
+  // Gestaltungsanfragen („Wir gestalten für dich“): eigene Liste im Cockpit unter Druck – kein Lead, keine Aufgabe, keine Mail (Wunsch Simon 03.11.2026)
+  async function briefsGet() { const a = await store.getMeta("print_briefs").catch(() => null); return Array.isArray(a) ? a : []; }
+  async function briefsSet(a) { await store.setMeta("print_briefs", a.slice(-500)); }
+  // Ältere Anfragen, die noch als Lead gespeichert wurden, einmalig übernehmen (Text aus der Lead-Nachricht, Dateien über leadId)
+  async function briefsImport() {
+    if (!D.leads) return 0; const cur = await briefsGet(), have = new Set(cur.map(x => x.leadId).filter(Boolean)); let n = 0, files = null;
+    for (const l of (D.leads() || []).filter(x => x && /^Druckshop: Gestaltung/.test(x.source || "") && !have.has(x.id))) {
+      const m = String(l.message || ""), line = k => { const r = m.match(new RegExp("^" + k + ": (.*)$", "m")); return r ? r[1].trim() : ""; };
+      const prod = line("Produkt"), wi = m.indexOf("Wünsche / Briefing:"), di = m.search(/\n(Dateien \(|Keine Dateien)/);
+      if (!files) files = await store.listFiles().catch(() => []);
+      cur.push({ id: "b" + crypto.randomBytes(8).toString("hex"), leadId: l.id, at: l.createdAt || l.at || nowIso(), status: "neu", name: l.name || "", email: l.email || "", phone: l.phone || "", company: l.company || "",
+        text: wi > -1 ? m.slice(wi + 19, di > wi ? di : undefined).trim().replace(/^\(kein Text – siehe Dateien\)$/, "") : "", product: prod.split(" · ")[0] || "", copies: (prod.match(/· ([\d.]+) Stk\./) || [])[1] || "",
+        price: (prod.match(/aktueller Druckpreis (.*)$/) || [])[1] || "", labels: line("Ausführung") ? line("Ausführung").split(" · ") : [], link: line("Konfiguration öffnen"),
+        files: files.filter(f => f.kind === "brief" && f.leadId === l.id).map(f => ({ id: f.id, name: f.name, bytes: f.bytes, ext: f.ext })) });
+      n++;
+    }
+    if (n) { cur.sort((a, b) => String(a.at).localeCompare(String(b.at))); await briefsSet(cur); }
+    return n;
+  }
+  let BRIEF_IMP = false;
   // Website-Chat: passende Produkte zur Besucher-Frage mit ALLEN Optionen aus dem Konfigurator (KI-Suche, 7 Tage gecacht) – damit die Chat-KI konkret beraten kann
   async function chatProducts(q) {
     q = clip(String(q || "").replace(/\s+/g, " ").trim(), 120); if (q.length < 3 || !cfg().pcKey || !D.ki || !D.ki.printDesignOn || !D.ki.printDesignOn()) return "";
@@ -3341,9 +3361,13 @@ module.exports = function (D) {
           lab.length ? "Ausführung: " + lab.join(" · ") : "", c.link ? "Konfiguration öffnen: " + clip(c.link, 900) : "", "",
           "Wünsche / Briefing:", text || "(kein Text – siehe Dateien)", "",
           files.length ? "Dateien (" + files.length + ", Download mit Cockpit-Anmeldung):\n" + files.map(m => "- " + m.name + " (" + Math.max(1, Math.round(m.bytes / 1024)) + " KB): " + cfg().publicUrl + "/admin/api/print/brief-file?id=" + m.id).join("\n") : "Keine Dateien angehängt."].filter(x => x !== "").join("\n");
-        const L = D.saveLead ? await D.saveLead({ name, email, phone, company, topic: "Grafik & Branding", entwurf: false, message: msg, source: "Druckshop: Gestaltung " + clip(c.title || c.product, 60) }) : null;
-        if (!L) return J(res, 500, { ok: false, error: "Konnte nicht gesendet werden – bitte schreib uns an simon@fs-creative.at" });
-        for (const m of files) { m.leadId = L.id; m.keepUntil = new Date(Date.now() + 180 * 864e5).toISOString(); await store.putFile(m).catch(() => {}); }
+        void msg;
+        const br = { id: "b" + crypto.randomBytes(8).toString("hex"), at: nowIso(), status: "neu", name, email, phone, company, text, product: clip(c.title || c.product, 120), copies: c.copies ? clip(c.copies, 12) : "", price: c.price ? clip(c.price, 40) : "",
+          labels: lab, link: c.link && /^https?:\/\//.test(String(c.link)) ? clip(c.link, 900) : "", files: files.map(m => ({ id: m.id, name: m.name, bytes: m.bytes, ext: m.ext })) };
+        try { const all = await briefsGet(); all.push(br); await briefsSet(all); }
+        catch (e) { log("Gestaltungsanfrage speichern:", e.message); return J(res, 500, { ok: false, error: "Konnte nicht gesendet werden – bitte schreib uns an simon@fs-creative.at" }); }
+        for (const m of files) { m.briefId = br.id; m.keepUntil = new Date(Date.now() + 365 * 864e5).toISOString(); await store.putFile(m).catch(() => {}); }
+        if (D.push) D.push("lead", { title: "Gestaltungsanfrage: " + (company || name), body: br.product + (text ? " – " + text.slice(0, 120) : ""), url: "/admin#print", tag: "brief-" + br.id }).catch(() => {});
         return J(res, 200, { ok: true });
       }
       if (p.indexOf("/print/api/account/") === 0) {
@@ -3817,7 +3841,9 @@ module.exports = function (D) {
     const c = cfg(), s = await settings();
     const orders = await store.listOrders();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
-    return { ok: true, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: SETTINGS && SETTINGS.markupPct != null ? SETTINGS.markupPct : c.markup, minMarginEur: SETTINGS && SETTINGS.minMarginEur != null ? SETTINGS.minMarginEur : c.minMargin, envMarkupPct: c.markup, envMinMarginEur: c.minMargin },
+    if (!BRIEF_IMP) { BRIEF_IMP = true; await briefsImport().catch(e => log("Gestaltungsanfragen übernehmen:", e.message)); }
+    const briefsNew = (await briefsGet().catch(() => [])).filter(x => x.status === "neu").length;
+    return { ok: true, briefsNew, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: SETTINGS && SETTINGS.markupPct != null ? SETTINGS.markupPct : c.markup, minMarginEur: SETTINGS && SETTINGS.minMarginEur != null ? SETTINGS.minMarginEur : c.minMargin, envMarkupPct: c.markup, envMinMarginEur: c.minMargin },
       settings: s, groups: mainsList().map(m => ({ slug: m.slug, name: m.name })), catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
       curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary), margins: marginStats(orders) };
   }
@@ -3924,12 +3950,26 @@ module.exports = function (D) {
         return D.send(res, 200, buf, "application/pdf", { "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store" });
       }
       if (p === "/admin/api/print/brief-file" && req.method === "GET") {
-        const id = String(u.searchParams.get("id") || ""), m = /^f[a-f0-9]{24}$/.test(id) ? await store.fileMeta(id) : null; if (!m || m.kind !== "brief") return D.send(res, 404, "Not found");
-        const data = await store.fileData(id); if (!data) return D.send(res, 404, "Not found");
-        return D.send(res, 200, data, "application/octet-stream", { "Content-Disposition": "attachment; filename*=UTF-8''" + encodeURIComponent(m.name), "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" });
+        const id = String(u.searchParams.get("id") || ""), m = /^f[a-f0-9]{24}$/.test(id) ? await store.fileMeta(id) : null; if (!m || m.kind !== "brief") return D.send(res, 404, "Nicht gefunden – die Datei wurde nach Ablauf der Aufbewahrung gelöscht");
+        const data = await store.fileData(id); if (!data) return D.send(res, 404, "Nicht gefunden");
+        // Ansehen im Browser nur für Bilder/PDF (sicherer Typ), sonst immer als Download
+        const VIEW = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", pdf: "application/pdf" }, vt = u.searchParams.get("view") === "1" && VIEW[String(m.ext || "").toLowerCase()];
+        return D.send(res, 200, data, vt || "application/octet-stream", { "Content-Disposition": (vt ? "inline" : "attachment") + "; filename*=UTF-8''" + encodeURIComponent(m.name), "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store", "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox" });
+      }
+      if (p === "/admin/api/print/briefs" && req.method === "GET") {
+        if (!BRIEF_IMP) { BRIEF_IMP = true; await briefsImport().catch(e => log("Gestaltungsanfragen übernehmen:", e.message)); }
+        const all = await briefsGet(), have = new Set();
+        for (const b of all) for (const f of b.files || []) { const m = await store.fileMeta(f.id).catch(() => null); f.ok = !!m; if (m) have.add(f.id); }
+        return J(res, 200, { ok: true, briefs: all.slice().reverse() });
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       const b = await readJson(req, 100000);
+      if (p === "/admin/api/print/brief") {   // Status („neu“ / „in Arbeit“ / „erledigt“) und Notiz einer Gestaltungsanfrage
+        const all = await briefsGet(), x = all.find(z => z.id === String(b.id || "")); if (!x) return J(res, 404, { ok: false, error: "Anfrage nicht gefunden" });
+        if (["neu", "arbeit", "erledigt"].indexOf(b.status) > -1) x.status = b.status;
+        if (typeof b.note === "string") x.note = clip(b.note, 2000);
+        x.updated = nowIso(); await briefsSet(all); return J(res, 200, { ok: true, brief: x });
+      }
       // Preis-Aufschlüsselung wie im Shop (nur lesend): Einkauf Produkt/Versand, Aufschlag, Verkauf; optional Print.com-Optionen überschreiben (pcOverride)
       if (p === "/admin/api/print/quote") {
         const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
