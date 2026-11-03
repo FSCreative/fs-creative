@@ -221,6 +221,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(await next(j => j.total >= 1 && j.prods.some(p => p[0] === "Flyer")), "neuer Besucher sofort");
     await hb({ sid: "livetest002", path: "/print", bg: true }); assert.ok(await next(j => j.bg >= 1), "Hintergrund-Tab gezählt");
     await hb({ sid: "livetest001", bye: true }); assert.ok(await next(j => !j.prods.some(p => p[0] === "Flyer")), "Abschied sofort");
+    const L = await (await fetch(B + "/admin/api/print/live", { headers: { cookie: COOKIE } })).json(); assert.ok(L.today >= 1, "Besucher heute gezählt: " + JSON.stringify(L));
+    await hb({ sid: "livetest003", path: "/print" }); await new Promise(r => setTimeout(r, 300)); assert.strictEqual((await (await fetch(B + "/admin/api/print/live", { headers: { cookie: COOKIE } })).json()).today, L.today, "gleicher Browser/IP am selben Tag zählt einmal");
     ctl.abort();
   });
   await t("Gestaltungsangebot: fertige Datei + Grafik-Aufschlag im Cockpit → Kunden-Link → Kasse rechnet den Aufschlag fest dazu, Rechnung mit eigener Zeile", async () => {

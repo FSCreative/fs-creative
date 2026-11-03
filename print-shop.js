@@ -3184,11 +3184,26 @@ module.exports = function (D) {
   const LIVE = new Map(), LIVE_MS = 70e3;
   const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) LIVE.delete(k); };   // Hintergrund-Tab meldet sich nur jede Minute
   const STEP_DE = ["Übersicht", "Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
+  // Besucher heute (Wunsch Simon 03.11.2026): ohne Cookie/Browser-Speicher – anonyme Tageskennung = Hash aus geheimem Salz, Datum, IP und Browser
+  // (wechselt täglich, IP wird nicht gespeichert); Zähler übersteht Neustarts (print_visits), dazu der Vortag zum Vergleich
+  let VISITS = null, visitsP = null;
+  function visitsLoad() {
+    const d = today(); if (VISITS && VISITS.date === d) return Promise.resolve(VISITS);
+    if (visitsP) return visitsP;
+    return visitsP = store.getMeta("print_visits").catch(() => null).then(m => { visitsP = null; const d2 = today();
+      if (VISITS && VISITS.date !== d2) VISITS = { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: { date: VISITS.date, n: VISITS.ids.size }, dirty: true };
+      else if (!VISITS) VISITS = m && m.date === d2 ? { date: d2, ids: new Set(m.ids || []), salt: m.salt || crypto.randomBytes(16).toString("hex"), prev: m.prev || null, dirty: false } : { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: m && m.date ? { date: m.date, n: (m.ids || []).length } : null, dirty: true };
+      return VISITS; });
+  }
+  function visitCount(ip, ua) { visitsLoad().then(v => { const id = crypto.createHash("sha256").update(v.salt + "|" + v.date + "|" + ip + "|" + String(ua || "").slice(0, 200)).digest("hex").slice(0, 16);
+    if (!v.ids.has(id) && v.ids.size < 100000) { v.ids.add(id); v.dirty = true; livePush(); } }).catch(() => {}); }
+  const visitsTimer = setInterval(() => { if (VISITS && VISITS.dirty) { VISITS.dirty = false; store.setMeta("print_visits", { date: VISITS.date, salt: VISITS.salt, ids: Array.from(VISITS.ids), prev: VISITS.prev }).catch(() => { VISITS.dirty = true; }); } if (VISITS && VISITS.date !== today()) visitsLoad(); }, 30000);
+  if (visitsTimer.unref) visitsTimer.unref();
   // Live-Anzeige im Cockpit ohne Abfrage-Takt: Server-Sent Events, Änderungen gehen sofort raus (Wunsch Simon 03.11.2026)
   const LIVE_SUBS = new Set(); let liveSig = "", livePushT = null;
   function livePush() {
     if (!LIVE_SUBS.size || livePushT) return;
-    livePushT = setTimeout(() => { livePushT = null; liveGc(); const st = liveState(), k = JSON.stringify([st.total, st.bg, st.cart, st.pages, st.steps, st.prods]); if (k === liveSig) return; liveSig = k;
+    livePushT = setTimeout(() => { livePushT = null; liveGc(); const st = liveState(), k = JSON.stringify([st.total, st.bg, st.cart, st.pages, st.steps, st.prods, st.today]); if (k === liveSig) return; liveSig = k;
       const msg = "data: " + JSON.stringify(Object.assign({ ok: true }, st)) + "\n\n"; for (const r of LIVE_SUBS) { try { r.write(msg); } catch (e) { LIVE_SUBS.delete(r); } } }, 300);
   }
   let livePing = 0;
@@ -3198,7 +3213,7 @@ module.exports = function (D) {
     const pages = {}, steps = {}, prods = {}; let cart = 0, bg = 0;
     for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
-    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };
@@ -3380,6 +3395,7 @@ module.exports = function (D) {
         const b = await readJson(req, 1000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
         if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), bg: b.bg === true }); }
         if (LIVE.size > 5000) liveGc();
+        if (sid.length >= 8 && !b.bye) visitCount(ip, req.headers["user-agent"]);
         livePush();
         return J(res, 200, { ok: true });
       }
@@ -3944,11 +3960,11 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/print/live/stream" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no", "X-Robots-Tag": "noindex" });
-        liveGc(); res.write("retry: 3000\n\ndata: " + JSON.stringify(Object.assign({ ok: true }, liveState())) + "\n\n");
+        await visitsLoad().catch(() => null); liveGc(); res.write("retry: 3000\n\ndata: " + JSON.stringify(Object.assign({ ok: true }, liveState())) + "\n\n");
         LIVE_SUBS.add(res); if (LIVE_SUBS.size > 50) { const f = LIVE_SUBS.values().next().value; LIVE_SUBS.delete(f); try { f.end(); } catch (e) {} }
         req.on("close", () => LIVE_SUBS.delete(res)); return;
       }
-      if (p === "/admin/api/print/live" && req.method === "GET") { liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
+      if (p === "/admin/api/print/live" && req.method === "GET") { await visitsLoad().catch(() => null); liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};
         if (mb.op === "pub" && cfg().pcKey) { await pubBuild(); return J(res, 200, Object.assign(await marginsState(), { pub: (await pubState()) ? { at: PUB.at, n: PUB.items.length } : null })); }   // Preisübersicht jetzt neu erstellen
