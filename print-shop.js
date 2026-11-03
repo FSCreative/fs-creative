@@ -302,11 +302,15 @@ module.exports = function (D) {
   // seeded[sku] (kuratierte Produkte einmalig freigeschaltet – spätere Entscheidungen im Cockpit werden nie überschrieben). products[key]: Aufschlag/Mindestmarge/SKU/Optionen.
   let SETTINGS = null;
   const objOf = x => x && typeof x === "object" && !Array.isArray(x) ? x : {};
+  const GTAG_RX = /^(G|AW|GT|DC)-[A-Z0-9]{4,20}$/;
+  // print.html mit Cookie-Banner-Kategorie „Marketing“ (nur wenn ein Google-Tag eingetragen ist – sonst bleibt der Shop ohne Tracking)
+  function printHtmlRaw() { const h = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); return SETTINGS && SETTINGS.gtagId ? h.replace('"categories":{"media":["Google Maps"]}', '"categories":{"media":["Google Maps"],"marketing":["Google Ads"]}') : h; }
   async function settings() {
     if (SETTINGS) return SETTINGS;
     startFixLoad().catch(() => {});   // ersetzte Startausführungen aus der Sortiments-Prüfung
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
     SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, anchorGapSmall: s.anchorGapSmall != null && isFinite(+s.anchorGapSmall) ? +s.anchorGapSmall : 0.05, anchorSmallBelow: s.anchorSmallBelow != null && isFinite(+s.anchorSmallBelow) ? +s.anchorSmallBelow : 100, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin), auditHid: objOf(s.auditHid) };
+    SETTINGS.gtagId = GTAG_RX.test(String(s.gtagId || "")) ? String(s.gtagId) : ""; SETTINGS.gtagLabel = /^[\w-]{4,40}$/.test(String(s.gtagLabel || "")) ? String(s.gtagLabel) : "";   // Google-Tag (Merchant Center/Ads Conversion-Tracking), nur mit Einwilligung „Marketing“
     // Mitbewerber-Preisanker aus print-anchors.json (versioniert im Repo): neue Version → Produkte daraus übernehmen, übrige Anker bleiben
     if (process.env.PRINT_ANCHORS_FILE !== "off") try { const f = JSON.parse(fs.readFileSync(path.join(__dirname, "print-anchors.json"), "utf8")); if (f && f.version && String(f.version) !== SETTINGS.anchorsFile && f.anchors) { await saveSettings({ anchors: f.anchors, anchorsFile: String(f.version) }); log("Preisanker " + f.version + " übernommen (" + Object.keys(f.anchors).length + " Produkte)"); } } catch (e) { if (e.code !== "ENOENT") log("Preisanker-Datei:", e.message); }
     return SETTINGS;
@@ -331,6 +335,8 @@ module.exports = function (D) {
     if (pl.anchorGapWide !== undefined) { const g = parseFloat(String(pl.anchorGapWide).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 50) s.anchorGapWide = g; }
     if (pl.anchorGapSmall !== undefined) { const g = parseFloat(String(pl.anchorGapSmall).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 50) s.anchorGapSmall = g; }
     if (pl.anchorSmallBelow !== undefined) { const g = parseFloat(String(pl.anchorSmallBelow).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 100000) s.anchorSmallBelow = g; }
+    if (pl.gtagId !== undefined) { const v = String(pl.gtagId || "").trim().toUpperCase(); if (!v || GTAG_RX.test(v)) s.gtagId = v; else throw Object.assign(new Error("Tag-ID ungültig – erwartet z. B. G-ABC123XYZ oder AW-123456789"), { status: 400 }); }
+    if (pl.gtagLabel !== undefined) { const v = String(pl.gtagLabel || "").trim(); if (!v || /^[\w-]{4,40}$/.test(v)) s.gtagLabel = v; }
     if (pl.minMarginPct !== undefined) { const g = parseFloat(String(pl.minMarginPct).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 100) s.minMarginPct = g; }
     if (pl.applyAll === true) Object.keys(s.products).forEach(k => { delete s.products[k].markupPct; delete s.products[k].minMarginEur; });   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
     if (pl.autoSend !== undefined) s.autoSend = pl.autoSend === true;
@@ -2679,7 +2685,7 @@ module.exports = function (D) {
   }
   // Preisübersicht als eigene, ohne JavaScript lesbare Seite
   async function pricesPage(req, res) {
-    let html = ""; try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); } catch (e) { return D.send(res, 404, "Not found"); }   // Navigationspunkt „Weihnachten“ nur in der Saison
+    let html = ""; try { html = xmasNav(printHtmlRaw()); } catch (e) { return D.send(res, 404, "Not found"); }   // Navigationspunkt „Weihnachten“ nur in der Saison
     const P = await pubState(), items = (P && P.items) || [], groups = [];
     items.forEach(it => { let g = groups.find(x => x.n === it.group); if (!g) groups.push(g = { n: it.group || "Weitere Produkte", l: [] }); g.l.push(it); });
     await slugMap().catch(() => null);
@@ -2792,7 +2798,7 @@ module.exports = function (D) {
   ];
   function guidePage(req, res, g) {
     let html = "", main = "";
-    try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); main = g ? fs.readFileSync(path.join(__dirname, "print", g.file), "utf8") : ""; } catch (e) { return D.send(res, 404, "Not found"); }
+    try { html = xmasNav(printHtmlRaw()); main = g ? fs.readFileSync(path.join(__dirname, "print", g.file), "utf8") : ""; } catch (e) { return D.send(res, 404, "Not found"); }
     const url = SITE + "/print/ratgeber" + (g ? "/" + g.slug : ""), title = g ? g.title : "Druck-Ratgeber: Formate, Papier & Druckdaten", desc = g ? g.desc : "Ratgeber zum Drucken: Druckformate und Maße, Papier und Grammatur, Druckdaten richtig anlegen – kurz, verständlich und mit Beispielen.";
     if (!g) main = '<main id="main"><div class="wrap ps-helppage ps-guide"><section class="lhero ps-hero"><nav class="ps-crumbs" aria-label="Brotkrumen"><a href="/print">Druckshop</a> › Ratgeber</nav><span class="eyebrow">Ratgeber</span><h1>Druck-Ratgeber</h1><p class="lead">Formate, Papier und Druckdaten – alles, was du vor dem Bestellen wissen solltest.</p></section><section class="sect"><div class="ps-help-cards">' +
       GUIDES.map(x => '<a class="ps-help-card" href="/print/ratgeber/' + x.slug + '"><h2>' + escH(x.short) + "</h2><p>" + escH(x.desc) + "</p></a>").join("") + '</div><div class="btn-row"><a class="btn primary" href="/print">Zum Druckshop</a><a class="btn" href="/print/hilfe">So geht’s &amp; FAQ</a></div></section></div></main>';
@@ -2810,7 +2816,7 @@ module.exports = function (D) {
   // Online-Designer (/print/online-designer): was er kann – für Suchmaschinen und KI-Assistenten (Inhalt print/online-designer.html, nur belegte Funktionen)
   function designerPage(req, res) {
     let html = "", main = "";
-    try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); main = fs.readFileSync(path.join(__dirname, "print", "online-designer.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    try { html = xmasNav(printHtmlRaw()); main = fs.readFileSync(path.join(__dirname, "print", "online-designer.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
     const url = SITE + "/print/online-designer", title = "Online-Designer mit KI-Assistent und Vorlagen – Drucksachen online gestalten", desc = "Visitenkarten, Flyer, Plakate & mehr im Browser gestalten: 22 Vorlagen-Stile, gratis KI-Assistent für Texte und Farben, QR-Code, Logo, Druckkontrolle und druckfertiges PDF.";
     const faq = [...main.matchAll(/<details[^>]*><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)].map(m => [m[1], m[2].replace(/<[^>]+>/g, "")]);
     const ld = [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], ["Online-Designer", url]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
@@ -3087,7 +3093,7 @@ module.exports = function (D) {
   async function xmasPage(req, res, preview) {
     const sea = XMAS.season();
     if (!sea.on) return D.send(res, 302, "", "text/plain", { Location: "/print", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex" });   // außerhalb der Saison: zurück in den Shop
-    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    let html = ""; try { html = printHtmlRaw(); } catch (e) { return D.send(res, 404, "Not found"); }
     await xmasState(); const xs = await xmasShown(); xmasKick();
     // Inhalt je Datenstand zwischenspeichern (Preise, Freigaben, Tag) – nicht bei jedem Aufruf neu zusammensetzen
     const rk = [XMD && XMD.at, xs ? xs.id : "-", sea.today, sea.before, Math.floor(Date.now() / 3600e3)].join("|");
@@ -3157,13 +3163,13 @@ module.exports = function (D) {
   const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
   // Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): nur im Speicher, aktiv = Lebenszeichen in den letzten 70 s; nichts Persönliches, nichts gespeichert
   const LIVE = new Map(), LIVE_MS = 70e3;
-  const liveGc = () => { const c = Date.now() - LIVE_MS; for (const [k, v] of LIVE) if (v.at < c) LIVE.delete(k); };
+  const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) LIVE.delete(k); };   // Hintergrund-Tab meldet sich nur jede Minute
   const STEP_DE = ["Übersicht", "Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   function liveState() {
-    const pages = {}, steps = {}, prods = {}; let cart = 0;
-    for (const v of LIVE.values()) { pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
+    const pages = {}, steps = {}, prods = {}; let cart = 0, bg = 0;
+    for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
-    return { at: new Date().toISOString(), total: LIVE.size, cart, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };
@@ -3194,7 +3200,8 @@ module.exports = function (D) {
   }
   async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
-  const orderPublic = o => ({ id: o.id, nr: o.nr, check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
+  const feedId = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8);   // wie im Merchant-Feed
+  const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
     createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(),
     canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
@@ -3236,7 +3243,7 @@ module.exports = function (D) {
     return xmasNav(html);
   }
   async function shopPage(req, res, preview, u, pathKey) {
-    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    let html = ""; try { html = printHtmlRaw(); } catch (e) { return D.send(res, 404, "Not found"); }
     html = shell(html, preview);
     const pk = pathKey || (u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120));
     { await slugMap().catch(() => null); html = html.replace(/href="\/print\?produkt=([\w-]+)"/g, (m, k) => 'href="' + escH(prodUrl(k)) + '"'); }
@@ -3282,7 +3289,7 @@ module.exports = function (D) {
         return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache" });
       }
       if ((p === "/print/hilfe" || p === "/print/hilfe/") && (req.method === "GET" || req.method === "HEAD")) {
-        let html = "", main = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+        let html = "", main = ""; try { html = printHtmlRaw(); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
         html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>So geht’s &amp; FAQ – Druckshop | FS Creative</title>")
           .replace(/(<meta name="description" content=")[^"]*/, "$1So funktioniert der FS Creative Druckshop: bestellen, Online-Designer mit Vorlagen und KI-Assistent, Bonusprogramm für Firmen, Digital- oder Offsetdruck und Antworten auf häufige Fragen.")
           .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
@@ -3340,9 +3347,9 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, id: meta.id, token: sig("brief", meta.id), name, bytes: buf.length });
       }
       if (p === "/print/api/hb" && req.method === "POST") {   // Live-Besucher (anonym: Zufalls-ID je Tab, kein Cookie) – Seite, Schritt, Produkt
-        if (limited("hb", ip, 240, 3600e3)) { req.resume(); return J(res, 204, {}); }
+        if (limited("hb", ip, 4000, 3600e3)) { req.resume(); return J(res, 204, {}); }
         const b = await readJson(req, 1000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
-        if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)) }); }
+        if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), bg: b.bg === true }); }
         if (LIVE.size > 5000) liveGc();
         return J(res, 200, { ok: true });
       }
@@ -3382,7 +3389,7 @@ module.exports = function (D) {
         const cat = await catalog(false), all = await catalogAll().catch(() => null); cms(false).catch(() => {});   // CMS bei Versionswechsel im Hintergrund auffrischen
         const products = publicCatalog(cat, s, all), rvAll = await ratings(), rv = {}; await slugMap().catch(() => null); if (XMAS.season().on) await xmasState().catch(() => null); /* Teaser zählt die Weihnachts-Vorschläge mit Preis */ Object.keys(rvAll).forEach(k => { if (rvAll[k].n >= RATING_MIN) rv[k] = { avg: rvAll[k].avg, n: rvAll[k].n }; });
         // gzip + 5 Min. im Browser (Katalog ändert sich selten, Preise kommen immer frisch über /print/api/price) – spart bei jedem Seitenwechsel ~160 KB
-        return D.sendGz(req, res, 200, JSON.stringify({ ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products).map(x => SLUGS.byKey[x.key] ? Object.assign({}, x, { slug: SLUGS.byKey[x.key] }) : x), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, xmas: xmasTeaser(products), payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) }), "application/json; charset=utf-8", { "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" });
+        return D.sendGz(req, res, 200, JSON.stringify({ ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products).map(x => SLUGS.byKey[x.key] ? Object.assign({}, x, { slug: SLUGS.byKey[x.key] }) : x), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), gtag: s.gtagId ? { id: s.gtagId, label: s.gtagLabel || "" } : null, agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, xmas: xmasTeaser(products), payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) }), "application/json; charset=utf-8", { "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
@@ -4035,6 +4042,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

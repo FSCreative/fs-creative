@@ -5,17 +5,17 @@
    Produkte, Bilder und Kategorien stammen von Print.com (Sortiment im Cockpit freigeschaltet); allgemeine Produkte werden erst beim Öffnen geladen (/print/api/product). */
 (function () {
   "use strict";
+  // Live-Besucher fürs Cockpit (auf allen /print-Seiten, auch Preise/Ratgeber/Hilfe): anonymes Lebenszeichen alle 25 s, im Hintergrund-Tab jede Minute (Zufalls-ID nur für diesen Tab in sessionStorage, kein Cookie, nichts Persönliches)
+  (function () { var sid = ""; try { sid = sessionStorage.getItem("psSid") || ""; if (!sid) { sid = Math.random().toString(36).slice(2, 12) + Date.now().toString(36); sessionStorage.setItem("psSid", sid); } } catch (e) { sid = Math.random().toString(36).slice(2, 14) + "t"; }
+    var lastBg = 0, beat = function (bye) { var bg = document.hidden && !bye; if (bg) { if (Date.now() - lastBg < 55000) return; lastBg = Date.now(); } try { fetch("/print/api/hb", { method: "POST", keepalive: true, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" },
+      body: JSON.stringify({ sid: sid, path: location.pathname, step: S ? S.step || 0 : 0, prod: S && S.prod ? S.prod.title : "", view: S ? S.view || "" : "", cart: S ? (S.cart || []).length : 0, bg: bg, bye: !!bye }) }).catch(function () {}); } catch (e) {} };
+    setTimeout(beat, 1500); setInterval(beat, 25000); document.addEventListener("visibilitychange", function () { if (!document.hidden) beat(); }); window.addEventListener("pagehide", function () { beat(true); });
+  })();
   var root = document.getElementById("shop");
   if (!root) return;
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
   var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
-  // Live-Besucher fürs Cockpit: anonymes Lebenszeichen alle 25 s (Zufalls-ID nur für diesen Tab in sessionStorage, kein Cookie, nichts Persönliches)
-  (function () { var sid = ""; try { sid = sessionStorage.getItem("psSid") || ""; if (!sid) { sid = Math.random().toString(36).slice(2, 12) + Date.now().toString(36); sessionStorage.setItem("psSid", sid); } } catch (e) { sid = Math.random().toString(36).slice(2, 14) + "t"; }
-    var beat = function (bye) { if (document.hidden && !bye) return; try { fetch("/print/api/hb", { method: "POST", keepalive: true, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" },
-      body: JSON.stringify({ sid: sid, path: location.pathname, step: S.step || 0, prod: S.prod ? S.prod.title : "", view: S.view || "", cart: (S.cart || []).length, bye: !!bye }) }).catch(function () {}); } catch (e) {} };
-    setTimeout(beat, 1500); setInterval(beat, 25000); document.addEventListener("visibilitychange", function () { if (!document.hidden) beat(); }); window.addEventListener("pagehide", function () { beat(true); });
-  })();
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   // Herkunft (Wunsch Simon 30.10.2026): Vorseite + Einstieg dieses Seitenaufrufs – nur im Speicher, nichts im Browser abgelegt; geht nur mit der Bestellung an uns
   var ORIGIN = { ref: String(document.referrer || "").slice(0, 400), land: (location.pathname + location.search).slice(0, 400) };
@@ -62,7 +62,7 @@
   (window.__catP ? window.__catP.then(viaUs).catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
     document.getElementById("psLoading").hidden = true;
     if (!c || !c.ready) { showSetup(c && c.reason === "setup"); return; }
-    S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products); if (XM_HTML) S.view = "xmas";
+    S.cat = c; window.PrintShop.ai = !!c.ai; gtInit(); fixLabels(c.products); if (XM_HTML) S.view = "xmas";
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
@@ -2326,8 +2326,36 @@
   }
   /* STATUS_HEAD_END */
   var SF = { esc: esc, eur: eur, stk: stk, dLong: dLong, past: dPast };
+  /* Google-Tag (Merchant Center / Ads Conversion-Tracking): nur wenn im Cockpit eine Tag-ID eingetragen ist UND der Besucher „Marketing“ zugestimmt hat
+     (Cookie-Banner fs-consent.js). Ohne Zustimmung wird nichts von Google geladen. Kauf-Ereignis einmal je Bestellung auf der Bestellbestätigung. */
+  var GT_PEND = null, gtBound = false;
+  function gtOk() { return !!(S.cat && S.cat.gtag && S.cat.gtag.id && window.FSConsent && window.FSConsent.has("marketing")); }
+  function gtLoad() {
+    if (!gtOk()) return false;
+    if (!window.gtag) {
+      var id = S.cat.gtag.id; window.dataLayer = window.dataLayer || []; window.gtag = function () { window.dataLayer.push(arguments); };
+      window.gtag("consent", "default", { ad_storage: "granted", ad_user_data: "granted", ad_personalization: "denied", analytics_storage: "granted" });
+      window.gtag("js", new Date()); window.gtag("config", id);
+      var sc = document.createElement("script"); sc.async = true; sc.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(id); document.head.appendChild(sc);
+    }
+    return true;
+  }
+  function gtFlush() {
+    var o = GT_PEND; if (!o || !gtLoad()) return; GT_PEND = null;
+    var k = "ps-conv-" + o.nr; try { if (localStorage.getItem(k)) return; localStorage.setItem(k, "1"); } catch (e) {}
+    var net = Math.round((+o.net || 0) * 100) / 100, g = S.cat.gtag;
+    window.gtag("event", "purchase", { transaction_id: o.nr, value: net, tax: Math.round(((+o.gross || 0) - net) * 100) / 100, shipping: 0, currency: "EUR",
+      items: [{ item_id: o.pkey || "", item_name: o.product || "", price: net, quantity: 1 }] });
+    if (g.label && /^AW-/.test(g.id)) window.gtag("event", "conversion", { send_to: g.id + "/" + g.label, value: net, currency: "EUR", transaction_id: o.nr });
+  }
+  function gtInit() {
+    if (gtBound || !S.cat || !S.cat.gtag) return; gtBound = true;
+    var bind = function () { if (!window.FSConsent) return false; window.FSConsent.onChange(function (c) { if (c && c.marketing) { gtLoad(); gtFlush(); } else if (window.gtag) window.gtag("consent", "update", { ad_storage: "denied", ad_user_data: "denied", analytics_storage: "denied" }); }); gtLoad(); return true; };
+    if (!bind()) window.addEventListener("fs-consent:ready", function () { bind(); gtFlush(); }, { once: true });
+  }
   function renderStatus(o, id, t) {
     var hd = statusHead(o, SF, Date.now()), k = hd.key;
+    if (k === "fresh" && o.nr) { GT_PEND = o; gtFlush(); }
     LIVE.o = o; LIVE.id = id; LIVE.t = t;
     var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t);
     var body = k === "pay" ? '<div class="btn-row" style="justify-content:center"><button type="button" class="ps-btn primary" data-act="retrypay:' + esc(id) + "|" + esc(t) + '">Erneut bezahlen</button></div>'

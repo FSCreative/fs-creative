@@ -201,6 +201,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const st = await (await fetch(B + "/admin/api/print/state", { headers: { cookie: COOKIE } })).json(); assert.strictEqual(st.briefsNew, 1);
     const up = await (await fetch(B + "/admin/api/print/brief", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify({ id: br.id, status: "erledigt" }) })).json(); assert.strictEqual(up.brief.status, "erledigt");
   });
+  await t("Google-Tag: nur mit Tag-ID im Cockpit – Katalog meldet ihn, Cookie-Banner bekommt „Marketing“, ungültige ID abgelehnt, Bestellseite mit Feed-ID", async () => {
+    const pg0 = await (await fetch(B + "/print")).text(); assert.ok(!/"marketing"/.test(pg0), "ohne ID keine Marketing-Kategorie");
+    assert.ok(!(await (await fetch(B + "/print/api/catalog")).json()).gtag, "ohne ID kein Tag");
+    const bad = await admin("/admin/api/print/settings", { gtagId: "UA-123" }); assert.strictEqual(bad.ok, false, JSON.stringify(bad)); assert.match(bad.error || "", /Tag-ID ungültig/);
+    const ok = await admin("/admin/api/print/settings", { gtagId: "g-test1234", gtagLabel: "AbC-12_x" }); assert.strictEqual(ok.ok, true, JSON.stringify(ok));
+    const c = await (await fetch(B + "/print/api/catalog")).json(); assert.deepStrictEqual(c.gtag, { id: "G-TEST1234", label: "AbC-12_x" });
+    const pg = await (await fetch(B + "/print")).text(); assert.ok(/"marketing":\["Google Ads"\]/.test(pg), "Banner fragt nach Marketing");
+    await admin("/admin/api/print/settings", { gtagId: "" }); assert.ok(!(await (await fetch(B + "/print/api/catalog")).json()).gtag, "Feld leer = aus");
+  });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     // Einkauf 20 + 5 Versand: 20 × 1,15 + 5 = 28,00 netto (mit 35 % wären es 32,00)

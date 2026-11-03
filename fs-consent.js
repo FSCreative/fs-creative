@@ -120,7 +120,7 @@
   };
 
   var PROVIDERS = {
-    'google maps': 'Google', 'youtube': 'Google (YouTube)', 'google recaptcha': 'Google', 'recaptcha': 'Google',
+    'google maps': 'Google', 'google ads': 'Google', 'google analytics': 'Google', 'youtube': 'Google (YouTube)', 'google recaptcha': 'Google', 'recaptcha': 'Google',
     'vimeo': 'Vimeo', 'instagram': 'Meta', 'facebook': 'Meta', 'openstreetmap': 'die OpenStreetMap Foundation',
     'spotify': 'Spotify', 'komoot': 'komoot', 'outdooractive': 'Outdooractive', 'calendly': 'Calendly'
   };

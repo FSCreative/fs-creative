@@ -260,6 +260,8 @@ function printLiveBlocks(html, known) {
   const on = printOn(known);
   return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "")
     .replace(/<!--PRINT_OFF-->([\s\S]*?)<!--\/PRINT_OFF-->/g, (m, inner) => on ? "" : inner)
+    .replace(/<!--GTAG_ON-->([\s\S]*?)<!--\/GTAG_ON-->/g, (m, inner) => { let g = false; try { g = on && !!PRINT && PRINT.gtagOn(); } catch (e) {} return g ? inner : ""; })   // Google-Tag im Druckshop (Einstellung im Cockpit)
+    .replace(/<!--GTAG_OFF-->([\s\S]*?)<!--\/GTAG_OFF-->/g, (m, inner) => { let g = false; try { g = on && !!PRINT && PRINT.gtagOn(); } catch (e) {} return g ? "" : inner; })
     .replace(/<!--PRINT_XMAS-->([\s\S]*?)<!--\/PRINT_XMAS-->/g, (m, inner) => { let x = false; try { x = on && !!PRINT && PRINT.xmasOn(); } catch (e) {} return x ? inner : ""; });   // Weihnachtsabteilung (nur in der Saison)
 }
 function renderIndex(baseHtml, route, live) {
