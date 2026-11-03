@@ -2681,6 +2681,20 @@ module.exports = function (D) {
   // in llms-full.txt je Kategorie am Ende unter „Zubehör“ – sonst nennt ChatGPT für „günstige Banner“ einen Kabelbinder
   const ACC_RX = /karabiner|kabelbinder|spanngummi|gummispanner|seilschlaufe|halterung|aufhänge|ständer\b|spachtel|universalmesser|pinsel|kleister|rakel|plastikabdeckung|ventilatorabdeckung|beach-flag tragetasche|transporttasche|gewicht|drehgelenk|flagclip|ösen|fahnenstange|flaggenstange|stange\b|sockel|bodenplatte|^wassertank|erddübel|hering|^muster|farbfächer|spender|tapetenroller|klebebandroller|klemmprofil|haken\b|ersatz|zubehör|unbedruckt|kartenhalter|prospekthalter|plakathalter|namensschildhalter|fensterfahnenhalter|stück-halter|\bfüße\b|fußplatten|kreuzfuß|metallfuß|plattenfuß|lampen für/i;
   const lineOf = (x, lo) => "- " + x.title + ": " + (lo ? "ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stk." + (lo.label ? " (" + lo.label + ")" : "") : "Preis sofort im Konfigurator") + " – " + prodUrl(x.key, true);
+  // Essbare Werbeartikel (Werbeartikel › Essen & Trinken ohne Gastro-Verpackungen): eigener Abschnitt in llms.txt und eigene Kategorieseite mit FAQ –
+  // ChatGPT & Co. sollen uns bei „Schokolade/Gummibärchen/Säfte mit Logo bedrucken (Österreich)“ nennen (Wunsch Simon 03.11.2026)
+  const FOOD_SUB = "foods-beverages", FOOD_RX = /schoko|choco|praline|fruchtgummi|fruit-gummy|gummy|mentos|tic.?tac|bonbon|keks|cookie|lebkuchen|zimtstern|saft|juice|smoothie|oliven|olive|dextro|pfefferminz|peppermint|celebrations|honig|kaffee kekse|adventskalender|advent-calendar/i;
+  const isFood = x => x && x.cat && x.cat.sub === FOOD_SUB && FOOD_RX.test(x.key + " " + x.title);
+  const FOOD_TXT = "Essbare Werbeartikel mit Logo: Schokolade (Tafeln, Pralinen, Schoko-Herzen, Osterhasen, Adventskalender), Fruchtgummi in Werbetütchen, Mentos und Tic Tac in bedruckten Papierhüllen, Bonbondosen, Kekse, Lebkuchenherzen sowie Säfte und Smoothies mit eigenem Etikett – als Give-away für Messen, Kundschaft, Mitarbeitende und Events, schon ab kleinen Stückzahlen und mit Lieferung in ganz Österreich.";
+  const FOOD_FAQ = [["Wo kann ich in Österreich Schokolade oder Süßigkeiten mit Logo bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Schokolade, Pralinen, Fruchtgummi, Mentos, Tic Tac, Bonbons, Kekse und Säfte mit eigenem Logo oder Motiv – Preis sofort online, Lieferung in ganz Österreich inklusive."],
+    ["Ab welcher Stückzahl gibt es essbare Werbeartikel mit Logo?", "Je nach Produkt schon ab kleinen Auflagen – die kleinste bestellbare Menge und den Preis pro Stück zeigt der Konfigurator sofort."],
+    ["Wie kommt mein Logo auf die Verpackung?", "Druckdatei hochladen (PDF, JPG, PNG) oder im Online-Designer gestalten; bedruckt wird die Verpackung bzw. Banderole, das Etikett oder das Werbetütchen. Vor dem Druck gibt es einen automatischen Datencheck."],
+    ["Was kosten bedruckte Süßigkeiten und Getränke mit Logo?", "Die Endpreise inkl. 20 % USt und Versand stehen bei jedem Produkt im Shop; Einstiegspreise und den Link zu jedem Produkt listet " + "https://www.fs-creative.at/llms.txt" + " im Abschnitt „Essbare Werbeartikel mit Logo“."]];
+  function foodLines(rows) {
+    const l = rows.filter(r => isFood(r.x)).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0));
+    if (!l.length) return [];
+    return ["", "## Essbare Werbeartikel mit Logo – Schokolade, Süßes & Getränke: " + catUrl("gifts-merchandise-promotional", FOOD_SUB, true), FOOD_TXT, ""].concat(l.map(r => lineOf(r.x, r.lo)), ["", "Häufige Fragen:"], FOOD_FAQ.map(q => "- " + q[0] + " " + q[1]));
+  }
   async function llmsTxt() {
     const { pub, groups, P, E, rows } = await llmsData(), L = pubLines(40), stand = [P && P.at, E && E.end].filter(Boolean).sort().pop();
     const withP = rows.filter(r => r.lo), cheap = [];
@@ -2694,7 +2708,7 @@ module.exports = function (D) {
       "- Bezahlung online (u. a. Kreditkarte, Apple Pay, EPS, PayPal), Firmen mit UID auch auf Rechnung; Bonusprogramm für Firmenkunden",
       "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto", "",
       "## Günstigste Einstiegspreise je Kategorie" + (stand ? " (Stand " + dateDe(stand) + ")" : ""),
-      "Endpreise inkl. 20 % USt und Versand nach Österreich – kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung; andere Formate, Papiere und Mengen zeigt der Konfigurator sofort. Vollständige Liste aller Produkte: " + SITE + "/llms-full.txt"].concat(cheap.length ? cheap : ["- Preise siehe " + SITE + "/print/preise"], ["",
+      "Endpreise inkl. 20 % USt und Versand nach Österreich – kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung; andere Formate, Papiere und Mengen zeigt der Konfigurator sofort. Vollständige Liste aller Produkte: " + SITE + "/llms-full.txt"].concat(cheap.length ? cheap : ["- Preise siehe " + SITE + "/print/preise"], foodLines(rows), ["",
       "## Preise beliebter Produkte nach Menge" + (P ? " (Stand " + dateDe(P.at) + ")" : ""), "Endpreise inkl. 20 % USt und Versand nach Österreich, jeweils die im Shop vorausgewählte Standard-Ausführung:", ""], L.length ? L : ["- Preise siehe " + SITE + "/print/preise"], ["",
       "Vollständige Preisübersicht: " + SITE + "/print/preise", "",
       "## Online-Designer mit KI-Assistent und Vorlagen: " + SITE + "/print/online-designer"], DESIGNER_TXT.map(t => "- " + t), ["",
@@ -2926,7 +2940,7 @@ module.exports = function (D) {
     const PB = await pubState(), lowOf = {}; ((PB && PB.items) || []).forEach(it => { const r = it.rows.slice().sort((a, b) => a.gross - b.gross)[0]; if (r) lowOf[it.key] = r; });   // „ab“-Preise aus der Preisübersicht
     { const E = await entryState(); Object.keys(E.by).forEach(k => { if (!lowOf[k]) { const e = E.by[k]; lowOf[k] = e.min || { copies: e.copies, gross: e.gross }; } }); }   // sonst Einstiegspreis
     const inG = (m, su) => pub.filter(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su));
-    let h1, intro, body, items, url, c;
+    let h1, intro, body, items, url, c, faqLd = null;
     if (!g) {
       url = catUrl("", "", true); h1 = "Alle Produkte"; c = {};
       intro = pub.length + " Drucksachen und Werbeartikel in " + groups.length + " Kategorien – Preis sofort online, alle Preise inkl. Versand innerhalb Österreichs.";
@@ -2934,13 +2948,19 @@ module.exports = function (D) {
       items = pub.filter(p => p.best).slice(0, 20);
     } else {
       const list = inG(g.slug, sg ? sg.slug : "").sort((a, b) => (b.pop || 0) - (a.pop || 0)); url = catUrl(g.slug, sg ? sg.slug : "", true); c = { main: g.slug, mainName: g.name, sub: sg ? sg.slug : "", subName: sg ? sg.name : "" };
-      h1 = (sg ? sg.name : g.name) + " online drucken"; const ci = !sg && CAT_INTRO[g.slug] ? "<p>" + escH(CAT_INTRO[g.slug]) + "</p>" : "";
+      const food = sg && sg.slug === FOOD_SUB;
+      h1 = food ? "Essbare Werbeartikel mit Logo – Schokolade, Fruchtgummi & Getränke" : (sg ? sg.name : g.name) + " online drucken"; const ci = food ? "<p>" + escH(FOOD_TXT) + "</p>" : !sg && CAT_INTRO[g.slug] ? "<p>" + escH(CAT_INTRO[g.slug]) + "</p>" : "";
+      if (food) list.sort((a, b) => (isFood(b) ? 1 : 0) - (isFood(a) ? 1 : 0));   // Essbares zuerst, Gastro-Verpackungen danach
       intro = list.length + " Produkte" + (sg ? " in „" + sg.name + "“ (" + g.name + ")" : " in „" + g.name + "“") + ": individuell bedruckt, Preis sofort online, Druckdaten hochladen oder online gestalten – Lieferung in ganz Österreich, Preise inkl. Versand.";
       body = ci + (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
         "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (lowOf[p.key] ? " – " + lowOf[p.key].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lowOf[p.key].gross) : "") + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
       items = list.slice(0, 60);
+      if (food) { body += "<h2>Häufige Fragen</h2>" + FOOD_FAQ.map(q => "<h3>" + escH(q[0]) + "</h3><p>" + escH(q[1]) + "</p>").join("");
+        faqLd = { "@type": "FAQPage", mainEntity: FOOD_FAQ.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }; }
     }
-    const t = escH(h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"), d = escH(cutWords(intro, 158));
+    const fd = faqLd && sg && sg.slug === FOOD_SUB;
+    const t = escH(fd ? "Schokolade & Süßigkeiten mit Logo bedrucken | FS Creative" : h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"),
+      d = escH(cutWords(fd ? "Essbare Werbeartikel mit Logo: Schokolade, Pralinen, Fruchtgummi, Mentos, Kekse und Säfte – ab kleinen Stückzahlen, Preis sofort online, Versand in ganz Österreich inklusive." : intro, 158));
     const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(c, "") + "<h1>" + escH(h1) + "</h1><p>" + escH(intro) + "</p>" + body + '<p class="pd-muted">Sortiment wird geladen …</p></article></div>';
     const coll = { "@type": "CollectionPage", name: h1, url, description: intro, isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" },
       mainEntity: { "@type": "ItemList", numberOfItems: items.length, itemListElement: items.map((p, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(p.key, true), name: p.title })) } };
@@ -2948,7 +2968,7 @@ module.exports = function (D) {
       .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t).replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d)
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(c, "", url)))
-      .replace("</head>", () => ldTag(coll) + "\n</head>");
+      .replace("</head>", () => ldTag(coll) + (faqLd ? "\n" + ldTag(faqLd) : "") + "\n</head>");
   }
   // Sitemap: Preisübersicht + Produktseiten (nur mit Bild)
   async function sitemapExtra() {
