@@ -826,7 +826,7 @@
   function dueHtml() { var p = S.price; if (!p || !p.deliveryDate) return ""; var d = new Date(p.deliveryDate + "T12:00:00"); if (isNaN(d)) return "";
     var day = d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "numeric" }), v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m);
     var cd = work && left > 0 ? "Bestellst du in den nächsten <b>" + (left >= 60 ? Math.floor(left / 60) + " Std. " : "") + (left % 60) + " Min.</b>, kommt es" : "Bestellst du jetzt, kommt es";
-    return '<p class="ps-due" id="psDue">🚚 ' + cd + " voraussichtlich am <b>" + esc(day) + "</b>.</p>"; }
+    return '<p class="ps-due" id="psDue">🚚 ' + cd + " voraussichtlich am <b>" + esc(day.replace(/\.$/, "")) + "</b>.</p>"; }
   setInterval(function () { var e = document.getElementById("psDue"); if (e && !document.hidden) { var t = document.createElement("div"); t.innerHTML = dueHtml(); if (t.firstChild) e.innerHTML = t.firstChild.innerHTML; } }, 30000);
   function socialHtml() { var n = +S.liveSame || 0, w = +S.liveWeek || 0, t = S.prod ? S.prod.title : ""; if (!t) return "";
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
