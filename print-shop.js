@@ -2746,7 +2746,11 @@ module.exports = function (D) {
       cats.push("- " + g.name + " › " + su.name + " (" + l.length + " Produkte" + (lo ? ", ab " + eurDe(lo.lo.gross) + " für " + lo.lo.copies.toLocaleString("de-AT") + " Stk." : "") + "): " + l.slice(0, 5).map(r => r.x.title).join(", ") + " – " + catUrl(g.slug, su.slug, true)); }));
     return [].concat.apply([], LLM_TOPICS.map(t => {
       const l = rows.filter(r => inTopic(t, r.x)).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0)).slice(0, 40); if (!l.length) return [];
-      return ["", "## " + t.h + ": " + catUrl(t.main, t.sub, true), t.txt, ""].concat(l.map(r => lineOf(r.x, r.lo)), ["", "Häufige Fragen:"], t.faq.map(q => "- " + q[0] + " " + q[1]));
+      // Textil & Hüte: Preis pro Stück dazu und eine Preisfrage mit echten Zahlen (günstigstes Produkt pro Stück) – ChatGPT & Co. vergleichen Stückpreise
+      const per = r => r.lo && r.lo.copies > 1 ? " – " + eurDe(r.lo.gross / r.lo.copies) + " pro Stück inkl. Druck und Versand" : "";
+      const pp = t.id !== "food" ? l.filter(r => r.lo && r.lo.copies > 1 && (t.id !== "textil" || /t-?shirt/i.test(r.x.title))).sort((a, b) => a.lo.gross / a.lo.copies - b.lo.gross / b.lo.copies)[0] : null;
+      const faq = t.faq.concat(pp ? [[t.id === "hats" ? "Was kostet eine Cap oder Mütze mit Logo?" : "Was kostet ein T-Shirt mit Logo?", "Ab " + eurDe(pp.lo.gross / pp.lo.copies) + " pro Stück (" + pp.x.title + ", " + pp.lo.copies + " Stück für " + eurDe(pp.lo.gross) + ") – Endpreis inklusive Logo-Druck, 20 % USt und Versand innerhalb Österreichs."]] : []);
+      return ["", "## " + t.h + ": " + catUrl(t.main, t.sub, true), t.txt, ""].concat(l.map(r => lineOf(r.x, r.lo) + (t.id !== "food" ? per(r) : "")), ["", "Häufige Fragen:"], faq.map(q => "- " + q[0] + " " + q[1]));
     })).concat(cats.length > 2 ? cats : []);
   }
   async function llmsTxt() {
@@ -3111,11 +3115,17 @@ module.exports = function (D) {
       const tag = (k, v) => v ? "<g:" + k + ">" + xmlEsc(v) + "</g:" + k + ">" : "";
       const apparel = gpc === 212 || gpc === 1604 ? tag("gender", "unisex") + tag("age_group", "adult") + tag("color", a.color || (kind === "textile" ? seg[0] : "")) + tag("size", a.size || (kind === "textile" ? "M" : "")) : "";
       const fid = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8), grp = it.formats && it.formats.length ? tag("item_group_id", fid(it.key)) : "";
-      const itemXml = (id, title, dsc, link, gross) => "<item>" + tag("id", id) + grp + tag("title", title) + tag("description", dsc) + tag("link", link) +
+      // Stückpreis bei Google („12,46 €/Stk.“): Grundpreis-Angabe in Stück (ct); sachliche Highlights und Kampagnen-Label (Textil/Werbeartikel/Druck) – Wunsch Simon 03.11.2026
+      const ms = x.methods || [], mT = ms.find(m => m.key === "transfer"), mS = ms.find(m => /^screen/.test(m.key || ""));
+      const hl = (kind === "textile" ? [mT ? "Logo per Transferdruck schon ab " + (mT.min || 1) + " Stück" + (mS ? ", ab " + mS.min + " Stück auch Siebdruck" : "") : mS ? "Siebdruck ab " + mS.min + " Stück" : "Mit eigenem Logo bedruckt", "Größen in einer Bestellung frei kombinierbar"] : kind === "promo" ? ["Mit eigenem Logo bedruckt, schon ab kleinen Stückzahlen"] : [])
+        .concat(["Versand innerhalb Österreichs inklusive", "Automatischer Datencheck vor dem Druck"]);
+      const lbl = kind === "textile" ? "textil" : kind === "promo" ? "werbeartikel" : /banner|bauzaun|roll/i.test(it.key) ? "grossformat" : "druck";
+      const itemXml = (id, title, dsc, link, gross, cnt) => "<item>" + tag("id", id) + grp + tag("title", title) + tag("description", dsc) + tag("link", link) +
         tag("image_link", imgs[0]) + imgs.slice(1, 6).map(u => tag("additional_image_link", u)).join("") + tag("availability", "in_stock") + tag("condition", "new") + tag("price", gross.toFixed(2) + " EUR") +
+        (cnt > 1 ? tag("unit_pricing_measure", cnt + " ct") + tag("unit_pricing_base_measure", "1 ct") : "") + hl.map(h => tag("product_highlight", h)).join("") + tag("custom_label_0", lbl) +
         tag("brand", "FS Creative") + tag("identifier_exists", "no") + tag("google_product_category", String(gpc)) + tag("product_type", ptype) + apparel +
         "<g:shipping><g:country>AT</g:country><g:service>Standard</g:service><g:price>0.00 EUR</g:price></g:shipping></item>\n";
-      const xml = itemXml(fid(it.key), t, desc, pk.link, pk.row.gross);
+      const xml = itemXml(fid(it.key), t, desc, pk.link, pk.row.gross, n);
       if (SUPPLIER_RX.test(xml)) { skipped.push(it.key + " (Lieferanten-Name)"); continue; }
       items.push(xml);
       // weitere Formate: eigener Eintrag (gleiche Gruppe), Link wählt Format und Auflage genau so vor (?format=…&menge=…)
@@ -3125,7 +3135,7 @@ module.exports = function (D) {
         const ft = clip(title + " " + ff + " " + verb + " – " + row.copies.toLocaleString("de-AT") + " Stück", 150);
         const fd = clip(desc.replace("Ausführung: " + scrubText(it.label || ""), "Ausführung: " + scrubText(lb)), 4900);
         const link = prodLink(it.key, true, "format=" + encodeURIComponent(f.v) + (row.copies !== it.start ? "&menge=" + row.copies : ""));
-        const fx = itemXml(fid(it.key + "-" + f.v.replace(/[^a-z0-9]+/gi, "-")), ft, fd, link, row.gross); if (!SUPPLIER_RX.test(fx)) items.push(fx);
+        const fx = itemXml(fid(it.key + "-" + f.v.replace(/[^a-z0-9]+/gi, "-")), ft, fd, link, row.gross, row.copies); if (!SUPPLIER_RX.test(fx)) items.push(fx);
       }
     }
     const head = '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">\n<channel>\n<title>FS Creative Druckshop</title>\n<link>' + SITE + "/print</link>\n" +
