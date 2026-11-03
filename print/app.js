@@ -25,6 +25,8 @@
   var deDate = function (iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }); };
   // Zahl + Einheit und Datumsangaben bleiben zusammen (geschütztes Leerzeichen)
   var nbsp = function (s) { return String(s).replace(/ /g, " "); };
+  // Mengeneinheit des Produkts: meist Stück; Meterware (z. B. Geschenkbänder: Menge = Meter Band) → „m“
+  function U(p) { p = p || S.prod || {}; return p.unit || "Stk."; }
   var stk = function (n) { return (+n || 0).toLocaleString("de-AT") + " Stk."; };
   var pDay = function (v) { var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/), d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v || NaN); return isNaN(d) ? null : d; };
   var dNum = function (v) { var d = pDay(v); return d ? d.getDate() + "." + (d.getMonth() + 1) + "." : ""; };   // „4.11.“ (nicht dShort: das ist die Liefertermin-Anzeige „Mi., 4. Nov.“)
@@ -98,7 +100,7 @@
     if (navigator.share && (navigator.maxTouchPoints > 0 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))) { navigator.share({ title: title, text: text, url: url }).catch(function () {}); return; }
     copyText(url).then(function () { toast("Link kopiert – einfach einfügen und teilen"); }, function () { window.prompt("Link zum Teilen (kopieren):", url); });
   }
-  function cfgShare() { shareLink(cfgLink(S.prod.key, cfgPack()), S.prod.title + " – FS Creative Druckshop", S.prod.title + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk." + (cfgSum() ? " · " + cfgSum() : "") + (S.price ? " · " + eur(S.price.gross) + " inkl. USt & Versand" : "")); }
+  function cfgShare() { shareLink(cfgLink(S.prod.key, cfgPack()), S.prod.title + " – FS Creative Druckshop", S.prod.title + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "" + (cfgSum() ? " · " + cfgSum() : "") + (S.price ? " · " + eur(S.price.gross) + " inkl. USt & Versand" : "")); }
   function cfgSave() {
     var had = cfgSavedNow(); if (had) { savDel(had.id); return; }   // zweiter Klick = wieder entfernen
     var it = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), product: S.prod.key, title: S.prod.title, img: imgOk(S.prod.img) ? S.prod.img : "", sum: cfgSum(), n: totalCopies(), gross: S.price ? S.price.gross : null, c: cfgPack(), at: new Date().toISOString() };
@@ -375,7 +377,7 @@
     var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
     var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="50" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
     var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>Stk.</small></label>'; }).join("") +
-      '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk." + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
+      '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + "" + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
     return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
       (n > 1 && sides() === 2 ? '<label class="ps-cb sm ps-msb"><input type="checkbox" data-motsb="1"' + (S.mot.sameBack !== false ? " checked" : "") + '><span>' + sideNames()[1] + " für alle Motive gleich – nur einmal hochladen</span></label>" : "") +
       (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu 50 Motive, ohne Aufpreis.</p>" : "") + "</div>";
@@ -762,7 +764,7 @@
     var seq = ++altSeq, p = S.prod; if (!p || kind() === "textile") return; S.alts = "busy"; var auto = S.autoFix === p.key;
     var cands = [], seen = {}, add = function (sel, copies, label, w) { var k = JSON.stringify([sel, copies]); if (seen[k]) return; seen[k] = 1; cands.push({ sel: sel, copies: copies, label: label, w: w }); };
     var tiers = (p.tiers || []).slice().sort(function (a, b) { return Math.abs(a - S.copies) - Math.abs(b - S.copies); }).filter(function (t) { return t !== S.copies; }).slice(0, auto ? 6 : 2);
-    tiers.forEach(function (t) { add(Object.assign({}, S.sel), t, "Auflage " + t.toLocaleString("de-AT") + "\u00a0Stk.", 1); });
+    tiers.forEach(function (t) { add(Object.assign({}, S.sel), t, "Auflage " + t.toLocaleString("de-AT") + "\u00a0" + U() + "", 1); });
     p.props.forEach(function (pr) { var cur = S.sel[pr.slug], opts = pr.options.map(function (o) { return o.slug; }), i = opts.indexOf(cur);
       bestOf(pr).concat([opts[i - 1], opts[i + 1]]).filter(function (v, k, a) { return v && v !== cur && a.indexOf(v) === k; }).slice(0, 3).forEach(function (v) {
         var r = resolveWith(pr.slug, v); if (r === null) return; var sel = Object.assign({}, S.sel, r); sel[pr.slug] = v;
@@ -807,7 +809,7 @@
     }).catch(function () {});
   }
   function tierHintHtml() { var h = S.tierHint, co = S.ctype === "company"; if (!h || !S.price) return "";
-    return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0Stk.</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro Stück (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
+    return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0" + U() + "</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro " + (U() === "m" ? "Meter" : "Stück") + " (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
   /* ── Verkaufshilfen (Wunsch Simon 03.11.2026) – nur ehrliche, echte Angaben ──
      1 Tab-Titel im Hintergrund · 2 Angebot per Mail · 3 Liefertermin mit Annahmeschluss 14:00
      5 echte Live-/Bestellzahlen · 6 Chat-Hinweis nach 60 s · 7 Vertrauens-Zeile beim Preis */
@@ -831,14 +833,14 @@
   function socialHtml() { var n = +S.liveSame || 0, w = +S.liveWeek || 0, t = S.prod ? S.prod.title : ""; if (!t) return "";
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
     return a || b ? '<p class="ps-social">' + [a, b].filter(Boolean).join(" · ") + "</p>" : ""; }
-  function trustHtml() { return '<ul class="ps-trust"><li>✓ Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>✓ Datencheck inklusive</li><li>✓ Persönlich erreichbar – aus dem Montafon</li></ul>' +
+  function trustHtml() { return '<ul class="ps-trust"><li>Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>Datencheck inklusive</li><li>Persönlich erreichbar – aus dem Montafon</li></ul>' +
     '<button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button>'; }
   function rememberPop() { var exit = false;
     var p = S.prod, pr = S.price; if (!p) return; var co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "", link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
     var labels = (pr && pr.labels ? pr.labels : []).map(function (l) { return l[0] + ": " + l[1]; }), me = S.me || {}, cu = S.customer || {}, back = document.activeElement;
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Angebot per Mail");
     m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">' + (exit ? "Noch am Vergleichen?" : "Angebot merken") + '</span><h3>' + (exit ? "Nimm dein Angebot mit" : "Angebot per Mail schicken") + '</h3><p>Du bekommst deine Konfiguration mit Preis und einem Link, mit dem du sie jederzeit wieder öffnen und bestellen kannst.' + (exit ? " Versand in Österreich und Datencheck sind schon inklusive." : "") + '</p>' +
-      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b>" + (priceTxt ? "<span>" + esc(priceTxt) + " · Versand inklusive</span>" : "") + "</div>" +
+      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "</b>" + (priceTxt ? "<span>" + esc(priceTxt) + " · Versand inklusive</span>" : "") + "</div>" +
       '<label class="ps-bf"><span>E-Mail *</span><input id="rmMail" type="email" autocomplete="email" value="' + esc(cu.email || me.email || "") + '"></label>' +
       '<label class="ps-cb"><input type="checkbox" id="rmRem"><span>Erinnere mich morgen einmal daran (optional)</span></label>' +
       '<input type="text" id="rmHp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">' +
@@ -885,7 +887,7 @@
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
-    var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + "\u00a0Stk." + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
+    var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + "\u00a0" + U() + "" + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
     if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + "\u00a0Stk." : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
     what += wishHtml();
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
@@ -894,14 +896,14 @@
     if (p.bonus) what += '<p class="ps-bonus-tag">★ ' + esc(p.bonus.tier || "Rabatt") + " (" + String(p.bonus.pct).replace(".", ",") + " %) · du sparst " + eur(co ? p.bonus.saved : p.bonus.saved * (1 + (p.rate || 0) / 100)) + "</p>";
     var u = unitOf();
     if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
-      '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0Stk." : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0Stk. · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
+      '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0" + U() + "" : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0" + U() + " · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() + (compact ? "" : dueHtml() + socialHtml() + trustHtml()) +
-      (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>Stückpreis</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
+      (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>" + (U() === "m" ? "Meterpreis" : "Stückpreis") + "</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() + (compact ? "" : dueHtml() + socialHtml() + trustHtml()) +
-      (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
+      (compact ? "" : '<dl><dt>' + (U() === "m" ? "Meterpreis" : "Stückpreis") + '</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
   function whoHtml() {
@@ -1112,11 +1114,33 @@
     return '<span class="xm-hsl" data-ratio="' + (+x.ratio || 2.3) + '" data-px="74">' + hs.map(function (h) {
       return '<span class="xm-hs" role="link" tabindex="0" data-prod="' + esc(h.k) + '" data-x="' + (+h.x) + '" data-y="' + (+h.y) + '" aria-label="' + esc(h.name) + '"><i aria-hidden="true"></i><span class="xm-hsc"><img src="' + esc(h.photo) + '" width="160" height="120" alt="" loading="lazy"><b>' + esc(h.name) + "</b>" + (h.price ? "<small>" + esc(h.price) + "</small>" : "") + "</span></span>"; }).join("") + "</span>";
   }
+  // Startseiten-Slider in der Saison: „Weihnachten“ + Themen mit eigenem Banner (Server: catalog.xmas.slides, z. B. „Planen fürs neue Jahr“) – wechselt alle 7 s, pausiert bei Maus darüber
   function xmasTeaser() {
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
-    var im = function (w) { return "/print/bild/ez9mp376cw6o/" + x.img + "?fm=webp&w=" + w + "&q=75"; };
-    return '<a class="ps-xteaser" href="/print/weihnachten"><span class="im"><img src="' + esc(im(1200)) + '" srcset="' + esc(im(800)) + " 800w, " + esc(im(1200)) + " 1200w, " + esc(im(1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' + xmTeaserSpots(x) +
-      '<span class="tx"><span class="xm-eb">Weihnachten ' + esc(x.year) + "</span><b>Weihnachten mit deinem Design</b><span>Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : ".") + '</span><span class="ps-btn primary">Zur Weihnachtsabteilung <span aria-hidden="true">→</span></span></span></a>';
+    var im = function (img, w) { return "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=75"; };
+    var slide = function (z, i, href, eb, title, text, btn) {
+      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img src="' + esc(im(z.img, 1200)) + '" srcset="' + esc(im(z.img, 800)) + " 800w, " + esc(im(z.img, 1200)) + " 1200w, " + esc(im(z.img, 1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' + xmTeaserSpots(z) +
+        '<span class="tx"><span class="xm-eb">' + esc(eb) + "</span><b>" + esc(title) + "</b><span>" + esc(text) + '</span><span class="ps-btn primary">' + esc(btn) + ' <span aria-hidden="true">→</span></span></span></a>'; };
+    var list = [slide(x, 0, "/print/weihnachten", "Weihnachten " + x.year, "Weihnachten mit deinem Design", "Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : "."), "Zur Weihnachtsabteilung")]
+      .concat((x.slides || []).map(function (z, i) { return slide(z, i + 1, "/print/weihnachten#" + z.slug, "Neues Jahr " + (+x.year + 1), z.title, z.text, z.n + " Ideen ansehen"); }));
+    if (list.length < 2) return '<div class="ps-xsl">' + list[0] + "</div>";
+    setTimeout(xsStart, 0);
+    return '<div class="ps-xsl" id="psXsl" aria-roledescription="Slider">' + list.join("") + '<div class="ps-xsd" role="group" aria-label="Folie wählen">' + list.map(function (_, i) { return '<button type="button" data-xsgo="' + i + '" aria-label="Folie ' + (i + 1) + '"' + (i ? "" : ' aria-current="true"') + "></button>"; }).join("") + "</div></div>";
+  }
+  var xsT = 0, xsHold = false;
+  function xsGo(n) {
+    var w = document.getElementById("psXsl"); if (!w) return; var sl = w.querySelectorAll(".ps-xteaser"), k = (n + sl.length) % sl.length;
+    [].forEach.call(sl, function (a, i) { var on = i === k; a.classList.toggle("on", on); if (on) { a.removeAttribute("aria-hidden"); a.removeAttribute("tabindex"); } else { a.setAttribute("aria-hidden", "true"); a.setAttribute("tabindex", "-1"); } });
+    [].forEach.call(w.querySelectorAll("[data-xsgo]"), function (b, i) { if (i === k) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current"); });
+    xmHotspots();
+  }
+  function xsStart() {
+    clearInterval(xsT); var w = document.getElementById("psXsl"); if (!w) return;
+    w.addEventListener("mouseenter", function () { xsHold = true; }); w.addEventListener("mouseleave", function () { xsHold = false; });
+    w.addEventListener("focusin", function () { xsHold = true; }); w.addEventListener("focusout", function () { xsHold = false; });
+    w.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-xsgo]"); if (b) { e.preventDefault(); xsGo(+b.getAttribute("data-xsgo")); } });
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    xsT = setInterval(function () { var w2 = document.getElementById("psXsl"); if (!w2) { clearInterval(xsT); return; } if (xsHold || document.hidden) return; var cur = w2.querySelector(".ps-xteaser.on"); xsGo((+(cur && cur.getAttribute("data-xs")) || 0) + 1); }, 7000);
   }
   function setPage(pg, push) {
     S.view = ""; S.page = pg; S.step = 1; S.dd = "";
@@ -1243,7 +1267,11 @@
   // Farbfelder: Hex je Farbname (Print.com liefert nur Namen/Produktfotos), englische Namen auf Deutsch
   var COLORS = {"natur": "#efe6d2", "schwarz": "#111111", "rot": "#d7262e", "weiß": "#ffffff", "himmelblau": "#7ec8f2", "rosa": "#f7b6c8", "gelb": "#ffd800", "orange": "#f57c1f", "apfelgrün": "#8cc63f", "lavendel": "#b9a6dc", "blattgrün": "#3a9a3e", "mittelblau": "#2e6fbf", "türkis": "#1fb5b0", "limettengrün": "#b5d334", "kornblumenblau": "#5a7fd6", "nachtblau": "#1b2a4a", "knallgelb": "#ffe500", "hellgrün": "#8fd16b", "knallgrün": "#29c43a", "königsblau": "#1f4fb5", "wildtaube": "#a59c94", "köningsflieder": "#b38fc9", "kakaobraun": "#6b4430", "aquamarin": "#5fd3c4", "babyrosa": "#f9cfdc", "babyblau": "#a9d2f0", "blau": "#1f5fbf", "karamell": "#c0813f", "grün": "#2e9a47", "karibikblau": "#1aa0c8", "marineblau": "#1d2a4d", "pfirsichfarbenes rouge": "#f2a68a", "palisanderholz": "#6d2e2a", "violett": "#6f3aa8", "matt kristallklar": "#e8eef2", "metallic gold": "#c9a54a", "metallic silber": "#bfc3c7", "metallic schwarz": "#2a2a2e", "metallic perle": "#efe9df", "kirschrot": "#b3122c", "lila metallic": "#8b4fb3", "metallic grün": "#2f8f4e", "metallic fuchsie": "#c8237f", "metallic blau": "#2a5db8", "metallic pink": "#ea5aa0", "metallic hellblau": "#7fb8e6", "metallic hellgrün": "#8fcf6a", "metallic lavendel": "#b9a3d8", "metallic königsblau": "#2245a8", "metallic knall orange": "#f26a1b", "metallic limettengrün": "#b2d23a", "metallic roségold": "#d6a08c", "metallic türkis": "#2bb3b1", "metallisch graphit": "#4a4c50", "silber": "#c0c4c8", "azure blue": "#2f9fe0", "bottle green": "#145a3c", "brick red": "#a8352b", "burgund": "#6d1a2c", "classic olive": "#5d6136", "deep navy": "#141d33", "fuchsie": "#d0287f", "grau meliert": "#a4a6a8", "kellygrün": "#1f9a4a", "light graphite": "#6a6d72", "navy": "#1f2a44", "lila": "#7b4bb0", "royal blue": "#1f4fb5", "sunflower": "#ffc423", "anthrazit": "#3a3d42", "blaues eis": "#cfe5f2", "flaschengrün": "#145a3c", "hellblau": "#9fcbee", "leuchtendes orange": "#ff7a1a", "weinrot": "#6e1a2a", "butter": "#f6e7a6", "canyon-rosa": "#d99a86", "baumwoll rosa": "#f4c9d2", "desert braun": "#a07b5a", "dunkelgrau meliert": "#55585c", "dämmerung": "#8a8fb0", "meliert": "#a4a6a8", "fiesta": "#f15a3a", "grün werden": "#5f9a5a", "heritage braun": "#6a4a36", "india ink grau": "#4a4f57", "khaki": "#a99a6c", "natürlich roh": "#efe6d2", "ozeanblau": "#1d6f9e", "salbei": "#a7b59a", "spectra gelb": "#ffe14a", "stiel grün": "#5b8a3a", "türkise monstera": "#2b8a83", "vintage weiß": "#f3efe6", "blue ice": "#cfe5f2", "cream": "#f5eedb", "dusk": "#8a8fb0", "mindful blue": "#4f6f9c", "misty jade": "#a9c9b7", "natural raw": "#efe6d2", "pink joy": "#f2a7c3", "stone": "#cfc6b6", "holzkohle": "#3c3c3e", "cherry red": "#b3122c", "daisy": "#ffd84a", "forest green": "#244a2e", "light_blue": "#9fcbee", "royal": "#1f4fb5", "sand": "#d8c7a3", "sapphire": "#1a74b8", "sport grey": "#9b9ea2", "farbmix luftballon": "conic-gradient(#e63946 0 25%,#ffd60a 0 50%,#2a9d8f 0 75%,#1f4fb5 0)", "farbmix metallic luftballon": "conic-gradient(#c9a54a 0 25%,#bfc3c7 0 50%,#c8237f 0 75%,#2a5db8 0)"}, COLOR_DE = {"azure blue": "Azurblau", "bottle green": "Flaschengrün", "brick red": "Ziegelrot", "classic olive": "Oliv", "deep navy": "Dunkles Marineblau", "light graphite": "Hellgraphit", "navy": "Marineblau", "royal blue": "Royalblau", "sunflower": "Sonnenblumengelb", "blue ice": "Eisblau", "cream": "Creme", "dusk": "Dämmerung", "mindful blue": "Taubenblau", "misty jade": "Jadegrün", "natural raw": "Natur roh", "pink joy": "Pink", "stone": "Stein", "cherry red": "Kirschrot", "daisy": "Gänseblümchengelb", "forest green": "Waldgrün", "light_blue": "Hellblau", "royal": "Royalblau", "sand": "Sand", "sapphire": "Saphirblau", "sport grey": "Sportgrau", "köningsflieder": "Königsflieder", "grün werden": "Frühlingsgrün", "lila metallic": "Metallic Lila"};
   var colKey = function (n) { return String(n || "").trim().toLowerCase(); };
-  var colHex = function (o) { return o.color || COLORS[colKey(o.name)] || ""; };
+  // Farbnamen mit Zusätzen („Matt hellblau“, „Mattes grün“, „Mat Mocha“, „Metallic Kupfer“): erst exakt, dann ohne Oberflächen-Zusatz, dann längstes enthaltenes Farbwort
+  var COLX = { "gold": "#c9a54a", "silber": "#c4c7cc", "kupfer": "#b8703f", "champagner": "#e6d3ad", "mocha": "#7a5643", "mokka": "#7a5643", "altrosa": "#d9a2a6", "moosbirne": "#9aa267", "hellblau": "#9cd0f2", "dunkelblau": "#1d3a6e", "dunkelgrün": "#1f5a35", "bordeaux": "#6b1f2c", "burgund": "#6b1f2c", "beige": "#e5d6bb", "grau": "#9a9a9a", "anthrazit": "#3b3e42", "braun": "#7a4b2a", "pink": "#ec4f9b", "lila": "#8c5bc0", "mint": "#a8e0cc", "creme": "#f3ead6", "petrol": "#1f6f78", "oliv": "#6f7a3a", "koralle": "#f07a6a", "flieder": "#c3a8dd", "sand": "#d9c7a3", "smaragd": "#1f8a5b", "eisblau": "#cfe9f5", "perlmutt": "#efe9e1" };
+  var colHex = function (o) { if (o.color) return o.color; var k = colKey(o.name), all = Object.assign({}, COLX, COLORS); if (all[k]) return all[k];
+    var b = k.replace(/\b(matte?s?|mat|glänzend|glaenzend|metallic|metallisch|glitzer|transparent|hochglanz|satin|pastell)\b/g, " ").replace(/\s+/g, " ").trim(); if (all[b]) return all[b];
+    var hit = Object.keys(all).filter(function (w) { return w.length >= 3 && (" " + b + " ").indexOf(w) > -1; }).sort(function (x, y) { return y.length - x.length; })[0]; return hit ? all[hit] : ""; };
   var colName = function (n) { return COLOR_DE[colKey(n)] || String(n || "").trim().replace(/_/g, " "); };
   function swatches(name, opts, cur, dis, pr) {
     var all = opts, more = 0; if (opts.length > 14 && !(S.swAll || {})[name]) { var ci = opts.findIndex(function (o) { return String(o.slug) === String(cur); }); opts = opts.slice(0, 12); if (ci >= 12) opts.push(all[ci]); more = all.length - opts.length; }
@@ -1321,15 +1349,20 @@
     return '<div data-pmtile class="ps-tile' + (items.length <= 4 ? " seg" : "") + (isAuto ? " best" : "") + (S.dd === "pm" ? " open" : "") + '"><span class="ps-tl">Druckverfahren' + (isAuto ? ' <span class="ps-bb">★ empfohlen</span>' : "") + "</span>" + ddHtml("pm", "Druckverfahren", items, cur) + '<span class="ps-td">' + esc(PM_INFO[S.price.pm] || "") + "</span></div>";
   }
   var PM_INFO = { digital: "Ideal für kleine Auflagen und schnelle Lieferung – ohne Einrichtekosten.", offset: "Ab mittleren Auflagen meist deutlich günstiger, sehr gleichmäßige Farben.", inkjet: "Moderner Inkjet-Digitaldruck – gestochen scharf, bei manchen Ausführungen (z. B. mit Kaschierung) am günstigsten.", digital_uv: "UV-härtende Tinte, direkt auf das Material gedruckt.", screen_printing: "Kräftige, langlebige Farben – ideal für Textilien und Werbeartikel.", sublimation: "Farbe geht ins Material über – waschfest und dauerhaft." };
+  // Meterware (z. B. Geschenkbänder): Menge = Meter Band; Rollenlänge aus der fixen Verpackung, Motiv-Rapport = Länge des Formats
+  function meterHint(p) {
+    if (U(p) !== "m") return ""; var n = +S.copies || 0, roll = +((JSON.stringify(p.fixed || {}).match(/(\d+)_meters?_per_roll/) || [])[1]) || 0, sz = sizeOf(), rep = sz ? Math.max(sz.w, sz.h) : 0;
+    return '<span class="ps-td">Die Menge ist in Metern: ' + n.toLocaleString("de-AT") + "\u00a0m Band" + (roll && n >= roll ? ", geliefert auf " + Math.ceil(n / roll) + " Rolle" + (Math.ceil(n / roll) === 1 ? "" : "n") + " à " + roll + "\u00a0m" : "") + "." + (rep >= 100 ? " Dein Motiv wiederholt sich alle " + (rep / 10).toLocaleString("de-AT") + "\u00a0cm (also ca. " + Math.floor(n * 1000 / rep).toLocaleString("de-AT") + "× auf der ganzen Länge)." : "") + "</span>";
+  }
   function amountHtml(p) {
     var bt = bestTiers(p), inT = p.tiers.indexOf(S.copies) > -1;
-    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + "\u00a0Stk. (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + "\u00a0Stk.", best: bt.indexOf(n) > -1 }; }));
+    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + " (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + "\u00a0" + U() + "", best: bt.indexOf(n) > -1 }; }));
     var sel = ddHtml("copies", "Auflage", qi, S.copies);
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
-      own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></label>'; }
+      own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + " " + U() + '"></label>'; }
     var ur = urTile(p);
-    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + "</div>" + ur + motHtml();
+    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">' + (U(p) === "m" ? "Länge" : "Auflage") + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + meterHint(p) + "</div>" + ur + motHtml();
   }
   // Produktion: Schnell/Express nur zeigen, wenn sie wirklich früher liefern als eine günstigere Stufe (Termine kommen über /print/api/deltas)
   var UR_ORD = ["standard", "quick", "urgent"];
@@ -1380,7 +1413,7 @@
     var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); urScroll(); }
   }
   function qtyHtml(p) {
-    var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + "\u00a0Stk." }; }), S.copies);
+    var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + "\u00a0" + U() + "" }; }), S.copies);
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       cp += '<div class="ps-qty"><label for="psQty">Andere Menge</label><input id="psQty" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (p.tiers.indexOf(S.copies) < 0 ? S.copies : "") + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + '"></div>'; }
     return cp + "</fieldset>";
@@ -1420,7 +1453,7 @@
     var val = function (k) { return esc(cu[k] || me[k] || ""); };
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Gestaltung anfragen");
     m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">Wir gestalten für dich</span><h3>Gestaltung anfragen</h3><p>Sag uns kurz, was drauf soll – wir melden uns mit Entwurf und Angebot. Gedruckt wird erst nach deiner Freigabe.</p>' +
-      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b><span>" + esc(labels.map(function (l) { return l[1]; }).join(" · ")) + "</span>" + (priceTxt ? "<span>Druckpreis laut Konfiguration: " + esc(priceTxt) + " (Gestaltung nach Angebot)</span>" : "") + "</div>" +
+      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "</b><span>" + esc(labels.map(function (l) { return l[1]; }).join(" · ")) + "</span>" + (priceTxt ? "<span>Druckpreis laut Konfiguration: " + esc(priceTxt) + " (Gestaltung nach Angebot)</span>" : "") + "</div>" +
       '<label class="ps-bf"><span>Was soll gestaltet werden? *</span><textarea id="bfText" rows="5" maxlength="4000" placeholder="z. B. Anlass, Texte, Stil, Farben, was dir wichtig ist …"></textarea></label>' +
       '<div class="ps-bf"><span>Dateien (optional) – Logo, Fotos, Texte · max. 5 Dateien à 15 MB</span><label class="ps-drop small ps-bfdrop"><input type="file" id="bfFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.svg,.ai,.eps,.psd,.tif,.tiff,.zip,.doc,.docx,.txt,.rtf,.odt"><b>Dateien auswählen oder hierher ziehen</b></label><ul class="ps-bfl" id="bfList"></ul></div>' +
       '<div class="ps-bf2"><label class="ps-bf"><span>Name *</span><input id="bfName" autocomplete="name" value="' + esc([cu.firstName || me.firstName, cu.lastName || me.lastName].filter(Boolean).join(" ")) + '"></label><label class="ps-bf"><span>E-Mail *</span><input id="bfMail" type="email" autocomplete="email" value="' + val("email") + '"></label>' +
@@ -1580,7 +1613,7 @@
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
     var im = galImgs(p), thumb = im.length ? '<button type="button" class="ps-cfg-im" data-galzoom="1" aria-label="Produktbilder ansehen"><img src="' + esc(String(im[0]).replace(/w=\d+/, "w=400")) + '" alt="' + esc(p.title) + '">' + (im.length > 1 ? "<span>" + im.length + " Fotos</span>" : "") + "</button>" : "";
     var fct = facts(p), sz = sizeOf(), b0 = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
-    var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">Endformat ' + fmtSize(sz.w, sz.h) + (b0 ? " · Datei mit " + b0 + " mm Beschnitt (" + (sz.w + 2 * b0) + " × " + (sz.h + 2 * b0) + " mm)" : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
+    var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Datei mit " + b0 + " mm Beschnitt (" + (sz.w + 2 * b0) + " × " + (sz.h + 2 * b0) + " mm)" : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
     return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h2>' + esc(p.title) + '</h2><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + cfgBarHtml() + "</div></div>" +
       (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +

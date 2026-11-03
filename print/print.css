@@ -850,7 +850,7 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 }
 @media(max-width:900px){body:has(.ps-ddl.big) .ps-bnav,body:has(.pd) .ps-bnav,body:has(.ps-pop) .ps-bnav{display:none}}
 @media (max-width:760px){.ps-head{grid-template-columns:92px minmax(0,1fr)}.ps-head-t h2{font-size:20px;line-height:1.2}.ps-head-t .sub{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.ps-head .ps-about{grid-column:1/-1}}
-.ps-swmore{align-self:start;height:40px;margin-top:3px;padding:0 12px;border-radius:999px;border:1px dashed var(--ps-line2);background:none;color:var(--ps-tag);font-weight:600;font-size:12.5px;cursor:pointer;grid-column:span 2}
+.ps-swmore,.ps-cfg .ps-sws .ps-swmore{align-self:start;justify-self:start;height:40px;margin-top:3px;padding:0 14px;border-radius:999px;border:1px dashed var(--ps-line2);background:none;color:var(--ps-tag);font-family:inherit;font-weight:600;font-size:12.5px;line-height:1;white-space:nowrap;width:max-content;cursor:pointer;grid-column:span 2}
 /* Ausführung: Auswahlkarten (3–4 Optionen) über die ganze Breite in einer Reihe, Listen paarweise; einzelne Liste ganze Breite (app.js) */
 @media(min-width:641px){
   .print-page .ps-grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1807,6 +1807,13 @@ html.light .ps-fb-done .ok b{color:#1f7a36}   /* Hell-Modus: Grün sonst kaum le
 .xm-foot .xm-fine{font-size:12.5px;margin-top:20px;color:var(--text-faint)}
 html.light .xm-d.late{color:#b3141b}html.light .xm-d.ok i{background:#1a9a45}html.light .xm-ph{background:#f4f2ef}
 html.light .xm-card:hover,html.light .xm-tile:hover .xm-tph{box-shadow:0 12px 28px rgba(18,20,28,.12)}
+.ps-xsl{position:relative;display:grid;margin:4px 0 44px}
+.ps-xsl>.ps-xteaser{grid-area:1/1;margin:0}
+.ps-xsl>.ps-xteaser:not(.on){opacity:0;visibility:hidden;pointer-events:none}
+.ps-xsl>.ps-xteaser{transition:opacity .6s,visibility .6s}
+.ps-xsd{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;z-index:3}
+.ps-xsd button{width:10px;height:10px;padding:0;border-radius:50%;border:0;background:rgba(255,255,255,.5);cursor:pointer;transition:width .3s,background .3s}
+.ps-xsd button[aria-current]{width:26px;border-radius:6px;background:#fff}
 .ps-xteaser{position:relative;display:flex;align-items:center;margin:4px 0 44px;border-radius:26px;overflow:hidden;height:clamp(300px,28vw,400px);background:#14275a;color:#fff;text-decoration:none;isolation:isolate}
 .ps-xteaser .im{position:absolute;inset:0;z-index:-2}
 .ps-xteaser .im img{width:100%;height:100%;object-fit:cover;object-position:74% center;display:block;transition:transform .7s}

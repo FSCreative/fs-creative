@@ -848,7 +848,7 @@ module.exports = function (D) {
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
-      kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
+      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
@@ -3116,7 +3116,7 @@ module.exports = function (D) {
   }
   // Startseiten-Teaser im Shop (print/app.js): nur in der Saison
   function xmasTeaser(products) { const sea = XMAS.season(); if (!sea.on) return null; const shown = {}; (products || []).forEach(p => { shown[p.key] = 1; });
-    return { year: sea.year, before: sea.before, n: XMAS.count(xmasData(), shown), img: XMAS.HERO.img, ratio: XMAS.HERO.ratio, hs: XMAS.heroSpots(xmasData(), shown) }; }
+    return { year: sea.year, before: sea.before, n: XMAS.count(xmasData(), shown), img: XMAS.HERO.img, ratio: XMAS.HERO.ratio, hs: XMAS.heroSpots(xmasData(), shown), slides: XMAS.teaserSlides(xmasData(), shown) }; }
   async function xmasPage(req, res, preview) {
     const sea = XMAS.season();
     if (!sea.on) return D.send(res, 302, "", "text/plain", { Location: "/print", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex" });   // außerhalb der Saison: zurück in den Shop
@@ -3368,7 +3368,7 @@ module.exports = function (D) {
       if ((p === "/print/hilfe" || p === "/print/hilfe/") && (req.method === "GET" || req.method === "HEAD")) {
         let html = "", main = ""; try { html = printHtmlRaw(); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
         html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>So geht’s &amp; FAQ – Druckshop | FS Creative</title>")
-          .replace(/(<meta name="description" content=")[^"]*/, "$1So funktioniert der FS Creative Druckshop: bestellen, Online-Designer mit Vorlagen und KI-Assistent, Bonusprogramm für Firmen, Digital- oder Offsetdruck und Antworten auf häufige Fragen.")
+          .replace(/(<meta name="description" content=")[^"]*/, "$1So funktioniert der Druckshop: bestellen, Online-Designer mit Vorlagen und KI, Bonus für Firmen, Digital- oder Offsetdruck und häufige Fragen.")
           .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
           .replace('data-hilfe>', 'data-hilfe class="active">').replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "").replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
         return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });

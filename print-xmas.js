@@ -252,6 +252,15 @@ function heroSpots(data, shown) {
   return (HOTSPOTS.hero || []).filter(h => allowed[h[0]] && !OFF[h[0]]).map(h => { const it = allowed[h[0]], x = data[h[0]];
     return { k: h[0], x: h[1], y: h[2], name: it[1], photo: PROXY + it[2] + "?fm=webp&w=300&q=75", price: x && x.gross > 0 ? priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; });
 }
+// Weitere Folien für den Startseiten-Slider im Shop (nach „Weihnachten“): Themen mit eigenem Banner und Produktpunkten – derzeit „Planen fürs neue Jahr“
+const SLIDES = ["planen"];
+function teaserSlides(data, shown) {
+  data = data || {};
+  return pick(data, shown).filter(x => SLIDES.indexOf(x.t.slug) > -1 && x.t.banner).map(x => { const allowed = {}; x.items.forEach(i => { allowed[i[0]] = i; });
+    return { slug: x.t.slug, title: x.t.title, text: x.t.text, n: x.items.length, img: x.t.banner[0], ratio: x.t.banner[1],
+      hs: (HOTSPOTS[x.t.slug] || []).filter(h => allowed[h[0]] && !OFF[h[0]]).map(h => { const it = allowed[h[0]], d = data[h[0]];
+        return { k: h[0], x: h[1], y: h[2], name: it[1], photo: PROXY + it[2] + "?fm=webp&w=300&q=75", price: d && d.gross > 0 ? priceHtml(d).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; }) }; });
+}
 // Am Handy je Thema zuerst nur so viele Karten (Rest über „Alle … zeigen“), am Computer alle
 const MOB = 6;
 // Bewusst nicht vorgeschlagen (Prüfung 28.10.2026): Weihnachtspullover – Print.com verlangt eine Eigenschaft „size“, die das Produkt im Shop nicht hat → nie ein Preis
@@ -316,4 +325,4 @@ function mailPicks(data, shown, sea, opts) {
   return out;
 }
 
-module.exports = { heroSpots, THEMES, HERO, SEASON, PROXY, season, keys, staleYear, render, count, img, viennaDay, mailPicks, NL_SLOTS };
+module.exports = { heroSpots, teaserSlides, THEMES, HERO, SEASON, PROXY, season, keys, staleYear, render, count, img, viennaDay, mailPicks, NL_SLOTS };

@@ -264,6 +264,12 @@ function printLiveBlocks(html, known) {
     .replace(/<!--GTAG_OFF-->([\s\S]*?)<!--\/GTAG_OFF-->/g, (m, inner) => { let g = false; try { g = on && !!PRINT && PRINT.gtagOn(); } catch (e) {} return g ? "" : inner; })
     .replace(/<!--PRINT_XMAS-->([\s\S]*?)<!--\/PRINT_XMAS-->/g, (m, inner) => { let x = false; try { x = on && !!PRINT && PRINT.xmasOn(); } catch (e) {} return x ? inner : ""; });   // Weihnachtsabteilung (nur in der Saison)
 }
+// Genau eine H1 je Seite (SEO): die Startseite enthält alle Unterseiten als Abschnitte – H1 nur im Abschnitt der aufgerufenen Route,
+// in den anderen als <h2 data-h1> (gleiches Aussehen per CSS in index.html)
+function oneH1(html, route) {
+  const own = html.indexOf('data-route="' + route + '"') > -1 ? route : "/";
+  return html.replace(/(<section class="page[^"]*" data-route="([^"]*)"[\s\S]*?<\/section>)/g, (m, sec, r) => r === own ? sec : sec.replace(/<h1(\s|>)/g, "<h2 data-h1$1").replace(/<\/h1>/g, "</h2>"));
+}
 function renderIndex(baseHtml, route, live) {
   const on = printOn(live);
   const meta = (on && ROUTE_META_PRINT[route]) || ROUTE_META[route];
@@ -288,6 +294,7 @@ function renderIndex(baseHtml, route, live) {
   if (!meta) {
     html = setAttrValue(html, /(<meta name="robots" content=")[^"]*(")/, "noindex, follow");
   }
+  html = oneH1(html, route);
   return { html: html, status: known ? 200 : 404 };
 }
 

@@ -156,7 +156,7 @@ module.exports = function (D) {
     const dup = (k, label) => { const by = {}; pages.forEach(p => { if (p[k]) (by[p[k]] = by[p[k]] || []).push(p.url); }); Object.keys(by).forEach(v => { if (by[v].length > 1) issues.push({ sev: "warnung", code: "dup-" + k, msg: by[v].length + " Seiten mit gleichem " + label + ": „" + v.slice(0, 70) + "“", url: by[v][0] }); }); };
     dup("title", "Titel"); dup("desc", "Beschreibung");
     // kaputte interne Links (bis 40 prüfen)
-    const known = new Set(pages.map(p => p.url.replace(/\/$/, ""))), toCheck = [...new Set(pages.flatMap(p => p.links || []))].filter(u => !known.has(u.replace(/\/$/, "")) && !/\.(pdf|jpe?g|png|webp|zip)(\?|$)/i.test(u)).slice(0, 40);
+    const known = new Set(pages.map(p => p.url.replace(/\/$/, ""))), toCheck = [...new Set(pages.flatMap(p => p.links || []))].filter(u => !known.has(u.replace(/\/$/, "")) && !/\.(pdf|jpe?g|png|webp|zip)(\?|$)/i.test(u) && !/\/cdn-cgi\//.test(u)).slice(0, 40);
     for (const u of toCheck) { const r = await get(u, { noBody: true, timeout: 8000 }); if (r.status >= 400 || !r.status) issues.push({ sev: "warnung", code: "broken", msg: "Kaputter Link (" + (r.status || "keine Antwort") + "): " + u, url: pages.find(p => (p.links || []).indexOf(u) > -1).url }); }
     if (!pages.some(p => p.ld.some(t => /LocalBusiness|Organization|Restaurant|Store|Hotel|Service|Product|WebSite/i.test(t)))) issues.push({ sev: "hinweis", code: "ld", msg: "Keine strukturierten Daten zum Unternehmen (JSON-LD LocalBusiness/Organization) – hilft bei Google-Infos und Sternen.", url: site.url });
     const score = Math.max(0, Math.min(100, Math.round(100 - issues.reduce((a, x) => a + (W[x.sev] || 0) / Math.max(1, x.code === "status" ? 1 : Math.sqrt(pages.length)), 0))));
