@@ -219,6 +219,11 @@ const AGB_VERSION = "2026-10-19";
 const FONTS = [
   ["Inter", "inter", 1], ["Open Sans", "open-sans", 1], ["Montserrat", "montserrat", 1], ["Lato", "lato", 1], ["Poppins", "poppins", 1], ["Raleway", "raleway", 1], ["Nunito", "nunito", 1],
   ["Playfair Display", "playfair-display", 1], ["Merriweather", "merriweather", 1], ["Lora", "lora", 1], ["Oswald", "oswald", 0], ["Dancing Script", "dancing-script", 0], ["Bebas Neue", "bebas-neue", -1], ["Pacifico", "pacifico", -1],
+  // Erweiterung 03.11.2026 (ebenfalls @fontsource 5.1.0, latin, OFL)
+  ["Roboto", "roboto", 1], ["Source Sans 3", "source-sans-3", 1], ["Work Sans", "work-sans", 1], ["DM Sans", "dm-sans", 1], ["Rubik", "rubik", 1], ["Barlow", "barlow", 1], ["Josefin Sans", "josefin-sans", 1], ["Quicksand", "quicksand", 0], ["Comfortaa", "comfortaa", 0],
+  ["Roboto Slab", "roboto-slab", 0], ["EB Garamond", "eb-garamond", 1], ["Cormorant Garamond", "cormorant-garamond", 1], ["Libre Baskerville", "libre-baskerville", 1],
+  ["Anton", "anton", -1], ["Abril Fatface", "abril-fatface", -1], ["Alfa Slab One", "alfa-slab-one", -1], ["Righteous", "righteous", -1], ["Lobster", "lobster", -1], ["Amatic SC", "amatic-sc", 0],
+  ["Great Vibes", "great-vibes", -1], ["Caveat", "caveat", 0], ["Permanent Marker", "permanent-marker", -1],
 ].map(f => ({ family: f[0], file: f[1], italic: f[2] === 1, bold: f[2] >= 0 }));
 
 module.exports = function (D) {
@@ -1932,7 +1937,7 @@ module.exports = function (D) {
       "Erfinde keine konkreten Telefonnummern, Adressen oder Preise, die nicht im Auftrag stehen – nutze dann klar erkennbare Platzhalter wie „+43 …“ oder „www.deine-website.at“.",
       "Texte: konkret auf genau diesen Auftrag zugeschnitten, keine Floskeln oder Füllwörter. H kurz und einprägsam (Anlass, Name oder Kernversprechen), S ergänzt H statt es zu wiederholen, O nur mit echten Angaben aus dem Auftrag (Datum, Uhrzeit, Ort), B nennt Nutzen/Programm in kurzen Sätzen, A nur bei echtem Aufhänger (z. B. „Eintritt frei“, „−20 %“, „Neu“).",
       "Farben: harmonisch und druckfreundlich (CMYK-tauglich, kein Neon außer beim Stil neon). Geh von den Grundfarben des gewählten Stils aus und passe sie an Branche, Anlass und genannte Firmenfarben an (z. B. Bäckerei warm, Technik kühl, Natur/Bio Grüntöne). Höchstens zwei Akzentfarben, fg auf bg sehr gut lesbar (Kontrast mind. 4,5:1), mute ebenfalls lesbar, ac2 harmoniert mit ac. Bei hellem bg dunkle Schrift, bei dunklem bg helle.",
-      "Schriften nur aus der Liste: fh = Überschrift, fb = Fließtext. Schreibschriften (Pacifico, Dancing Script) und schmale Plakatschriften (Bebas Neue, Oswald) nur als fh, nie als fb. fb immer gut lesbar (z. B. Inter, Open Sans, Lato, Nunito, Lora). fh und fb dürfen gleich sein (z. B. minimal), sonst stimmig kombinieren (Serif + Sans).",
+      "Schriften nur aus der Liste: fh = Überschrift, fb = Fließtext. Schreib- und Zierschriften (Pacifico, Dancing Script, Great Vibes, Caveat, Lobster, Permanent Marker, Amatic SC, Abril Fatface, Alfa Slab One, Righteous) und schmale Plakatschriften (Bebas Neue, Oswald, Anton) nur als fh, nie als fb. fb immer gut lesbar (z. B. Inter, Open Sans, Lato, Nunito, Lora). fh und fb dürfen gleich sein (z. B. minimal), sonst stimmig kombinieren (Serif + Sans).",
       "photo = true nur, wenn der Auftrag ausdrücklich ein eigenes Foto/Bild erwähnt (z. B. Produktfoto, Foto vom Haus, Team- oder Speisenfotos). Sonst false – dann wird ein reines Typo-Design mit Dekor ohne Bildrahmen gesetzt. Es werden nie Fotos gesucht oder erzeugt.",
       "Wähle den Stil, der inhaltlich und optisch am besten passt (nur aus dieser Liste): " + styles.map(styleTxt).join(", ") + ".",
       "tip = ein kurzer, konkreter Gestaltungstipp für genau diesen Auftrag (ein Satz).",
@@ -2687,7 +2692,7 @@ module.exports = function (D) {
   // Online-Designer; /llms-full.txt = alle Produkte mit Einstiegspreis und Link. Nur Angaben, die der Shop wirklich einhält.
   const DESIGNER_TXT = ["Kostenlos im Konfigurator: Produkt wählen → „Online gestalten“ – ganz ohne Grafikprogramm, das druckfertige PDF entsteht automatisch",
     "Funktionsumfang wie ein Grafikprogramm im Browser, gratis, ohne Abo und ohne Installation (eine kostenlose Alternative zu Canva oder Photoshop für Drucksachen): Ebenen, Gruppieren, Ausrichten/Verteilen, Smart Guides, Bild zuschneiden, Masken, Filter, Verläufe, Bogentext, Kontur, Deckkraft, Rechtsklick-Menü mit Stil kopieren/übertragen, Tastenkürzel, Vorder- und Rückseite",
-    "22 Vorlagen-Stile (z. B. Klar, Elegant, Business, Natur, Retro, Festlich, Kreidetafel), die sich automatisch an das gewählte Format anpassen – für Visitenkarten, Flyer, Plakate, Folder und Speisekarten, Aufkleber und Roll-ups",
+    "36 Vorlagen-Stile (z. B. Klar, Elegant, Business, Natur, Retro, Festlich, Kreidetafel), die sich automatisch an das gewählte Format anpassen – für Visitenkarten, Flyer, Plakate, Folder und Speisekarten, Aufkleber und Roll-ups",
     "Gratis KI-Assistent: in einem Satz beschreiben, was gestaltet werden soll (z. B. „Flyer für unser Sommerfest am 12. Juni“) – die KI schlägt Texte auf Deutsch, Stil und Farbpalette vor, alles bleibt frei bearbeitbar",
     "Werkzeuge: Texte und Bogentext, Schriftarten, Formen und Linien, Icons, QR-Code, eigene Bilder und Logo (Logo merken für die nächste Bestellung), Hintergrundbild, Ebenen, Rückgängig, Markenfarben und Farbpipette",
     "Druckkontrolle schon beim Gestalten: Beschnitt und Sicherheitsabstand eingezeichnet, Schnittvorschau, Hinweise bei zu geringer Bildauflösung, sehr kleiner Schrift oder Farben, die im Druck nicht so leuchten"];
@@ -2889,7 +2894,7 @@ module.exports = function (D) {
     const art = '<article class="ps-seo-home" style="padding:28px 0 8px"><h2>Online drucken in Österreich</h2><p>Flyer, Visitenkarten, Plakate, Broschüren, Aufkleber, Banner und Werbeartikel: online gestalten oder Druckdaten hochladen, den Preis sofort sehen und bestellen. Alle Preise inklusive 20 % USt und Versand innerhalb Österreichs – vom Druckshop von FS Creative aus Gaschurn im Montafon.</p>' +
       (items.length ? "<h2>Beliebte Produkte</h2><ul>" + items.map(it => { const r = low(it); return '<li><a href="' + escH(prodUrl(it.key)) + '">' + escH(it.title) + "</a>" + (r ? " – " + r.copies.toLocaleString("de-AT") + " Stück ab " + eurDe(r.gross) : "") + "</li>"; }).join("") + "</ul>" : "") +
       (groups.length ? "<h2>Kategorien</h2><ul>" + groups.map(g => '<li><a href="' + escH(catUrl(g.slug)) + '">' + escH(g.name) + "</a></li>").join("") + "</ul>" : "") +
-      "<h2>Darum FS Creative</h2><ul><li>Preis sofort – Endpreis inklusive Versand in ganz Österreich</li><li>Automatischer Datencheck für jede Datei, auf Wunsch persönlicher Profi-Datencheck</li><li><a href='/print/online-designer'>Online-Designer</a> mit 22 Vorlagen-Stilen und gratis KI-Assistent – ganz ohne Grafikprogramm</li><li>Firmen: Nettopreise und Kauf auf Rechnung</li></ul>" +
+      "<h2>Darum FS Creative</h2><ul><li>Preis sofort – Endpreis inklusive Versand in ganz Österreich</li><li>Automatischer Datencheck für jede Datei, auf Wunsch persönlicher Profi-Datencheck</li><li><a href='/print/online-designer'>Online-Designer</a> mit 36 Vorlagen-Stilen und gratis KI-Assistent – ganz ohne Grafikprogramm</li><li>Firmen: Nettopreise und Kauf auf Rechnung</li></ul>" +
       faqHtml(faq) + '<p><a href="/print/preise">Alle Preise im Überblick</a> · <a href="/print/ratgeber">Ratgeber: Formate, Papier, Druckdaten</a> · <a href="/print/hilfe">So geht’s &amp; FAQ</a></p></article>';
     const ld = { "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) };
     return html.replace(/(<div class="ps-loading" id="psLoading">[\s\S]*?<\/section>)(<\/div>)/, (m, a, b) => a + art + b).replace("</head>", () => ldTag(ld) + "\n</head>");
@@ -2932,8 +2937,8 @@ module.exports = function (D) {
   // Online-Designer (/print/online-designer): was er kann – für Suchmaschinen und KI-Assistenten (Inhalt print/online-designer.html, nur belegte Funktionen)
   // ── Designer-Landingpages für Suchmaschinen & KI (Wunsch Simon 03.11.2026): „Canva-Alternative“, „Photoshop-Alternative“, „Visitenkarten online gestalten kostenlos“ …
   // Nur belegte Angaben (Zahlen aus templates.js, designer.js, Schriftordner); fremde Marken nur beschreibend, mit Hinweis „keine Verbindung“.
-  const DFACTS = { styles: 22, styleNames: "Klar, Nachtblau, Elegant, Akzentband, Plakativ, Natur, Bild & Text, Kreise, Pastell, Retro, Minimal, Business, Neon, Terracotta, Ozean, Kreidetafel, Festlich, Sportlich, Frisch, Handgemacht, Editorial, Verspielt",
-    fonts: 14, fontNames: "Inter, Montserrat, Poppins, Raleway, Lato, Open Sans, Nunito, Oswald, Bebas Neue, Playfair Display, Lora, Merriweather, Dancing Script, Pacifico", icons: 48, shapes: 14 };
+  const DFACTS = { styles: 36, styleNames: "Klar, Nachtblau, Elegant, Akzentband, Plakativ, Natur, Bild & Text, Kreise, Pastell, Retro, Minimal, Business, Neon, Terracotta, Ozean, Kreidetafel, Festlich, Sportlich, Frisch, Handgemacht, Editorial, Verspielt, Klassisch, Modern, Vintage, Hochzeit, Handschrift, Street, Marktstand, Alpin, Kunterbunt, Impact, Diner, Tech, Kanzlei, Werkstatt",
+    fonts: FONTS.length, fontNames: FONTS.map(f => f.family).join(", "), icons: 48, shapes: 14 };
   const DFEATURES = [
     ["Vorlagen", DFACTS.styles + " Gestaltungs-Stile (" + DFACTS.styleNames + "), automatisch passend für jedes Format – Visitenkarte, Flyer, Plakat, Folder, Speisekarte, Aufkleber, Roll-up"],
     ["KI-Assistent (gratis)", "In einem Satz beschreiben, was du brauchst – die KI schlägt deutsche Texte, Stil und Farbpalette vor und setzt alles ins Format ein"],

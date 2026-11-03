@@ -1,5 +1,7 @@
 Mitgelieferte Schriften des FS Creative Druckshops (latin-Teilmenge, Quelle: @fontsource 5.1.0):
-Inter, Open Sans, Montserrat, Lato, Poppins, Raleway, Nunito, Playfair Display, Merriweather, Lora, Oswald, Dancing Script, Bebas Neue, Pacifico.
+Inter, Open Sans, Montserrat, Lato, Poppins, Raleway, Nunito, Playfair Display, Merriweather, Lora, Oswald, Dancing Script, Bebas Neue, Pacifico,
+Roboto, Source Sans 3, Work Sans, DM Sans, Rubik, Barlow, Josefin Sans, Quicksand, Comfortaa, Roboto Slab, EB Garamond, Cormorant Garamond, Libre Baskerville,
+Anton, Abril Fatface, Alfa Slab One, Righteous, Lobster, Amatic SC, Great Vibes, Caveat, Permanent Marker.
 Alle Schriften stehen unter der SIL Open Font License 1.1 (Copyright bei den jeweiligen Autorinnen und Autoren, siehe fonts.google.com). Lizenztext:
 
 Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) Inter-Italic[opsz,wght].ttf: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)

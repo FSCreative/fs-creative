@@ -35,22 +35,37 @@
     frisch: { name: "Frisch", bg: "#ffffff", fg: "#1b1b1b", mute: "#5f6b62", ac: "#1f9d55", ac2: "#c7f5d3", fh: "Poppins", hb: true, fb: "Inter", lay: "left", blobs: true },
     handmade: { name: "Handgemacht", bg: "#e8dcc4", fg: "#3b3326", mute: "#6d624f", ac: "#6b8e23", ac2: "#cbbf9c", fh: "Pacifico", hb: false, fb: "Lora", lay: "center", leaves: true },
     editorial: { name: "Editorial", bg: "#fafafa", fg: "#141414", mute: "#6b6b6b", ac: "#e63946", ac2: "#f1faee", fh: "Merriweather", hb: true, fb: "Open Sans", lay: "band" },
+    // Erweiterung 03.11.2026: neue Stile mit den zusätzlichen Schriften
+    klassik: { name: "Klassisch", bg: "#fffdf8", fg: "#1f1b16", mute: "#6f665c", ac: "#8b1e3f", ac2: "#e9dccb", fh: "EB Garamond", hb: true, fb: "Source Sans 3", lay: "frame" },
+    modern: { name: "Modern", bg: "#ffffff", fg: "#111827", mute: "#6b7280", ac: "#4f46e5", ac2: "#c7d2fe", fh: "DM Sans", hb: true, fb: "DM Sans", lay: "left" },
+    vintage: { name: "Vintage", bg: "#f1e4c9", fg: "#3e2c1c", mute: "#6e5a44", ac: "#a3472f", ac2: "#d9b77e", fh: "Abril Fatface", hb: false, fb: "Libre Baskerville", lay: "center", stripes: true },
+    hochzeit: { name: "Hochzeit", bg: "#fbf7f2", fg: "#4a3f35", mute: "#85776a", ac: "#c9a227", ac2: "#eadfcf", fh: "Great Vibes", hb: false, fb: "Cormorant Garamond", lay: "frame", dots: true },
+    notiz: { name: "Handschrift", bg: "#fffdf3", fg: "#2c2c2c", mute: "#6a6a6a", ac: "#e76f51", ac2: "#f4a261", fh: "Caveat", hb: true, fb: "Work Sans", lay: "left", blobs: true },
+    street: { name: "Street", bg: "#1b1b1b", fg: "#ffffff", mute: "#bdbdbd", ac: "#ff4d00", ac2: "#ffd400", fh: "Permanent Marker", hb: false, fb: "Barlow", lay: "bold" },
+    markt: { name: "Marktstand", bg: "#fff4e0", fg: "#3b2a1a", mute: "#77624d", ac: "#2a9d8f", ac2: "#e9c46a", fh: "Amatic SC", hb: true, fb: "Josefin Sans", lay: "center", leaves: true },
+    alpin: { name: "Alpin", bg: "#f4f7f5", fg: "#1e3a2f", mute: "#5b6f66", ac: "#2f6f4f", ac2: "#a7c4b5", fh: "Roboto Slab", hb: true, fb: "Rubik", lay: "band", waves: true },
+    kunterbunt: { name: "Kunterbunt", bg: "#fffbea", fg: "#2d2a32", mute: "#6b6672", ac: "#ff595e", ac2: "#1982c4", fh: "Comfortaa", hb: true, fb: "Quicksand", lay: "center", circles: true, dots: true },
+    impact: { name: "Impact", bg: "#e63946", fg: "#ffffff", mute: "#ffe3e5", ac: "#ffffff", ac2: "#1d3557", fh: "Anton", hb: false, fb: "Roboto", lay: "bold", upper: true },
+    diner: { name: "Diner", bg: "#fdf0d5", fg: "#1d3557", mute: "#4d6280", ac: "#c1121f", ac2: "#669bbc", fh: "Lobster", hb: false, fb: "Work Sans", lay: "split" },
+    tech: { name: "Tech", bg: "#0d1117", fg: "#e6edf3", mute: "#9aa4ae", ac: "#39d353", ac2: "#2f81f7", fh: "Righteous", hb: false, fb: "DM Sans", lay: "left", glow: true },
+    kanzlei: { name: "Kanzlei", bg: "#ffffff", fg: "#1c2b39", mute: "#5d6b78", ac: "#8c6d3f", ac2: "#e8dfd0", fh: "Libre Baskerville", hb: true, fb: "Source Sans 3", lay: "band" },
+    werkstatt: { name: "Werkstatt", bg: "#ececec", fg: "#222222", mute: "#5a5a5a", ac: "#f77f00", ac2: "#003049", fh: "Alfa Slab One", hb: false, fb: "Barlow", lay: "split", upper: true },
     verspielt: { name: "Verspielt", bg: "#fff8e1", fg: "#2b2b2b", mute: "#6d6d6d", ac: "#7b2ff7", ac2: "#ffcc00", fh: "Dancing Script", hb: true, fb: "Poppins", lay: "center", circles: true, dots: true },
   };
   // dunkler Hintergrund? (für Logo-/QR-Farbe und Rückseiten)
   function dk(hex) { var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "")); if (!m) return false; var n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, bl = n & 255; return (0.299 * r + 0.587 * g + 0.114 * bl) < 110; }
   var PER = {
-    visitenkarten: ["klar", "nacht", "elegant", "akzent", "bold", "natur", "kreise", "mono", "business", "neon", "pastell", "kreide", "festlich", "frisch", "handmade", "editorial", "verspielt", "ozean", "retro"],
-    flyer: ["klar", "split", "nacht", "bold", "elegant", "natur", "retro", "terracotta", "sport", "neon", "pastell", "business", "kreide", "festlich", "ozean", "frisch", "handmade", "editorial", "verspielt", "kreise"],
-    plakate: ["bold", "split", "nacht", "klar", "elegant", "kreise", "retro", "sport", "neon", "terracotta", "kreide", "festlich", "pastell", "ozean", "editorial", "verspielt", "mono"],
-    folder: ["klar", "nacht", "natur", "elegant", "akzent", "kreise", "business", "kreide", "festlich", "terracotta", "ozean", "pastell", "mono", "editorial"],
-    aufkleber: ["klar", "nacht", "bold", "natur", "elegant", "kreise", "retro", "neon", "pastell", "handmade", "verspielt", "festlich", "frisch", "sport"],
-    rollups: ["klar", "split", "nacht", "bold", "akzent", "natur", "business", "sport", "neon", "terracotta", "ozean", "editorial", "frisch", "mono"],
+    visitenkarten: ["klar", "nacht", "elegant", "akzent", "bold", "natur", "kreise", "mono", "business", "neon", "pastell", "kreide", "festlich", "frisch", "handmade", "editorial", "verspielt", "ozean", "retro", "klassik", "modern", "kanzlei", "hochzeit", "notiz", "alpin", "tech", "street", "vintage", "werkstatt"],
+    flyer: ["klar", "split", "nacht", "bold", "elegant", "natur", "retro", "terracotta", "sport", "neon", "pastell", "business", "kreide", "festlich", "ozean", "frisch", "handmade", "editorial", "verspielt", "kreise", "modern", "vintage", "street", "markt", "alpin", "kunterbunt", "impact", "diner", "tech", "klassik", "hochzeit", "werkstatt"],
+    plakate: ["bold", "split", "nacht", "klar", "elegant", "kreise", "retro", "sport", "neon", "terracotta", "kreide", "festlich", "pastell", "ozean", "editorial", "verspielt", "mono", "impact", "street", "vintage", "modern", "markt", "diner", "tech", "alpin", "kunterbunt", "werkstatt", "hochzeit"],
+    folder: ["klar", "nacht", "natur", "elegant", "akzent", "kreise", "business", "kreide", "festlich", "terracotta", "ozean", "pastell", "mono", "editorial", "klassik", "modern", "kanzlei", "alpin", "markt", "diner", "vintage", "hochzeit"],
+    aufkleber: ["klar", "nacht", "bold", "natur", "elegant", "kreise", "retro", "neon", "pastell", "handmade", "verspielt", "festlich", "frisch", "sport", "street", "vintage", "markt", "kunterbunt", "impact", "diner", "tech", "notiz", "modern"],
+    rollups: ["klar", "split", "nacht", "bold", "akzent", "natur", "business", "sport", "neon", "terracotta", "ozean", "editorial", "frisch", "mono", "modern", "impact", "alpin", "tech", "kanzlei", "street", "werkstatt"],
   };
   function upper(st, s) { return st.upper ? String(s).toUpperCase() : s; }
   // grobe Höhe eines Textblocks (mm) – für das Stapeln der Elemente
   function textH(text, pt, w, lh, font) {
-    var mmPt = 0.3528, cw = pt * mmPt * (/Bebas|Oswald/.test(font) ? 0.42 : 0.54), per = Math.max(1, Math.floor(w / cw)), n = 0;
+    var mmPt = 0.3528, cw = pt * mmPt * (/Bebas|Oswald|Anton|Amatic/.test(font) ? 0.42 : /Abril|Alfa|Lobster|Righteous|Permanent/.test(font) ? 0.6 : 0.54), per = Math.max(1, Math.floor(w / cw)), n = 0;
     String(text).split("\n").forEach(function (l) { n += Math.max(1, Math.ceil(l.length / per)); });
     return n * pt * mmPt * (lh || 1.16);
   }
