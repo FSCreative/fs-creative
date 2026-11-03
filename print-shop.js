@@ -2598,11 +2598,13 @@ module.exports = function (D) {
   // Ältere Anfragen, die noch als Lead gespeichert wurden, einmalig übernehmen (Text aus der Lead-Nachricht, Dateien über leadId)
   async function briefsImport() {
     if (!D.leads) return 0; const cur = await briefsGet(), have = new Set(cur.map(x => x.leadId).filter(Boolean)); let n = 0, files = null;
+    const byLead = {}; (D.leads() || []).forEach(l => { if (l && l.id) byLead[l.id] = l; });
+    cur.forEach(x => { const l = x.leadId && byLead[x.leadId]; if (l && l.created && x.at !== l.created) { x.at = l.created; n++; } });   // Eingangszeit des Leads (nicht Zeitpunkt der Übernahme)
     for (const l of (D.leads() || []).filter(x => x && /^Druckshop: Gestaltung/.test(x.source || "") && !have.has(x.id))) {
       const m = String(l.message || ""), line = k => { const r = m.match(new RegExp("^" + k + ": (.*)$", "m")); return r ? r[1].trim() : ""; };
       const prod = line("Produkt"), wi = m.indexOf("Wünsche / Briefing:"), di = m.search(/\n(Dateien \(|Keine Dateien)/);
       if (!files) files = await store.listFiles().catch(() => []);
-      cur.push({ id: "b" + crypto.randomBytes(8).toString("hex"), leadId: l.id, at: l.createdAt || l.at || nowIso(), status: "neu", name: l.name || "", email: l.email || "", phone: l.phone || "", company: l.company || "",
+      cur.push({ id: "b" + crypto.randomBytes(8).toString("hex"), leadId: l.id, at: l.created || l.createdAt || nowIso(), status: "neu", name: l.name || "", email: l.email || "", phone: l.phone || "", company: l.company || "",
         text: wi > -1 ? m.slice(wi + 19, di > wi ? di : undefined).trim().replace(/^\(kein Text – siehe Dateien\)$/, "") : "", product: prod.split(" · ")[0] || "", copies: (prod.match(/· ([\d.]+) Stk\./) || [])[1] || "",
         price: (prod.match(/aktueller Druckpreis (.*)$/) || [])[1] || "", labels: line("Ausführung") ? line("Ausführung").split(" · ") : [], link: line("Konfiguration öffnen"),
         files: files.filter(f => f.kind === "brief" && f.leadId === l.id).map(f => ({ id: f.id, name: f.name, bytes: f.bytes, ext: f.ext })) });
