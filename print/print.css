@@ -1815,7 +1815,7 @@ html.light .xm-card:hover,html.light .xm-tile:hover .xm-tph{box-shadow:0 12px 28
 .ps-xteaser .tx>b{font-size:clamp(28px,3.4vw,46px);line-height:1.04;letter-spacing:-.03em;font-weight:800}
 .ps-xteaser .tx>span:not(.xm-eb):not(.ps-btn){font-size:16px;line-height:1.5;color:rgba(255,255,255,.9)}
 .ps-xteaser .ps-btn{margin-top:6px}
-.ps-xteaser:hover .im img{transform:scale(1.03)}
+.ps-xteaser:hover .im img{transform:none}
 .ps-xteaser:focus-visible{outline:3px solid var(--ps-focus);outline-offset:3px}
 @media (max-width:1100px){.xm-tiles{grid-template-columns:repeat(5,minmax(0,1fr))}.xm-band-t{max-width:min(440px,52%)}}
 @media (max-width:760px){

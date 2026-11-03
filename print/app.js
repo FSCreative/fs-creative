@@ -872,7 +872,7 @@
       var box = L.parentNode, cw = box.clientWidth, ch = box.clientHeight, r = parseFloat(L.getAttribute("data-ratio")) || 2, px = (parseFloat(L.getAttribute("data-px")) || 50) / 100;
       if (!desk || !cw || !ch) { L.hidden = true; return; } L.hidden = false;
       var sc = Math.max(cw / r, ch) , dw = sc * r, dh = sc, ox = (cw - dw) * px, oy = (ch - dh) / 2;
-      var tb = box.querySelector(".xm-hero-t, .xm-band-t"), br = box.getBoundingClientRect(), tr = tb ? tb.getBoundingClientRect() : null;
+      var tb = box.querySelector(".xm-hero-t, .xm-band-t, .ps-xteaser .tx"), br = box.getBoundingClientRect(), tr = tb ? tb.getBoundingClientRect() : null;
       [].forEach.call(L.querySelectorAll(".xm-hs"), function (a) {
         var x = ox + dw * (+a.getAttribute("data-x")) / 100, y = oy + dh * (+a.getAttribute("data-y")) / 100;
         var under = tr && x + br.left > tr.left - 16 && x + br.left < tr.right + 16 && y + br.top > tr.top - 16 && y + br.top < tr.bottom + 16;
@@ -1106,10 +1106,16 @@
       '<section class="ps-hsec ps-hsteps"><div class="ps-hsec-h"><h2>So einfach geht’s</h2><a class="ps-link" href="/print/hilfe">So geht’s &amp; FAQ →</a></div><ol><li><b>Produkt wählen</b><span>Format, Papier, Auflage – Preis sofort</span></li><li><b>Gestalten oder hochladen</b><span>Im Designer oder als fertige PDF</span></li><li><b>Bezahlen</b><span>Online oder als Firma auf Rechnung</span></li><li><b>Prüfen &amp; drucken</b><span>Automatischer Datencheck, Versand in ganz Österreich</span></li></ol></section>';
   }
   // Weihnachts-Teaser (nur in der Saison, Server liefert catalog.xmas): Bild über unseren Bild-Proxy, Link auf die Weihnachtsabteilung
+  // Produktpunkte auch auf der Kachel der Startseite (nur Computer); die Kachel ist selbst ein Link → Punkte als <span>, Klick öffnet das Produkt
+  function xmTeaserSpots(x) {
+    var hs = x.hs || []; if (!hs.length) return ""; setTimeout(xmHotspots, 0);
+    return '<span class="xm-hsl" data-ratio="' + (+x.ratio || 2.3) + '" data-px="74">' + hs.map(function (h) {
+      return '<span class="xm-hs" role="link" tabindex="0" data-prod="' + esc(h.k) + '" data-x="' + (+h.x) + '" data-y="' + (+h.y) + '" aria-label="' + esc(h.name) + '"><i aria-hidden="true"></i><span class="xm-hsc"><img src="' + esc(h.photo) + '" width="160" height="120" alt="" loading="lazy"><b>' + esc(h.name) + "</b>" + (h.price ? "<small>" + esc(h.price) + "</small>" : "") + "</span></span>"; }).join("") + "</span>";
+  }
   function xmasTeaser() {
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
     var im = function (w) { return "/print/bild/ez9mp376cw6o/" + x.img + "?fm=webp&w=" + w + "&q=75"; };
-    return '<a class="ps-xteaser" href="/print/weihnachten"><span class="im"><img src="' + esc(im(1200)) + '" srcset="' + esc(im(800)) + " 800w, " + esc(im(1200)) + " 1200w, " + esc(im(1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' +
+    return '<a class="ps-xteaser" href="/print/weihnachten"><span class="im"><img src="' + esc(im(1200)) + '" srcset="' + esc(im(800)) + " 800w, " + esc(im(1200)) + " 1200w, " + esc(im(1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' + xmTeaserSpots(x) +
       '<span class="tx"><span class="xm-eb">Weihnachten ' + esc(x.year) + "</span><b>Weihnachten mit deinem Design</b><span>Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : ".") + '</span><span class="ps-btn primary">Zur Weihnachtsabteilung <span aria-hidden="true">→</span></span></span></a>';
   }
   function setPage(pg, push) {
@@ -2041,6 +2047,7 @@
     var lk = e.target.closest("a[data-cat],a[data-prod]"); if (lk) { if (!S.cat || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); }   // Shop noch nicht geladen (Weihnachtsseite vom Server): normaler Link   // echte Links: Strg/Cmd-Klick öffnet neuen Tab
     var ct = e.target.closest("[data-cat]"); if (ct) { var cv0 = ct.getAttribute("data-cat").split("|"); navCat(cv0[0], cv0[1]); return; }
     var fl = e.target.closest("[data-flt]"); if (fl) { var fk = fl.getAttribute("data-flt"); S.flt = S.flt || {}; if (!fk) S.flt = {}; else S.flt[fk] = !S.flt[fk]; var gg = document.getElementById("psGrid"); if (gg) { gg.innerHTML = gridHtml(); fromObserve(); } return; }
+    if (e.target.closest("span.xm-hs")) e.preventDefault();   // Punkt auf der Weihnachts-Kachel: Produkt statt Weihnachtsseite
     var t = e.target.closest("[data-go],[data-prod],[data-act],[data-ctype],[data-group],[data-sub],[data-gal]"); if (!t || t.disabled) return;
     if (t.hasAttribute("data-go")) { e.preventDefault(); go(+t.getAttribute("data-go")); return; }
     if (t.hasAttribute("data-prod")) { var cq = t.getAttribute("data-copies"); pickProduct(t.getAttribute("data-prod"), function () { if (S.view === "xmas") S.view = ""; setCopies(cq); go(2); }); return; }

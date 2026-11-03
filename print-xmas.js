@@ -246,6 +246,12 @@ function hotspotsHtml(id, ratio, posX, data, shown, prefer, allowed) {
     return '<a class="xm-hs" href="/print?produkt=' + encodeURIComponent(h[0]) + '" data-prod="' + escH(h[0]) + '" data-x="' + h[1] + '" data-y="' + h[2] + '" aria-label="' + escH(it[1]) + '"><i aria-hidden="true"></i>' +
       '<span class="xm-hsc"><img src="' + escH(img(it[2], 300)) + '" width="160" height="120" alt="" loading="lazy" decoding="async"><b>' + escH(it[1]) + "</b>" + (x && x.gross > 0 ? "<small>" + priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() + "</small>" : "") + "</span></a>"; }).join("") + "</div>";
 }
+// Punkte für das Kopfbild als Daten (Startseiten-Kachel im Shop rendert sie selbst): nur Produkte, die auf der Weihnachtsseite als Vorschlag stehen
+function heroSpots(data, shown) {
+  data = data || {}; const allowed = {}; pick(data, shown).forEach(x => x.items.forEach(i => { allowed[i[0]] = i; }));
+  return (HOTSPOTS.hero || []).filter(h => allowed[h[0]] && !OFF[h[0]]).map(h => { const it = allowed[h[0]], x = data[h[0]];
+    return { k: h[0], x: h[1], y: h[2], name: it[1], photo: PROXY + it[2] + "?fm=webp&w=300&q=75", price: x && x.gross > 0 ? priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; });
+}
 // Am Handy je Thema zuerst nur so viele Karten (Rest über „Alle … zeigen“), am Computer alle
 const MOB = 6;
 // Bewusst nicht vorgeschlagen (Prüfung 28.10.2026): Weihnachtspullover – Print.com verlangt eine Eigenschaft „size“, die das Produkt im Shop nicht hat → nie ein Preis
@@ -310,4 +316,4 @@ function mailPicks(data, shown, sea, opts) {
   return out;
 }
 
-module.exports = { THEMES, HERO, SEASON, PROXY, season, keys, staleYear, render, count, img, viennaDay, mailPicks, NL_SLOTS };
+module.exports = { heroSpots, THEMES, HERO, SEASON, PROXY, season, keys, staleYear, render, count, img, viennaDay, mailPicks, NL_SLOTS };

@@ -3116,7 +3116,7 @@ module.exports = function (D) {
   }
   // Startseiten-Teaser im Shop (print/app.js): nur in der Saison
   function xmasTeaser(products) { const sea = XMAS.season(); if (!sea.on) return null; const shown = {}; (products || []).forEach(p => { shown[p.key] = 1; });
-    return { year: sea.year, before: sea.before, n: XMAS.count(xmasData(), shown), img: XMAS.HERO.img }; }
+    return { year: sea.year, before: sea.before, n: XMAS.count(xmasData(), shown), img: XMAS.HERO.img, ratio: XMAS.HERO.ratio, hs: XMAS.heroSpots(xmasData(), shown) }; }
   async function xmasPage(req, res, preview) {
     const sea = XMAS.season();
     if (!sea.on) return D.send(res, 302, "", "text/plain", { Location: "/print", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex" });   // außerhalb der Saison: zurück in den Shop
