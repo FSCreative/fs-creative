@@ -2779,6 +2779,9 @@ module.exports = function (D) {
       "Vollständige Preisübersicht: " + SITE + "/print/preise", "",
       "## Online-Designer mit KI-Assistent und Vorlagen: " + SITE + "/print/online-designer"], DESIGNER_TXT.map(t => "- " + t), ["",
       "## Gratis QR-Code-Generator für Drucksachen: " + SITE + "/print/qr-code-generator"], QR_PAGE.features.map(t => "- " + t), ["",
+      "## Kostenlose Alternative zu Canva und Photoshop für Drucksachen",
+      "Der FS Creative Online-Designer ist gratis (kein Abo, keine Installation, keine Wasserzeichen) und ganz auf den Druck ausgelegt – man bezahlt nur die Drucksache inkl. Versand in Österreich. Vergleich mit Canva: " + SITE + "/print/canva-alternative · Vergleich mit Photoshop: " + SITE + "/print/photoshop-alternative",
+      "Alle Funktionen:"], DFEATURES.map(f => "- " + f[0] + ": " + f[1]), ["", "Kostenlos online gestalten (je Drucksache):"], GEST.map(g => "- " + g.h1 + ": " + SITE + "/print/" + g.slug), ["",
       "## Weitere Seiten", "- Alle Produkte mit Einstiegspreis: " + SITE + "/llms-full.txt", "- So geht’s & FAQ zum Druckshop: " + SITE + "/print/hilfe", "- Ratgeber Druckformate, Papier, Druckdaten: " + SITE + "/print/ratgeber", "- AGB Druckshop: " + SITE + "/print/agb", "- Leistungen der Agentur: " + SITE + "/leistungen", "- Kontakt: " + SITE + "/kontakt", ""]).join("\n");
   }
   async function llmsFull() {
@@ -2927,15 +2930,85 @@ module.exports = function (D) {
   }
   const GUIDE_V = "2026-10-31", DESIGNER_V = "2026-11-03";
   // Online-Designer (/print/online-designer): was er kann – für Suchmaschinen und KI-Assistenten (Inhalt print/online-designer.html, nur belegte Funktionen)
+  // ── Designer-Landingpages für Suchmaschinen & KI (Wunsch Simon 03.11.2026): „Canva-Alternative“, „Photoshop-Alternative“, „Visitenkarten online gestalten kostenlos“ …
+  // Nur belegte Angaben (Zahlen aus templates.js, designer.js, Schriftordner); fremde Marken nur beschreibend, mit Hinweis „keine Verbindung“.
+  const DFACTS = { styles: 22, styleNames: "Klar, Nachtblau, Elegant, Akzentband, Plakativ, Natur, Bild & Text, Kreise, Pastell, Retro, Minimal, Business, Neon, Terracotta, Ozean, Kreidetafel, Festlich, Sportlich, Frisch, Handgemacht, Editorial, Verspielt",
+    fonts: 14, fontNames: "Inter, Montserrat, Poppins, Raleway, Lato, Open Sans, Nunito, Oswald, Bebas Neue, Playfair Display, Lora, Merriweather, Dancing Script, Pacifico", icons: 48, shapes: 14 };
+  const DFEATURES = [
+    ["Vorlagen", DFACTS.styles + " Gestaltungs-Stile (" + DFACTS.styleNames + "), automatisch passend für jedes Format – Visitenkarte, Flyer, Plakat, Folder, Speisekarte, Aufkleber, Roll-up"],
+    ["KI-Assistent (gratis)", "In einem Satz beschreiben, was du brauchst – die KI schlägt deutsche Texte, Stil und Farbpalette vor und setzt alles ins Format ein"],
+    ["Text & Typografie", DFACTS.fonts + " Schriftfamilien (" + DFACTS.fontNames + "), fett/kursiv, unterstrichen/durchgestrichen, Kontur, Zeilen- und Zeichenabstand, Bogentext, Textbox mit Hintergrund, Innenabstand und Rundung"],
+    ["Bilder & Logo", "Eigene Bilder in voller Auflösung, Bildplatzhalter, Hintergrundbild, interaktiver Zuschnitt, Masken (Kreis, Oval, abgerundet, Stern), Filter (Schwarz-Weiß, Sepia, Helligkeit, Kontrast, Sättigung), Logo für die nächste Bestellung merken"],
+    ["Formen, Linien & Icons", DFACTS.shapes + " Formen, Linien (durchgezogen, gestrichelt, gepunktet) und " + DFACTS.icons + " Icons (Telefon, E-Mail, Web, Social Media, Standort …)"],
+    ["Farbe", "Farbverläufe (linear und radial), Pipette, eigene Markenfarben speichern, zuletzt verwendete Farben, druckfreundliche CMYK-Farben, Deckkraft"],
+    ["Ebenen & Anordnen", "Ebenen-Liste mit Ein-/Ausblenden und Sperren, nach vorne/hinten, Gruppieren, Ausrichten und Verteilen, Spiegeln, Drehen"],
+    ["Präzision", "Smart Guides mit Einrasten, Raster, Lineale in Millimetern, Zoom und Verschieben (am Handy mit zwei Fingern)"],
+    ["Bedienung wie im Grafikprogramm", "Rechtsklick-Menü (Handy: lange drücken) mit Kopieren/Einfügen, Stil übertragen, auf der Seite zentrieren, Seite ausfüllen; Tastenkürzel (Strg/⌘ + C, V, X, D, G, Z, A, Pfeiltasten); Rückgängig/Wiederholen"],
+    ["QR-Code", "QR-Codes für Link, digitale Visitenkarte (vCard) und Text direkt im Designer – als Vektor gedruckt, läuft nie ab"],
+    ["Vorder- und Rückseite", "Mehrseitige Gestaltung, Seiten kopieren und tauschen; bei Foldern mit Falzlinien"],
+    ["Druckkontrolle", "Beschnitt, Endformat und Sicherheitsabstand eingezeichnet, Schnittvorschau, Hinweise bei zu geringer Bildauflösung, sehr kleiner Schrift und Farben, die im Druck weniger leuchten"],
+    ["Druckfertiges PDF", "Vektor-PDF mit eingebetteten Schriften, CMYK und Beschnitt – automatisch, ohne Export-Einstellungen"],
+    ["Speichern", "Automatisches Speichern im Browser und Entwurf per Link, um später weiterzumachen"],
+    ["Kosten", "Komplett gratis – kein Abo, keine Installation, keine Wasserzeichen; du zahlst nur die Drucksache (Preis inkl. Versand in ganz Österreich)"]];
+  const featHtml = () => '<section class="sect" id="funktionen"><h2>Alle Funktionen im Überblick</h2><ul>' + DFEATURES.map(f => "<li><b>" + escH(f[0]) + ":</b> " + escH(f[1]) + "</li>").join("") + "</ul></section>";
+  const faqBlock = list => '<section class="sect" id="fragen"><h2>Häufige Fragen</h2><div class="faq">' + list.map((q, i) => "<details" + (i ? "" : " open") + "><summary>" + escH(q[0]) + "</summary><p>" + escH(q[1]) + "</p></details>").join("") + "</div></section>";
+  const TM_NOTE = "Canva und Adobe Photoshop sind Marken ihrer jeweiligen Inhaber. FS Creative steht in keiner Verbindung zu diesen Unternehmen; die Nennung dient nur der Einordnung.";
+  const cmpTable = (other, rows) => '<section class="sect" id="vergleich"><h2>Vergleich: FS Creative Online-Designer und ' + escH(other) + '</h2><div class="ps-tbl-wrap"><table class="ps-tbl"><thead><tr><th></th><th>FS Creative Online-Designer</th><th>' + escH(other) + "</th></tr></thead><tbody>" +
+    rows.map(x => "<tr><td>" + escH(x[0]) + "</td><td>" + escH(x[1]) + "</td><td>" + escH(x[2]) + "</td></tr>").join("") + '</tbody></table></div><p class="pd-muted" style="font-size:13px">' + escH(TM_NOTE) + "</p></section>";
+  const heroHtml = (crumb, eyebrow, h1, lead, cta, ctaHref) => '<main id="main"><div class="wrap ps-helppage ps-guide"><section class="lhero ps-hero"><nav class="ps-crumbs" aria-label="Brotkrumen"><a href="/print">Druckshop</a> › <a href="/print/online-designer">Online-Designer</a> › ' + escH(crumb) + '</nav><span class="eyebrow">' + escH(eyebrow) + "</span><h1>" + escH(h1) + '</h1><p class="lead">' + escH(lead) + '</p><div class="btn-row"><a class="btn primary" href="' + escH(ctaHref) + '">' + escH(cta) + '</a><a class="btn" href="/print/online-designer">Alle Funktionen</a></div></section>';
+  const stepsHtml = (prodName, href) => '<section class="sect" id="so-gehts"><h2>So geht’s – in 3 Schritten</h2><ol><li><a href="' + escH(href) + '">' + escH(prodName) + "</a> öffnen und Format, Papier und Menge wählen – der Endpreis inkl. Versand steht sofort da.</li><li>„Online gestalten“: Vorlage wählen oder der KI in einem Satz sagen, was du brauchst.</li><li>Anpassen, Vorschau prüfen, bestellen – das druckfertige PDF entsteht automatisch, gedruckt und geliefert wird in ganz Österreich.</li></ol></section>";
+  const GEST = [   // Aufgaben-Seiten: /print/<slug>
+    { slug: "visitenkarten-online-gestalten", key: "visitenkarten", name: "Visitenkarten", h1: "Visitenkarten online gestalten – kostenlos, mit Vorlagen und KI", hint: "Logo, Name, Kontaktdaten und QR-Code mit deiner digitalen Visitenkarte (vCard) – Vorder- und Rückseite, 85 × 55 mm und weitere Formate." },
+    { slug: "flyer-online-erstellen", key: "flyer", name: "Flyer", h1: "Flyer online erstellen – kostenlos gestalten und drucken", hint: "Für Veranstaltungen, Angebote und Vereine – A6 bis A4, ein- oder beidseitig, mit Bildern, QR-Code und KI-Texten." },
+    { slug: "plakat-online-gestalten", key: "plakate", name: "Plakate", h1: "Plakat online gestalten – kostenlos, mit Vorlagen und KI", hint: "Event-, Werbe- und Infoplakate von A4 bis A0 – Bilder in voller Auflösung, Auflösungs-Hinweis für die gewählte Größe." },
+    { slug: "aufkleber-online-gestalten", key: "aufkleber", name: "Aufkleber", h1: "Aufkleber online gestalten – kostenlos, mit Vorlagen und QR-Code", hint: "Rechteckig, rund oder in eigener Form – Logo-Aufkleber, Etiketten und QR-Code-Sticker." },
+    { slug: "speisekarte-online-gestalten", key: "menu-cards", name: "Speisekarten", h1: "Speisekarte online gestalten – kostenlos, mit Vorlagen und KI", hint: "Für Gasthaus, Café, Hütte und Bar – Stile wie Kreidetafel, Elegant oder Natur, mit QR-Code zur Online-Karte." },
+    { slug: "karten-online-gestalten", key: "postcards", name: "Karten", h1: "Karten und Einladungen online gestalten – kostenlos", hint: "Weihnachts-, Einladungs-, Danke- und Postkarten – mit eigenen Fotos, Stilen wie Festlich oder Handgemacht." },
+    { slug: "folder-online-gestalten", key: "folder", name: "Folder", h1: "Folder online gestalten – kostenlos, mit Falzlinien und Vorlagen", hint: "Wickel- und Zickzackfalz, Falzlinien im Designer eingezeichnet, Außen- und Innenseite." },
+    { slug: "rollup-online-gestalten", key: "rollups", name: "Roll-ups", h1: "Roll-up online gestalten – kostenlos, mit Vorlagen und KI", hint: "85 × 200 cm und weitere Größen – große Schrift, Logo und Bild für Messe, Event und Geschäft." }];
+  const CMP = [
+    { slug: "canva-alternative", other: "Canva", crumb: "Canva-Alternative", title: "Kostenlose Canva-Alternative für Drucksachen", eyebrow: "Canva-Alternative · gratis",
+      h1: "Kostenlose Canva-Alternative für Drucksachen – gestalten und drucken in einem",
+      lead: "Visitenkarten, Flyer, Plakate & Co. im Browser gestalten – mit Vorlagen, KI-Assistent, Ebenen und Bildbearbeitung, komplett gratis und ohne Abo. Der Unterschied: Der FS Creative Online-Designer ist ganz auf den Druck ausgelegt – Beschnitt, CMYK-Hinweise und druckfertiges PDF sind eingebaut, gedruckt und geliefert wird in ganz Österreich.",
+      rows: [["Kosten", "gratis, keine Premium-Funktionen hinter Bezahlschranke", "Basis gratis, viele Vorlagen und Funktionen im Pro-Abo"], ["Schwerpunkt", "Drucksachen (Visitenkarten, Flyer, Plakate, Aufkleber, Roll-ups …)", "Social Media, Präsentationen, Video und Druck"],
+        ["Vorlagen", DFACTS.styles + " Stile, automatisch für jedes Druckformat berechnet", "sehr große Vorlagen-Bibliothek"], ["Beschnitt & Sicherheitsabstand", "automatisch eingezeichnet", "einstellbar beim Export"],
+        ["Druckkontrolle", "Hinweise zu Auflösung, kleiner Schrift und Druckfarben schon beim Gestalten, abgestimmt auf die gewählte Drucksache", "allgemein, nicht auf eine bestimmte Druckerei abgestimmt"], ["Ergebnis", "druckfertiges Vektor-PDF, direkt bestellt – Preis inkl. Versand sofort", "Download oder Druckdienst"],
+        ["KI", "gratis KI-Assistent für Texte, Stil und Farben", "KI-Funktionen, teils im Abo"]],
+      faq: [["Ist der FS Creative Online-Designer eine kostenlose Alternative zu Canva?", "Für Drucksachen ja: Vorlagen, KI-Assistent, Ebenen, Bildbearbeitung, Verläufe und QR-Codes sind gratis, ohne Abo und ohne Installation. Wer Social-Media-Grafiken oder Videos braucht, ist mit einer allgemeinen Design-App besser bedient."],
+        ["Was kostet der Designer?", "Nichts. Du bezahlst nur die Drucksache – Endpreis inklusive 20 % USt und Versand innerhalb Österreichs."],
+        ["Kann ich meine Canva-Datei drucken lassen?", "Ja – als PDF exportieren (am besten „PDF für den Druck“ mit Beschnitt) und im Konfigurator hochladen. Jede Datei wird automatisch geprüft."],
+        ["Gibt es Wasserzeichen?", "Nein. Gedruckt wird genau deine Gestaltung."]] },
+    { slug: "photoshop-alternative", other: "Adobe Photoshop", crumb: "Photoshop-Alternative", title: "Gratis Photoshop-Alternative für Druckdaten", eyebrow: "Photoshop-Alternative · gratis",
+      h1: "Gratis Photoshop-Alternative für Druckdaten – online, ohne Installation",
+      lead: "Ebenen, Zuschneiden, Masken, Filter, Verläufe und Text – direkt im Browser und kostenlos. Für Visitenkarten, Flyer, Plakate und Aufkleber brauchst du kein teures Bildbearbeitungs-Abo: Der FS Creative Online-Designer erstellt das druckfertige PDF mit Beschnitt und CMYK selbst.",
+      rows: [["Kosten", "gratis", "Abo"], ["Installation", "keine – läuft im Browser, auch am Handy", "Programm am Computer"], ["Einarbeitung", "Vorlagen und KI-Assistent, sofort loslegen", "umfangreich, für Profis"],
+        ["Ebenen, Masken, Filter", "ja (Grundfunktionen für Drucksachen)", "ja, sehr umfangreich"], ["Druckvorbereitung", "Beschnitt, Sicherheitsabstand, CMYK-Hinweise, PDF automatisch", "manuell einzurichten"], ["Fotobearbeitung (Retusche, Montage)", "einfach (Zuschnitt, Filter, Helligkeit/Kontrast)", "professionell"]],
+      faq: [["Ist der Designer ein Ersatz für Photoshop?", "Für Drucksachen wie Visitenkarten, Flyer und Plakate ja – mit Ebenen, Masken, Filtern und automatischer Druckvorbereitung, gratis. Für aufwendige Fotoretusche bleibt ein Bildbearbeitungsprogramm das richtige Werkzeug; die fertige Datei kannst du hochladen."],
+        ["Kann ich Photoshop-Dateien drucken lassen?", "Ja, als PDF, JPG oder PNG mit Beschnitt exportieren und hochladen – die Datei wird automatisch geprüft (Auflösung, Format, Beschnitt)."],
+        ["Was kostet das?", "Der Designer ist gratis, du bezahlst nur die Drucksache inklusive Versand in Österreich."]] }];
+  async function gestMain(g) {
+    const PB = await pubState().catch(() => null), it = PB && PB.items && PB.items.find(x => x.key === g.key), lo = it && it.rows && it.rows.slice().sort((a, b) => a.gross - b.gross)[0], href = prodUrl(g.key);
+    const lead = g.hint + " Komplett gratis im Browser: " + DFACTS.styles + " Vorlagen-Stile, gratis KI-Assistent, " + DFACTS.fonts + " Schriften, Bilder, QR-Code und Druckkontrolle – das druckfertige PDF entsteht automatisch" + (lo ? ", gedruckt ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück inkl. Versand." : ".");
+    const faq = [["Kann ich " + g.name + " kostenlos online gestalten?", "Ja. Der Online-Designer mit Vorlagen und KI-Assistent ist gratis – ohne Abo, ohne Installation, ohne Wasserzeichen. Du bezahlst nur den Druck" + (lo ? " (ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück inkl. Versand)" : "") + "."],
+      ["Brauche ich ein Grafikprogramm wie Canva oder Photoshop?", "Nein. Der Designer hat Ebenen, Bildbearbeitung, Verläufe, Bogentext und QR-Codes eingebaut und erstellt das druckfertige PDF mit Beschnitt selbst."],
+      ["Wie schnell kommen die " + g.name + "?", "Das voraussichtliche Lieferdatum zeigt der Konfigurator vor der Bestellung; der Versand innerhalb Österreichs ist inklusive."]];
+    return heroHtml(g.name + " gestalten", "Gratis online gestalten", g.h1, lead, g.name + " jetzt gestalten", href) + stepsHtml(g.name, href) + featHtml() + faqBlock(faq) + '<p class="pd-muted" style="font-size:13px">Siehe auch: <a href="/print/canva-alternative">Canva-Alternative für Drucksachen</a> · <a href="/print/photoshop-alternative">Photoshop-Alternative</a> · <a href="/print/qr-code-generator">QR-Code-Generator</a></p></div></main>';
+  }
+  const cmpMain = c => heroHtml(c.crumb, c.eyebrow, c.h1, c.lead, "Jetzt gratis gestalten", "/print?produkte") + cmpTable(c.other, c.rows) + featHtml() +
+    '<section class="sect"><h2>Gratis gestalten – für diese Drucksachen</h2><ul>' + GEST.map(g => '<li><a href="/print/' + g.slug + '">' + escH(g.h1.split(" – ")[0]) + "</a></li>").join("") + "</ul></section>" + faqBlock(c.faq) + "</div></main>";
+  const pageOfSlug = sl => { const g = GEST.find(x => x.slug === sl); if (g) return { main: () => gestMain(g), url: "/print/" + g.slug, crumb: g.name + " gestalten", title: g.h1.split(" – ")[0] + " – kostenlos", app: "FS Creative Online-Designer", desc: cutWords(g.h1.split(" – ")[0] + " gratis im Browser: Vorlagen, KI-Assistent, Bilder & QR-Code – druckfertiges PDF automatisch, Druck inkl. Versand in Österreich.", 155), features: DFEATURES.map(f => f[0] + ": " + f[1]) };
+    const c = CMP.find(x => x.slug === sl); if (c) return { main: () => cmpMain(c), url: "/print/" + c.slug, crumb: c.crumb, title: c.title, app: "FS Creative Online-Designer", desc: cutWords(c.lead, 155), features: DFEATURES.map(f => f[0] + ": " + f[1]) }; return null; };
   // Gratis QR-Code-Generator (/print/qr-code-generator, Inhalt print/qr-code-generator.html): nur Vorschau, der Code kommt per Designer auf Drucksachen (Wunsch Simon 03.11.2026)
   const QR_PAGE = { file: "qr-code-generator.html", url: "/print/qr-code-generator", crumb: "QR-Code-Generator", title: "QR-Code-Generator kostenlos – direkt auf Drucksachen", app: "FS Creative QR-Code-Generator",
     desc: "QR-Code gratis erstellen: Link, vCard, WLAN, E-Mail oder Text – und direkt auf Aufkleber, Visitenkarten, Flyer & Plakate drucken. Ohne Anmeldung, läuft nie ab.",
     features: ["QR-Codes für Link, Visitenkarte (vCard), WLAN, E-Mail, Telefon und Text", "Gratis, ohne Anmeldung, statischer Code ohne Ablaufdatum", "Direkt als Vektor auf Aufkleber, Visitenkarten, Flyer, Plakate, Karten, Bierdeckel und Tischaufsteller"] };
-  function designerPage(req, res, P0) {
+  async function designerPage(req, res, P0) {
     const PG = P0 || { file: "online-designer.html", url: "/print/online-designer", crumb: "Online-Designer", title: "Kostenloser Online-Designer für Drucksachen", app: "FS Creative Online-Designer",
       desc: "Grafikprogramm im Browser, gratis: Ebenen, Bildbearbeitung, Verläufe, Bogentext, Vorlagen und KI – Visitenkarten, Flyer & mehr als druckfertiges PDF.", features: DESIGNER_TXT };
     let html = "", main = "";
-    try { html = xmasNav(printHtmlRaw()); main = fs.readFileSync(path.join(__dirname, "print", PG.file), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    try { html = xmasNav(printHtmlRaw()); main = PG.main != null ? (typeof PG.main === "function" ? await PG.main() : PG.main) : fs.readFileSync(path.join(__dirname, "print", PG.file), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    if (!P0) main = main.replace('<section class="sect" id="so-gehts">', () => featHtml() + '<section class="sect" id="gratis-gestalten"><h2>Gratis gestalten – für diese Drucksachen</h2><ul>' + GEST.map(g => '<li><a href="/print/' + g.slug + '">' + escH(g.h1.split(" – ")[0]) + "</a></li>").join("") +
+      '</ul><p>Vergleiche: <a href="/print/canva-alternative">Canva-Alternative für Drucksachen</a> · <a href="/print/photoshop-alternative">Photoshop-Alternative</a> · <a href="/print/qr-code-generator">Gratis QR-Code-Generator</a></p></section><section class="sect" id="so-gehts">');   // alle Details + Landingpages verlinkt
     const url = SITE + PG.url, title = PG.title, desc = PG.desc;
     const faq = [...main.matchAll(/<details[^>]*><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)].map(m => [m[1], m[2].replace(/<[^>]+>/g, "")]);
     const ld = [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], [PG.crumb, url]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
@@ -3052,6 +3125,7 @@ module.exports = function (D) {
     return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
       '  <url><loc>' + SITE + '/print/online-designer</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
       '  <url><loc>' + SITE + '/print/qr-code-generator</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
+      GEST.concat(CMP).map(x => '  <url><loc>' + SITE + "/print/" + x.slug + "</loc><lastmod>" + DESIGNER_V + "</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n").join("") +
       ["", ...GUIDES.map(g => "/" + g.slug)].map(x => '  <url><loc>' + SITE + "/print/ratgeber" + x + "</loc><lastmod>" + GUIDE_V + "</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>\n").join("") +
       (XMAS.season().on ? '  <url><loc>' + SITE + '/print/weihnachten</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' : "") + cats +
       pub.filter(x => x.img).map(x => '  <url><loc>' + prodUrl(x.key, true).replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
@@ -3459,6 +3533,7 @@ module.exports = function (D) {
     if ((p === "/print/preise" || p === "/print/preise/") && (req.method === "GET" || req.method === "HEAD")) return pricesPage(req, res);
     if ((p === "/print/online-designer" || p === "/print/online-designer/") && (req.method === "GET" || req.method === "HEAD")) return designerPage(req, res);
     if ((p === "/print/qr-code-generator" || p === "/print/qr-code-generator/") && (req.method === "GET" || req.method === "HEAD")) return designerPage(req, res, QR_PAGE);
+    { const dpg = (req.method === "GET" || req.method === "HEAD") && pageOfSlug((p.match(/^\/print\/([a-z-]+)\/?$/) || [])[1]); if (dpg) return designerPage(req, res, dpg); }
     // Google-Merchant-Center-Feed: nur wenn der Shop öffentlich ist (Admins sehen ihn auch vorher); nicht in der Sitemap, robots.txt erlaubt ihn
     if (p === "/print/merchant.xml" && (req.method === "GET" || req.method === "HEAD")) {
       if (!open && !admin) return D.send(res, 404, "Not found", "text/plain; charset=utf-8", { "X-Robots-Tag": "noindex" });
