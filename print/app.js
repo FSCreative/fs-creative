@@ -8,7 +8,7 @@
   // Live-Besucher fürs Cockpit (auf allen /print-Seiten, auch Preise/Ratgeber/Hilfe): anonymes Lebenszeichen alle 25 s, im Hintergrund-Tab jede Minute (Zufalls-ID nur für diesen Tab in sessionStorage, kein Cookie, nichts Persönliches)
   (function () { var sid = ""; try { sid = sessionStorage.getItem("psSid") || ""; if (!sid) { sid = Math.random().toString(36).slice(2, 12) + Date.now().toString(36); sessionStorage.setItem("psSid", sid); } } catch (e) { sid = Math.random().toString(36).slice(2, 14) + "t"; }
     var lastBg = 0, beat = function (bye) { var bg = document.hidden && !bye; if (bg) { if (Date.now() - lastBg < 55000) return; lastBg = Date.now(); } try { fetch("/print/api/hb", { method: "POST", keepalive: true, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" },
-      body: JSON.stringify({ sid: sid, path: location.pathname, step: S ? S.step || 0 : 0, prod: S && S.prod ? S.prod.title : "", view: S ? S.view || "" : "", cart: S ? (S.cart || []).length : 0, bg: bg, bye: !!bye }) }).catch(function () {}); } catch (e) {} };
+      body: JSON.stringify({ sid: sid, path: location.pathname, step: S ? S.step || 0 : 0, prod: S && S.prod ? S.prod.title : "", view: S ? S.view || "" : "", cart: S ? (S.cart || []).length : 0, bg: bg, bye: !!bye }) }).then(function (r) { return r.json(); }).then(function (j) { if (!j || !S || bye) return; var ch = S.liveSame !== j.same || S.liveWeek !== j.week; S.liveSame = +j.same || 0; S.liveWeek = +j.week || 0; if (ch && !document.hidden) renderPrice(); }).catch(function () {}); } catch (e) {} };
     setTimeout(beat, 1500); setInterval(beat, 25000); document.addEventListener("visibilitychange", function () { if (!document.hidden) beat(); }); window.addEventListener("pagehide", function () { beat(true); });
   })();
   var root = document.getElementById("shop");
@@ -808,6 +808,74 @@
   }
   function tierHintHtml() { var h = S.tierHint, co = S.ctype === "company"; if (!h || !S.price) return "";
     return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0Stk.</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro Stück (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
+  /* ── Verkaufshilfen (Wunsch Simon 03.11.2026) – nur ehrliche, echte Angaben ──
+     1 Tab-Titel im Hintergrund · 2 Angebot per Mail · 3 Liefertermin mit Annahmeschluss 14:00 · 4 Erstbesteller-Gutschein beim Verlassen (Computer, einmal)
+     5 echte Live-/Bestellzahlen · 6 Chat-Hinweis nach 60 s · 7 Vertrauens-Zeile beim Preis */
+  var TT = { base: "", icon: null, on: false };
+  function favDot(on) { try { var l = document.querySelector('link[rel~="icon"]'); if (!l) return; if (!TT.icon) TT.icon = l.href; if (!on) { l.href = TT.icon; return; }
+    var img = new Image(); img.onload = function () { var c = document.createElement("canvas"); c.width = c.height = 64; var x = c.getContext("2d"); x.drawImage(img, 0, 0, 64, 64); x.fillStyle = "#ff3b30"; x.beginPath(); x.arc(50, 14, 13, 0, 7); x.fill(); if (TT.on) l.href = c.toDataURL("image/png"); }; img.src = TT.icon; } catch (e) {} }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { var p = S.price, co = S.ctype === "company", cart = (S.cart || []).length;
+      if (!(S.prod && S.step >= 2 && S.step <= 3) && !cart) return;
+      TT.base = document.title; TT.on = true;
+      document.title = (S.step >= 2 && S.step <= 3 && S.prod ? "👋 " + S.prod.title + " wartet" + (p ? " – " + eur(co ? p.net : p.gross) : "") : "🛒 Dein Warenkorb wartet (" + cart + ")") + " · Versand gratis";
+      favDot(true);
+    } else if (TT.on) { TT.on = false; if (TT.base) document.title = TT.base; favDot(false); }
+  });
+  function vienna() { var f = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date()), g = function (t) { return (f.filter(function (x) { return x.type === t; })[0] || {}).value; }; return { wd: g("weekday"), h: +g("hour"), m: +g("minute") }; }
+  function dueHtml() { var p = S.price; if (!p || !p.deliveryDate) return ""; var d = new Date(p.deliveryDate + "T12:00:00"); if (isNaN(d)) return "";
+    var day = d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "numeric" }), v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m);
+    var cd = work && left > 0 ? "Bestellst du in den nächsten <b>" + (left >= 60 ? Math.floor(left / 60) + " Std. " : "") + (left % 60) + " Min.</b>, kommt es" : "Bestellst du jetzt, kommt es";
+    return '<p class="ps-due" id="psDue">🚚 ' + cd + " voraussichtlich am <b>" + esc(day) + "</b>.</p>"; }
+  setInterval(function () { var e = document.getElementById("psDue"); if (e && !document.hidden) { var t = document.createElement("div"); t.innerHTML = dueHtml(); if (t.firstChild) e.innerHTML = t.firstChild.innerHTML; } }, 30000);
+  function socialHtml() { var n = +S.liveSame || 0, w = +S.liveWeek || 0, t = S.prod ? S.prod.title : ""; if (!t) return "";
+    var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
+    return a || b ? '<p class="ps-social">' + [a, b].filter(Boolean).join(" · ") + "</p>" : ""; }
+  function trustHtml() { return '<ul class="ps-trust"><li>✓ Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>✓ Datencheck inklusive</li><li>✓ Persönlich erreichbar – aus dem Montafon</li></ul>' +
+    '<button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button>'; }
+  function rememberPop() {
+    var p = S.prod, pr = S.price; if (!p) return; var co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "", link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
+    var labels = (pr && pr.labels ? pr.labels : []).map(function (l) { return l[0] + ": " + l[1]; }), me = S.me || {}, cu = S.customer || {}, back = document.activeElement;
+    var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Angebot per Mail");
+    m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">Angebot merken</span><h3>Angebot per Mail schicken</h3><p>Du bekommst deine Konfiguration mit Preis und einem Link, mit dem du sie jederzeit wieder öffnen und bestellen kannst.</p>' +
+      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b>" + (priceTxt ? "<span>" + esc(priceTxt) + " · Versand inklusive</span>" : "") + "</div>" +
+      '<label class="ps-bf"><span>E-Mail *</span><input id="rmMail" type="email" autocomplete="email" value="' + esc(cu.email || me.email || "") + '"></label>' +
+      '<label class="ps-cb"><input type="checkbox" id="rmRem"><span>Erinnere mich morgen einmal daran (optional)</span></label>' +
+      '<input type="text" id="rmHp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">' +
+      '<p class="pd-muted" style="font-size:12.5px">Wir verwenden deine Adresse nur für diese Mail' + " (und die eine Erinnerung, falls gewählt) – kein Newsletter. " + '<a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></p>' +
+      '<p class="ps-err" id="rmErr" hidden></p><div class="ps-pop-a"><button type="button" class="ps-btn primary" id="rmSend">Angebot schicken</button><button type="button" class="ps-btn" data-popx="1">Abbrechen</button></div></div>' +
+      '<button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
+    var q = function (id) { return m.querySelector("#" + id); }, err = function (t) { var e = q("rmErr"); e.textContent = t || ""; e.hidden = !t; };
+    var close = function () { m.remove(); document.removeEventListener("keydown", k0); if (back && back.focus) back.focus(); }, k0 = function (e) { if (e.key === "Escape") close(); };
+    m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) close(); });
+    q("rmSend").addEventListener("click", function () { var b = this, mail = q("rmMail").value.trim(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { err("Bitte eine gültige E-Mail-Adresse angeben."); return; }
+      err(""); b.disabled = true; b.textContent = "Wird gesendet …";
+      api("/print/api/remember", { email: mail, remind: q("rmRem").checked, title: p.title, copies: totalCopies(), price: priceTxt, link: link, labels: labels, website: q("rmHp").value }).then(function (j) {
+        if (!j.ok) { b.disabled = false; b.textContent = "Angebot schicken"; err(j.error || "Konnte nicht gesendet werden."); return; }
+        m.querySelector(".ps-pop-b").innerHTML = '<span class="ps-pop-k">Angebot merken</span><h3>Ist unterwegs ✉️</h3><p>Schau in dein Postfach (' + esc(mail) + "). Mit dem Link öffnest du deine Konfiguration jederzeit wieder.</p>" + '<div class="ps-pop-a"><button type="button" class="ps-btn primary" data-popx="1">Weiter</button></div>';
+      }).catch(function () { b.disabled = false; b.textContent = "Angebot schicken"; err("Keine Verbindung – bitte erneut versuchen."); }); });
+    document.body.appendChild(m); document.addEventListener("keydown", k0); setTimeout(function () { q("rmMail").focus(); }, 30);
+  }
+  /* 4: beim Verlassen (Maus zur Tab-Leiste, nur Computer, einmal je Besuch) – Gutschein für die erste Bestellung */
+  var EXIT_CODE = "ERSTBESTELLUNG5";
+  document.addEventListener("mouseout", function (e) {
+    if (e.relatedTarget || e.clientY > 0 || !window.matchMedia || !window.matchMedia("(pointer:fine)").matches) return;
+    if (!S.prod || S.step < 2 || S.step > 4 || S.me || document.querySelector(".ps-pop")) return;
+    try { if (sessionStorage.getItem("psExit") || localStorage.getItem("psExitSeen")) return; sessionStorage.setItem("psExit", "1"); localStorage.setItem("psExitSeen", String(Date.now())); } catch (x) { return; }
+    var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Gutschein");
+    m.innerHTML = '<div class="ps-pop-c"><div class="ps-pop-b"><span class="ps-pop-k">Bevor du gehst</span><h3>5 % auf deine erste Bestellung</h3><p>Mit dem Code <b class="ps-code">' + EXIT_CODE + "</b> sparst du 5 % – einfach an der Kasse eingeben. Versand in Österreich ist sowieso inklusive.</p>" +
+      '<div class="ps-pop-a"><button type="button" class="ps-btn primary" data-act="exituse">Code übernehmen</button><button type="button" class="ps-btn" data-popx="1">Nein danke</button></div></div><button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
+    m.addEventListener("click", function (ev) { if (ev.target === m || ev.target.closest("[data-popx]")) m.remove(); if (ev.target.closest('[data-act="exituse"]')) { S.voucher = EXIT_CODE; S.voucherErr = ""; m.remove(); toast("Code " + EXIT_CODE + " gemerkt – wird an der Kasse abgezogen"); } });
+    document.body.appendChild(m);
+  });
+  /* 6: Chat-Hinweis nach 60 s in „Ausführung“ (einmal je Besuch) */
+  var chatNudgeT = setInterval(function () {
+    if (document.hidden || !S.prod || S.step !== 2) { S.__st2 = 0; return; } S.__st2 = (S.__st2 || 0) + 5; if (S.__st2 < 60) return;
+    clearInterval(chatNudgeT); try { if (sessionStorage.getItem("psChatNudge")) return; sessionStorage.setItem("psChatNudge", "1"); } catch (x) { return; }
+    var cb = document.querySelector(".fscc-b"); if (!cb || document.querySelector(".fscc-panel.open, .ps-pop")) return;
+    var n = document.createElement("button"); n.type = "button"; n.className = "ps-chatnudge"; n.innerHTML = "Unsicher bei Papier oder Format? <b>Frag mich einfach</b> 💬<span aria-hidden=\"true\">×</span>";
+    n.addEventListener("click", function (e) { n.remove(); if (e.target.tagName !== "SPAN") cb.click(); }); document.body.appendChild(n); setTimeout(function () { if (n.parentNode) n.remove(); }, 20000);
+  }, 5000);
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
@@ -821,12 +889,12 @@
     var u = unitOf();
     if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0Stk." : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0Stk. · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() + (compact ? "" : dueHtml() + socialHtml() + trustHtml()) +
       (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>Stückpreis</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() + (compact ? "" : dueHtml() + socialHtml() + trustHtml()) +
       (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
@@ -1976,6 +2044,7 @@
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
+    if (k === "remember") { rememberPop(); return; }
     if (k === "settier") { var tn = +v; if (tn > 0) { S.copies = tn; S.tierHint = null; var qx2 = document.getElementById("psQty"); if (qx2) qx2.value = ""; render(); loadPrice(); toast(tn.toLocaleString("de-AT") + "\u00a0Stück übernommen"); } return; }
     if (k === "xmall") { var xs = t.closest(".xm-sec"); if (xs) xs.classList.add("open"); t.remove(); return; }   // Weihnachtsabteilung (Handy): alle Ideen eines Themas
     if (k === "cwarn") { warnPop(v); return; }

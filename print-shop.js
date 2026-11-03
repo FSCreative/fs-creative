@@ -44,7 +44,7 @@ function categoryOf(sku, single, plural) { const t = (String(sku || "") + " " + 
 const slugN = v => String(v || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
 // Print.com-CMS (öffentliches JSON der Reseller-App): Bilder, Namen, Beschreibungen, Produktbaum – gekürzt auf das Nötige (nicht die ganzen ~10 MB speichern)
 // Print.com-Namen, die maschinell falsch übersetzt sind (werden sonst so im Shop angezeigt)
-const NAME_FIX = { "bar-apron-pocket": "Barschürzen mit Tasche", "bar-apron-green-generation": "Barschürzen „Green Generation“", "bar-apron-canvas": "Barschürzen aus Canvas", "apron-canvas": "Schürzen aus Canvas", "houston-cap": "Caps „Houston“", "whiteboards-premium": "Whiteboards Premium (bedruckt)", "tubes-giftset": "Reagenzglas-Geschenksets" };
+const NAME_FIX = { "textile-stickers": "Textilaufkleber", "bar-apron-pocket": "Barschürzen mit Tasche", "bar-apron-green-generation": "Barschürzen „Green Generation“", "bar-apron-canvas": "Barschürzen aus Canvas", "apron-canvas": "Schürzen aus Canvas", "houston-cap": "Caps „Houston“", "whiteboards-premium": "Whiteboards Premium (bedruckt)", "tubes-giftset": "Reagenzglas-Geschenksets" };
 function cmsTrim(j, keepSkus) {
   j = j || {};
   const A = ref => { const id = ref && (ref.id || ref); const a = id && j.asset && j.asset[id]; const f = a && String(a.file || ""); return f && /^\/\/images\.ctfassets\.net\/[\w\-./%]+$/i.test(f) ? f.slice(23) : ""; };   // Pfad ohne „//images.ctfassets.net/“ (spart Platz)
@@ -3167,6 +3167,7 @@ module.exports = function (D) {
     // Sortiments-Prüfung wöchentlich in der Nacht (Sonntag 2–5 Uhr Wien): Startausführungen heilen, nicht bestellbare Produkte ausblenden
     if (cfg().pcKey && live() && !auditLive) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
       if (wd.replace(",", "") === "Sun" && +hh >= 2 && +hh < 5) store.getMeta("print_audit").then(a => { if (!a || !a.end || Date.now() - Date.parse(a.end) > 6 * 864e5) auditRun().catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
+    rememberDue().catch(e => log("Angebots-Erinnerung:", e.message));
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
@@ -3204,6 +3205,30 @@ module.exports = function (D) {
     if (!v.ids.has(id) && v.ids.size < 100000) { v.ids.add(id); v.dirty = true; livePush(); } }).catch(() => {}); }
   const visitsTimer = setInterval(() => { if (VISITS && VISITS.dirty) { VISITS.dirty = false; store.setMeta("print_visits", { date: VISITS.date, salt: VISITS.salt, ids: Array.from(VISITS.ids), prev: VISITS.prev, since: VISITS.since || null }).catch(() => { VISITS.dirty = true; }); } if (VISITS && VISITS.date !== today()) visitsLoad(); }, 30000);
   if (visitsTimer.unref) visitsTimer.unref();
+  // Bestellungen der letzten 7 Tage je Produkt (für den Hinweis im Konfigurator), 10 Min. zwischengespeichert
+  let OWEEK = { at: 0, by: {} };
+  async function ordersWeek() {
+    if (Date.now() - OWEEK.at < 10 * 60e3) return OWEEK.by;
+    const by = {}, from = Date.now() - 7 * 864e5;
+    for (const o of await store.listOrders().catch(() => [])) if (o && o.product && BONUS_COUNTS[o.status] && Date.parse(o.createdAt || 0) > from) by[o.product.title] = (by[o.product.title] || 0) + 1;
+    OWEEK = { at: Date.now(), by }; return by;
+  }
+  // „Angebot per Mail merken“: Konfiguration + Preis an den Besucher; auf Wunsch (eigenes Häkchen) EINE Erinnerung nach 24 h, wenn bis dahin nicht bestellt
+  async function rememberGet() { const a = await store.getMeta("print_remember").catch(() => null); return Array.isArray(a) ? a : []; }
+  async function rememberDue() {
+    const all = await rememberGet(); let ch = false; const now = Date.now();
+    for (const r of all) {
+      if (!r.remind || r.reminded || now - Date.parse(r.at) < 24 * 3600e3) continue;
+      r.reminded = nowIso(); ch = true;
+      if (now - Date.parse(r.at) > 72 * 3600e3) continue;   // zu alt (z. B. nach längerer Pause): nicht mehr nachfassen
+      const ordered = (await store.listOrders().catch(() => [])).some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at));
+      if (ordered) continue;
+      await mail(r.email, "Noch Fragen zu deinem " + r.title + "?", "Dein Angebot liegt noch bereit", ["Gestern hast du dir dein Angebot für " + r.title + " zuschicken lassen. Deine Konfiguration ist weiterhin gespeichert – ein Klick und du kannst bestellen.", "Wenn du Fragen zu Papier, Format oder Druckdaten hast, antworte einfach auf diese Mail."],
+        [["Produkt", r.title + (r.copies ? " · " + Number(r.copies).toLocaleString("de-AT") + " Stk." : "")], ["Preis", r.price || "im Konfigurator"], ["Angebot öffnen", r.link, "button"]], ["Das ist die einzige Erinnerung – wir schreiben dir dazu nicht noch einmal."]);
+    }
+    const keep = all.filter(r => now - Date.parse(r.at) < 90 * 864e5); if (keep.length !== all.length) ch = true;   // nach 90 Tagen löschen (Datenschutz)
+    if (ch) await store.setMeta("print_remember", keep.slice(-3000));
+  }
   // Live-Anzeige im Cockpit ohne Abfrage-Takt: Server-Sent Events, Änderungen gehen sofort raus (Wunsch Simon 03.11.2026)
   const LIVE_SUBS = new Set(); let liveSig = "", livePushT = null;
   function livePush() {
@@ -3395,6 +3420,21 @@ module.exports = function (D) {
         await store.putFile(meta, buf);
         return J(res, 200, { ok: true, id: meta.id, token: sig("brief", meta.id), name, bytes: buf.length });
       }
+      if (p === "/print/api/remember" && req.method === "POST") {   // „Angebot per Mail schicken“
+        if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (limited("remember", ip, 6, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
+        const b = await readJson(req, 8000).catch(() => ({})), email = clip(b.email, 160).trim().toLowerCase();
+        if (b.website) return J(res, 200, { ok: true });
+        if (!/^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i.test(email)) return J(res, 400, { ok: false, error: "Bitte eine gültige E-Mail-Adresse angeben" });
+        const link = String(b.link || ""); if (!/^https:\/\/www\.fs-creative\.at\/print[/?]/.test(link)) return J(res, 400, { ok: false, error: "Konfiguration fehlt" });
+        const r = { at: nowIso(), email, remind: b.remind === true, title: clip(b.title, 120), copies: Math.max(0, parseInt(b.copies, 10) || 0), price: clip(b.price, 60), link: clip(link, 1500), labels: (Array.isArray(b.labels) ? b.labels : []).slice(0, 12).map(l => clip(l, 120)) };
+        const ok = await mail(email, "Dein Angebot: " + r.title, "Dein Angebot von FS Creative", ["Hier ist deine Konfiguration zum Nachlesen – mit einem Klick öffnest du sie wieder im Shop und kannst direkt bestellen. Versand in Österreich ist inklusive, der Datencheck auch."],
+          [["Produkt", r.title + (r.copies ? " · " + r.copies.toLocaleString("de-AT") + " Stk." : "")], ["Ausführung", r.labels.join(" · ") || "–"], ["Preis", r.price || "im Konfigurator"], ["Angebot öffnen", r.link, "button"]],
+          [r.remind ? "Wie gewünscht erinnern wir dich morgen einmal daran." : "Fragen? Antworte einfach auf diese Mail."]);
+        if (!ok) return J(res, 502, { ok: false, error: "Mail konnte nicht gesendet werden – bitte später erneut" });
+        const all = await rememberGet(); all.push(r); await store.setMeta("print_remember", all.slice(-3000));
+        return J(res, 200, { ok: true });
+      }
       if (p === "/print/api/hb" && req.method === "POST") {   // Live-Besucher (anonym: Zufalls-ID je Tab, kein Cookie) – Seite, Schritt, Produkt
         if (limited("hb", ip, 4000, 3600e3)) { req.resume(); return J(res, 204, {}); }
         const b = await readJson(req, 1000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
@@ -3402,7 +3442,10 @@ module.exports = function (D) {
         if (LIVE.size > 5000) liveGc();
         if (sid.length >= 8 && !b.bye) visitCount(ip, req.headers["user-agent"]);
         livePush();
-        return J(res, 200, { ok: true });
+        // echte Zahlen für „Gerade sehen sich X weitere … an“ / „Diese Woche N× bestellt“ (nur zählen, keine Personendaten)
+        const pr0 = clip(String(b.prod || ""), 60); let same = 0, week = 0;
+        if (pr0 && !b.bye) { const now = Date.now(); for (const [k, v] of LIVE) if (k !== sid && v.prod === pr0 && !v.bg && now - v.at < LIVE_MS) same++; week = (await ordersWeek().catch(() => ({})))[pr0] || 0; }
+        return J(res, 200, { ok: true, same, week });
       }
       if (p === "/print/api/brief/offer" && req.method === "GET") {   // Gestaltungsangebot öffnen: Konfiguration + fertige Druckdatei + Grafik-Aufschlag
         const [bid, tok] = String(u.searchParams.get("e") || "").split("."), br = (await briefsGet()).find(x => x.id === bid), of = br && br.offer;
