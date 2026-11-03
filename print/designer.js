@@ -181,7 +181,11 @@
         });
       }
       return applyTemplate(PrintTemplates.list(opts.product.key)[0].id, true);
-    }).then(function () { setPanel(isTouch ? null : "tpl"); });
+    }).then(function () { setPanel(isTouch ? null : "tpl");
+      // QR-Code vom Gratis-Generator (/print/qr-code-generator) automatisch einsetzen
+      var qp = null; try { qp = JSON.parse(sessionStorage.getItem("psQrPrefill") || "null"); } catch (e) {}
+      if (qp && qp.mode) { try { sessionStorage.removeItem("psQrPrefill"); } catch (e) {} D.qrDraft = qp; makeQR(); setPanel("qr"); toast("Dein QR-Code ist eingefügt – Größe und Position frei anpassbar"); }
+    });
   }
   function close(silent) {
     if (!D) return;

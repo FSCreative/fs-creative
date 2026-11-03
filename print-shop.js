@@ -2775,6 +2775,7 @@ module.exports = function (D) {
       "## Preise beliebter Produkte nach Menge" + (P ? " (Stand " + dateDe(P.at) + ")" : ""), "Endpreise inkl. 20 % USt und Versand nach Österreich, jeweils die im Shop vorausgewählte Standard-Ausführung:", ""], L.length ? L : ["- Preise siehe " + SITE + "/print/preise"], ["",
       "Vollständige Preisübersicht: " + SITE + "/print/preise", "",
       "## Online-Designer mit KI-Assistent und Vorlagen: " + SITE + "/print/online-designer"], DESIGNER_TXT.map(t => "- " + t), ["",
+      "## Gratis QR-Code-Generator für Drucksachen: " + SITE + "/print/qr-code-generator"], QR_PAGE.features.map(t => "- " + t), ["",
       "## Weitere Seiten", "- Alle Produkte mit Einstiegspreis: " + SITE + "/llms-full.txt", "- So geht’s & FAQ zum Druckshop: " + SITE + "/print/hilfe", "- Ratgeber Druckformate, Papier, Druckdaten: " + SITE + "/print/ratgeber", "- AGB Druckshop: " + SITE + "/print/agb", "- Leistungen der Agentur: " + SITE + "/leistungen", "- Kontakt: " + SITE + "/kontakt", ""]).join("\n");
   }
   async function llmsFull() {
@@ -2922,14 +2923,20 @@ module.exports = function (D) {
   }
   const GUIDE_V = "2026-10-31", DESIGNER_V = "2026-11-03";
   // Online-Designer (/print/online-designer): was er kann – für Suchmaschinen und KI-Assistenten (Inhalt print/online-designer.html, nur belegte Funktionen)
-  function designerPage(req, res) {
+  // Gratis QR-Code-Generator (/print/qr-code-generator, Inhalt print/qr-code-generator.html): nur Vorschau, der Code kommt per Designer auf Drucksachen (Wunsch Simon 03.11.2026)
+  const QR_PAGE = { file: "qr-code-generator.html", url: "/print/qr-code-generator", crumb: "QR-Code-Generator", title: "QR-Code-Generator kostenlos – direkt auf Drucksachen", app: "FS Creative QR-Code-Generator",
+    desc: "QR-Code gratis erstellen: Link, vCard, WLAN, E-Mail oder Text – und direkt auf Aufkleber, Visitenkarten, Flyer & Plakate drucken. Ohne Anmeldung, läuft nie ab.",
+    features: ["QR-Codes für Link, Visitenkarte (vCard), WLAN, E-Mail, Telefon und Text", "Gratis, ohne Anmeldung, statischer Code ohne Ablaufdatum", "Direkt als Vektor auf Aufkleber, Visitenkarten, Flyer, Plakate, Karten, Bierdeckel und Tischaufsteller"] };
+  function designerPage(req, res, P0) {
+    const PG = P0 || { file: "online-designer.html", url: "/print/online-designer", crumb: "Online-Designer", title: "Kostenloser Online-Designer für Drucksachen", app: "FS Creative Online-Designer",
+      desc: "Grafikprogramm im Browser, gratis: Ebenen, Bildbearbeitung, Verläufe, Bogentext, Vorlagen und KI – Visitenkarten, Flyer & mehr als druckfertiges PDF.", features: DESIGNER_TXT };
     let html = "", main = "";
-    try { html = xmasNav(printHtmlRaw()); main = fs.readFileSync(path.join(__dirname, "print", "online-designer.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
-    const url = SITE + "/print/online-designer", title = "Kostenloser Online-Designer für Drucksachen", desc = "Grafikprogramm im Browser, gratis: Ebenen, Bildbearbeitung, Verläufe, Bogentext, Vorlagen und KI – Visitenkarten, Flyer & mehr als druckfertiges PDF.";
+    try { html = xmasNav(printHtmlRaw()); main = fs.readFileSync(path.join(__dirname, "print", PG.file), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    const url = SITE + PG.url, title = PG.title, desc = PG.desc;
     const faq = [...main.matchAll(/<details[^>]*><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)].map(m => [m[1], m[2].replace(/<[^>]+>/g, "")]);
-    const ld = [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], ["Online-Designer", url]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
-      { "@type": "WebApplication", name: "FS Creative Online-Designer", url, applicationCategory: "DesignApplication", operatingSystem: "Webbrowser", inLanguage: "de-AT", description: desc, isAccessibleForFree: true,
-        offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" }, featureList: DESIGNER_TXT, provider: { "@type": "Organization", name: "FS Creative", url: SITE }, dateModified: DESIGNER_V },
+    const ld = [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], [PG.crumb, url]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
+      { "@type": "WebApplication", name: PG.app, url, applicationCategory: "DesignApplication", operatingSystem: "Webbrowser", inLanguage: "de-AT", description: desc, isAccessibleForFree: true,
+        offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" }, featureList: PG.features, provider: { "@type": "Organization", name: "FS Creative", url: SITE }, dateModified: DESIGNER_V },
       { "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }];
     html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main)
       .replace(/<title>[^<]*<\/title>/, "<title>" + escH(title) + " | FS Creative</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + escH(desc))
@@ -3040,6 +3047,7 @@ module.exports = function (D) {
       [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(topicUrl(g.slug, su.slug, true)) + (topicOf(g.slug, su.slug) ? "0.8" : "0.6") + "</priority></url>")))).join("\n") + "\n";
     return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
       '  <url><loc>' + SITE + '/print/online-designer</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
+      '  <url><loc>' + SITE + '/print/qr-code-generator</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
       ["", ...GUIDES.map(g => "/" + g.slug)].map(x => '  <url><loc>' + SITE + "/print/ratgeber" + x + "</loc><lastmod>" + GUIDE_V + "</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>\n").join("") +
       (XMAS.season().on ? '  <url><loc>' + SITE + '/print/weihnachten</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' : "") + cats +
       pub.filter(x => x.img).map(x => '  <url><loc>' + prodUrl(x.key, true).replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
@@ -3446,6 +3454,7 @@ module.exports = function (D) {
       return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u); }
     if ((p === "/print/preise" || p === "/print/preise/") && (req.method === "GET" || req.method === "HEAD")) return pricesPage(req, res);
     if ((p === "/print/online-designer" || p === "/print/online-designer/") && (req.method === "GET" || req.method === "HEAD")) return designerPage(req, res);
+    if ((p === "/print/qr-code-generator" || p === "/print/qr-code-generator/") && (req.method === "GET" || req.method === "HEAD")) return designerPage(req, res, QR_PAGE);
     // Google-Merchant-Center-Feed: nur wenn der Shop öffentlich ist (Admins sehen ihn auch vorher); nicht in der Sitemap, robots.txt erlaubt ihn
     if (p === "/print/merchant.xml" && (req.method === "GET" || req.method === "HEAD")) {
       if (!open && !admin) return D.send(res, 404, "Not found", "text/plain; charset=utf-8", { "X-Robots-Tag": "noindex" });

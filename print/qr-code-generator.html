@@ -1,0 +1,121 @@
+<main id="main">
+  <div class="wrap ps-helppage ps-guide">
+    <section class="lhero ps-hero">
+      <nav class="ps-crumbs" aria-label="Brotkrumen"><a href="/print">Druckshop</a> › QR-Code-Generator</nav>
+      <span class="eyebrow">Gratis QR-Code-Generator</span>
+      <h1>QR-Code kostenlos erstellen – und gleich drucken lassen</h1>
+      <p class="lead">Link, Visitenkarte, WLAN, E-Mail, Telefon oder Text eingeben – der QR-Code entsteht sofort. Mit einem Klick landet er auf Aufklebern, Visitenkarten, Flyern, Plakaten, Bierdeckeln oder Tischaufstellern, druckfertig als Vektor. Gratis, ohne Anmeldung, ohne Ablaufdatum.</p>
+    </section>
+
+    <section class="sect qrg" id="generator" aria-label="QR-Code erstellen">
+      <div class="qrg-grid">
+        <div class="qrg-form">
+          <div class="ps-seg qrg-modes" role="group" aria-label="Inhalt des QR-Codes">
+            <button type="button" data-m="url" aria-pressed="true">Link</button><button type="button" data-m="vcard" aria-pressed="false">Visitenkarte</button><button type="button" data-m="wifi" aria-pressed="false">WLAN</button><button type="button" data-m="mail" aria-pressed="false">E-Mail</button><button type="button" data-m="tel" aria-pressed="false">Telefon</button><button type="button" data-m="text" aria-pressed="false">Text</button>
+          </div>
+          <div class="qrg-f" data-for="url"><label>Webadresse<input type="url" data-k="url" placeholder="https://www.deine-seite.at" autocomplete="url"></label></div>
+          <div class="qrg-f" data-for="vcard" hidden>
+            <label>Name<input data-k="fn" placeholder="Vorname Nachname" autocomplete="name"></label><label>Firma<input data-k="org" autocomplete="organization"></label>
+            <label>Telefon<input data-k="tel" type="tel" autocomplete="tel"></label><label>E-Mail<input data-k="email" type="email" autocomplete="email"></label>
+            <label>Website<input data-k="web" type="url" placeholder="https://"></label><label>Adresse<input data-k="adr" placeholder="Straße, PLZ Ort"></label>
+          </div>
+          <div class="qrg-f" data-for="wifi" hidden>
+            <label>WLAN-Name (SSID)<input data-k="ssid"></label><label>Passwort<input data-k="wpw" type="text" autocomplete="off"></label>
+            <label>Verschlüsselung<select data-k="wsec"><option value="WPA">WPA/WPA2/WPA3</option><option value="WEP">WEP</option><option value="nopass">Offen (ohne Passwort)</option></select></label>
+          </div>
+          <div class="qrg-f" data-for="mail" hidden><label>E-Mail-Adresse<input data-k="to" type="email"></label><label>Betreff (optional)<input data-k="sub"></label></div>
+          <div class="qrg-f" data-for="tel" hidden><label>Telefonnummer<input data-k="nr" type="tel" placeholder="+43 …"></label></div>
+          <div class="qrg-f" data-for="text" hidden><label>Text<textarea data-k="text" rows="3" maxlength="600"></textarea></label></div>
+          <label class="qrg-col">Farbe<input type="color" data-k="color" value="#000000"></label>
+          <p class="pd-muted">Tipp: dunkle Farbe auf hellem Grund und mindestens 15 × 15 mm groß drucken – dann scannt jedes Handy zuverlässig.</p>
+        </div>
+        <div class="qrg-prev">
+          <div class="qrg-box" aria-live="polite"><canvas id="qrgCv" width="240" height="240" aria-label="Vorschau des QR-Codes"></canvas><span class="qrg-wm" aria-hidden="true">Vorschau</span></div>
+          <p class="qrg-note" id="qrgNote">Gib oben einen Inhalt ein.</p>
+        </div>
+      </div>
+      <h2 class="qrg-h">Worauf soll dein QR-Code?</h2>
+      <p class="pd-muted">Der Code wird beim „Online gestalten“ automatisch in deine Gestaltung eingesetzt – als scharfe Vektorgrafik, in jeder Größe.</p>
+      <div class="qrg-prods">
+        <a href="/print/aufkleber" data-go="/print/aufkleber">Aufkleber</a><a href="/print/visitenkarten" data-go="/print/visitenkarten">Visitenkarten</a><a href="/print/flyer" data-go="/print/flyer">Flyer</a><a href="/print/plakate" data-go="/print/plakate">Plakate</a><a href="/print/karten" data-go="/print/karten">Karten</a><a href="/print/tischaufsteller" data-go="/print/tischaufsteller">Tischaufsteller</a><a href="/print/bierdeckel" data-go="/print/bierdeckel">Bierdeckel</a><a href="/print/fensteraufkleber" data-go="/print/fensteraufkleber">Fensteraufkleber</a>
+      </div>
+    </section>
+
+    <section class="sect" id="ideen">
+      <h2>Wofür QR-Codes auf Drucksachen?</h2>
+      <ul>
+        <li><b>Speisekarte und Bestellung</b> auf Tischaufstellern und Bierdeckeln</li>
+        <li><b>WLAN für Gäste</b> – Code scannen, verbunden, ohne Passwort abtippen</li>
+        <li><b>Kontakt speichern</b> mit dem vCard-Code auf der Visitenkarte</li>
+        <li><b>Bewertungen, Website oder Gutscheine</b> auf Flyern, Plakaten und Aufklebern</li>
+      </ul>
+    </section>
+
+    <section class="sect" id="fragen">
+      <h2>Häufige Fragen</h2>
+      <div class="faq">
+        <details open><summary>Ist der QR-Code-Generator wirklich kostenlos?</summary><p>Ja. Erstellen ist gratis, ohne Anmeldung und ohne Abo. Der Code ist statisch – er läuft nie ab und funktioniert ohne Umleitung über fremde Server. Du bezahlst nur die Drucksache, auf die du ihn druckst.</p></details>
+        <details><summary>Kann ich den QR-Code herunterladen?</summary><p>Der Generator ist für unsere Drucksachen gedacht: Der Code wird direkt in deine Gestaltung im Online-Designer eingesetzt und als Vektor gedruckt. Einen Download als Bilddatei gibt es nicht.</p></details>
+        <details><summary>Wie groß muss ein QR-Code gedruckt werden?</summary><p>Mindestens 15 × 15 mm, bei langen Inhalten (z. B. vCard) besser 20–25 mm. Dunkle Farbe auf hellem Grund und ein freier Rand rundherum sorgen für sicheres Scannen.</p></details>
+        <details><summary>Welche Inhalte sind möglich?</summary><p>Links, digitale Visitenkarten (vCard), WLAN-Zugang, E-Mail, Telefonnummer und freier Text.</p></details>
+      </div>
+    </section>
+  </div>
+  <style>
+    .qrg-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start}
+    .qrg-form label{display:block;margin:10px 0 0;font-size:14px;color:var(--text-dim,#6e6e73)}
+    .qrg-form input,.qrg-form select,.qrg-form textarea{display:block;width:100%;margin-top:4px;padding:10px 12px;border-radius:10px;border:1px solid var(--border-2,#d2d2d7);background:var(--surface,transparent);color:inherit;font:inherit}
+    .qrg-form input[type=color]{width:64px;height:40px;padding:2px}
+    .qrg-modes{flex-wrap:wrap}
+    .qrg-box{position:relative;width:260px;height:260px;display:grid;place-items:center;border-radius:18px;background:#fff;border:1px solid var(--border-2,#d2d2d7)}
+    .qrg-wm{position:absolute;bottom:8px;right:12px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#a1a1a6}
+    .qrg-note{font-size:14px;margin-top:10px}
+    .qrg-h{margin-top:30px}
+    .qrg-prods{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+    .qrg-prods a{padding:11px 18px;border-radius:999px;background:var(--accent,#0a84ff);color:#fff;font-weight:600;text-decoration:none;cursor:pointer}
+    .qrg-prods a[aria-disabled=true]{opacity:.45;pointer-events:none}
+    @media (max-width:760px){.qrg-grid{grid-template-columns:1fr}.qrg-prev{justify-self:center}}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+  (function () {
+    // Gratis QR-Code-Generator nur für Drucksachen (Wunsch Simon 03.11.2026): Vorschau ohne Download; „Worauf?“ merkt den Code (sessionStorage psQrPrefill),
+    // der Designer setzt ihn beim Öffnen als Vektor ein (gleiche Daten wie das QR-Panel im Designer: mode url|vcard|text + Farbe)
+    var root = document.getElementById("generator"), mode = "url", cv = document.getElementById("qrgCv"), note = document.getElementById("qrgNote");
+    var val = function (k) { var e = root.querySelector('[data-k="' + k + '"]'); return e ? String(e.value || "").trim() : ""; };
+    var esc = function (s) { return String(s).replace(/([\\;,:"])/g, "\\$1"); };
+    function data() {
+      if (mode === "url") { var u = val("url"); if (!u) return ""; return /^[a-z]+:\/\//i.test(u) ? u : "https://" + u; }
+      if (mode === "vcard") return val("fn") || val("tel") || val("email") ? "vcard" : "";
+      if (mode === "wifi") return val("ssid") ? "WIFI:T:" + val("wsec") + ";S:" + esc(val("ssid")) + ";" + (val("wsec") === "nopass" ? "" : "P:" + esc(val("wpw")) + ";") + ";" : "";
+      if (mode === "mail") return val("to") ? "mailto:" + val("to") + (val("sub") ? "?subject=" + encodeURIComponent(val("sub")) : "") : "";
+      if (mode === "tel") return val("nr") ? "tel:" + val("nr").replace(/[^\d+]/g, "") : "";
+      return val("text");
+    }
+    function draft() {   // Format wie im Designer (D.qrDraft)
+      var c = val("color") || "#000000", d = data(); if (!d) return null;
+      if (mode === "vcard") return { mode: "vcard", fn: val("fn"), org: val("org"), tel: val("tel"), email: val("email"), web: val("web"), adr: val("adr"), color: c };
+      if (mode === "url") return { mode: "url", url: d, color: c };
+      return { mode: "text", text: d, color: c };
+    }
+    function vcardText(q) { return ["BEGIN:VCARD", "VERSION:3.0", "N:" + (q.fn || "").split(" ").reverse().join(";"), "FN:" + (q.fn || ""), q.org ? "ORG:" + q.org : "", q.tel ? "TEL:" + q.tel : "", q.email ? "EMAIL:" + q.email : "", q.web ? "URL:" + q.web : "", q.adr ? "ADR:;;" + q.adr + ";;;;" : "", "END:VCARD"].filter(Boolean).join("\n"); }
+    function draw() {
+      var q = draft(), x = cv.getContext("2d"); x.clearRect(0, 0, cv.width, cv.height);
+      root.querySelectorAll("[data-go]").forEach(function (a) { a.setAttribute("aria-disabled", String(!q)); });
+      if (!q || !window.qrcode) { note.textContent = q ? "Vorschau wird geladen …" : "Gib oben einen Inhalt ein."; return; }
+      var txt = q.mode === "vcard" ? vcardText(q) : q.mode === "url" ? q.url : q.text; if (txt.length > 1200) { note.textContent = "Zu viel Inhalt für einen QR-Code."; return; }
+      var qr = qrcode(0, "M"); qr.addData(unescape(encodeURIComponent(txt))); qr.make();
+      var n = qr.getModuleCount(), s = Math.floor(cv.width / (n + 4)), off = Math.floor((cv.width - s * n) / 2); x.fillStyle = q.color;
+      for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (qr.isDark(r, c)) x.fillRect(off + c * s, off + r * s, s, s);
+      note.textContent = "Fertig – jetzt unten das Produkt wählen. Der Code kommt beim Gestalten automatisch auf deine Drucksache.";
+    }
+    root.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-m]"); if (b) { mode = b.getAttribute("data-m"); root.querySelectorAll("[data-m]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); root.querySelectorAll(".qrg-f").forEach(function (f) { f.hidden = f.getAttribute("data-for") !== mode; }); draw(); return; }
+      var a = e.target.closest("[data-go]"); if (a) { e.preventDefault(); var q = draft(); if (!q) return; try { sessionStorage.setItem("psQrPrefill", JSON.stringify(q)); } catch (x) {} location.href = a.getAttribute("data-go"); }
+    });
+    root.addEventListener("input", draw); root.addEventListener("change", draw);
+    var t = setInterval(function () { if (window.qrcode) { clearInterval(t); draw(); } }, 200); setTimeout(function () { clearInterval(t); }, 15000);
+    cv.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  })();
+  </script>
+</main>

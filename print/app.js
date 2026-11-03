@@ -870,6 +870,8 @@
       }).catch(function () { b.disabled = false; b.textContent = "Angebot schicken"; err("Keine Verbindung – bitte erneut versuchen."); }); });
     document.body.appendChild(m); document.addEventListener("keydown", k0); setTimeout(function () { q("rmMail").focus(); }, 30);
   }
+  /* QR-Code vom Gratis-Generator wartet auf den Designer → einmal kurz erklären, wie er auf die Drucksache kommt */
+  setTimeout(function () { try { if (sessionStorage.getItem("psQrPrefill") && !sessionStorage.getItem("psQrHint")) { sessionStorage.setItem("psQrHint", "1"); toast("Dein QR-Code ist bereit: Ausführung wählen und „Online gestalten“ – er wird automatisch eingefügt."); } } catch (e) {} }, 1500);
   /* 6: Chat-Hinweis 60 s nach dem Öffnen – überall im Druckshop, Zeit läuft auch bei Schritt- oder Tabwechsel weiter (Wunsch Simon 03.11.2026);
      einmal je Besuch; ist der Tab gerade im Hintergrund, erscheint er beim Zurückkommen */
   var chatNudgeAt = Date.now() + 60000; try { var cs0 = +sessionStorage.getItem("psChatStart"); if (cs0 > 0) chatNudgeAt = cs0 + 60000; else sessionStorage.setItem("psChatStart", String(Date.now())); } catch (x) {}   // Zeit zählt über Seitenwechsel im Shop hinweg
