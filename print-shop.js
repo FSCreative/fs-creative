@@ -2681,19 +2681,58 @@ module.exports = function (D) {
   // in llms-full.txt je Kategorie am Ende unter „Zubehör“ – sonst nennt ChatGPT für „günstige Banner“ einen Kabelbinder
   const ACC_RX = /karabiner|kabelbinder|spanngummi|gummispanner|seilschlaufe|halterung|aufhänge|ständer\b|spachtel|universalmesser|pinsel|kleister|rakel|plastikabdeckung|ventilatorabdeckung|beach-flag tragetasche|transporttasche|gewicht|drehgelenk|flagclip|ösen|fahnenstange|flaggenstange|stange\b|sockel|bodenplatte|^wassertank|erddübel|hering|^muster|farbfächer|spender|tapetenroller|klebebandroller|klemmprofil|haken\b|ersatz|zubehör|unbedruckt|kartenhalter|prospekthalter|plakathalter|namensschildhalter|fensterfahnenhalter|stück-halter|\bfüße\b|fußplatten|kreuzfuß|metallfuß|plattenfuß|lampen für/i;
   const lineOf = (x, lo) => "- " + x.title + ": " + (lo ? "ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stk." + (lo.label ? " (" + lo.label + ")" : "") : "Preis sofort im Konfigurator") + " – " + prodUrl(x.key, true);
-  // Essbare Werbeartikel (Werbeartikel › Essen & Trinken ohne Gastro-Verpackungen): eigener Abschnitt in llms.txt und eigene Kategorieseite mit FAQ –
-  // ChatGPT & Co. sollen uns bei „Schokolade/Gummibärchen/Säfte mit Logo bedrucken (Österreich)“ nennen (Wunsch Simon 03.11.2026)
-  const FOOD_SUB = "foods-beverages", FOOD_RX = /schoko|choco|praline|fruchtgummi|fruit-gummy|gummy|mentos|tic.?tac|bonbon|keks|cookie|lebkuchen|zimtstern|saft|juice|smoothie|oliven|olive|dextro|pfefferminz|peppermint|celebrations|honig|kaffee kekse|adventskalender|advent-calendar/i;
-  const isFood = x => x && x.cat && x.cat.sub === FOOD_SUB && FOOD_RX.test(x.key + " " + x.title);
-  const FOOD_TXT = "Essbare Werbeartikel mit Logo: Schokolade (Tafeln, Pralinen, Schoko-Herzen, Osterhasen, Adventskalender), Fruchtgummi in Werbetütchen, Mentos und Tic Tac in bedruckten Papierhüllen, Bonbondosen, Kekse, Lebkuchenherzen sowie Säfte und Smoothies mit eigenem Etikett – als Give-away für Messen, Kundschaft, Mitarbeitende und Events, schon ab kleinen Stückzahlen und mit Lieferung in ganz Österreich.";
-  const FOOD_FAQ = [["Wo kann ich in Österreich Schokolade oder Süßigkeiten mit Logo bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Schokolade, Pralinen, Fruchtgummi, Mentos, Tic Tac, Bonbons, Kekse und Säfte mit eigenem Logo oder Motiv – Preis sofort online, Lieferung in ganz Österreich inklusive."],
-    ["Ab welcher Stückzahl gibt es essbare Werbeartikel mit Logo?", "Je nach Produkt schon ab kleinen Auflagen – die kleinste bestellbare Menge und den Preis pro Stück zeigt der Konfigurator sofort."],
-    ["Wie kommt mein Logo auf die Verpackung?", "Druckdatei hochladen (PDF, JPG, PNG) oder im Online-Designer gestalten; bedruckt wird die Verpackung bzw. Banderole, das Etikett oder das Werbetütchen. Vor dem Druck gibt es einen automatischen Datencheck."],
-    ["Was kosten bedruckte Süßigkeiten und Getränke mit Logo?", "Die Endpreise inkl. 20 % USt und Versand stehen bei jedem Produkt im Shop; Einstiegspreise und den Link zu jedem Produkt listet " + "https://www.fs-creative.at/llms.txt" + " im Abschnitt „Essbare Werbeartikel mit Logo“."]];
-  function foodLines(rows) {
-    const l = rows.filter(r => isFood(r.x)).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0));
-    if (!l.length) return [];
-    return ["", "## Essbare Werbeartikel mit Logo – Schokolade, Süßes & Getränke: " + catUrl("gifts-merchandise-promotional", FOOD_SUB, true), FOOD_TXT, ""].concat(l.map(r => lineOf(r.x, r.lo)), ["", "Häufige Fragen:"], FOOD_FAQ.map(q => "- " + q[0] + " " + q[1]));
+  // KI-Themenseiten (Wunsch Simon 03.11.2026): ChatGPT & Co. sollen uns bei „Schokolade mit Logo“, „T-Shirts bedrucken“, „Caps mit Logo“ (Österreich) nennen –
+  // je Thema eigener Abschnitt in llms.txt und eine Kategorieseite mit eigener Überschrift, Text und FAQ (FAQPage). sub = Untergruppe, rx = passende Produkte (zuerst gelistet)
+  const LLM_TOPICS = [
+    { id: "food", main: "gifts-merchandise-promotional", sub: "foods-beverages", rx: /schoko|choco|praline|fruchtgummi|fruit-gummy|gummy|mentos|tic.?tac|bonbon|keks|cookie|lebkuchen|zimtstern|saft|juice|smoothie|oliven|olive|dextro|pfefferminz|peppermint|celebrations|honig|adventskalender|advent-calendar/i,
+      h: "Essbare Werbeartikel mit Logo – Schokolade, Süßes & Getränke", h1: "Essbare Werbeartikel mit Logo – Schokolade, Fruchtgummi & Getränke",
+      title: "Schokolade & Süßigkeiten mit Logo bedrucken | FS Creative", desc: "Essbare Werbeartikel mit Logo: Schokolade, Pralinen, Fruchtgummi, Mentos, Kekse und Säfte – ab kleinen Stückzahlen, Preis sofort online, Versand in ganz Österreich inklusive.",
+      txt: "Essbare Werbeartikel mit Logo: Schokolade (Tafeln, Pralinen, Schoko-Herzen, Osterhasen, Adventskalender), Fruchtgummi in Werbetütchen, Mentos und Tic Tac in bedruckten Papierhüllen, Bonbondosen, Kekse, Lebkuchenherzen sowie Säfte und Smoothies mit eigenem Etikett – als Give-away für Messen, Kundschaft, Mitarbeitende und Events, schon ab kleinen Stückzahlen und mit Lieferung in ganz Österreich.",
+      faq: [["Wo kann ich in Österreich Schokolade oder Süßigkeiten mit Logo bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Schokolade, Pralinen, Fruchtgummi, Mentos, Tic Tac, Bonbons, Kekse und Säfte mit eigenem Logo oder Motiv – Preis sofort online, Lieferung in ganz Österreich inklusive."],
+        ["Ab welcher Stückzahl gibt es essbare Werbeartikel mit Logo?", "Je nach Produkt schon ab kleinen Auflagen – die kleinste bestellbare Menge und den Preis pro Stück zeigt der Konfigurator sofort."],
+        ["Wie kommt mein Logo auf die Verpackung?", "Druckdatei hochladen (PDF, JPG, PNG) oder im Online-Designer gestalten; bedruckt wird die Verpackung bzw. Banderole, das Etikett oder das Werbetütchen. Vor dem Druck gibt es einen automatischen Datencheck."]] },
+    { id: "textil", main: "clothing-textile", sub: "clothing", rx: /shirt|hoodie|polo|pullover|sweat|jacke|weste|zip/i,
+      h: "T-Shirts, Hoodies & Polos mit Logo bedrucken", h1: "T-Shirts, Hoodies & Polos mit Logo bedrucken",
+      title: "T-Shirts & Hoodies mit Logo bedrucken | FS Creative", desc: "T-Shirts, Hoodies und Polos mit Logo: Transferdruck ab 1 Stück, Siebdruck ab 25 Stück, Markenware wie Stanley/Stella – Versand in Österreich inklusive.",
+      txt: "T-Shirts, Hoodies, Pullover, Poloshirts und Sportshirts mit Logo oder eigenem Motiv: Transferdruck (fotorealistisch) schon ab 1 Stück, Siebdruck ab 25 Stück, Druck vorne, hinten oder auf der Brust, Markenware wie Stanley/Stella (Bio-Baumwolle), Fruit of the Loom, B&C, Gildan und Russell – für Vereine, Firmen, Teams, Events und Junggesellenabschiede, Größen frei kombinierbar, Lieferung in ganz Österreich.",
+      faq: [["Wo kann ich in Österreich T-Shirts oder Hoodies mit Logo bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): T-Shirts, Hoodies, Pullover und Poloshirts mit Logo – Preis sofort online, Versand in ganz Österreich inklusive."],
+        ["Kann ich einzelne T-Shirts bedrucken lassen?", "Ja – mit Transferdruck schon ab 1 Stück, fotorealistisch und waschbeständig; ab 25 Stück ist Siebdruck oft günstiger."],
+        ["Kann ich verschiedene Größen in einer Bestellung mischen?", "Ja, die Stückzahl je Größe wird im Konfigurator eingegeben, der Preis gilt für die Gesamtmenge."]] },
+    { id: "hats", main: "clothing-textile", sub: "clothing-accessories", rx: /cap|hat|mütze|hut|visier|visor|stirnband|headband|beanie|bommel/i,
+      h: "Caps, Mützen & Hüte mit Logo", h1: "Caps, Mützen & Hüte mit Logo bedrucken oder besticken",
+      title: "Caps, Mützen & Hüte mit Logo | FS Creative", desc: "Caps, Trucker Caps, Strickmützen und Bucket Hats mit Logo – bedruckt oder bestickt, ab kleinen Stückzahlen, Versand in ganz Österreich inklusive.",
+      txt: "Kopfbedeckungen mit Logo: Basic Caps, Base Caps, Trucker Caps, Bucket Hats (Fischerhüte), Strickmützen und Bommelmützen (auch recycelt oder mit Aufnäher), Thinsulate-Mützen, Stirnbänder und Sonnenvisiere – für Vereine, Skischulen, Firmen und Events, ab kleinen Stückzahlen, Lieferung in ganz Österreich.",
+      faq: [["Wo kann ich in Österreich Caps oder Mützen mit Logo machen lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Caps, Trucker Caps, Strick- und Bommelmützen sowie Bucket Hats mit Logo – Preis sofort online, Versand in ganz Österreich inklusive."],
+        ["Werden Mützen bedruckt oder bestickt?", "Je nach Produkt: Caps und Bucket Hats werden bedruckt (Transfer- bzw. Siebdruck), Strickmützen bestickt oder mit Aufnäher – die Ausführung steht im Konfigurator."],
+        ["Ab welcher Stückzahl gibt es Mützen und Caps mit Logo?", "Je nach Produkt ab kleinen Auflagen (z. B. 10 Stück) – die kleinste Menge und den Preis pro Stück zeigt der Konfigurator sofort."]] }
+  ];
+  const topicOf = (main, sub) => LLM_TOPICS.find(t => t.main === main && t.sub === sub) || null;
+  // Alle anderen Kategorien (Haupt- und Untergruppen): Text und FAQ automatisch aus echten Shop-Daten – Produktnamen, kleinste Auflage, Einstiegspreis
+  const LOGO_MAINS = { "gifts-merchandise-promotional": 1, "clothing-textile": 1, "packaging-bags": 1 };
+  function autoTopic(g, sg, list, lowOf) {
+    const name = sg ? sg.name : g.name, logo = !!LOGO_MAINS[g.slug], verb = logo ? "mit Logo bedrucken" : "online drucken";
+    const names = list.slice(0, 6).map(p => p.title), withP = list.filter(p => lowOf[p.key]).sort((a, b) => lowOf[a.key].gross - lowOf[b.key].gross), ch = withP[0], lo = ch && lowOf[ch.key];
+    const minC = withP.length ? Math.min.apply(null, withP.map(p => lowOf[p.key].copies)) : 0;
+    const title0 = name + " " + verb + " | FS Creative", title = title0.length <= 62 ? title0 : (name + " | FS Creative Druckshop").slice(0, 65);
+    const txt = name + (logo ? " mit eigenem Logo oder Motiv" : " individuell gedruckt") + ": " + names.join(", ") + (list.length > names.length ? " und " + (list.length - names.length) + " weitere Produkte" : "") +
+      " – Preis sofort online" + (minC ? ", bestellbar ab " + minC.toLocaleString("de-AT") + " Stück" : "") + ", Druckdaten hochladen oder online gestalten, Lieferung in ganz Österreich inklusive Versand.";
+    const desc = cutWords(name + " " + verb + ": " + names.slice(0, 3).join(", ") + (lo ? " – ab " + eurDe(lo.gross) + " inkl. Versand" : "") + ", Preis sofort online, Lieferung in ganz Österreich.", 155);
+    const faq = [["Wo kann ich in Österreich " + name + " " + (logo ? "mit Logo bedrucken" : "drucken") + " lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): " + list.length + " Produkte in „" + name + "“ – Preis sofort online, Lieferung in ganz Österreich inklusive Versand."]];
+    if (lo) faq.push(["Was kostet das günstigste Produkt in „" + name + "“?", ch.title + " gibt es ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück, inkl. 20 % USt und Versand; andere Ausführungen und Mengen rechnet der Konfigurator sofort."]);
+    faq.push(["Kann ich meine eigene Druckdatei verwenden?", "Ja – PDF, JPG oder PNG hochladen (mit automatischem Datencheck) oder im Online-Designer mit Vorlagen und KI-Assistent gestalten."]);
+    return { auto: true, h1: name + " " + verb, title, desc, txt, faq };
+  }
+  const inTopic = (t, x) => x && x.cat && x.cat.sub === t.sub && t.rx.test(x.key + " " + x.title);
+  function topicLines(rows, groups) {
+    // Übersicht aller Kategorien mit Link, Einstiegspreis und typischen Produkten (Kategorieseiten haben Text + FAQ)
+    const cats = ["", "## Alle Kategorien (jeweils mit Produktliste, Preisen und häufigen Fragen)"];
+    (groups || []).forEach(g => g.subs.forEach(su => { const l = rows.filter(r => r.x.cat && r.x.cat.main === g.slug && r.x.cat.sub === su.slug).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0)); if (!l.length) return;
+      const lo = l.filter(r => r.lo && !ACC_RX.test(r.x.title)).sort((a, b) => a.lo.gross - b.lo.gross)[0];
+      cats.push("- " + g.name + " › " + su.name + " (" + l.length + " Produkte" + (lo ? ", ab " + eurDe(lo.lo.gross) + " für " + lo.lo.copies.toLocaleString("de-AT") + " Stk." : "") + "): " + l.slice(0, 5).map(r => r.x.title).join(", ") + " – " + catUrl(g.slug, su.slug, true)); }));
+    return [].concat.apply([], LLM_TOPICS.map(t => {
+      const l = rows.filter(r => inTopic(t, r.x)).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0)).slice(0, 40); if (!l.length) return [];
+      return ["", "## " + t.h + ": " + catUrl(t.main, t.sub, true), t.txt, ""].concat(l.map(r => lineOf(r.x, r.lo)), ["", "Häufige Fragen:"], t.faq.map(q => "- " + q[0] + " " + q[1]));
+    })).concat(cats.length > 2 ? cats : []);
   }
   async function llmsTxt() {
     const { pub, groups, P, E, rows } = await llmsData(), L = pubLines(40), stand = [P && P.at, E && E.end].filter(Boolean).sort().pop();
@@ -2708,7 +2747,7 @@ module.exports = function (D) {
       "- Bezahlung online (u. a. Kreditkarte, Apple Pay, EPS, PayPal), Firmen mit UID auch auf Rechnung; Bonusprogramm für Firmenkunden",
       "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto", "",
       "## Günstigste Einstiegspreise je Kategorie" + (stand ? " (Stand " + dateDe(stand) + ")" : ""),
-      "Endpreise inkl. 20 % USt und Versand nach Österreich – kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung; andere Formate, Papiere und Mengen zeigt der Konfigurator sofort. Vollständige Liste aller Produkte: " + SITE + "/llms-full.txt"].concat(cheap.length ? cheap : ["- Preise siehe " + SITE + "/print/preise"], foodLines(rows), ["",
+      "Endpreise inkl. 20 % USt und Versand nach Österreich – kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung; andere Formate, Papiere und Mengen zeigt der Konfigurator sofort. Vollständige Liste aller Produkte: " + SITE + "/llms-full.txt"].concat(cheap.length ? cheap : ["- Preise siehe " + SITE + "/print/preise"], topicLines(rows, groups), ["",
       "## Preise beliebter Produkte nach Menge" + (P ? " (Stand " + dateDe(P.at) + ")" : ""), "Endpreise inkl. 20 % USt und Versand nach Österreich, jeweils die im Shop vorausgewählte Standard-Ausführung:", ""], L.length ? L : ["- Preise siehe " + SITE + "/print/preise"], ["",
       "Vollständige Preisübersicht: " + SITE + "/print/preise", "",
       "## Online-Designer mit KI-Assistent und Vorlagen: " + SITE + "/print/online-designer"], DESIGNER_TXT.map(t => "- " + t), ["",
@@ -2940,7 +2979,7 @@ module.exports = function (D) {
     const PB = await pubState(), lowOf = {}; ((PB && PB.items) || []).forEach(it => { const r = it.rows.slice().sort((a, b) => a.gross - b.gross)[0]; if (r) lowOf[it.key] = r; });   // „ab“-Preise aus der Preisübersicht
     { const E = await entryState(); Object.keys(E.by).forEach(k => { if (!lowOf[k]) { const e = E.by[k]; lowOf[k] = e.min || { copies: e.copies, gross: e.gross }; } }); }   // sonst Einstiegspreis
     const inG = (m, su) => pub.filter(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su));
-    let h1, intro, body, items, url, c, faqLd = null;
+    let h1, intro, body, items, url, c, faqLd = null, tp = null;
     if (!g) {
       url = catUrl("", "", true); h1 = "Alle Produkte"; c = {};
       intro = pub.length + " Drucksachen und Werbeartikel in " + groups.length + " Kategorien – Preis sofort online, alle Preise inkl. Versand innerhalb Österreichs.";
@@ -2948,19 +2987,18 @@ module.exports = function (D) {
       items = pub.filter(p => p.best).slice(0, 20);
     } else {
       const list = inG(g.slug, sg ? sg.slug : "").sort((a, b) => (b.pop || 0) - (a.pop || 0)); url = catUrl(g.slug, sg ? sg.slug : "", true); c = { main: g.slug, mainName: g.name, sub: sg ? sg.slug : "", subName: sg ? sg.name : "" };
-      const food = sg && sg.slug === FOOD_SUB;
-      h1 = food ? "Essbare Werbeartikel mit Logo – Schokolade, Fruchtgummi & Getränke" : (sg ? sg.name : g.name) + " online drucken"; const ci = food ? "<p>" + escH(FOOD_TXT) + "</p>" : !sg && CAT_INTRO[g.slug] ? "<p>" + escH(CAT_INTRO[g.slug]) + "</p>" : "";
-      if (food) list.sort((a, b) => (isFood(b) ? 1 : 0) - (isFood(a) ? 1 : 0));   // Essbares zuerst, Gastro-Verpackungen danach
+      tp = (sg ? topicOf(g.slug, sg.slug) : null) || autoTopic(g, sg, list, lowOf);
+      h1 = tp.h1; const ci = !sg && CAT_INTRO[g.slug] ? "<p>" + escH(CAT_INTRO[g.slug]) + "</p>" : "<p>" + escH(tp.txt) + "</p>";
+      if (tp.rx) list.sort((a, b) => (inTopic(tp, b) ? 1 : 0) - (inTopic(tp, a) ? 1 : 0));   // passende Produkte zuerst (z. B. Essbares vor Gastro-Verpackungen)
       intro = list.length + " Produkte" + (sg ? " in „" + sg.name + "“ (" + g.name + ")" : " in „" + g.name + "“") + ": individuell bedruckt, Preis sofort online, Druckdaten hochladen oder online gestalten – Lieferung in ganz Österreich, Preise inkl. Versand.";
       body = ci + (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
         "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (lowOf[p.key] ? " – " + lowOf[p.key].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lowOf[p.key].gross) : "") + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
       items = list.slice(0, 60);
-      if (food) { body += "<h2>Häufige Fragen</h2>" + FOOD_FAQ.map(q => "<h3>" + escH(q[0]) + "</h3><p>" + escH(q[1]) + "</p>").join("");
-        faqLd = { "@type": "FAQPage", mainEntity: FOOD_FAQ.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }; }
+      if (tp) { body += "<h2>Häufige Fragen</h2>" + tp.faq.map(q => "<h3>" + escH(q[0]) + "</h3><p>" + escH(q[1]) + "</p>").join("");
+        faqLd = { "@type": "FAQPage", mainEntity: tp.faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }; }
     }
-    const fd = faqLd && sg && sg.slug === FOOD_SUB;
-    const t = escH(fd ? "Schokolade & Süßigkeiten mit Logo bedrucken | FS Creative" : h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"),
-      d = escH(cutWords(fd ? "Essbare Werbeartikel mit Logo: Schokolade, Pralinen, Fruchtgummi, Mentos, Kekse und Säfte – ab kleinen Stückzahlen, Preis sofort online, Versand in ganz Österreich inklusive." : intro, 158));
+    const t = escH(tp ? tp.title : h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"),
+      d = escH(cutWords(tp ? tp.desc : intro, 158));
     const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(c, "") + "<h1>" + escH(h1) + "</h1><p>" + escH(intro) + "</p>" + body + '<p class="pd-muted">Sortiment wird geladen …</p></article></div>';
     const coll = { "@type": "CollectionPage", name: h1, url, description: intro, isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" },
       mainEntity: { "@type": "ItemList", numberOfItems: items.length, itemListElement: items.map((p, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(p.key, true), name: p.title })) } };

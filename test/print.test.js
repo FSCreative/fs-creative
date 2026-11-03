@@ -179,7 +179,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const ov = await (await fetch(B + "/print?produkte")).text();
     assert.ok(/<h1>Alle Produkte<\/h1>/.test(ov) && /"@type":"CollectionPage"/.test(ov) && ov.indexOf('href="/print?produkte&amp;kategorie=' + main + '"') > -1 && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\?produkte"/.test(ov), "Übersicht für Crawler");
     const cp = await (await fetch(B + "/print?produkte&kategorie=" + main)).text();
-    assert.ok(/online drucken<\/h1>/.test(cp) && cp.indexOf('href="/print/visitenkarten"') > -1 && /"@type":"BreadcrumbList"/.test(cp) && /<title>[^<]*Produkte \| FS Creative Druckshop<\/title>/.test(cp), "Kategorieseite für Crawler");
+    assert.ok(/online drucken<\/h1>/.test(cp) && cp.indexOf('href="/print/visitenkarten"') > -1 && /"@type":"BreadcrumbList"/.test(cp) && /<title>[^<]*\| FS Creative[^<]*<\/title>/.test(cp) && /"@type":"FAQPage"/.test(cp) && /<h2>Häufige Fragen<\/h2>/.test(cp), "Kategorieseite für Crawler (mit FAQ)");
     assert.ok(/<title>Alle Produkte/.test(await (await fetch(B + "/print?produkte&kategorie=gibtsnicht")).text()), "unbekannte Kategorie → Übersicht");
     const sm2 = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(sm2.indexOf("/print?produkte&amp;kategorie=" + main + "</loc>") > -1, "Sitemap mit Kategorien");
     assert.ok(/"@type":"BreadcrumbList"[^<]*Visitenkarten/.test(pr) && /<nav class="ps-crumbs"/.test(pr) && /og:image" content="https:/.test(pr), "Produktseite mit Brotkrumen und Vorschaubild");
