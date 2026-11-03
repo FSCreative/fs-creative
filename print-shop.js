@@ -1283,7 +1283,7 @@ module.exports = function (D) {
       return ov.markupPct != null ? "product" : bulkF(b) < 1 ? "bulk" : "markup"; })(buy);
     return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, defDate: buy.def || buy.deliveryDate, wish: buy.wish || "", days, at: nowIso() };
   }
-  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || "", defDate: q.defDate || q.deliveryDate, days: q.days || [], shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
+  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || "", defDate: q.defDate || q.deliveryDate, days: q.days || [], shippingIncluded: true, methods: q.methods || null, pm: q.pm || null, freight: !!(q.purchase && /EPI|FREIGHT|PALLET|PALET|SPED|LTL|CARGO/i.test(String(q.purchase.method || ""))) });
 
   // ───────────────────────── Dateien ─────────────────────────
   function sniff(buf) {

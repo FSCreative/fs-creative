@@ -799,17 +799,25 @@
   /* Mengenhinweis (alle Produkte): nächste 1–2 größeren Auflagen rechnen; ist der Stückpreis dort ≥ 8 % günstiger → „Ab N Stk. nur … pro Stück“ (Versand fällt dann kaum ins Gewicht) */
   var tierSeq = 0;
   function tierKick() {
-    S.tierHint = null; var p = S.prod, n = +S.copies || 0, my = ++tierSeq;
+    S.tierHint = null; S.splitHint = null; var p = S.prod, n = +S.copies || 0, my = ++tierSeq;
     if (!p || !S.price || !n || kind() === "textile" || (S.mot && S.mot.n > 1)) return;
-    var next = (p.tiers || []).filter(function (t) { return t > n; }).slice(0, 2); if (!next.length) return;
-    api("/print/api/deltas", Object.assign(cfgOf(), { country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", alts: next.map(function (t) { return { k: "q" + t, sel: S.sel, copies: t }; }) })).then(function (j) {
-      if (my !== tierSeq || !j.ok || !S.price) return; var co = S.ctype === "company", cur = (co ? S.price.net : S.price.gross) / n, best = null;
+    var next = (p.tiers || []).filter(function (t) { return t > n; }).slice(0, 2);
+    // Aufteilen: kleinere Auflagen, die genau aufgehen (z. B. 1 000 = 2 × 500) – wird die große Menge teurer (z. B. Spedition statt Paketdienst), Tipp anzeigen (Wunsch Simon 03.11.2026)
+    var part = (p.tiers || []).filter(function (t) { return t < n && n % t === 0 && n / t <= 4; }).slice(-2);
+    if (!next.length && !part.length) return;
+    api("/print/api/deltas", Object.assign(cfgOf(), { country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", alts: next.concat(part).map(function (t) { return { k: "q" + t, sel: S.sel, copies: t }; }) })).then(function (j) {
+      if (my !== tierSeq || !j.ok || !S.price) return; var co = S.ctype === "company", tot = co ? S.price.net : S.price.gross, cur = tot / n, best = null, split = null;
       next.forEach(function (t) { var d = j.d && j.d["q" + t]; if (!d || d.off || d.busy || !(d.ag > 0)) return; var u = (co ? d.an : d.ag) / t, sv = 1 - u / cur; if (sv >= 0.08 && (!best || sv > best.sv + 0.04)) best = { n: t, unit: u, sv: sv, total: co ? d.an : d.ag }; });
-      if (best) { S.tierHint = best; var b = document.getElementById("psPrice"); if (b) renderPrice(); }
+      part.forEach(function (t) { var d = j.d && j.d["q" + t]; if (!d || d.off || d.busy || !(d.ag > 0)) return; var k = n / t, sum = k * (co ? d.an : d.ag), save = tot - sum; if (save >= Math.max(1, tot * 0.01) && (!split || save > split.save)) split = { t: t, k: k, sum: sum, save: save }; });
+      if (best || split) { S.tierHint = best; S.splitHint = split; var b = document.getElementById("psPrice"); if (b) renderPrice(); }
     }).catch(function () {});
   }
-  function tierHintHtml() { var h = S.tierHint, co = S.ctype === "company"; if (!h || !S.price) return "";
-    return '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0" + U() + "</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro " + (U() === "m" ? "Meter" : "Stück") + " (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
+  function tierHintHtml() { var h = S.tierHint, sp = S.splitHint, co = S.ctype === "company"; if (!S.price) return "";
+    var spH = sp ? '<p class="ps-tierhint">💡 Tipp: <b>' + sp.k + " × " + sp.t.toLocaleString("de-AT") + "\u00a0" + U() + "</b> getrennt bestellt kosten nur <b>" + eur(sp.sum) + "</b> " + (co ? "netto" : "inkl. USt") + " – " + eur(sp.save) + " weniger. " +
+      (S.price.freight ? "Grund: Ab dieser Menge wird per Spedition statt per Paketdienst geliefert, das ist deutlich teurer." : "Grund: Bei dieser Menge ist die Produktion bzw. der Versand pro Stück teurer.") +
+      ' <button type="button" class="ps-link" data-act="settier:' + sp.t + '">' + sp.t.toLocaleString("de-AT") + "\u00a0" + U() + " übernehmen</button> und " + sp.k + "× in den Warenkorb legen.</p>" : "";
+    if (!h) return spH;
+    return spH + '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0" + U() + "</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro " + (U() === "m" ? "Meter" : "Stück") + " (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
   /* ── Verkaufshilfen (Wunsch Simon 03.11.2026) – nur ehrliche, echte Angaben ──
      1 Tab-Titel im Hintergrund · 2 Angebot per Mail · 3 Liefertermin mit Annahmeschluss 14:00
      5 echte Live-/Bestellzahlen · 6 Chat-Hinweis nach 60 s · 7 Vertrauens-Zeile beim Preis */
