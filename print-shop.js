@@ -1211,7 +1211,9 @@ module.exports = function (D) {
       // So gerechnet darf der Anker den Preis nur senken, nie über den normalen Aufschlag heben (ancX)
       const c = +n.copies, at = t => { const cs = Object.keys(t || {}).map(Number).sort((x, y) => x - y); if (!cs.length || c < cs[0]) return 0;
         const top = cs[cs.length - 1]; if (c > top) { if (!(t[top] > 0)) return 0; ancX = true; return t[top] * c / top; }
-        if (t[c]) return t[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo); };
+        // nie mehr pro Stück als bei einer kleineren verglichenen Auflage (manche Mitbewerber-Staffeln steigen pro Stück leicht an)
+        const cap = Math.min.apply(null, cs.filter(x => x < c && t[x] > 0).map(x => t[x] / x * c).concat([Infinity]));
+        if (t[c]) return Math.min(t[c], cap); const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return Math.min(cap, t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo)); };
       if (a.area) {   // Wunschgröße: Preis über die Fläche interpolieren (gleiche Fläche → günstigster Mitbewerberpreis), nur innerhalb der verglichenen Flächen
         if (!n.size) return 0; const m2 = n.size.w * n.size.h / 1e6, by = {};
         a.area.forEach(p => { const v = at(p[1]); if (v > 0 && (!by[p[0]] || v < by[p[0]])) by[p[0]] = v; });
