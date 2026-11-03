@@ -4172,6 +4172,12 @@ async function handleAdmin(req, res, u, p) {
     try { const pl = await sevBody(req); const r = p.endsWith("/offer") ? await sevCreateOffer(pl) : p.endsWith("status") ? await sevOfferStatus(pl) : await sevOfferToInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
+  if (p === "/admin/api/sevdesk/offer-delete" && req.method === "POST") {   // Angebots-Entwurf löschen (versendete/angenommene bleiben – dort Status „Abgelehnt“)
+    try { const pl = await sevBody(req); if (pl.confirm !== true) throw new Error("Bestätigung fehlt"); const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("kein_angebot");
+      const cur = OFFERS_CACHE.data && (OFFERS_CACHE.data.offers || []).find(x => x.id === id); if (cur && cur.status !== 100) throw new Error("Nur Entwürfe können gelöscht werden");
+      await sev("DELETE", "/Order/" + id); OFFERS_CACHE.at = 0; return send(res, 200, JSON.stringify({ ok: true, id }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
   if (p === "/admin/api/sevdesk/invoice" && req.method === "POST") {
     try { const pl = await sevBody(req); const r = await sevCreateInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }

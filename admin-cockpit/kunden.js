@@ -117,8 +117,14 @@ F.action("offstat",function(id){
   var o=offById(id); if(!o) return;
   var opts=[[200,"Versendet / offen"],[500,"Angenommen"],[300,"Abgelehnt"]].filter(function(x){ return x[0]!==o.status; });
   F.modal('<h2 style="font-size:19px">Status von '+esc(o.nr||"Angebot")+' ändern</h2><p class="muted" style="margin:0">'+esc(o.contact)+' · '+eur(o.gross)+' · jetzt: '+esc((OSTAT[o.status]||[o.status])[0])+'</p><p class="muted">Wird sofort gespeichert.'+(o.status===100?' „Versendet“ markiert den Entwurf als per PDF versendet (es wird keine Mail verschickt).':'')+'</p>'+
-    '<div class="foot"><span></span><span class="row wrap">'+opts.map(function(x){ return '<button type="button" class="btn'+(x[0]===500?" primary":x[0]===300?" danger":"")+'" data-act="offsetstat:'+esc(id)+'|'+x[0]+'">'+x[1]+'</button>'; }).join("")+'<button type="button" class="btn" data-closemodal>Abbrechen</button></span></div>',"narrow");
+    '<div class="foot"><span>'+(o.status===100?'<button type="button" class="btn danger" data-act="offdel:'+esc(id)+'">Entwurf löschen</button>':'')+'</span><span class="row wrap">'+opts.map(function(x){ return '<button type="button" class="btn'+(x[0]===500?" primary":x[0]===300?" danger":"")+'" data-act="offsetstat:'+esc(id)+'|'+x[0]+'">'+x[1]+'</button>'; }).join("")+'<button type="button" class="btn" data-closemodal>Abbrechen</button></span></div>',"narrow");
 });
+F.action("offdel",function(id){
+  var o=offById(id); if(!o||o.status!==100) return;
+  F.modal('<h2 style="font-size:19px">'+esc(o.nr||"Angebot")+' löschen?</h2><p class="muted" style="margin:0">'+esc(o.contact)+' · '+eur(o.gross)+' · Entwurf</p><p class="muted">Der Entwurf wird endgültig gelöscht.</p>'+
+    '<div class="foot"><span></span><span class="row wrap"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="button" class="btn danger" data-act="offdelgo:'+esc(id)+'">Endgültig löschen</button></span></div>',"narrow");
+});
+F.action("offdelgo",function(id){ var o=offById(id); F.closeModal(); offPost("/admin/api/sevdesk/offer-delete",{id:id},"Angebot "+((o&&o.nr)||"")+" gelöscht"); });
 F.action("offsetstat",function(v){
   var p=v.split("|"), id=p[0], st=+p[1], o=offById(id); F.closeModal();
   offPost("/admin/api/sevdesk/offer-status",{id:id,status:st},"Angebot "+((o&&o.nr)||"")+": "+(OSTAT[st]||[st])[0]).then(function(j){

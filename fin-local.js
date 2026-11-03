@@ -1031,6 +1031,10 @@ module.exports = function (D) {
         if (T === "CheckAccountTransaction" && String(o.status) !== "100") throw err(400, "Verknüpfte Umsätze können nicht gelöscht werden");
         if (T === "CheckAccountTransaction" && o.cashLocked) throw err(400, "Kassenbuchungen können nicht gelöscht werden – Korrektur per Gegenbuchung");
         if (T === "CheckAccount" && isCash(id) && all("CheckAccountTransaction").some(x => x.checkAccount && String(x.checkAccount.id) === String(id))) throw err(400, "Kasse mit Buchungen kann nicht gelöscht werden");
+        if (T === "Order") {   // nur Angebots-Entwürfe, samt Positionen
+          if (String(o.status) !== "100") throw err(400, "Nur Angebots-Entwürfe können gelöscht werden");
+          for (const x of positionsOf("Order", id)) await del("OrderPos", x.id);
+        }
         await del(T, id); return { objects: [null] }; }
       throw err(400, "Nicht unterstützt: " + method + " " + p);
     }
