@@ -3305,10 +3305,10 @@ module.exports = function (D) {
   const liveTimer = setInterval(() => { if (!LIVE_SUBS.size) return; livePush(); if (++livePing % 4 === 0) for (const r of LIVE_SUBS) { try { r.write(": ping\n\n"); } catch (e) { LIVE_SUBS.delete(r); } } }, 5000);   // abgelaufene Besucher rausnehmen, Verbindung offen halten
   if (liveTimer.unref) liveTimer.unref();
   function liveState() {
-    const pages = {}, steps = {}, prods = {}; let cart = 0, bg = 0;
-    for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
+    const pages = {}, steps = {}, prods = {}, carts = []; let cart = 0, bg = 0;
+    for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) { cart++; carts.push({ step: st, items: v.items || [], n: v.cart }); } }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
-    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };
@@ -3502,8 +3502,10 @@ module.exports = function (D) {
       }
       if (p === "/print/api/hb" && req.method === "POST") {   // Live-Besucher (anonym: Zufalls-ID je Tab, kein Cookie) – Seite, Schritt, Produkt
         if (limited("hb", ip, 4000, 3600e3)) { req.resume(); return J(res, 204, {}); }
-        const b = await readJson(req, 1000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
-        if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), bg: b.bg === true }); }
+        const b = await readJson(req, 4000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
+        // Warenkorb-Inhalt nur anonym fürs Cockpit (Produkt, Menge, Preis – keine Namen/Adressen), höchstens 8 Positionen
+        const items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(x => ({ t: clip(String((x && x.t) || ""), 60), n: Math.max(0, Math.min(1e6, +(x && x.n) || 0)), u: (x && x.u) === "m" ? "m" : "", g: Math.max(0, Math.min(1e6, Math.round((+(x && x.g) || 0) * 100) / 100)) })).filter(x => x.t);
+        if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), items, bg: b.bg === true }); }
         if (LIVE.size > 5000) liveGc();
         if (sid.length >= 8 && !b.bye) visitCount(ip, req.headers["user-agent"]);
         livePush();

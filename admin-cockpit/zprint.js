@@ -408,10 +408,19 @@ F.searcher(function(q){
 F.view({id:"print",label:"Druckaufträge",short:"Druck",icon:"print",order:36,count:function(){ return ST&&ST.ok?(ST.review||0)+(ST.briefsNew||0):0; },render:render,after:function(){ if(!ST||Date.now()-at>60000) load(); }});
 /* Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): /admin/api/print/live alle 15 s, solange die Druck-Seite offen ist */
 var PRLIVE=null;
+/* Warenkorb-Inhalt beim Darüberfahren (anonym: Produkt, Menge, Preis – Wunsch Simon 03.11.2026) */
+function cartPop(L){
+  var cs=(L.carts||[]).filter(function(c){ return c.items&&c.items.length; }); if(!L.cart) return "";
+  if(!document.getElementById("prlvCss")){ var st=document.createElement("style"); st.id="prlvCss"; st.textContent=".prlv-cart{position:relative;cursor:default}.prlv-pop{display:none;position:absolute;left:0;top:100%;z-index:50;min-width:280px;max-width:420px;margin-top:6px;padding:10px 12px;border-radius:12px;background:var(--card,#1c1c1e);border:1px solid var(--border,rgba(127,127,127,.3));box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:13px}.prlv-cart:hover .prlv-pop,.prlv-cart:focus .prlv-pop,.prlv-cart:focus-within .prlv-pop{display:block}.prlv-pop .c+.c{margin-top:8px;padding-top:8px;border-top:1px solid var(--border,rgba(127,127,127,.3))}.prlv-pop .r{display:flex;justify-content:space-between;gap:12px}"; document.head.appendChild(st); }
+  if(!cs.length) return '<div class="prlv-pop"><span class="muted">Inhalt wird beim nächsten Signal des Besuchers angezeigt (spätestens in 25 s).</span></div>';
+  return '<div class="prlv-pop">'+cs.map(function(c,i){ var sum=c.items.reduce(function(a,x){ return a+(+x.g||0); },0);
+    return '<div class="c"><div class="muted small">Warenkorb '+(i+1)+' · '+esc(c.step||"")+'</div>'+c.items.map(function(x){ return '<div class="r"><span>'+esc(x.t)+' · '+(+x.n||0).toLocaleString("de-AT")+'\u00a0'+(x.u==="m"?"m":"Stk.")+'</span><b>'+(x.g?eur(x.g):"")+'</b></div>'; }).join("")+
+      (c.items.length>1&&sum?'<div class="r" style="margin-top:4px"><span class="muted">Summe</span><b>'+eur(sum)+'</b></div>':'')+'</div>'; }).join("")+'</div>';
+}
 function liveHtml(L){
   var pill=function(a){ return '<span class="tag">'+esc(a[0])+' <b>'+a[1]+'</b></span>'; };
   return '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline"><div><div class="muted small">gerade im Shop</div><div style="font-size:30px;font-weight:700">'+L.total+'</div>'+(L.bg?'<div class="muted small">davon '+L.bg+' im Hintergrund-Tab</div>':'')+'</div>'+
-    '<div><div class="muted small">mit Warenkorb</div><div style="font-size:30px;font-weight:700">'+L.cart+'</div></div>'+
+    '<div class="prlv-cart" tabindex="0"><div class="muted small">mit Warenkorb'+(L.cart?' ▾':'')+'</div><div style="font-size:30px;font-weight:700">'+L.cart+'</div>'+cartPop(L)+'</div>'+
     '<div><div class="muted small">heute im Shop</div><div style="font-size:30px;font-weight:700">'+(L.today||0)+'</div>'+(L.todaySince?'<div class="muted small">gezählt seit '+new Date(L.todaySince).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})+'</div>':'')+(L.yesterday!=null?'<div class="muted small">gestern '+L.yesterday+'</div>':'')+'</div></div>'+
     (L.total?'<div style="margin-top:10px"><div class="muted small">Schritt</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.steps.map(pill).join("")+'</div></div>'+
     (L.prods.length?'<div style="margin-top:10px"><div class="muted small">Produkte</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.prods.map(pill).join("")+'</div></div>':'')+
