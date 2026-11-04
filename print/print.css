@@ -2149,3 +2149,8 @@ html.ps-v2 #shop:has(>.ps-v2hero),html.ps-v2 #shop:has(>div>.ps-v2hero){margin-t
 @media (prefers-reduced-motion:reduce){.ps-cn.bump{animation:none}}
 .ps-fbrand .brand.ps-v2fb{display:inline-block}.ps-v2fb img{height:46px;width:auto;display:block}.ps-v2fb .dk{display:none}html:not(.light) .ps-v2fb .lt{display:none}html:not(.light) .ps-v2fb .dk{display:block}
 .ps-empty{text-align:center}.ps-empty .ps-nav{justify-content:center}.ps-empty-ic{display:inline-grid;place-items:center;width:64px;height:64px;border-radius:50%;background:rgba(47,107,255,.1);color:var(--accent);font-size:28px;margin-bottom:6px}.ps-empty-ic svg{width:30px;height:30px}.ps-empty-pop{margin-top:34px}
+/* Weihnachtsseite im neuen Look: Titelbild wie der Slider auf der Startseite über die ganze Breite, direkt unter dem Kopf */
+@media (min-width:761px){html.ps-v2 .xm-hero{width:100vw;margin-left:calc(50% - 50vw);border-radius:0;margin-top:0}
+  html.ps-v2 .xm-hero .xm-hero-t{padding-left:max(var(--v2pad),calc((100vw - var(--maxw)) / 2 + var(--v2pad)))}}
+html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:first-child){margin-top:0}
+@media (max-width:760px){html.ps-v2 .xm-hero{width:100vw;margin-left:calc(50% - 50vw);border-radius:0;margin-top:0}}
