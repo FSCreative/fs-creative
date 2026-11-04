@@ -27,7 +27,7 @@
   function loadScript(l) { return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = l.src; if (l.sri) { s.integrity = l.sri; s.crossOrigin = "anonymous"; } s.referrerPolicy = "no-referrer"; s.onload = res; s.onerror = function () { rej(new Error("Bibliothek konnte nicht geladen werden")); }; document.head.appendChild(s); }); }
   var libsP = null;
   function libs() {
-    if (!libsP) libsP = Promise.all([window.fabric ? 1 : loadScript(LIB.fabric), window.qrcode ? 1 : loadScript(LIB.qr), window.PrintTemplates ? 1 : loadScript({ src: "/print/templates.js?v=" + (window.PRINT_V || "4") }), window.PrintFlats ? 1 : loadScript({ src: "/print/flats.js?v=" + (window.PRINT_V || "4") })]).catch(function (e) { libsP = null; throw e; });
+    if (!libsP) libsP = Promise.all([window.fabric ? 1 : loadScript(LIB.fabric), window.qrcode ? 1 : loadScript(LIB.qr), window.PrintTemplates ? 1 : loadScript({ src: "/print/templates.js?v=" + (window.PRINT_V || "4") })]).catch(function (e) { libsP = null; throw e; });
     return libsP;
   }
   // ── Schriften (mitgeliefert, /print/fonts) ──
@@ -274,46 +274,79 @@
   // ── Ansicht: Einpassen, Zoom, Lineale ──
   // Textil: oben Platz für die Positions-Leiste
   function fit() { var c = D.c, cw = c.getWidth(), ch = c.getHeight(), pad = isTouch ? 18 : 40, B = D.tex ? garmentBox() : { x: 0, y: 0, w: D.W, h: D.H }, top = D.tex && D.sides > 1 ? 54 : 0, z = Math.min((cw - pad * 2) / B.w, (ch - pad * 2 - top) / B.h); c.setViewportTransform([z, 0, 0, z, (cw - B.w * z) / 2 - B.x * z, top + (ch - top - B.h * z) / 2 - B.y * z]); D.userZoom = false; afterView(); }
-  // ── Textil-Designer (2D, Wunsch Simon 04.11.2026): je Druckposition eine Seite in Größe der max. Druckfläche; dahinter die technische Zeichnung
-  //    (print/flats.js: Vorder-, Rückseite, Ärmel als Detail; Maße Größe L in mm, Ursprung = Mitte auf Höhe Halsansatz bzw. oben an der Armkugel).
-  //    Nur Ansicht: exportiert wird ausschließlich die Druckfläche (transparent). Brust links = Träger links = vom Betrachter rechts.
+  // ── Textil-Designer (2D, Wunsch Simon 04.11.2026): je Druckposition eine Seite in Größe der max. Druckfläche; dahinter ein KI-Foto des
+  //    Kleidungsstücks (print/garments/<art>-<ansicht>.webp, weiß, Maske im Alphakanal) in der gewählten Farbe eingefärbt. Ursprung = Mitte auf Höhe
+  //    Halsansatz (Ärmel: oben an der Armkugel), Maßstab über die Brustbreite (Größe L). Nur Ansicht zur Visualisierung – exportiert wird
+  //    ausschließlich die Druckfläche (transparent). Brust links = Träger links = vom Betrachter rechts; die Seitenansicht zeigt den linken Ärmel.
   function texKind() { var k = (D.tex && D.tex.kind) || "tee"; return /zip|jacke/.test(k) ? "zip" : /hood/.test(k) ? "hoodie" : /sweat|pullover/.test(k) ? "sweat" : /polo/.test(k) ? "polo" : "tee"; }
   var isHeavy = function (k) { return k === "hoodie" || k === "zip" || k === "sweat"; };
   function texPlace(i) {   // Lage der Druckfläche in mm (ax/ay = linke obere Ecke) und Ansicht
     var pg = D.tex.pages[i] || D.tex.pages[0], s = pg.slug, w = pg.area[0], h = pg.area[1], k = texKind(), heavy = isHeavy(k);
-    if (/sleeve/.test(s)) { var right = /right/.test(s); return { view: right ? "sleeveR" : "sleeveL", ax: -w / 2, ay: (heavy ? 205 : 118) - h / 2, side: right ? "rechts" : "links" }; }
-    var cy = { tee: 140, polo: 140, hoodie: 110, zip: 120, sweat: 135 }[k], cx = k === "zip" || k === "polo" ? 50 : 40;
+    // Lage nach üblichen Druckmaßen ab Halsansatz (Größe L): Brustlogo Mitte ca. 19–21 cm tief und 10 cm neben der Mitte, Frontdruck ca. 7 cm unter
+    // dem Ausschnitt, Rückendruck ca. 7 cm unter dem Kragen (Hoodie/Zip unter der Kapuze), Ärmel Mitte ca. 10 cm (kurz) bzw. 17 cm (lang) unter der Schulter
+    if (/sleeve/.test(s)) { var right = /right/.test(s); return { view: right ? "sleeveR" : "sleeveL", ax: -w / 2, ay: (heavy ? 170 : 100) - h / 2, side: right ? "rechts" : "links" }; }
+    var cy = { tee: 145, polo: 150, hoodie: 160, zip: 160, sweat: 145 }[k], cx = k === "zip" ? 55 : 50;
     if (/chest_right/.test(s)) return { view: "front", ax: -cx - w, ay: cy };
     if (/chest/.test(s)) return { view: "front", ax: cx, ay: cy };
-    if (/back/.test(s)) return { view: "back", ax: -w / 2, ay: k === "hoodie" || k === "zip" ? 205 : 80 };
-    return { view: "front", ax: -w / 2, ay: { tee: 135, polo: 200, hoodie: 100, zip: 110, sweat: 130 }[k] };
+    if (/back/.test(s)) return { view: "back", ax: -w / 2, ay: k === "hoodie" || k === "zip" ? 230 : 95 };
+    return { view: "front", ax: -w / 2, ay: { tee: 170, polo: 210, hoodie: 170, zip: 170, sweat: 160 }[k] };
   }
   function texGeom(i) {
     if (!D.tex) return; var a = D.tex.pages[i].area;
     D.mm = { w: a[0], h: a[1] }; D.W = a[0] * U; D.H = a[1] * U;
     D.trim = { x: 0, y: 0, w: D.W, h: D.H }; D.saferect = { x: 0, y: 0, w: D.W, h: D.H };
   }
-  var FLATIMG = {};
-  function flatOf(view) {   // { box, img } – SVG der Zeichnung als Bild (je Modell, Ansicht, Farbe zwischengespeichert)
-    if (!window.PrintFlats) return null;
-    var k = texKind(), col = hexOf(D.tex.color || "#ffffff"), key = k + "|" + view + "|" + col; if (FLATIMG[key]) return FLATIMG[key];
-    var f = window.PrintFlats.svg(k, view, col), im = new Image(), e = FLATIMG[key] = { box: f.box, img: im, ok: false };
-    im.onload = function () { e.ok = true; if (D && D.c) D.c.requestRenderAll(); }; im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(f.svg);
-    return e;
+  //    Bildmaße (Pixel bezogen auf 1264 px): Ursprung x/y (Mitte, Halsansatz bzw. Armkugel oben), Pixel je mm waagrecht/senkrecht, Weißpunkt, Hintergrund.
+  //    Senkrecht exakt: Länge Halsansatz–Saum (Größe L) → Lage der Druckflächen ab Kragen stimmt in cm. Die KI-Fotos sind schlanker als echte Ware;
+  //    waagrecht deshalb 0,8 × senkrecht (Foto nur leicht verbreitert, sieht natürlich aus; Druckflächen wirken dadurch etwas breiter als am echten Stück).
+  var GARM = {
+    "tee-front": [628, 95, 1.128, 1.41, 245, "#f1f1f3"], "tee-back": [631, 97, 1.128, 1.41, 248, "#eeeef0"], "tee-side": [674, 180, 1.208, 1.51, 249, "#efeff3"],
+    "polo-front": [626, 80, 1.208, 1.51, 249, "#eeeef0"], "polo-back": [627, 75, 1.216, 1.52, 245, "#ecedef"], "polo-side": [680, 210, 1.184, 1.48, 248, "#efeff1"],
+    "hoodie-front": [618, 240, 1.072, 1.34, 247, "#eff0f3"], "hoodie-back": [627, 250, 0.984, 1.23, 248, "#efeff1"], "hoodie-side": [620, 305, 1.0, 1.25, 246, "#ededef"],
+    "zip-front": [628, 250, 1.04, 1.30, 250, "#f1f1f3"], "zip-back": [628, 255, 1.04, 1.30, 252, "#f0eff1"], "zip-side": [580, 275, 1.016, 1.27, 249, "#efeff1"],
+    "sweat-front": [631, 85, 1.24, 1.55, 248, "#f0eff1"], "sweat-back": [628, 94, 1.232, 1.54, 247, "#efeff1"], "sweat-side": [655, 285, 1.2, 1.5, 241, "#f2f2f4"]
+  };
+  var GIMG = {}, GTINT = {};
+  function garmKey(view) { return texKind() + "-" + (/sleeve/.test(view) ? "side" : view); }
+  function garmOf(view) {   // { m: Maße, img: eingefärbtes Bild (Canvas) oder null, solange es lädt }
+    var key = garmKey(view), m = GARM[key]; if (!m) return null;
+    var col = hexOf(D.tex.color || "#ffffff"), tk = key + "|" + col;
+    if (GTINT[tk]) return { m: m, img: GTINT[tk] };
+    var im = GIMG[key];
+    if (!im) { im = GIMG[key] = new Image(); im.onload = function () { if (D && D.c) D.c.requestRenderAll(); }; im.src = "/print/garments/" + key + ".webp?v=" + (window.PRINT_V || "4"); }
+    if (!im.complete || !im.naturalWidth) return { m: m, img: null };
+    var cv = document.createElement("canvas"); cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+    var g = cv.getContext("2d"); g.drawImage(im, 0, 0);
+    var c = [1, 3, 5].map(function (i) { return parseInt(col.substr(i, 2), 16); }), lc = (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255;
+    if (lc < 0.93) {   // Einfärben: Schattierung des weißen Fotos × Farbe; dunkle Farben mit etwas mehr Kontrast und Glanzlicht, damit Falten sichtbar bleiben
+      var id = g.getImageData(0, 0, cv.width, cv.height), d = id.data, wp = m[4], ex = 1.5 + (1 - lc) * 1.5, hl = (1 - lc) * 0.5, base = c.map(function (v) { return Math.max(v, 22); });
+      for (var i = 0; i < d.length; i += 4) { if (!d[i + 3]) continue;
+        var sh = Math.min(1.08, (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / wp), k = Math.pow(sh, ex), h = Math.max(0, sh - 0.9) * hl * 255;
+        d[i] = Math.min(255, base[0] * k + h); d[i + 1] = Math.min(255, base[1] * k + h); d[i + 2] = Math.min(255, base[2] * k + h); }
+      g.putImageData(id, 0, 0);
+    }
+    GTINT[tk] = cv; return { m: m, img: cv };
   }
-  function garmentBox() {   // Ausschnitt in Arbeitsflächen-Einheiten (für Einpassen und Vorschau)
-    var P = texPlace(D.cur), f = flatOf(P.view), b = f ? f.box : [-450, -60, 450, 830];
-    return { x: (b[0] - P.ax) * U, y: (b[1] - P.ay) * U, w: (b[2] - b[0]) * U, h: (b[3] - b[1] + 40) * U };
+  function garmentBox() {   // Ausschnitt in Arbeitsflächen-Einheiten (für Einpassen und Vorschau): Foto ohne Randbereich
+    var P = texPlace(D.cur), m = GARM[garmKey(P.view)] || [632, 100, 1], cx = P.view === "sleeveR" ? 1264 - m[0] : m[0];
+    var sx = m[2], sy = m[3] || m[2], b = [(60 - cx) / sx, (30 - m[1]) / sy, (1204 - cx) / sx, (1234 - m[1]) / sy];
+    return { x: (b[0] - P.ax) * U, y: (b[1] - P.ay) * U, w: (b[2] - b[0]) * U, h: (b[3] - b[1] + 70) * U };
   }
   function garment(e) {
     if (!D || !D.tex || (D.exporting && !D.pvGarment)) return;
-    var c = D.c, ctx = (e && e.ctx) || c.contextContainer, v = c.viewportTransform, P = texPlace(D.cur), z = v[0] * U, f = flatOf(P.view);
+    var c = D.c, ctx = (e && e.ctx) || c.contextContainer, v = c.viewportTransform, P = texPlace(D.cur), z = v[0] * U, G = garmOf(P.view);
     ctx.save(); ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]); ctx.translate(-P.ax * U, -P.ay * U); ctx.scale(U, U);
-    ctx.fillStyle = "#eef0f3"; ctx.fillRect(-8000, -8000, 16000, 16000);   // heller Hintergrund
-    if (f && f.ok) { ctx.imageSmoothingEnabled = true; ctx.drawImage(f.img, f.box[0], f.box[1], f.box[2] - f.box[0], f.box[3] - f.box[1]); }
-    if (!D.exporting && f) {
+    ctx.fillStyle = G ? G.m[5] : "#eef0f3"; ctx.fillRect(-8000, -8000, 16000, 16000);   // Studio-Hintergrund des Fotos über die ganze Fläche
+    if (G && G.img) {
+      var m = G.m, f = 1264 / G.img.width;   // Bild → 1264er-Pixel
+      ctx.save(); if (P.view === "sleeveR") ctx.scale(-1, 1);   // rechter Ärmel = gespiegelte Seitenansicht
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.drawImage(G.img, -m[0] / m[2], -m[1] / m[3], G.img.width * f / m[2], G.img.height * f / m[3]); ctx.restore();
+    }
+    if (!D.exporting && G) {
+      var yb = (1234 - G.m[1]) / G.m[3] + 22, fs = 13 / z;
       var lab = (P.side ? "Ärmel " + P.side : P.view === "front" ? "Vorderseite" : "Rückseite") + " · Druckfläche max. " + (D.mm.w / 10).toString().replace(".", ",") + " × " + (D.mm.h / 10).toString().replace(".", ",") + " cm";
-      ctx.fillStyle = "rgba(60,60,67,.75)"; ctx.font = "600 " + (13 / z) + "px -apple-system,Segoe UI,sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(lab, 0, f.box[3] + 30);   // Schrift zoomunabhängig
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "rgba(60,60,67,.75)"; ctx.font = "600 " + fs + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText(lab, 0, yb);   // Schrift zoomunabhängig
+      ctx.fillStyle = "rgba(60,60,67,.6)"; ctx.font = (11.5 / z) + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText("Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.", 0, yb + fs * 1.5);
     }
     ctx.restore();
   }
@@ -948,7 +981,7 @@
   function preview() {
     busy("Vorschau wird erstellt …");
     eachPage(function () { return renderPreview(1100); }).then(function (pv) { busy(false);
-      modal('<h3>Vorschau</h3>' + mock(pv) + '<div class="ps-thumbs" style="margin-top:14px">' + pv.map(function (s, i) { return '<figure><img src="' + s + '" alt=""><figcaption>' + (pv.length > 1 ? (i ? "Rückseite/Innen" : "Vorderseite/Außen") : "Endformat") + " – so wird geschnitten</figcaption></figure>"; }).join("") + '</div><div class="foot"><button class="ps-btn primary" data-a="m:ok">Schließen</button></div>', null, "wide");
+      modal('<h3>Vorschau</h3>' + (D.tex ? '<p class="pd-muted">Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.</p>' : "") + mock(pv) + '<div class="ps-thumbs" style="margin-top:14px">' + pv.map(function (s, i) { return '<figure><img src="' + s + '" alt=""><figcaption>' + (D.tex ? esc((D.tex.pages[i] || {}).title || "") : (pv.length > 1 ? (i ? "Rückseite/Innen" : "Vorderseite/Außen") : "Endformat") + " – so wird geschnitten") + "</figcaption></figure>"; }).join("") + '</div><div class="foot"><button class="ps-btn primary" data-a="m:ok">Schließen</button></div>', null, "wide");
     }).catch(function (e) { busy(false); toast(e.message, true); });
   }
   function finish() {
@@ -959,7 +992,7 @@
       var errs = all.filter(function (x) { return x.level === "error"; }), warns = all.filter(function (x) { return x.level !== "error"; });
       modal('<h3>Druckdaten-Check</h3>' + mock(res.map(function (r) { return r.pv; })) +
         '<ul class="ps-checks">' + (all.length ? all.map(function (x) { return '<li class="' + (x.level === "info" ? "warn" : x.level) + '">' + esc(x.text) + "</li>"; }).join("") : '<li>Alles im grünen Bereich: Texte im Sicherheitsabstand, Bilder ausreichend aufgelöst.</li>') + "</ul>" +
-        '<p class="pd-muted" style="margin-top:10px">' + (D.tex ? "Im nächsten Schritt erzeugen wir die Logo-PDF für die Druckerei – eine Seite je Druckposition in Größe der Druckfläche, Hintergrund transparent (nur dein Design wird gedruckt)." : "Im nächsten Schritt erzeugen wir das Druck-PDF (" + (D.mm.w + 2 * D.b) + " × " + (D.mm.h + 2 * D.b) + " mm inkl. Beschnitt, Schriften eingebettet, CMYK) und prüfen es nochmals.") + "</p>" +
+        '<p class="pd-muted" style="margin-top:10px">' + (D.tex ? "Die Ansicht auf dem Kleidungsstück ist nur eine Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Stück abweichen. Im nächsten Schritt erzeugen wir die Logo-PDF für die Druckerei – eine Seite je Druckposition in Größe der Druckfläche, Hintergrund transparent (nur dein Design wird gedruckt)." : "Im nächsten Schritt erzeugen wir das Druck-PDF (" + (D.mm.w + 2 * D.b) + " × " + (D.mm.h + 2 * D.b) + " mm inkl. Beschnitt, Schriften eingebettet, CMYK) und prüfen es nochmals.") + "</p>" +
         '<div class="foot"><button class="ps-btn" data-a="m:back">Weiter bearbeiten</button><button class="ps-btn primary" data-a="m:pdf">' + (errs.length ? "Trotzdem Druck-PDF erstellen" : "Druck-PDF erstellen") + "</button></div>", function (a) {
           if (a !== "pdf") return;
           busy("Druck-PDF wird erstellt …");

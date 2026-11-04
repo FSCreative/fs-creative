@@ -401,7 +401,13 @@
     type_glue: { t: "Klebstoff", d: { permanent: "Hält dauerhaft.", detachable: "Lässt sich rückstandsfrei wieder ablösen." } },
     shape: { t: "Form" }
   };
-  function fixLabels(list) { (list || []).forEach(function (p) { (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
+  // Klebebuchstaben: „Anzahl der Konturlinien“ verständlich erklären (Wunsch Simon 04.11.2026) – jede geschnittene Form bzw. jedes Loch ist eine Kontur
+  var CONTOUR_HELP = "So zählst du: Jede einzeln ausgeschnittene Form ist eine Kontur – jeder Buchstabe, jede Ziffer, jedes Logo-Teil. Löcher in Buchstaben (z. B. bei A, B, O, R, a, e) und i-Punkte/Umlautpunkte zählen extra. Beispiele: „OPEN“ = 6, „Bäckerei“ = 16. Dasselbe Motiv nur einmal in die Datei setzen – mehrere Stück wählst du bei der Menge. Unsicher? Lieber etwas mehr wählen oder uns im Chat fragen.";
+  var PDESC = { "vinyl-cut-letters": "Einzeln aus Folie geschnittene Buchstaben, Zahlen und Logos in vielen Farben – mit Übertragungsfolie zum einfachen Aufkleben, bis zu 8 Jahre haltbar." };
+  function fixLabels(list) { (list || []).forEach(function (p) { if (PDESC[p.key]) p.desc = PDESC[p.key];
+    (p.props || []).forEach(function (pr) { if (pr.slug === "number_of_contour_lines") { pr.title = "Anzahl Konturen (Schnittformen)"; pr.options.forEach(function (o) { o.name = o.slug + (o.slug === "1" ? " Kontur" : " Konturen"); o.desc = CONTOUR_HELP; delete o.more; }); }
+    });
+    (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
 
   function prodByKey(k) { return ((S.cat && S.cat.products) || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
@@ -675,6 +681,7 @@
   // ── Bestseller: Produkte laut Print.com-Beliebtheit (Katalog „best“), Optionen = die meistgewählten Standards ──
   var BEST = { size: ["a5", "a4", "a6", "us_large", "bc", "bc_plus"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "135gr_silk_mc", "350gr_silk_mc", "350gr_gesatineerd_mc", "300gr_silk_mc"], printtype: ["44"] };
   // Großformat (Banner, Roll-ups, Displays …): typisch 1 Stück
+  var START_MM = { "vinyl-cut-letters": [200, 100] };   // Startformat je Produkt in mm (Klebebuchstaben 20 × 10 cm, Wunsch Simon 04.11.2026)
   function bigFmt(p) { return p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat || {}).main || p.group || ""); }
   function isPoster() { return !!S.prod && /plakat|poster|wahlplakat/i.test(S.prod.key + " " + S.prod.title); }
   function bestOf(pr) {
@@ -709,7 +716,7 @@
       S.copies = st ? +st.copies : bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.dday = "";
       if (!st) ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;   // ohne Startausführung (alter Katalog): Bestseller wie bisher
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); }); S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
-      var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
+      var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; var s0 = START_MM[p.key] || (cm ? [2000, 1000] : [148, 210]); S.custom = { w: cl(s0[0], C.minW, C.maxW) / f, h: cl(s0[1], C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel(); S.presetBase = Object.assign({}, S.sel);
     }
@@ -1789,7 +1796,7 @@
     if (m && sc && t.method !== "screen1" && !m.photo && m.colors === 1 && n >= sc.min && pos.every(function (x) { return sc.positions.indexOf(x.slug) > -1; }))
       hint = '<div class="ps-texhint" role="note"><b>Tipp: Dein Design ist einfarbig.</b> Ab ' + sc.min + " Stück ist <b>Siebdruck 1-farbig</b> meist günstiger und besonders langlebig. " + '<button type="button" class="ps-btn small" data-act="texscreen">Auf Siebdruck umstellen</button></div>';
     else if (m && t.method === "screen1" && (m.photo || m.colors > 1)) hint = '<div class="ps-texhint warn" role="note"><b>Achtung:</b> Siebdruck 1-farbig druckt nur eine Farbe – dein Design hat ' + (m.photo ? "Fotos/Verläufe" : m.colors + " Farben") + '. <button type="button" class="ps-btn small" data-act="textransfer">Auf Transferdruck (vollfarbig) umstellen</button></div>';
-    var pv = S.mode === "design" && S.previews && S.previews.length ? '<div class="ps-thumbs">' + S.previews.map(function (src, i) { return '<figure><img src="' + esc(src) + '" alt=""><figcaption>' + esc((pos[i] || {}).title || "") + "</figcaption></figure>"; }).join("") + "</div>" : "";
+    var pv = S.mode === "design" && S.previews && S.previews.length ? '<div class="ps-thumbs">' + S.previews.map(function (src, i) { return '<figure><img src="' + esc(src) + '" alt=""><figcaption>' + esc((pos[i] || {}).title || "") + "</figcaption></figure>"; }).join("") + '</div><p class="pd-muted ps-texpv">Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage des Drucks können am gelieferten Kleidungsstück abweichen. Gedruckt wird dein Motiv in der gezeigten Größe.</p>' : "";
     return '<div class="ps-texd"><button type="button" class="ps-btn primary" data-act="texdesign">👕 ' + (S.texDesign ? "Shirt-Design bearbeiten" : "Im Shirt-Designer gestalten") + '</button><span class="pd-muted">Text, Logo, Bilder, Formen und QR-Code direkt auf dem ' + esc(texKindName()) + ' in deiner Farbe platzieren – gratis.</span></div>' + pv + hint;
   }
   // Preis-Anzeige im Shirt-Designer (wird nach jeder Preisberechnung aktualisiert)

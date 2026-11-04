@@ -965,11 +965,12 @@ module.exports = function (D) {
   // Auflage und Vorauswahl wie bisher (Bestseller bei Format/Papier/Druck), aber passend zu den Mengen je Druckverfahren und zu den Ausschlussregeln:
   // geht die Vorauswahl mit dem Verfahren dieser Menge nicht, werden die übrigen Optionen angepasst; geht die Menge gar nicht, die nächstliegende Auflage.
   // Eine Quelle für Konfigurator (pubProd.start → print/app.js), „ab“-Preise (/print/api/from), Startseiten-Prüfung, Preisübersicht und Weihnachtsabteilung.
+  const START_MM = { "vinyl-cut-letters": [200, 100] };   // Startformat je Produkt in mm, gleich wie print/app.js (Klebebuchstaben 20 × 10 cm)
   function startOf(p) {
     if (!p) return null;
     if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: 10, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }
     const C = p.custom, cm = C && C.unit === "cm", f = cm ? 10 : 1, cl = (v, a, b) => Math.max(a, Math.min(b, v));
-    const custom = C ? { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f } : null, cu = sel => p.kind === "banner" || (!!C && sel.size === "custom");
+    const s0 = START_MM[p.key] || (cm ? [2000, 1000] : [148, 210]), custom = C ? { w: cl(s0[0], C.minW, C.maxW) / f, h: cl(s0[1], C.minH, C.maxH) / f } : null, cu = sel => p.kind === "banner" || (!!C && sel.size === "custom");
     const ok = (sel, n) => { const pm = pmsFor(p, n), r = resolveSel(p, sel, cu(sel) ? { size: "custom" } : null, pm ? { printingmethod: pm } : null);
       return !r.excluded && (!pm || r.all.printingmethod == null || pm.indexOf(String(r.all.printingmethod)) > -1); };
     const fix = (sel, n) => {   // übrige Optionen auf die nächste gültige Kombination (aktuelle Werte zuerst), Druckverfahren passend zur Menge
@@ -3675,7 +3676,7 @@ module.exports = function (D) {
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
-      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flats.js") {
+      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js") {
         let js = ""; try { js = fs.readFileSync(path.join(__dirname, "print", p.slice(7))); } catch (e) { return D.send(res, 404, "Not found"); }
         return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache" });
       }
