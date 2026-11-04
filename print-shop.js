@@ -1866,33 +1866,20 @@ module.exports = function (D) {
   // ───────────────────────── Mails ─────────────────────────
   // Shop-Mails (Bestellbestätigung, Versand, Tracking …): Karte mit Kopfzeile, optional Fortschritt (prog: 0 Bestellt … 3 Zugestellt),
   // Links als Knopf statt langer URL – tabellenbasiert, damit Outlook/Gmail/Apple Mail gleich aussehen (Wunsch Simon 03.11.2026: „schöner“)
-  const MAIL_STEPS = ["Bestellt", "In Produktion", "Unterwegs", "Zugestellt"];
-  function mailHtml(title, intro, rows, outro, prog) {
-    const F = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", P = t => '<p style="margin:0 0 14px;line-height:1.55;font-size:15px;color:#1d1d1f">' + escH(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#0a66d8">$1</a>') + "</p>";
+  const MAIL_STEPS = ["Bestellt", "In Produktion", "Unterwegs", "Zugestellt"], MAILCARD = require("./mail-card.js");
+  function mailHtml(title, intro, rows, outro, prog) {   // Layout: mail-card.js (robust für alle Mail-Programme)
     const isUrl = v => /^https?:\/\/\S+$/.test(String(v || "").trim());
-    const btn = (label, url, ghost) => '<a href="' + escH(url) + '" style="display:inline-block;' + (ghost ? "background:#ffffff;color:#0a66d8;border:1px solid #c9d8f0;" : "background:#0a66d8;color:#ffffff;") + 'text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:999px;margin:0 8px 8px 0">' + escH(label) + "</a>";
-    const data = (rows || []).filter(r => r[2] !== "button" && !isUrl(r[1])), links = (rows || []).filter(r => r[2] === "button" ? isUrl(r[1]) : isUrl(r[1]));
-    const steps = prog != null ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 22px"><tr>' + MAIL_STEPS.map((t, k) => {
-      const done = k <= prog, cur = k === prog;
-      return '<td align="center" style="width:25%;font-family:' + F + ';font-size:12px;color:' + (done ? "#1d1d1f" : "#a1a1a6") + ';font-weight:' + (cur ? 700 : 500) + '"><div style="height:6px;border-radius:3px;margin:0 3px 8px;background:' + (done ? "#0a66d8" : "#e5e5ea") + '"></div>' + (done && !cur ? "✓ " : "") + t + "</td>"; }).join("") + "</tr></table>" : "";
-    const table = data.length ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 20px;border:1px solid #e5e5ea;border-radius:14px;border-collapse:separate;overflow:hidden">' + data.map((r, k) =>
-      '<tr><td style="padding:10px 14px;' + (k ? "border-top:1px solid #f0f0f2;" : "") + 'font-family:' + F + ';font-size:13px;color:#6e6e73;vertical-align:top;width:34%">' + escH(r[0]) + '</td><td style="padding:10px 14px;' + (k ? "border-top:1px solid #f0f0f2;" : "") + 'font-family:' + F + ';font-size:14px;color:#1d1d1f;font-weight:600">' + escH(r[1]) + "</td></tr>").join("") + "</table>" : "";
-    const lk = links.length ? '<div style="margin:4px 0 18px">' + links.map((r, k) => btn(/sendungsverfolgung|fedex|ups|dhl|dpd|gls|post/i.test(r[0] + " " + r[1]) ? (links.length > 1 ? "Sendung " + (k + 1) + " verfolgen" : "Sendung verfolgen") : r[0], String(r[1]).trim(), k > 0)).join("") + "</div>" : "";
-    return '<div style="margin:0;padding:24px 12px;background:#f2f2f5"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
-      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e8e8ed">' +
-      '<tr><td style="background:#0d1b3d;padding:18px 26px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="vertical-align:middle"><img src="https://www.fs-creative.at/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" width="34" height="34" alt="" style="display:block;border:0"></td>' +
-      '<td style="vertical-align:middle;padding-left:10px;font-family:' + F + ';color:#ffffff;font-size:16px;font-weight:700;letter-spacing:-.01em">FS Creative <span style="font-weight:500;color:#aab6d3">Druckshop</span></td></tr></table></td></tr>' +
-      '<tr><td style="padding:28px 26px 8px;font-family:' + F + '"><h1 style="margin:0 0 16px;font-size:24px;line-height:1.2;letter-spacing:-.02em;color:#1d1d1f">' + escH(title) + "</h1>" + steps +
-      intro.map(P).join("") + table + lk + (outro || []).map(t => P(t).replace("font-size:15px;color:#1d1d1f", "font-size:14px;color:#3a3a3c")).join("") + "</td></tr>" +
-      '<tr><td style="padding:16px 26px 22px;border-top:1px solid #f0f0f2;font-family:' + F + ';font-size:12.5px;line-height:1.6;color:#86868b">FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn, Österreich<br>Fragen? Einfach auf diese Mail antworten · <a href="https://www.fs-creative.at/print" style="color:#0a66d8;text-decoration:none">fs-creative.at/print</a></td></tr>' +
-      "</table></td></tr></table></div>";
+    const data = (rows || []).filter(r => r[2] !== "button" && !isUrl(r[1])), links = (rows || []).filter(r => isUrl(r[1]));
+    const buttons = links.map((r, k) => [/sendungsverfolgung|fedex|ups|dhl|dpd|gls|post/i.test(r[0] + " " + r[1]) ? (links.length > 1 ? "Sendung " + (k + 1) + " verfolgen" : "Sendung verfolgen") : r[0], String(r[1]).trim()]);
+    return MAILCARD.card({ brand: "Druckshop", title, intro, rows: data, buttons, outro, steps: prog != null ? { list: MAIL_STEPS, cur: prog } : null,
+      footer: 'FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn, Österreich<br>Fragen? Einfach auf diese Mail antworten · <a href="https://www.fs-creative.at/print" style="color:#0a66d8;text-decoration:none">fs-creative.at/print</a>' });
   }
   async function mail(to, subject, title, intro, rows, outro, replyTo, prog) {
     if (!D.mailSend) return false;
     const text = [title, ""].concat(intro, [""], (rows || []).map(r => r[0] + ": " + r[1]), [""], outro || [], ["", "FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn"]).join("\n");
     try { await D.mailSend({ to, subject, text, html: mailHtml(title, intro, rows, outro, prog), replyTo }); return true; } catch (e) { log("Mail an " + String(to).replace(/^[^@]+/, "…") + " fehlgeschlagen:", e.message); return false; }
   }
-  const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) + " (ggf. auch am darauffolgenden Werktag)" : "")],
+  const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.filter(l => l && l[1] && !/^(ohne|nein|keine?\b.*|none|unbedruckt)$/i.test(String(l[1]).trim()) && !/druckverfahren/i.test(l[0])).map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) + " (ggf. auch am darauffolgenden Werktag)" : "")],
     ["Lieferadresse", [o.customer.company, o.customer.firstName + " " + o.customer.lastName, o.customer.street, o.customer.zip + " " + o.customer.city, COUNTRIES[o.customer.country]].filter(Boolean).join(", ")],
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
@@ -3421,12 +3408,14 @@ module.exports = function (D) {
   // Zahlungs-Erinnerung (Wunsch Simon 04.11.2026): Mollie-Bestellung nicht bezahlt → EINE Mail nach 2 h (bis 60 h nach der Bestellung, Zahlung ist 3 Tage möglich)
   // mit allen Artikeln (Warenkorb-Gruppe zusammen), Summe und „Jetzt bezahlen“ (Bestellseite → „Erneut bezahlen“). Nicht, wenn der Kunde inzwischen eine andere Bestellung bezahlt hat.
   let lastPayRem = 0;
-  async function payReminderDue() {
-    if (!D.mailSend || Date.now() - lastPayRem < 10 * 60e3) return; lastPayRem = Date.now();
+  async function payReminderDue(forceId) {   // forceId: aus dem Cockpit sofort senden (ohne Mindestalter)
+    if (!D.mailSend) return 0; if (!forceId) { if (Date.now() - lastPayRem < 10 * 60e3) return 0; lastPayRem = Date.now(); }
+    let sent = 0;
     const all = await store.listOrders().catch(() => []), now = Date.now(), done = {};
     const open = all.filter(o => o && o.payment && o.payment.method === "mollie" && ["pending_payment", "payment_failed"].indexOf(o.status) > -1 && !(o.mails && o.mails.payRemind) && o.customer && o.customer.email);
     for (const o of open) {
-      const age = now - Date.parse(o.createdAt || 0); if (age < 2 * 3600e3 || age > 60 * 3600e3) continue;
+      if (forceId && o.id !== forceId) continue;
+      const age = now - Date.parse(o.createdAt || 0); if (!forceId && (age < 2 * 3600e3 || age > 60 * 3600e3)) continue; if (age > 72 * 3600e3) continue;
       const key = o.groupId || o.id; if (done[key]) continue; done[key] = 1;
       const grp = o.groupId ? open.filter(x => x.groupId === o.groupId) : [o], em = String(o.customer.email).toLowerCase();
       if (all.some(x => x && x.customer && String(x.customer.email || "").toLowerCase() === em && Date.parse(x.createdAt || 0) > Date.parse(o.createdAt) && x.payment && x.payment.status === "paid")) { for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = "skip"; await store.putOrder(x); } continue; }
@@ -3436,8 +3425,10 @@ module.exports = function (D) {
       const ok = await mail(o.customer.email, "Deine Bestellung " + o.nr + " wartet noch auf die Zahlung", "Deine Bestellung ist noch nicht bezahlt",
         ["Hallo " + (o.customer.firstName || "") + ",", "deine Bestellung ist bei uns gespeichert – die Zahlung wurde aber noch nicht abgeschlossen. Mit einem Klick kannst du sie jetzt bezahlen, deine Druckdaten und Einstellungen bleiben erhalten."],
         rows, ["Sobald die Zahlung eingegangen ist, prüfen wir deine Daten und geben den Druck frei. Die Bestellung kann noch bis " + deDate(new Date(Date.parse(o.createdAt) + 3 * 864e5).toISOString()) + " bezahlt werden.", "Fragen oder etwas ändern? Antworte einfach auf diese Mail."], D.notifyTo, 0);
-      for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = ok ? nowIso() : "fehler"; if (ok) hist(x, "Zahlungs-Erinnerung per Mail gesendet"); await store.putOrder(x); }
+      for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = ok ? nowIso() : "fehler"; if (ok) hist(x, "Zahlungs-Erinnerung per Mail gesendet" + (forceId ? " (Cockpit)" : "")); await store.putOrder(x); }
+      if (ok) sent++;
     }
+    return sent;
   }
   async function rememberDue() {
     const all = await rememberGet(); let ch = false; const now = Date.now();
@@ -4369,6 +4360,7 @@ module.exports = function (D) {
         if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bestätigung fehlt" });
         const id = String(b.id || ""); const op = String(b.op || "");
         if (op === "place") { const o = await placeOrder(id, "Cockpit"); return J(res, 200, { ok: true, order: o }); }
+        if (op === "payremind") { const n = await payReminderDue(id); return J(res, 200, { ok: n > 0, sent: n, error: n ? undefined : "Nicht gesendet (bezahlt, schon erinnert oder keine E-Mail)" }); }
         if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false); return J(res, 200, { ok: true, order: o }); }
         if (op === "complete") {   // manuell abschließen (z. B. aus den Aufträgen: „Erledigt“) – erst nach der Bestellung bei Print.com
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");

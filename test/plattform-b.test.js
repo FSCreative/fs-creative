@@ -607,7 +607,7 @@ function unitTests(T) {
       ["InvoicePos", { id: "12711", invoice: { id: "1271", objectName: "Invoice" }, quantity: "7", price: "10.04", priceNet: "10.04", priceGross: "12.05", taxRate: "20", sumNet: "70.28", sumTax: "14.06", sumGross: "84.34", name: "Beratung", positionNumber: "0" }]];
     const { L } = finSetup(seedA); await L.load();
     const sevNum = x => parseFloat(x) || 0;
-    const O = require(path.join(ROOT, "sevdesk-ops.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
+    const O = require(path.join(ROOT, "sevdesk-ops.js", "mail-card.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
       sevDateDE: d => d, sevNet: (g, r) => r2(g / (1 + r / 100)), viennaToday: () => "2026-10-20", sevMeta: async () => ({}), snapshot: async () => ({}), invalidate: () => {}, sevBook: async () => ({}) });
     for (const [id, want] of [["1270", "30.00"], ["1271", "84.34"]]) {
       const det = Object.assign({ ok: true }, await O.invoiceDetail(id)); let pre = null;

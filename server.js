@@ -2239,7 +2239,7 @@ async function dunSend(st, list) {
   SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
   return res;
 }
-const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook, mailSignature: () => mailSignature(),
+const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook, mailSignature: () => mailSignature(), firm: () => FIN_STATE.firm || {},
   // Kartenzahlung ohne Zahlername: Händler aus dem Buchungstext („E-COMM 24,00 AT K1 01.10. 08:35 WORLD4YOU INTERNET“ → „World4you Internet“)
   cardName: p => { try { const c = FIN_RULES.card(p); return c && c.merchant ? c.merchant.replace(/[*]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase().replace(/(^|[\s\-\/])([a-zäöü])/g, (m, x, y) => x + y.toUpperCase()) : ""; } catch (e) { return ""; } },
   snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });

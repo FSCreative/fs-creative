@@ -131,7 +131,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
   // ── 2) Feed-Bausteine direkt (Bild-Proxy, Lieferanten-Name, Kategorien, Format) ──
   await t("Feed-Bausteine: Bild nur über /print/bild/ (absolut, JPEG), nie mit Lieferanten-Namen oder SVG; Google-Kategorien; Format im Titel", async () => {
     process.env.PRINT_ANCHORS_FILE = "off";
-    const PS = require(path.join(ROOT, "print-shop.js"))({ DATA_DIR: fs.mkdtempSync(path.join(tmp, "ps-")), ORIGIN: SITE }), T = PS._test;
+    const PS = require(path.join(ROOT, "print-shop.js", "mail-card.js"))({ DATA_DIR: fs.mkdtempSync(path.join(tmp, "ps-")), ORIGIN: SITE }), T = PS._test;
     const ct = f => "https://images.ctfassets.net/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/0123456789abcdef0123456789abcdef/" + f + "?fm=webp&w=600";
     assert.strictEqual(T.feedImg(ct("Flyers.jpg")), SITE + "/print/bild/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/0123456789abcdef0123456789abcdef/Flyers.jpg?fm=jpg&w=1200&v=2");
     ["Printcom_flyer.jpg", "print.com-flyer.jpg", "Print.Com.jpg", "print-com.jpg", "flyer_printcom.jpg", "drukwerkdeal.jpg", "logo.svg"].forEach(f => assert.strictEqual(T.feedImg(ct(f)), "", f));

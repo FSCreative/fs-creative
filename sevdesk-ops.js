@@ -10,6 +10,7 @@ module.exports = function (D) {
   const unix = day => Math.floor(Date.parse(day + "T12:00:00Z") / 1000);
   const need = pl => { if (!pl || pl.confirm !== true) throw new Error("Bestätigung fehlt"); };
   const first = j => { const o = j && j.objects; return Array.isArray(o) ? (o[0] || {}) : (o || {}); };
+  const MAILCARD = require("./mail-card.js");
   const plainHtml = t => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br>");
   const norm = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|und|&)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
   function nameScore(a, b) {   // 0..1: gemeinsame Wörter (≥3 Zeichen)
@@ -101,7 +102,19 @@ module.exports = function (D) {
       const subject = String(pl.subject || "").trim().slice(0, 250); if (!subject) throw new Error("Betreff fehlt");
       const text = String(pl.text || "").trim(); if (!text) throw new Error("Text fehlt");
       const sig = pl.signature === false ? "" : mailSig();
-      const body = { toEmail: to[0], subject, text: sig ? plainHtml(trimForSig(text, sig)) + "<br><br>" + sig : plainHtml(text), copy: !!pl.copy };
+      // gestaltete Mail (mail-card.js): Text wie eingegeben, Eckdaten der Rechnung als Tabelle, Bankdaten; die PDF hängt wie bisher an (Wunsch Simon 04.11.2026)
+      let html = sig ? plainHtml(trimForSig(text, sig)) + "<br><br>" + sig : plainHtml(text);
+      try {
+        const inv = await invoiceDetail(id), F = (D.firm && D.firm()) || {}, eur = n => (Math.round((+n || 0) * 100) / 100).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " €";
+        const dDe = v => { const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
+        const isRem = inv.type === "MA", rows = [[isRem ? "Zahlungserinnerung" : "Rechnungsnummer", inv.nr || ""], [isRem ? "Offener Betrag" : "Rechnungsbetrag", eur(inv.open > 0 ? inv.open : inv.gross)]];
+        if (inv.due && !(inv.paid >= inv.gross && inv.gross > 0)) rows.push(["Zahlbar bis", dDe(inv.due)]);
+        if (F.iban) rows.push(["Bankverbindung", [F.bank, "IBAN " + F.iban, F.bic ? "BIC " + F.bic : ""].filter(Boolean).join("\n")]); if (inv.nr) rows.push(["Verwendungszweck", inv.nr]);
+        const body0 = sig ? trimForSig(text, sig) : text, paras = String(body0).split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
+        html = MAILCARD.card({ title: (isRem ? "Zahlungserinnerung " : "Ihre Rechnung ") + (inv.nr || ""), intro: paras, rows, extraHtml: '<p style="margin:0 0 14px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:#6e6e73">📎 Die ' + (isRem ? "Zahlungserinnerung" : "Rechnung") + " finden Sie als PDF im Anhang.</p>" + (sig ? '<div style="margin-top:8px">' + sig + "</div>" : ""),
+          footer: [F.name || "FS Creative", F.owner, F.street, [F.zip, F.city].filter(Boolean).join(" ")].filter(Boolean).map(MAILCARD.esc).join(" · ") + (F.uid ? "<br>UID " + MAILCARD.esc(F.uid) : "") });
+      } catch (e) { /* Rechnung nicht lesbar → schlichte Mail wie bisher */ }
+      const body = { toEmail: to[0], subject, text: html, copy: !!pl.copy };
       if (to.length > 1) body.ccEmail = to.slice(1).join(",");
       await sev("POST", "/Invoice/" + id + "/sendViaEmail", { body, timeout: 60000 });
       out.sentTo = to.join(", ");

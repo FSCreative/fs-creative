@@ -18,7 +18,7 @@ const tx = (id, amount, name) => ["CheckAccountTransaction", { id, checkAccount:
   const L = require(path.join(ROOT, "fin-local.js"))({ fin, renderPdf: async () => ({}), mailSend: async () => ({}) });
   await L.load();
   const r2 = n => Math.round(n * 100) / 100;
-  const O = require(path.join(ROOT, "sevdesk-ops.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum: x => parseFloat(x) || 0, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
+  const O = require(path.join(ROOT, "sevdesk-ops.js", "mail-card.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum: x => parseFloat(x) || 0, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
     sevDateDE: d => d, sevNet: (g, r) => r2(g / (1 + r / 100)), viennaToday: () => "2026-10-20", sevMeta: async () => ({}), snapshot: async () => ({}), invalidate: () => {}, sevBook: async () => ({}) });
   const book = (txId, taxRate, taxRule) => O.bankOp({ confirm: true, op: "newVoucher", txId, accountingTypeId: "27", taxRate, taxRule, supplierName: "S", description: "D" });
   const vouOf = () => L.all("Voucher").slice(-1)[0];   // zuletzt angelegter Beleg
