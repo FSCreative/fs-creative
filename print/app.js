@@ -84,13 +84,30 @@
   // ── Konfiguration teilen & merken: alles Gewählte steckt im Link (?produkt=…&c=…), kein Server nötig ──
   var b64e = function (t) { return btoa(unescape(encodeURIComponent(t))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
   var b64d = function (t) { t = String(t).replace(/-/g, "+").replace(/_/g, "/"); while (t.length % 4) t += "="; return decodeURIComponent(escape(atob(t))); };
-  function cfgPack() { var c = { s: S.sel, q: S.copies, u: S.urgency }; if (S.pm && S.pm !== "auto") c.m = S.pm; if (isCustom()) c.c = S.custom; if (kind() === "textile" && S.textile) c.t = S.textile; return b64e(JSON.stringify(c)); }
+  function cfgPack() { var c = { s: S.sel, q: S.copies, u: S.urgency }; if (S.pm && S.pm !== "auto") c.m = S.pm; if (isCustom()) c.c = S.custom; if (kind() === "textile" && S.textile) c.t = S.textile;
+    // Link zum Weiterschicken (Wunsch Simon 04.11.2026): auch Motive + Aufteilung und hochgeladene Dateien (Datei-ID + Zugangsschlüssel) mitnehmen
+    var fr = function (f) { return f && f.fileId && f.token ? [f.fileId, f.token] : null; };
+    if (S.mot && S.mot.n > 1) { if (typeof motSave === "function") motSave(); c.mo = { n: S.mot.n, sp: S.mot.split.slice(), f: S.mot.files.map(function (x) { return fr(x && x.file); }) }; }
+    else if (S.file && S.mode !== "design") { var f0 = fr(S.file); if (f0) c.f = f0; }
+    var lg = {}; Object.keys(S.logos || {}).forEach(function (k) { var x = fr(S.logos[k]); if (x) lg[k] = x; }); if (Object.keys(lg).length) c.lg = lg;
+    return b64e(JSON.stringify(c)); }
+  // Dateien aus einem geteilten Link nachladen (nur mit gültigem Zugangsschlüssel) und in Schritt 3 zeigen
+  function linkFiles(c) {
+    var get = function (r) { return r && /^f[a-f0-9]{24}$/.test(r[0]) ? api("/print/api/file/" + r[0] + "?t=" + encodeURIComponent(r[1]), null, "GET").then(function (j) { return j && j.ok ? j : null; }).catch(function () { return null; }) : Promise.resolve(null); };
+    var jobs = [];
+    if (c.mo && c.mo.f) jobs.push(Promise.all(c.mo.f.map(get)).then(function (l) { l.forEach(function (f, i) { if (f) S.mot.files[i] = { file: f, previews: null, design: null, mode: "upload" }; }); if (l[0]) { S.mot.i = 0; S.file = l[0]; S.mode = "upload"; } }));
+    if (c.f) jobs.push(get(c.f).then(function (f) { if (f) { S.file = f; S.mode = "upload"; S.previews = null; } }));
+    if (c.lg) Object.keys(c.lg).forEach(function (k) { jobs.push(get(c.lg[k]).then(function (f) { if (f) { S.logos = S.logos || {}; S.logos[k] = f; } })); });
+    if (!jobs.length) return; Promise.all(jobs).then(function () { if (S.file || Object.keys(S.logos || {}).length) { S.step = 3; render(); if (S.file) pollPreflight(); toast("Konfiguration mit Druckdaten geladen ✓"); } });
+  }
   function cfgLink(p, code) { var x = prodByKey(p); return location.origin + (x && x.slug ? "/print/" + x.slug + "?c=" : "/print?produkt=" + encodeURIComponent(p) + "&c=") + code; }
   function cfgApply(code) {
     var c; try { c = JSON.parse(b64d(code)); } catch (e) { return false; } if (!c || typeof c !== "object") return false;
     var p = S.prod; (p.props || []).forEach(function (pr) { var v = c.s && c.s[pr.slug]; if (v != null && pr.options.some(function (o) { return String(o.slug) === String(v); })) S.sel[pr.slug] = String(v); });
     if (+c.q > 0 && +c.q <= 1e6) S.copies = Math.round(+c.q); if (c.u && (p.urgency || []).some(function (u) { return u.slug === c.u; })) S.urgency = c.u; if (c.m && typeof c.m === "string") S.pm = c.m;
     if (c.c && c.c.w && c.c.h && p.custom) S.custom = { w: String(+c.c.w || ""), h: String(+c.c.h || "") };
+    if (c.mo && +c.mo.n > 1 && +c.mo.n <= 50) { var sp = (c.mo.sp || []).map(function (v) { return Math.max(0, Math.round(+v || 0)); }).slice(0, +c.mo.n); S.mot = { n: +c.mo.n, split: sp, files: [], i: 0 }; if (sp.length !== S.mot.n || sp.reduce(function (a, b) { return a + b; }, 0) !== +S.copies) motBalance(); }
+    if (c.f || (c.mo && c.mo.f) || c.lg) setTimeout(function () { linkFiles(c); }, 0);
     if (c.t && kind() === "textile" && S.textile && p.methods) { var m = p.methods.filter(function (x) { return x.key === c.t.method; })[0];
       if (m) { S.textile.method = m.key; var ps = (c.t.positions || []).filter(function (x) { return m.positions.indexOf(x) > -1; }); if (ps.length) S.textile.positions = ps;
         var sz = {}; Object.keys(c.t.sizes || {}).forEach(function (k) { if (p.sizes.some(function (x) { return x.slug === k; }) && +c.t.sizes[k] > 0) sz[k] = Math.min(5000, Math.round(+c.t.sizes[k])); }); if (Object.keys(sz).length) S.textile.sizes = sz; } }
