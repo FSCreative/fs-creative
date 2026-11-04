@@ -1979,7 +1979,7 @@ async function sevCreateOffer(pl) {
       alternatives: pl.alternatives === true },   // Alternativangebot: jede Position eigener Preis, keine Gesamtsumme im PDF
     orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
       // Produktfotos je Position (bis 3; nur Produktbilder aus dem Druckshop-CMS bzw. unserem Bild-Proxy) – das PDF zeigt sie groß unter der Position
-      const imgs = (Array.isArray(i.images) ? i.images : []).map(String).filter(u => /^https:\/\/images\.ctfassets\.net\/|^https:\/\/www\.fs-creative\.at\/print\/bild\//.test(u)).slice(0, 3);
+      const imgs = (Array.isArray(i.images) ? i.images : []).map(String).filter(u => /^https:\/\/images\.ctfassets\.net\/|^https:\/\/www\.fs-creative\.at\/print\/bild\/|^https:\/\/www\.fs-creative\.at\/logos\/angebote\/[\w.-]+\.(jpe?g|png)$/.test(u)).slice(0, 3);   // logos/angebote: eigene Produktfotos (z. B. Farbvarianten, die Print.com nicht liefert)
       return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: parseInt(i.unity, 10) > 0 ? parseInt(i.unity, 10) : 1, objectName: "Unity" }, taxRate: r }, imgs.length ? { images: imgs } : {}); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
     orderPosDelete: null,
   };

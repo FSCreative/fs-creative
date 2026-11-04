@@ -113,7 +113,9 @@ module.exports = function (D) {
     const IMG = {};
     const imgUrl = u => String(u).replace(/^https:\/\/www\.fs-creative\.at\/print\/bild\//, "https://images.ctfassets.net/").replace(/[?#].*$/, "") + "?fm=jpg&w=900&q=82";
     await Promise.all([].concat.apply([], pos.map(p => Array.isArray(p.images) ? p.images.slice(0, 3) : [])).map(async u => {
-      try { const r = await fetch(imgUrl(u), { signal: AbortSignal.timeout(8000) }); if (r.ok) IMG[u] = Buffer.from(await r.arrayBuffer()); } catch (e) {} }));
+      try { const lm = String(u).match(/^https:\/\/www\.fs-creative\.at\/logos\/angebote\/([\w.-]+\.(?:jpe?g|png))$/);   // eigene Fotos direkt von der Platte
+        if (lm) { IMG[u] = fs.readFileSync(path.join(__dirname, "logos", "angebote", lm[1])); return; }
+        const r = await fetch(imgUrl(u), { signal: AbortSignal.timeout(8000) }); if (r.ok) IMG[u] = Buffer.from(await r.arrayBuffer()); } catch (e) {} }));
     const alt = isOrder && (o.alternatives === true || o.alternatives === "true");
     // Text mit Hervorhebung: Zeilen „GROSSBUCHSTABEN: …“ → Label fett (Druckart, Druckfläche, Farben …)
     const richLines = t => String(t || "").split("\n").map(l => { const m = l.match(/^([A-ZÄÖÜ][A-ZÄÖÜa-zäöüß0-9 &/.()-]{2,40}:)\s*(.*)$/); return m ? [m[1] + " ", m[2]] : ["", l]; });
