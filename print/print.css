@@ -2038,7 +2038,7 @@ html.ps-v2.light header.nav .brand .mark img{content:url(/logos/gluehbirne-kopf.
 .ps-v2ic .ps-cn[hidden]{display:block}.ps-v2ic .ps-cn:empty::before{content:"0"}
 .ps-v2cat{background:#fff;border-bottom:1px solid #e5e7eb}
 .ps-v2cat .in{height:62px;gap:2px;overflow-x:auto;scrollbar-width:none}.ps-v2cat .in::-webkit-scrollbar{display:none}
-.ps-v2cat .in>a{flex:none;display:flex;align-items:center;gap:9px;height:44px;padding:0 13px;border-radius:10px;color:#111827;text-decoration:none;font-size:15px;font-weight:500;white-space:nowrap}
+.ps-v2cat .in>a{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 clamp(6px,.75vw,13px);border-radius:10px;color:#111827;text-decoration:none;font-size:clamp(13.5px,1.02vw,15px);font-weight:500;white-space:nowrap}
 .ps-v2cat .in>a:hover{background:#f1f5f9}.ps-v2cat svg{width:22px;height:22px;color:#111827;stroke-width:1.6}
 .ps-v2all{position:relative;flex:none;margin-right:12px}
 .ps-v2all .all{display:flex;align-items:center;gap:9px;height:46px;padding:0 16px;border:0;border-radius:10px;background:var(--accent);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(47,107,255,.35)}
