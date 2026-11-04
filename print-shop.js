@@ -960,31 +960,31 @@ module.exports = function (D) {
   }
   // ── Falzgeometrie ──
   // Print.com nennt bei Foldern das GEFALZTE Format (z. B. „1/3 A4 – 99 × 210 mm“ = DIN-lang-Folder aus A4); Druckdaten = offenes Format.
-  // Wickelfalz: einklappende Felder schmaler (2 mm, ab 4 Feldern 1,5 mm je Stufe), Fensterfalz: Klappen je 1 mm schmaler.
+  // Maße laut offiziellen Infoblättern des Produktionspartners (geprüft 04.11.2026): Wickelfalz 6/8/10-seitig X, X, X−2, X−3, X−4 mm (einklappende Felder),
+  // Fensterfalz 6-seitig ½X, X, ½X, geschlossener Fensterfalz 8-seitig X−1, X, X, X−1 mm, Zickzack/Einbruch/Kreuzfalz gleich breit. Bogen = Felder × Endformat.
   // x/y = Falzpositionen in mm ab linker/oberer Schnittkante, gemessen auf der Außenseite (Seite 1); Innenseite gespiegelt.
   const FOLD_NAMES = { single: "Einbruchfalz", singlehorizontal: "Einbruchfalz oben", wikkel: "Wickelfalz", zigzag: "Zickzackfalz", luik: "Fensterfalz", cross: "Kreuzfalz" };
   function foldSpec(slug, w, h) {
     const m = String(slug || "").match(/^(single|singlehorizontal|wikkel|zigzag|luik|cross)_(\d+)$/); if (!m || !(w > 0 && h > 0)) return null;
-    const t = m[1], pages = +m[2], rd = v => Math.round(v * 2) / 2, name = pages + "-seitiger " + FOLD_NAMES[t];
-    const acc = ws => ws.slice(0, -1).reduce((a, x) => a.concat([rd((a.length ? a[a.length - 1] : 0) + x)]), []);
+    const t = m[1], pages = +m[2], rd = v => Math.round(v * 10) / 10, name = pages + "-seitiger " + FOLD_NAMES[t];
+    const acc = ws => { let c = 0; return ws.slice(0, -1).map(x => rd(c += x)); };
     if (t === "cross") return { slug, name, pages, closed: { w, h }, open: { w: 2 * w, h: 2 * h }, x: [w], y: [h], out: ["Rückseite", "Titel", "Innen", "Innen"], in: ["Innen", "Innen", "Innen", "Innen"], note: "Kreuzfalz: erst quer, dann längs gefalzt – Bogen 2 × 2 Felder." };
     if (t === "singlehorizontal") return { slug, name, pages, closed: { w, h }, open: { w, h: 2 * h }, x: [], y: [h], out: ["Rückseite (180° gedreht anlegen)", "Titel"], in: ["Innen oben", "Innen unten"], note: "Falz oben: Rückseite steht im offenen Bogen auf dem Kopf." };
     let ws, out, inn, note = "";
     const n = t === "single" ? 2 : t === "luik" ? (pages === 6 ? 3 : 4) : pages / 2;
     if (t === "single" || t === "zigzag") { ws = Array(n).fill(w); out = Array(n).fill("").map((x, i) => i === n - 1 ? "Titel" : i === n - 2 && t === "single" ? "Rückseite" : "Außen " + (i + 1)); inn = Array(n).fill("").map((x, i) => "Innen " + (i + 1)); if (t === "zigzag") note = "Zickzackfalz: alle Felder gleich breit."; }
     else if (t === "wikkel") {
-      // Print.com-Vorgabe (Drukwerkdeal-Anleitung): alle Felder außer Vorder- und Rückseite je 1 mm kürzer. Der Bogen bleibt n × Format (z. B. 1/3 A4 = A4-Bogen 297 mm),
-      // die beiden Außenfelder gleichen aus: 1/3 A4 Wickelfalz = 98 + 99,5 + 99,5 mm
-      const flaps = Array(n - 2).fill(w - 1), full = (n * w - flaps.reduce((a, x) => a + x, 0)) / 2;
-      const inside = [full, full].concat(flaps).map(rd); ws = inside.slice().reverse();   // Außenseite = gespiegelte Innenseite
+      // Innenseite von links: zwei volle Felder X, dann die einklappenden Felder X−2, X−3, X−4 mm; Bogen n × Endformat → X = (n·w + Σ Abzüge) / n
+      const d = [2, 3, 4].slice(0, n - 2), X = (n * w + d.reduce((a, x) => a + x, 0)) / n;
+      const inside = [X, X].concat(d.map(x => X - x)); ws = inside.slice().reverse();   // ungerundet, erst Falzpositionen runden (Bogen bleibt exakt)   // Außenseite = gespiegelte Innenseite
       out = ws.map((x, i) => i === n - 1 ? "Titel" : i === n - 2 ? "Rückseite" : "Klappe (außen)"); inn = inside.map((x, i) => i < 2 ? "Innen " + (i + 1) : "Einklappseite " + (i - 1));
-      note = "Wickelfalz: einklappende Seite" + (n > 3 ? "n sind" : " ist") + " je 1 mm schmaler (Vorgabe der Druckerei), damit beim Falzen nichts staucht – Texte dort entsprechend einrücken.";
-    } else {   // Fensterfalz
-      ws = n === 3 ? [w / 2 - 1, w + 2, w / 2 - 1] : [w - 1, w + 1, w + 1, w - 1]; ws = ws.map(rd);   // Bogen bleibt gleich, Klappen je 1 mm schmaler (schließen ohne zu stauchen)
+      note = "Wickelfalz: einklappende Seite" + (n > 3 ? "n sind" : " ist") + " schmaler (" + d.map(x => "−" + x + " mm").join(", ") + ") – Texte dort entsprechend einrücken.";
+    } else {   // Fensterfalz: 6-seitig ½X, X, ½X; geschlossen 8-seitig X−1, X, X, X−1 mm (Bogen 4 × Endformat)
+      if (n === 3) ws = [w / 2, w, w / 2]; else { const X = (4 * w + 2) / 4; ws = [X - 1, X, X, X - 1]; }
       out = n === 3 ? ["Titel – rechte Hälfte", "Rückseite", "Titel – linke Hälfte"] : ["Klappe (außen)", "Rückseite", "Titel", "Klappe (außen)"]; inn = n === 3 ? ["Klappe innen", "Innen Mitte", "Klappe innen"] : ["Klappe innen", "Innen", "Innen", "Klappe innen"];
-      note = "Fensterfalz: beide Klappen falzen zur Mitte und sind je 1 mm schmaler – zusammen bilden sie die Vorderseite.";
+      note = n === 3 ? "Fensterfalz: beide Klappen sind halb so breit wie die Mitte und falzen zur Mitte." : "Geschlossener Fensterfalz: die beiden Außenklappen sind je 1 mm schmaler.";
     }
-    return { slug, name, pages, closed: { w, h }, open: { w: rd(ws.reduce((a, x) => a + x, 0)), h }, x: acc(ws), y: [], widths: ws, out, in: inn, note };
+    return { slug, name, pages, closed: { w, h }, open: { w: rd(ws.reduce((a, x) => a + x, 0)), h }, x: acc(ws), y: [], widths: ws.map(rd), out, in: inn, note };
   }
   function areaOf(prod, all) {
     const a = prod.areas || {}, k = prod.areaProp && all[prod.areaProp], ks = Object.keys(a);
@@ -1483,7 +1483,7 @@ module.exports = function (D) {
     const out = [];
     for (const url of (r && r.workfiles) || []) { const m = /^https:\/\/app\.print\.com\/workfiles\/([a-z0-9_-]{1,80}\/[0-9a-f-]{36}\.zip)$/.exec(String(url)); if (!m) continue;
       const files = await workfileZip(m[1]).catch(() => []), base = "/print/api/wf/" + m[1].replace(/\.zip$/, "");
-      files.forEach((f, i) => out.push({ name: f.name, size: f.buf.length, type: (f.name.split(".").pop() || "").toUpperCase(), url: base + "/" + i + "/" + encodeURIComponent(f.name) })); }
+      files.forEach((f, i) => { if (out.some(o => o.name === f.name)) return; out.push({ name: f.name, size: f.buf.length, type: (f.name.split(".").pop() || "").toUpperCase(), url: base + "/" + i + "/" + encodeURIComponent(f.name) }); }); }
     WF_LIST.set(key, { at: Date.now(), files: out }); if (WF_LIST.size > 500) WF_LIST.delete(WF_LIST.keys().next().value);
     return out;
   }
