@@ -737,7 +737,7 @@
     return [{ slug: "area", title: "Druckfläche", area: (k && a[k]) || (ks.length === 1 ? a[ks[0]] : null) || p.printArea || [100, 100] }];
   }
   function logoKey() { return JSON.stringify(logoPositions().map(function (x) { return [x.slug, x.area]; })); }
-  function cfgOf() { return { product: S.prod.key, sel: S.sel, copies: S.copies, urgency: S.urgency, wish: S.dday || undefined, pm: S.pm || "auto", custom: isCustom() ? S.custom : undefined, textile: S.textile || undefined }; }
+  function cfgOf() { return { product: S.prod.key, sel: S.sel, copies: S.copies, urgency: S.urgency, wish: S.dday || undefined, pm: S.pm || "auto", custom: isCustom() ? S.custom : undefined, textile: S.textile || undefined, motifs: S.mot && S.mot.n > 1 ? S.mot.n : undefined }; }   // mehrere Motive: kein Offsetdruck (Print.com) → anderer Preis
 
   // ── Preis ──
   var pT, pSeq = 0;
@@ -2092,7 +2092,7 @@
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
-      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(50, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); return; }
+      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(50, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); loadPrice(); return; }
       if (mn.hasAttribute("data-motbal")) { motBalance(); render(); return; }
       if (mn.hasAttribute("data-moti")) { motLoad(+mn.getAttribute("data-moti")); render(); return; }
     }
@@ -2199,7 +2199,7 @@
     if (t.matches("select[data-urgency]")) { S.urgency = t.value; S.dday = ""; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
     if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }
-    if (t.hasAttribute("data-motcount")) { var mc = Math.max(2, Math.min(50, parseInt(t.value, 10) || 2)); if (mc > S.copies) { toast("Mehr Motive als Stück geht nicht", true); render(); return; } motSave(); S.mot.n = mc; S.mot.files = S.mot.files.slice(0, mc); S.mot.i = Math.min(S.mot.i, mc - 1); motLoad(S.mot.i); motBalance(); render(); return; }
+    if (t.hasAttribute("data-motcount")) { var mc = Math.max(2, Math.min(50, parseInt(t.value, 10) || 2)); if (mc > S.copies) { toast("Mehr Motive als Stück geht nicht", true); render(); return; } motSave(); S.mot.n = mc; S.mot.files = S.mot.files.slice(0, mc); S.mot.i = Math.min(S.mot.i, mc - 1); motLoad(S.mot.i); motBalance(); render(); loadPrice(); return; }
     if (t.hasAttribute("data-motsb")) { S.mot.sameBack = t.checked; render(); if (t.checked) applyBackAll(); return; }
     if (t.id === "psCBack" && t.files && t.files[0]) return uploadCommonBack(t.files[0]);
     if (t.hasAttribute("data-mots")) { S.mot.split[+t.getAttribute("data-mots")] = Math.max(1, parseInt(t.value, 10) || 1); render(); return; }

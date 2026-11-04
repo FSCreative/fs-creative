@@ -1055,6 +1055,9 @@ module.exports = function (D) {
     // Auflagen-Bereiche je Druckverfahren: nur Verfahren zulassen, die diese Menge drucken
     let pmOnly = null;
     if (prod.qty && prod.qty.length && prod.qty.some(x => x.pm) && !prod.qty.some(x => !x.pm && qtyIn(x, copies))) pmOnly = { printingmethod: prod.qty.filter(x => x.pm && qtyIn(x, copies)).map(x => x.pm) };
+    // Mehrere Motive (Sortenmix): Print.com nimmt im Offsetdruck keine mehreren Designs an („Cannot have multiple designs with offset printing method“) → Offset ausschließen (D-261104-C92J)
+    const motN = Array.isArray(input.motifs) ? input.motifs.length : +input.motifs || 0;
+    if (motN > 1 && prod.auto && Array.isArray(prod.auto.printingmethod)) { const ok = (pmOnly ? pmOnly.printingmethod : prod.auto.printingmethod.map(String)).filter(pm => pm !== "offset"); if (ok.length) pmOnly = { printingmethod: ok }; }
     const r = resolveSel(prod, sel, extra, pmOnly), all = r.all; let excl = r.excluded;
     if (pmOnly && all.printingmethod != null && pmOnly.printingmethod.indexOf(String(all.printingmethod)) < 0) throw bad("Diese Auflage ist mit dem gewählten Druckverfahren nicht möglich");
     let variants = null;
@@ -2290,6 +2293,8 @@ module.exports = function (D) {
   // Absender-Aufkleber mit unserem Logo (Glühbirne) – wie die Absenderadresse „mit Logo“ im Print.com-Konto; ohne Bild nimmt Print.com die Adresse ohne Logo
   const senderLogo = base => process.env.PRINT_SENDER_LOGO_URL || base + "/logos/absender-logo.png";
   const pcFileUrl = (base, id) => base + "/print-files/" + id + "/" + sig("pcfile", id) + ".pdf";
+  // Offsetdruck + mehrere Motive (ältere Bestellungen): je Motiv eigene Position im selben Auftrag statt „designs“
+  const motifSplit = o => Array.isArray(o.motifs) && o.motifs.length > 1 && String((o.pcOptions || {}).printingmethod || "") === "offset";
   const motifDesigns = (o, base) => Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => ({ fileUrl: pcFileUrl(base, m.fileId), copies: m.copies })) : null;
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
   async function placeOrder(id, by) {
@@ -2303,21 +2308,22 @@ module.exports = function (D) {
       const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
         billingAddress: billingFs(),
-        items: [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
+        items: motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(base, m.fileId),
+          fileOptions: { isProduction: true }, approveDesign: true, senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: m.copies }] })) : [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
           // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
           motifDesigns(o, base) ? { designs: motifDesigns(o, base) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, { fileUrl: pcFileUrl(base, fm.id) }), { fileOptions: { isProduction: true }, approveDesign: true,
           senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: o.copies }] })] };
       // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
       const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
-      if (wishOk) Object.assign(body.items[0].shipments[0], { deliveryDate: pw, method: pm });
+      if (wishOk) body.items.forEach(it => Object.assign(it.shipments[0], { deliveryDate: pw, method: pm }));
       let j;
       try { j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
-      catch (e) { if (!wishOk || e.status !== 400) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; } delete body.items[0].shipments[0].deliveryDate; delete body.items[0].shipments[0].method; hist(o, "Wunsch-Liefertag " + pw + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt"); j = null; }
+      catch (e) { if (!wishOk || e.status !== 400) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; } body.items.forEach(it => { delete it.shipments[0].deliveryDate; delete it.shipments[0].method; }); hist(o, "Wunsch-Liefertag " + pw + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt"); j = null; }
       try { if (!j) j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
       catch (e) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
       const r = firstOf(j);
       o.printcom = { orderNumber: String(r.orderNumber || (r.items && r.items[0] && r.items[0].orderNumber) || ""), at: nowIso(), by: by || "Cockpit", total: +r.orderTotal || +r.grandTotal || null, status: String((r.items && r.items[0] && r.items[0].status) || r.status || "") };
-      o.status = "ordered"; stamp(o); hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + " Motive als eigene Designs" : ""));
+      o.status = "ordered"; stamp(o); hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + (motifSplit(o) ? " Motive als eigene Positionen (Offsetdruck)" : " Motive als eigene Designs") : ""));
       if (needsBack(fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
       if (!o.printcom.orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
       await store.putOrder(o);
