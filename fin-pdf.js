@@ -139,9 +139,9 @@ module.exports = function (D) {
       const disc = +p.discount || 0, txt = (strip(p.text) + (disc > 0 ? (strip(p.text) ? "\n" : "") + "abzüglich " + String(disc).replace(".", ",") + " % Rabatt" : "")).trim(), NW = big ? 196 : 268, hName = doc.font("Helvetica-Bold").fontSize(big ? 11 : 9).heightOfString(p.name || "", { width: NW }), hTxt = txt ? (big ? richH(txt, TW, tfs) + 6 : doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2) : 0;
       let PH = big ? 158 : 0; const lim = H - FH - 40;
       // erste Position soll auf Seite 1 stehen: Fotos dafür bei Bedarf etwas kleiner (mind. 110 pt)
-      if (big && i === 0 && y + hName + hTxt + 30 + PH > lim) PH = Math.max(110, lim - (y + hName + hTxt + 30));
+      if (big && i === 0 && y + hName + hTxt + 30 + PH > lim) PH = Math.max(110, Math.floor(lim - (y + hName + hTxt + 30)) - 2);   // abrunden + Puffer: sonst kippt die Zeile wegen Rundung (x,0001 pt) doch auf Seite 2
       const rh = hName + hTxt + 16 + (big ? PH + 14 : 0);
-      if (y + rh > lim) { doc.addPage(); y = 60; header(); }
+      if (y + rh > lim + 0.5) { doc.addPage(); y = 60; header(); }
       if (i % 2 === 1) doc.rect(L, y, R - L, rh).fill(ZEBRA);
       const ty = y + 8;
       doc.font("Helvetica").fontSize(9).fillColor(INK).text(String(i + 1), cx.pos, ty, { width: 26 });

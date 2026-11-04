@@ -2252,7 +2252,8 @@ module.exports = function (D) {
     }
     const s = await settings();
     const direct = o.check === "self" && !(o.fileChecks || []).some(c => c.level === "error") && !(o.clientChecks || []).some(t => /wird sichtbar unscharf/.test(t));
-    if ((s.autoSend || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
+    // Profi-Datencheck bezahlt → nie automatisch senden, Simon prüft persönlich (Bestellung D-261104-33V2 ging trotz „pro“ direkt raus)
+    if (((s.autoSend && o.check !== "pro") || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
   // Status der Rechnung in der Buchhaltung ("100" Entwurf, "200" offen, "750" teilbezahlt, "1000" bezahlt); "" = unbekannt (alter Server/keine Antwort)
@@ -2275,6 +2276,27 @@ module.exports = function (D) {
     try { const bb = p0.getBleedBox(); np.setBleedBox(bb.x, bb.y, bb.width, bb.height); } catch (e) {}
     const out = Buffer.from(await d.save({ useObjectStreams: false }));
     PADDED.set(k, out); if (PADDED.size > 40) PADDED.delete(PADDED.keys().next().value);
+    return out;
+  }
+  // Querformat-Datei für ein Hochformat (oder umgekehrt, z. B. A5 quer bei „A5“): Print.com setzt die Seite sonst ungedreht und verkleinert ins Format
+  // (Bestellung D-261104-33V2) → Seiten drehen: Vorderseiten 90°, Rückseiten 270° (Wenden wie beim Querformat üblich, Rückseite steht nicht auf dem Kopf)
+  const ROTATED = new Map();
+  async function rotateForPrint(buf, fm, o) {
+    const sz = o && o.size, b = +(o && o.bleed) || 0;
+    if (!sz || !(sz.w > 0) || !(sz.h > 0) || Math.abs(sz.w - sz.h) < 3 || (Array.isArray(o.pageMap) && o.pageMap.length) || /^(textile|promo)$/.test((o.product && o.product.kind) || "")) return buf;
+    const k = fm.id + ":" + buf.length; if (ROTATED.has(k)) return ROTATED.get(k);
+    const { PDFDocument, degrees } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false, ignoreEncryption: true });
+    const near = (a, x) => a >= x - 2 && a <= x + 2 * b + 2, MM = 25.4 / 72;
+    let changed = false;
+    d.getPages().forEach((pg, i) => {
+      let box; try { box = pg.getTrimBox(); } catch (e) { box = pg.getMediaBox(); }
+      const rot = ((pg.getRotation().angle % 360) + 360) % 360, sw = rot % 180 ? box.height : box.width, sh = rot % 180 ? box.width : box.height, w = sw * MM, h = sh * MM;
+      if (near(w, sz.w) && near(h, sz.h)) return;   // passt bereits
+      if (!(near(w, sz.h) && near(h, sz.w))) return;   // anderes Format – nicht anfassen
+      pg.setRotation(degrees((rot + (i % 2 ? 270 : 90)) % 360)); changed = true;
+    });
+    const out = changed ? Buffer.from(await d.save({ useObjectStreams: false })) : buf;
+    ROTATED.set(k, out); if (ROTATED.size > 40) ROTATED.delete(ROTATED.keys().next().value);
     return out;
   }
   // Absender-Aufkleber mit unserem Logo (Glühbirne) – wie die Absenderadresse „mit Logo“ im Print.com-Konto; ohne Bild nimmt Print.com die Adresse ohne Logo
@@ -3574,6 +3596,7 @@ module.exports = function (D) {
         if (!o || ["ordered", "in_production", "shipped", "delivered", "problem", "paid", "invoice_requested"].indexOf(o.status) < 0) return D.send(res, 404, "Not found");
         let buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
+        buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
       if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js") {
