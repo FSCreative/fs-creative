@@ -1977,3 +1977,5 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .pd-tsz{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;border:1px solid rgba(127,127,127,.35);border-radius:10px;font-size:12.5px;font-weight:600}
 .pd-tsz.on{border-color:#0a84ff;background:rgba(10,132,255,.12)}.pd-tsz input{width:100%;text-align:center;border:0;background:transparent;color:inherit;font:inherit;font-weight:500}
 .pd-tsprice b{font-size:15px}
+
+.ps-bonus-tag.best{color:var(--text-dim)}
