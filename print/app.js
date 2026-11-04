@@ -13,6 +13,9 @@
   })();
   var root = document.getElementById("shop");
   if (!root) return;
+  // Neue Startseite + Header (Entwurf Simon 04.11.2026) – vorerst nur als Vorschau: /print?vorschau=start (bleibt für den Besuch an), /print?vorschau=aus beendet sie
+  var V2 = (function () { var q = new URLSearchParams(location.search); try { if (q.has("vorschau")) { if (q.get("vorschau") === "aus") sessionStorage.removeItem("psV2"); else sessionStorage.setItem("psV2", "1"); } return sessionStorage.getItem("psV2") === "1"; } catch (e) { return q.get("vorschau") === "start"; } })();
+  if (V2) v2Header();
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
   var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
@@ -403,7 +406,8 @@
     var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="50" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
     var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>' + U() + '</small></label>'; }).join("") +
       '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + "" + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
-    return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
+    DDI.motinfo = [{ val: "1", name: "Was sind Motive?", desc: "Ein Motiv ist ein Design, also eine Druckdatei. Mit mehreren Motiven bestellst du verschiedene Designs in einer Auflage, zum Beispiel 500 Flyer mit 2 Motiven: 250 Stück mit Design A und 250 Stück mit Design B. Die Aufteilung kannst du selbst festlegen. Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln – ohne Aufpreis. Hast du nur ein Design, lass einfach 1 gewählt." }];
+    return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <button type="button" class="ps-i sm" data-ddinfo="motinfo|1" aria-label="Was bedeutet Anzahl Motive?" aria-haspopup="dialog">i</button> <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
       (n > 1 && sides() === 2 ? '<label class="ps-cb sm ps-msb"><input type="checkbox" data-motsb="1"' + (S.mot.sameBack !== false ? " checked" : "") + '><span>' + sideNames()[1] + " für alle Motive gleich – nur einmal hochladen</span></label>" : "") +
       (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu 50 Motive, ohne Aufpreis. Mit mehreren Motiven wird digital gedruckt – Offsetdruck gibt es nur mit einem Motiv.</p>" : "") + "</div>";
   }
@@ -1147,6 +1151,51 @@
       '<span class="bd">' + (p.__new ? '<span class="ps-badge new">' + esc(newLabel(p.added)) + "</span>" : p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
+
+  // ── Vorschau neuer Header: Leiste mit Vorteilen, große Suche, Konto/Hilfe/Warenkorb, Kategorien-Leiste mit Symbolen ──
+  function v2Ic(d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + "</svg>"; }
+  var V2I = { truck: '<path d="M3 6h11v9H3zM14 9h4l3 3v3h-7"/><circle cx="7" cy="17" r="1.8"/><circle cx="17" cy="17" r="1.8"/>', check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16.5 9"/>', pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>', pin: '<path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+    grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
+    flyer: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h5"/>', card: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 11h5M7 14h8"/>',
+    poster: '<path d="M6 3h12v18l-6-4-6 4z"/>', banner: '<path d="M4 4v17M4 5h15l-3 4 3 4H4"/>', rollup: '<path d="M7 3h10v15H7zM5 18h14M12 18v3M9 21h6"/>',
+    sticker: '<path d="M20 12a8 8 0 1 1-8-8h8z"/><path d="M20 12h-5a3 3 0 0 1-3-3V4"/>', shirt: '<path d="M8 3 3 6l2 5 3-1v11h8V10l3 1 2-5-5-3a4 4 0 0 1-8 0z"/>',
+    gift: '<rect x="3" y="8" width="18" height="5"/><path d="M5 13v8h14v-8M12 8v13M12 8S10 3 7.5 4.5 9 8 12 8zm0 0s2-5 4.5-3.5S15 8 12 8z"/>', box: '<path d="m3 7 9-4 9 4v10l-9 4-9-4z"/><path d="m3 7 9 4 9-4M12 11v10"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', chat: '<path d="M4 5h16v11H9l-5 4z"/>', cart: '<path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', star: '<path d="M12 2.6l2.7 6 6.6.7-4.9 4.4 1.4 6.5L12 16.9l-5.8 3.3 1.4-6.5-4.9-4.4 6.6-.7z"/>' };
+  var V2CAT = [["Flyer & Folder", "flyer", "/print/flyer"], ["Visitenkarten", "card", "/print/visitenkarten"], ["Plakate", "poster", "/print/plakate"], ["Banner", "banner", "/print/pvc-banner"], ["Roll-ups", "rollup", "/print/rollups"],
+    ["Aufkleber", "sticker", "", "stickers-tapes"], ["Textilien", "shirt", "", "clothing-textile"], ["Werbeartikel", "gift", "", "gifts-merchandise-promotional"], ["Verpackungen", "box", "", "packaging-bags"]];
+  function v2Header() {
+    var hd = document.querySelector("header.nav"), inner = hd && hd.querySelector(".nav-inner"); if (!inner || hd.querySelector(".ps-v2q")) return;
+    document.documentElement.classList.add("ps-v2");
+    var top = document.createElement("div"); top.className = "ps-v2top";
+    top.innerHTML = '<div class="in"><ul><li>' + v2Ic(V2I.truck) + "Versand in ganz Österreich inklusive</li><li>" + v2Ic(V2I.check) + "Datencheck gratis</li><li>" + v2Ic(V2I.pen) + "Online gestalten oder Datei hochladen</li><li>" + v2Ic(V2I.pin) + 'Persönlich aus dem Montafon</li></ul><nav aria-label="Service"><a href="/print/hilfe">So geht’s &amp; FAQ</a><a href="tel:+436641430620">+43 664 1430620</a><button type="button" data-theme-toggle>Licht an/aus</button></nav></div>';
+    hd.insertBefore(top, inner);
+    var q = document.createElement("form"); q.className = "ps-v2q"; q.action = "/print"; q.method = "get"; q.setAttribute("role", "search");
+    q.innerHTML = v2Ic(V2I.search) + '<input type="search" name="q" placeholder="Was möchtest du drucken? (z. B. Flyer, Banner, Visitenkarten …)" aria-label="Produkt suchen" autocomplete="off" value=""><button type="submit">Suchen</button>';
+    q.addEventListener("submit", function (e) { var v = q.querySelector("input").value.trim(); if (!S || !S.cat) return; e.preventDefault(); S.q = v; S.group = ""; S.sub = ""; setPage("produkte"); });
+    var ic = document.createElement("div"); ic.className = "ps-v2ic";
+    ic.innerHTML = '<a href="/print?konto" data-acct-link>' + v2Ic(V2I.user) + '<span data-acct-label>Anmelden</span></a><a href="/print/hilfe#faq" data-chat-open>' + v2Ic(V2I.chat) + "<span>Hilfe &amp; Chat</span></a>" +
+      '<a href="/print?warenkorb" data-cart-link>' + v2Ic(V2I.cart) + '<span>Warenkorb</span><b class="ps-cn" data-cart-n hidden></b></a>';
+    var brand = inner.querySelector(".brand"); inner.insertBefore(q, brand ? brand.nextSibling : inner.firstChild); inner.insertBefore(ic, q.nextSibling);
+    var xn = document.querySelector(".nav-links [data-xnav]");
+    var cat = document.createElement("nav"); cat.className = "ps-v2cat"; cat.setAttribute("aria-label", "Kategorien");
+    cat.innerHTML = '<div class="in"><a class="all" href="/print?produkte" data-nav="produkte">' + v2Ic(V2I.grid) + "Alle Produkte</a>" + (xn ? '<a class="xm" href="/print/weihnachten">' + v2Ic(V2I.star) + "Weihnachten</a>" : "") +
+      V2CAT.map(function (c) { return c[2] ? '<a href="' + c[2] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>" : '<a href="/print?kategorie=' + c[3] + '" data-nav="produkte" data-navgroup="' + c[3] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>"; }).join("") + "</div>";
+    hd.appendChild(cat);
+  }
+  // ── Vorschau neue Startseite: Slider auf Bildschirmbreite, Vorteile-Leiste, beliebte Kategorien mit Bildern ──
+  function v2Home() {
+    var sl = xmasTeaser(); if (!sl) return "";
+    var P = function (k) { return prodByKey(k); }, bn = P("pvc-banner") || S.cat.products.filter(function (p) { return p.kind === "banner"; })[0], tx = P("tshirt-basic"), mug = P("tasse");
+    var cats = [[P("flyer"), "Flyer & Folder"], [P("visitenkarten"), "Visitenkarten"], [P("plakate"), "Plakate & Poster"], [bn, "Banner & Planen"], [P("aufkleber"), "Aufkleber", "stickers-tapes"], [tx, "Textilien", "clothing-textile"], [mug, "Werbeartikel", "gifts-merchandise-promotional"]].filter(function (c) { return c[0]; });
+    var tile = function (c) { var p = c[0], at = c[2] ? 'data-nav="produkte" data-navgroup="' + esc(c[2]) + '"' : 'data-prod="' + esc(p.key) + '"';
+      return '<button type="button" class="ps-v2t" ' + at + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : "") + '</span><b>' + esc(c[1]) + ' <i aria-hidden="true">→</i></b></button>'; };
+    var usp = [["truck", "Schnelle Lieferung", "frei Haus in ganz Österreich"], ["check", "Datencheck inklusive", "automatisch – Profi-Check optional"], ["pen", "Einfach gestalten", "online im Designer oder Datei hochladen"], ["pin", "Regional & persönlich", "dein Druckpartner aus dem Montafon"]];
+    return '<div class="ps-v2hero">' + sl + "</div>" +
+      '<ul class="ps-v2usp">' + usp.map(function (u) { return "<li>" + v2Ic(V2I[u[0]]) + "<span><b>" + u[1] + "</b>" + u[2] + "</span></li>"; }).join("") + "</ul>" +
+      '<section class="ps-hsec ps-v2cats"><div class="ps-hsec-h"><h2>Beliebte Kategorien</h2><button type="button" class="ps-link" data-nav="produkte">Alle Produkte ansehen →</button></div><div class="ps-v2grid">' + cats.map(tile).join("") +
+      '<button type="button" class="ps-v2t all" data-nav="produkte"><span class="im">' + v2Ic(V2I.grid) + "</span><b>Alle Produkte <i aria-hidden=\"true\">→</i></b></button></div></section>";
+  }
   function vHome() {
     var chipsK = ["flyer", "visitenkarten", "plakate", "aufkleber", "rollups", "folder"], chipsL = chipsK.map(prodByKey).filter(Boolean);
     var bn = S.cat.products.filter(function (p) { return p.kind === "banner"; })[0]; if (bn) chipsL.splice(3, 0, bn);
@@ -1156,12 +1205,13 @@
     var nw = newestProds(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
     // Hero (Entwurf 1, Okt. 2026): eine Überschrift, eine Suche, sechs Produktfotos – Sofortpreis darunter als eigener Abschnitt
     var tiles = ["flyer", "visitenkarten", "plakate"].map(prodByKey).concat([bn, tx, S.cat.products.filter(function (p) { return p.kind === "promo"; })[0]]).filter(Boolean).slice(0, 6);
-    return '<section class="ps-hero1"><h1>Drucken, <span class="gx">ganz einfach.</span></h1><p class="lead">Produkt wählen, Datei hochladen oder online gestalten – Preis sofort, Lieferung in ganz Österreich.</p>' +
+    var v2h = V2 ? v2Home() : "";
+    return (v2h || '<section class="ps-hero1"><h1>Drucken, <span class="gx">ganz einfach.</span></h1><p class="lead">Produkt wählen, Datei hochladen oder online gestalten – Preis sofort, Lieferung in ganz Österreich.</p>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Was möchtest du drucken?" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-h1tiles">' + tiles.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '"><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<i aria-hidden="true">' + esc(p.icon) + "</i>") + "</span><b>" + esc(p.kind === "promo" ? "Werbeartikel" : p.kind === "textile" ? "T-Shirts" : shortName(p)) + "</b></button>"; }).join("") + "</div>" +
       '<button type="button" class="ps-link ps-h1all" data-nav="produkte">Alle Produkte ansehen →</button>' +
       '<ul class="ps-h1trust"><li>Preis sofort inkl. Versand</li><li>Datencheck gratis</li><li>Firmen auf Rechnung</li></ul></section>' +
-      xmasTeaser() + savedHomeHtml() + recentHtml() +
+      xmasTeaser()) + savedHomeHtml() + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die vier neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
