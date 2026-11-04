@@ -5,7 +5,7 @@
 "use strict";
 var W=window, d=document;
 if(W.__fscChat||/^\/admin/.test(location.pathname)||!W.fetch||!W.JSON) return; W.__fscChat=1;
-var K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
+var tyWho="", tySent=0, K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
 var FMAX=15*1024*1024, FTYPES={"image/jpeg":1,"image/png":1,"image/webp":1,"application/pdf":1};
 try{ st=JSON.parse(localStorage.getItem(K)||"null")||{}; }catch(e){ st={}; }
 function save(){ try{ localStorage.setItem(K,JSON.stringify(st)); }catch(e){} }
@@ -35,7 +35,7 @@ var CSS='.fscc-print{position:fixed;right:90px;bottom:calc(29px + var(--fscc-tb,
 '.fscc-m{max-width:84%;padding:8px 12px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px}.fscc-m small{display:block;font-size:11px;opacity:.7;margin-top:2px}'+
 '.fscc-m.v{align-self:flex-end;background:var(--accent,#0a84ff);color:#fff;border-bottom-right-radius:5px}.fscc-m.me,.fscc-m.ki{align-self:flex-start;background:var(--surface-2,rgba(255,255,255,.07));border-bottom-left-radius:5px}'+
 '.fscc-m .who{display:block;font-size:11px;font-weight:700;opacity:.75;margin-bottom:1px}.fscc-m.sys{align-self:center;max-width:92%;background:none;color:var(--text-dim,#a1a1aa);font-size:12.5px;text-align:center;padding:4px 8px}'+
-'.fscc-ty{align-self:flex-start;color:var(--text-dim,#a1a1aa);font-size:12.5px;padding:2px 6px}.fscc-hi{align-self:center;text-align:center;color:var(--text-dim,#a1a1aa);font-size:13.5px;padding:18px 10px 8px}'+
+'.fscc-ty{align-self:flex-start;display:flex;gap:4px;align-items:center;padding:11px 14px;border-radius:16px;background:var(--fscc-in,rgba(127,127,127,.16))}.fscc-ty i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.35;animation:fsccTy 1.2s infinite ease-in-out}.fscc-ty i:nth-child(2){animation-delay:.18s}.fscc-ty i:nth-child(3){animation-delay:.36s}@keyframes fsccTy{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:.9;transform:translateY(-3px)}}.fscc-hi{align-self:center;text-align:center;color:var(--text-dim,#a1a1aa);font-size:13.5px;padding:18px 10px 8px}'+
 '.fscc-pv{font-size:11.5px;color:var(--text-faint,#6e6e78);padding:0 14px 6px;text-align:center}.fscc-pv a{color:inherit;text-decoration:underline}'+
 '.fscc-f{border-top:1px solid var(--border,rgba(255,255,255,.09));padding:10px 10px calc(10px + env(safe-area-inset-bottom));display:grid;gap:8px}'+
 '.fscc-nm,.fscc-in{width:100%;border:1px solid var(--border-2,rgba(255,255,255,.14));background:var(--bg,#0a0a0f);color:inherit;border-radius:14px;padding:9px 12px;font:inherit;font-size:16px}.fscc-nm{font-size:14px;padding:7px 12px}'+
@@ -108,7 +108,7 @@ function build(){
   p.addEventListener("dragleave",function(){ if(--dn<=0){ dn=0; p.classList.remove("drag"); } });
   p.addEventListener("drop",function(e){ if(!hasFiles(e)) return; e.preventDefault(); dn=0; p.classList.remove("drag"); queue(e.dataTransfer.files); });
   el.in.addEventListener("paste",function(e){ var it=e.clipboardData&&e.clipboardData.files; if(it&&it.length){ e.preventDefault(); queue(it); } });
-  el.in.addEventListener("input",grow);
+  el.in.addEventListener("input",grow); el.in.addEventListener("input",function(){ if(!st.started||!el.in.value.trim()||Date.now()-tySent<3000) return; tySent=Date.now(); fetch("/chat/api/typing?c="+cid(),{method:"POST",credentials:"same-origin",cache:"no-store"}).catch(function(){}); });
   el.in.addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); send(); } });
   f.addEventListener("submit",function(e){ e.preventDefault(); send(); });
   p.addEventListener("keydown",function(e){ if(e.key==="Escape"){ e.preventDefault(); toggle(false); } });
@@ -128,10 +128,10 @@ function start(){
   api("/chat/api/start",{cid:cid(),page:location.pathname}).then(function(j){ if(!j||!j.ok) return; online=!!j.online; closed=!!j.closed; typing=!!j.typing; msgs=j.msgs||[]; last=msgs.length?msgs[msgs.length-1].id:0; if(j.name&&!el.nm.value) el.nm.value=j.name; seen(); head(); paint(); schedule(); }).catch(function(){ schedule(); });
 }
 function seen(){ if(last&&last!==st.seen){ st.seen=last; save(); } }
-function schedule(){ clearTimeout(pollT); if(isOpen) pollT=setTimeout(poll,typing?2500:4000); }
+function schedule(){ clearTimeout(pollT); if(isOpen) pollT=setTimeout(poll,typing?2000:online?3000:4000); }
 function poll(){
   if(!isOpen||d.hidden){ schedule(); return; }
-  api("/chat/api/poll?c="+cid()+"&after="+last).then(function(j){ if(j&&j.ok){ var ch=online!==!!j.online||typing!==!!j.typing; online=!!j.online; typing=!!j.typing; closed=!!j.closed; add(j.msgs||[]); if(ch){ head(); paint(); } } schedule(); }).catch(schedule);
+  api("/chat/api/poll?c="+cid()+"&after="+last).then(function(j){ if(j&&j.ok){ var ch=online!==!!j.online||typing!==!!j.typing||tyWho!==(j.who||""); online=!!j.online; typing=!!j.typing; tyWho=j.who||""; closed=!!j.closed; add(j.msgs||[]); if(ch){ head(); paint(); } } schedule(); }).catch(schedule);
 }
 function add(arr){ var n=0; arr.forEach(function(m){ if(m.id>last){ msgs.push(m); last=m.id; n++; } }); if(n){ seen(); paint(); } }
 function fmt(iso){ var t=new Date(iso); return isNaN(t)?"":t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
@@ -141,7 +141,7 @@ function paint(){
   msgs.forEach(function(m){ var b=h("div","fscc-m "+(m.from==="v"||m.from==="me"||m.from==="ki"||m.from==="sys"?m.from:"sys"));
     if(m.from==="me"||m.from==="ki") b.appendChild(h("span","who",m.from==="me"?"Simon":"KI-Assistent · Angaben unverbindlich"));
     if(m.file&&m.from!=="sys"){ b.classList.add("file"); b.appendChild(fileEl(m.file)); } else b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at))); L.appendChild(b); });
-  if(typing) L.appendChild(h("div","fscc-ty","schreibt …"));
+  if(typing){ var ty=h("div","fscc-ty"); ty.setAttribute("aria-label",(tyWho==="me"?"Simon":"Der Assistent")+" schreibt"); ty.appendChild(h("i")); ty.appendChild(h("i")); ty.appendChild(h("i")); L.appendChild(ty); }
   el.pv.style.display=st.started?"none":""; el.nm.style.display=st.started&&st.name?"none":"";
   if(atEnd||sending) L.scrollTop=L.scrollHeight;
 }

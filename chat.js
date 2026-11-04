@@ -122,6 +122,8 @@ module.exports = function (D) {
   // ───────────────────────── Zustand im Arbeitsspeicher ─────────────────────────
   const CONVS = new Map();          // id → Unterhaltung (Kopfdaten)
   const BUSY = new Map();           // id → KI schreibt gerade
+  const VTYP = new Map(), ATYP = new Map(), TYP_MS = 6000;   // „schreibt …“ (Wunsch Simon 04.11.2026): Besucher bzw. Simon hat zuletzt getippt (id → Zeit)
+  const typingOf = (m, id) => (m.get(id) || 0) > Date.now() - TYP_MS;
   let VER = 1, LOADED = null, ST = null, AIDAY = null, lastClean = 0;
   const bump = () => { VER++; };
   async function loadAll() {
@@ -307,7 +309,13 @@ module.exports = function (D) {
         const c = CONVS.get(id), on = await online();
         if (!c) return J(res, 200, { ok: true, online: on, msgs: [], typing: false, closed: false });
         const msgs = c.lastId > a ? (await store.msgs(id, a, 100)).map(pubMsg) : [];
-        return J(res, 200, { ok: true, online: on, msgs, typing: BUSY.has(id), closed: !!c.closed });
+        return J(res, 200, { ok: true, online: on, msgs, typing: BUSY.has(id) || typingOf(ATYP, id), who: BUSY.has(id) ? "ki" : typingOf(ATYP, id) ? "me" : "", closed: !!c.closed });
+      }
+      if (p === "/chat/api/typing" && req.method === "POST") {   // Besucher tippt (gedrosselt im Widget, ~alle 3 s)
+        req.resume(); const id = String(u.searchParams.get("c") || "");
+        if (CID_RX.test(id) && CONVS.get(id) && !limited("t|" + ip, 300, 600000)) VTYP.set(id, Date.now());
+        if (VTYP.size > 5000) for (const k of VTYP.keys()) { VTYP.delete(k); if (VTYP.size <= 4000) break; }
+        return J(res, 200, { ok: true });
       }
       if (p === "/chat/api/file" && (req.method === "GET" || req.method === "HEAD")) {   // nur Dateien der eigenen Unterhaltung (ID + Datei-ID)
         const id = String(u.searchParams.get("c") || ""), fid = String(u.searchParams.get("f") || "");
@@ -384,7 +392,7 @@ module.exports = function (D) {
         const id = String(u.searchParams.get("id") || ""), c = CID_RX.test(id) && CONVS.get(id);
         if (!c) return J(res, 404, { ok: false, error: "not_found" });
         if (u.searchParams.get("read") === "1" && c.unread) { c.unread = 0; await store.putConv(c); bump(); }
-        return J(res, 200, { ok: true, conv: summary(c), pages: c.pages || [], msgs: (await store.msgs(id, 0, 300)).map(pubMsg) });
+        return J(res, 200, { ok: true, conv: summary(c), pages: c.pages || [], msgs: (await store.msgs(id, 0, 300)).map(pubMsg), typing: typingOf(VTYP, id) });
       }
       if (p === "/admin/api/chat/file") {
         const id = String(u.searchParams.get("id") || ""), c = CID_RX.test(id) && CONVS.get(id);
@@ -401,9 +409,11 @@ module.exports = function (D) {
         let m; try { m = await storeFile(c, "me", buf, req.headers["x-file-name"]); } catch (e) { return fileErr(res, e); }
         return J(res, 200, { ok: true, msg: pubMsg(m), conv: summary(c) });
       }
+      if (p === "/admin/api/chat/typing" && req.method === "GET") { const id = String(u.searchParams.get("id") || ""); return J(res, 200, { ok: true, typing: CID_RX.test(id) && typingOf(VTYP, id) }); }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       let d; try { d = await body(req, 20000); } catch (e) { return J(res, e.code || 400, { ok: false, error: e.message }); }
       if (p === "/admin/api/chat/status") return J(res, 200, { ok: true, online: await setStatus(d.online !== false) });
+      if (p === "/admin/api/chat/typing") { const id = String(d.id || ""); if (CID_RX.test(id) && CONVS.get(id)) ATYP.set(id, Date.now()); return J(res, 200, { ok: true }); }   // Simon tippt
       const id = String(d.id || ""), c = CID_RX.test(id) && CONVS.get(id);
       if (!c) return J(res, 404, { ok: false, error: "not_found" });
       if (p === "/admin/api/chat/send") {

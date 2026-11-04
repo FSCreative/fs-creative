@@ -28,7 +28,7 @@ F.css('.ch-top{display:flex;align-items:center;justify-content:space-between;gap
   '.ch-badge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--ok);color:var(--on-glow);font-weight:700;font-size:11.5px;line-height:20px;text-align:center}.ch-c.closed{opacity:.6}'+
   '.ch-th{display:flex;flex-direction:column;min-width:0;min-height:0}.ch-hd{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}.ch-hd .t{flex:1 1 180px;min-width:0}.ch-hd .t b{display:block;font-size:15.5px}.ch-hd .t span{display:block;font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
   '.ch-hd .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ch-hd .seg{display:inline-flex}.ch-hd .seg button{padding:5px 10px;font-size:12.5px}.ch-back{display:none}'+
-  '.ch-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:6px;background:var(--sunk)}.ch-m{max-width:76%;padding:8px 12px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px;line-height:1.45;background:var(--panel);border:1px solid var(--line)}'+
+  '.ch-typing{display:flex;gap:4px;align-items:center;align-self:flex-start;margin:0 16px 8px;padding:10px 14px;border-radius:16px;background:var(--surface-2,rgba(127,127,127,.14));width:max-content}.ch-typing[hidden]{display:none}.ch-typing i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.35;animation:chTy 1.2s infinite ease-in-out}.ch-typing i:nth-child(2){animation-delay:.18s}.ch-typing i:nth-child(3){animation-delay:.36s}@keyframes chTy{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:.9;transform:translateY(-3px)}}.ch-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:6px;background:var(--sunk)}.ch-m{max-width:76%;padding:8px 12px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px;line-height:1.45;background:var(--panel);border:1px solid var(--line)}'+
   '.ch-m small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}.ch-m.v{align-self:flex-start;border-bottom-left-radius:5px;font-family:var(--f-body);font-size:14.5px;font-weight:400;letter-spacing:normal;line-height:1.45;color:var(--ink)}.ch-m.me{align-self:flex-end;background:var(--ok-soft);border-color:transparent;border-bottom-right-radius:5px}'+
   '.ch-m.ki{align-self:flex-end;background:var(--info-soft);border-color:transparent;border-bottom-right-radius:5px}.ch-m .ki-t{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:0 6px;border-radius:6px;background:var(--info);color:var(--on-glow);margin-bottom:3px}'+
   '.ch-m.sys{align-self:center;background:none;border:0;color:var(--ink-3);font-size:12.5px;text-align:center}.ch-ty{align-self:flex-end;font-size:12.5px;color:var(--ink-3)}.ch-info{font-size:12.5px;color:var(--ink-2);padding:8px 14px;border-bottom:1px solid var(--line);display:flex;gap:12px;flex-wrap:wrap}'+
@@ -59,7 +59,7 @@ function loadThread(){
   api("/admin/api/chat/conv?id="+encodeURIComponent(id)+"&read=1").then(function(j){ if(SEL!==id) return;
     if(!j||!j.ok){ if(j&&j.error==="not_found"){ SEL=null; TH=null; paint(); } return; }
     var same=TH&&TH.id===id&&JSON.stringify(TH.msgs)===JSON.stringify(j.msgs)&&JSON.stringify(TH.conv)===JSON.stringify(j.conv);
-    TH={id:id,conv:j.conv,msgs:j.msgs,pages:j.pages||[]}; if(!same) paintThread();
+    TH={id:id,conv:j.conv,msgs:j.msgs,pages:j.pages||[]}; if(!same) paintThread(); tyShow(!!j.typing);
   });
 }
 /* Automatisch online, sobald das Cockpit offen und sichtbar ist (Bildschirm entsperrt). Von Hand ausgeschaltet bleibt es aus,
@@ -113,7 +113,7 @@ function paintThread(){
   var hd=document.getElementById("chHd"), ms=document.getElementById("chMsgs");
   if(compFor!==SEL||!hd||!ms){
     compFor=SEL;
-    th.innerHTML='<div id="chHd"></div><div class="ch-msgs" id="chMsgs" role="log" aria-live="polite" aria-label="Nachrichten"></div><div class="ch-up" id="chUp" role="status" aria-live="polite"></div><form class="ch-comp" data-form="chsend"><button type="button" class="btn icon ch-clip" data-act="chattach" title="Bild oder PDF anhängen (max. 15 MB) – auch per Drag & Drop oder Einfügen" aria-label="Bild oder PDF anhängen">'+F.svg("clip")+'</button><input type="file" id="chFile" multiple accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" hidden><textarea class="f" id="chText" rows="1" maxlength="2000" placeholder="Antwort schreiben … (Enter = senden, Umschalt+Enter = neue Zeile)" aria-label="Antwort"></textarea><button type="submit" class="btn primary">Senden</button></form>';
+    th.innerHTML='<div id="chHd"></div><div class="ch-msgs" id="chMsgs" role="log" aria-live="polite" aria-label="Nachrichten"></div><div class="ch-typing" id="chTyping" hidden aria-label="Besucher schreibt"><i></i><i></i><i></i></div><div class="ch-up" id="chUp" role="status" aria-live="polite"></div><form class="ch-comp" data-form="chsend"><button type="button" class="btn icon ch-clip" data-act="chattach" title="Bild oder PDF anhängen (max. 15 MB) – auch per Drag & Drop oder Einfügen" aria-label="Bild oder PDF anhängen">'+F.svg("clip")+'</button><input type="file" id="chFile" multiple accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" hidden><textarea class="f" id="chText" rows="1" maxlength="2000" placeholder="Antwort schreiben … (Enter = senden, Umschalt+Enter = neue Zeile)" aria-label="Antwort"></textarea><button type="submit" class="btn primary">Senden</button></form>';
     hd=document.getElementById("chHd"); ms=document.getElementById("chMsgs");
     var ta=document.getElementById("chText"); ta.value=DRAFT[SEL]||""; grow(ta);
     if(window.matchMedia&&!window.matchMedia("(max-width:900px)").matches) setTimeout(function(){ ta.focus({preventScroll:true}); },30);
@@ -173,7 +173,11 @@ F.form("chsend",function(f){
     DRAFT[id]=""; if(SEL===id){ ta.value=""; grow(ta); if(TH&&TH.id===id){ TH.msgs=TH.msgs.concat([j.msg]); TH.conv=j.conv; } paintThread(); } setConv(j.conv); load();
   }).catch(function(){ sending=false; F.toast("Keine Verbindung",true); });
 });
-F.listen("input","#chText",function(el){ if(SEL) DRAFT[SEL]=el.value; grow(el); });
+F.listen("input","#chText",function(el){ if(SEL) DRAFT[SEL]=el.value; grow(el); if(SEL&&el.value.trim()&&Date.now()-TYS>3000){ TYS=Date.now(); api("/admin/api/chat/typing",{id:SEL}); } });
+/* „schreibt …“ (Wunsch Simon 04.11.2026): Besucher tippt → drei Punkte unter dem Verlauf; du tippst → der Besucher sieht sie im Chat */
+var TYS=0;
+function tyShow(on){ var t=document.getElementById("chTyping"); if(t) t.hidden=!on; }
+setInterval(function(){ if(!SEL||F.current!=="chat"||document.hidden) return; var id=SEL; api("/admin/api/chat/typing?id="+encodeURIComponent(id)).then(function(j){ if(SEL===id&&j&&j.ok) tyShow(!!j.typing); }); },2000);
 F.listen("keydown","#chText",function(el,e){ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); var f=el.closest("form"); if(f&&F.forms.chsend) F.forms.chsend(f,e); } });
 
 /* ── Anhänge senden: nacheinander, mit Fortschritt; Fehler verständlich auf Deutsch ── */
