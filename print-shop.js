@@ -375,9 +375,24 @@ module.exports = function (D) {
     await store.setMeta("print_settings", s); SETTINGS = s; return s;
   }
   // Sichtbar im Shop: einzeln an ODER (Kategorie an UND nicht einzeln aus); Untergruppe (an/aus) vor Hauptgruppe; kuratierte zusätzlich über products[key].enabled abschaltbar
+  // Zubehör laut Hersteller: { sku: [Zubehör-SKU, …] } für alle freigeschalteten Produkte, einmal täglich im Hintergrund (niedrige Priorität)
+  let ACC_MAP = null; const ACC_ON = new Set(); let accBusy = false;
+  async function accLoad() { if (ACC_MAP) return ACC_MAP; ACC_MAP = (await store.getMeta("print_acc").catch(() => null)) || { at: null, map: {} }; ACC_ON.clear(); Object.values(ACC_MAP.map || {}).forEach(l => (l || []).forEach(x => ACC_ON.add(x.sku))); return ACC_MAP; }
+  async function accSync(force) {
+    await accLoad(); if (accBusy || (!force && ACC_MAP.at && Date.now() - Date.parse(ACC_MAP.at) < 864e5) || !cfg().pcKey) return; accBusy = true;
+    try {
+      const s = await settings(), cat = await catalog(), all = await catalogAll().catch(() => null), list = publicCatalog(cat, s, all), map = {};
+      for (const p of list) { const pr = (cat.products || []).find(x => x.key === p.key), sku = pr ? pr.sku : p.key; if (!sku || map[sku]) continue;
+        try { const raw = await pcApi("GET", "/accessories/" + encodeURIComponent(sku), undefined, { low: true }); map[sku] = (Array.isArray(raw) ? raw : []).filter(a => a && a.sku).map(a => ({ sku: String(a.sku), conf: a.configuration || {} })); } catch (e) { if (ACC_MAP.map[sku]) map[sku] = ACC_MAP.map[sku]; }
+        await new Promise(r => setTimeout(r, 250)); }
+      ACC_MAP = { at: new Date().toISOString(), map }; ACC_ON.clear(); Object.values(map).forEach(l => l.forEach(x => ACC_ON.add(x.sku))); ACC_CACHE.clear();
+      await store.setMeta("print_acc", ACC_MAP).catch(() => {});
+    } finally { accBusy = false; }
+  }
   function shown(s, sku, key, cat) {
     const ov = (key && s.products[key]) || {}; if (ov.enabled === false) return false;
     const e = s.enabled[sku]; if (e === true) return true; if (e === false) return false;
+    if (ACC_ON.has(sku)) return true;   // Zubehör eines freigeschalteten Produkts (täglicher Abgleich accSync)
     cat = cat || {}; if (cat.sub && (s.catEnabled[cat.sub] === true || s.catEnabled[cat.sub] === false)) return s.catEnabled[cat.sub];
     return s.catEnabled[cat.main] === true;
   }
@@ -1452,7 +1467,8 @@ module.exports = function (D) {
   const ACC_CACHE = new Map();
   async function accessoryList(prod) {
     if (!prod.sku) return []; const hit = ACC_CACHE.get(prod.sku); if (hit && Date.now() - hit.at < 864e5) return hit.items;
-    const raw = await pcApi("GET", "/accessories/" + encodeURIComponent(prod.sku), undefined, { low: true }), cat = await catalog(), items = [], seen = {};
+    await accLoad(); const known = ACC_MAP.map && ACC_MAP.map[prod.sku];
+    const raw = known ? known.map(x => ({ sku: x.sku, configuration: x.conf })) : await pcApi("GET", "/accessories/" + encodeURIComponent(prod.sku), undefined, { low: true }), cat = await catalog(), items = [], seen = {};
     const pub = publicCatalog(cat, await settings(), await catalogAll().catch(() => null)); await slugMap().catch(() => null);
     for (const a of Array.isArray(raw) ? raw : []) {
       const cur = (cat.products || []).find(x => x.sku === a.sku), c = pub.find(x => x.key === (cur ? cur.key : a.sku)); if (!c) continue;
@@ -3648,6 +3664,7 @@ module.exports = function (D) {
   const live = () => process.env.PRINT_SHOP_LIVE === "1" || !!(SETTINGS && SETTINGS.live);   // Railway-Variable oder Schalter im Cockpit
   const liveReady = async () => { if (!SETTINGS) await settings().catch(() => null); return live(); };   // nach Neustart: Einstellungen erst laden
   setTimeout(() => { settings().catch(() => {}); vouchers().catch(() => {}); }, 0);
+  setTimeout(() => { accLoad().catch(() => {}); }, 0); const accTimer = setInterval(() => { accSync(false).catch(() => {}); }, 36e5); if (accTimer.unref) accTimer.unref(); setTimeout(() => { accSync(false).catch(() => {}); }, 9e4).unref?.();
   // Ansichtsmodus (PRINT_SHOP_VIEW=1, z. B. für die Mollie-Prüfung): Shop, Preise, AGB öffentlich sichtbar – Bestellen noch gesperrt
   const viewOnly = () => !live() && process.env.PRINT_SHOP_VIEW === "1";
   const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an simon@fs-creative.at.";
@@ -4516,8 +4533,10 @@ module.exports = function (D) {
       }
       // Einkaufspreis testen (nur lesend, keine Bestellung): beliebige SKU + Optionen
       if (p === "/admin/api/print/pcprobe") {   // Print.com-Abfragen zum Prüfen: Zubehör, Produktionsvorlage, Arbeitsdateien (nur Admin)
-        const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
+        const sku = String(b.sku || "x"); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
         try {
+          if (b.op === "accsync") { accSync(true).catch(() => {}); return J(res, 200, { ok: true, started: true }); }
+          if (b.op === "accstate") { await accLoad(); return J(res, 200, { ok: true, at: ACC_MAP.at, products: Object.keys(ACC_MAP.map || {}).length, withAcc: Object.values(ACC_MAP.map || {}).filter(l => l.length).length, accSkus: ACC_ON.size, busy: accBusy }); }
           if (b.op === "acc") return J(res, 200, { ok: true, raw: await pcApi("GET", "/accessories/" + encodeURIComponent(sku)) });
           if (b.op === "wf") return J(res, 200, { ok: true, raw: await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/workfile", { options: b.options || {} }) });
           if (b.op === "tpl") return J(res, 200, { ok: true, raw: await pcApi("POST", "/printjobs/templates", { sku, options: b.options || {} }, { base: "https://platform.print.com" }) });
