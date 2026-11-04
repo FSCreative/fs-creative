@@ -3772,7 +3772,10 @@ module.exports = function (D) {
     const html = '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Bald verfügbar — FS Creative</title><link rel="stylesheet" href="/landing.css?v=4"></head><body><main id="main"><div class="wrap"><section class="lhero"><span class="eyebrow">Druck</span><h1>Bald verfügbar.</h1><p class="lead">Diese Seite ist noch nicht öffentlich. Drucksachen gestalten und drucken wir gern persönlich für dich.</p><div class="btn-row"><a class="btn primary" href="/druck">Zu Druck &amp; Print</a><a class="btn ghost" href="/kontakt?von=print&amp;thema=Druck">Anfragen</a></div></section></div></main></body></html>';
     return D.send(res, 404, html, "text/html; charset=utf-8", { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
   }
-  const ASSET_V = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12);
+  // Version aus dem Inhalt der Shop-Dateien: beim Umschalten eines Deploys kann eine Anfrage noch beim alten Server landen – der liefert dann seine
+  // (alte) Datei nur unter seiner eigenen Version aus, für fremde Versionen ohne Zwischenspeichern (siehe unten), sonst bliebe alter Code stundenlang im Cache
+  const ASSET_V = (() => { try { const h = crypto.createHash("sha1"); ["print/app.js", "print/print.css", "print/designer.js", "print/templates.js", "print.html"].forEach(f => { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (e) {} }); return h.digest("hex").slice(0, 12); }
+    catch (e) { return String(process.env.RAILWAY_GIT_COMMIT_SHA || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12); } })();
   // Aktionsbanner in der Kopfzeile: aktiver Gutschein mit banner:true bzw. WILLKOMMEN10 (endet automatisch mit Ablauf/Deaktivierung im Cockpit)
   function promoOf() { const t = today(), ok = x => x && x.active !== false && (!x.until || t <= x.until) && !(x.maxUses && (x.used || 0) >= x.maxUses) && +x.pct > 0, L = Object.values(VOUCHERS || {});
     const v = L.find(x => ok(x) && x.banner === true) || L.find(x => ok(x) && x.banner !== false && /^WILLKOMMEN/i.test(String(x.code || "")));   // im Cockpit markiert, sonst WILLKOMMEN…
@@ -3846,7 +3849,8 @@ module.exports = function (D) {
       }
       if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js") {
         let js = ""; try { js = fs.readFileSync(path.join(__dirname, "print", p.slice(7))); } catch (e) { return D.send(res, 404, "Not found"); }
-        return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache" });
+        const vq = u && u.searchParams ? u.searchParams.get("v") : "";
+        return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": !vq || vq === ASSET_V || vq === "2" ? "no-cache" : "no-store" });
       }
       if ((p === "/print/hilfe" || p === "/print/hilfe/") && (req.method === "GET" || req.method === "HEAD")) {
         let html = "", main = ""; try { html = printHtmlRaw(); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
