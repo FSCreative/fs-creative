@@ -194,6 +194,11 @@
       // QR-Code vom Gratis-Generator (/print/qr-code-generator) automatisch einsetzen
       var qp = null; try { qp = JSON.parse(sessionStorage.getItem("psQrPrefill") || "null"); } catch (e) {}
       if (qp && qp.mode) { try { sessionStorage.removeItem("psQrPrefill"); } catch (e) {} D.qrDraft = qp; makeQR(); setPanel("qr"); toast("Dein QR-Code ist eingefügt – Größe und Position frei anpassbar"); }
+      // Textil: hochgeladene Logos (Wunsch Simon 04.11.2026) direkt auf ihre Druckposition setzen – eingepasst und mittig, wie gedruckt
+      var ti = D.tex && opts.texImages, idxs = ti ? D.tex.pages.map(function (x, i) { return ti[x.slug] ? i : -1; }).filter(function (i) { return i > -1; }) : [];
+      if (idxs.length) return idxs.reduce(function (pr, i) { return pr.then(function () { return loadPage(i); }).then(function () { return fetch(ti[D.tex.pages[i].slug]).then(function (r) { return r.blob(); }); })
+        .then(function (bl) { return addImage(new File([bl], "Logo." + ((bl.type.split("/")[1] || "png").replace("svg+xml", "svg")), { type: bl.type || "image/png" }), { fit: true, name: "Logo" }); }).catch(function () {}); }, Promise.resolve())
+        .then(function () { return loadPage(idxs[0]); }).then(function () { texNavPaint(); toast("Dein Logo ist eingesetzt – Größe und Lage frei anpassbar"); });
     });
   }
   function close(silent) {
@@ -611,7 +616,7 @@
         // in den Platzhalter einpassen (Rest zuschneiden)
         var cw = pb.width / s2, ch = pb.height / s2; img.set({ cropX: (im.w - cw) / 2, cropY: (im.h - ch) / 2, width: cw, height: ch, left: pb.left, top: pb.top });
         var idx = D.c.getObjects().indexOf(ph); D.c.remove(ph); D.c.insertAt(img, idx); }
-      else { var s3 = Math.min(T.w * 0.6 / im.w, T.h * 0.6 / im.h); img.set({ scaleX: s3, scaleY: s3 }); center(img); D.c.add(img); }
+      else { var s3 = Math.min(T.w * (opt.fit ? 1 : 0.6) / im.w, T.h * (opt.fit ? 1 : 0.6) / im.h); img.set({ scaleX: s3, scaleY: s3 }); center(img); D.c.add(img); }
       img.setCoords(); D.c.setActiveObject(img); D.c.requestRenderAll(); changed();
       if (im.scaled) toast("Sehr großes Bild – auf " + im.w + " × " + im.h + " px verkleinert (reicht für scharfen Druck).");
       var dpi = dpiOf(img); if (dpi < 250) toast("Achtung: Bild hat bei dieser Größe nur " + dpi + " dpi – kleiner platzieren oder größeres Bild verwenden.", true);

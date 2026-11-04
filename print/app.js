@@ -1025,7 +1025,8 @@
     try { if (!history.state && n === 2 && (/[?&]produkt=/.test(location.search) || /^\/print\/[a-z0-9-]+\/?$/.test(location.pathname))) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung (sonst neuer Eintrag – Zurück führt zur Startseite)
       else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", n === 2 && S.prod.slug ? "/print/" + S.prod.slug : location.href); } } catch (e) {} }   // Produkt gewählt → seine sprechende Adresse
   function go(n, nopush) { if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
-    if (!nopush) stepPush(n, n === 3 ? S.mode : ""); S.step = n; S.err = ""; render(); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
+    if (!nopush) stepPush(n, n === 3 ? S.mode : ""); var up = n === 3 && S.step < 3; S.step = n; S.err = ""; render(); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); }
+    if (up && !nopush && kind() === "textile" && !S.file) setTimeout(function () { if (S.step === 3 && kind() === "textile") openTexDesigner(); }, 250); }   // Textil: gestaltet wird immer im Shirt-Designer (Wunsch Simon 04.11.2026)
 
   // ── Startseite: „Was möchtest du heute drucken?“ + Suche, Klassiker (Flyer, Banner), täglich 4 andere Produkte, Kategorien, Designer ──
   function daySeed() { var d = new Date(); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate(); }
@@ -1788,7 +1789,7 @@
     var tx = kind() === "textile", tdz = tx ? texDesignHtml(pos) : "";
     if (tx && S.mode === "design" && S.file) return '<div class="ps-panel"><h2>Dein Shirt-Design</h2><p class="sub">' + esc(S.prod.title) + " · " + pos.map(function (x) { return esc(x.title); }).join(", ") + "</p>" + tdz + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
-    return '<div class="ps-panel"><h2>' + (tx ? "Gestalten oder Logo hochladen" : "Logo hochladen") + '</h2><p class="sub">' + esc(S.prod.title) + " · " + (tx ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + tdz + '<div class="ps-logos">' + slots + "</div>" + (Object.keys(S.logos || {}).length ? pmkHtml() : "") + (S.file ? "" : logoReqHtml(pos)) + merged +
+    return '<div class="ps-panel"><h2>' + (tx ? "Gestalten oder Logo hochladen" : "Logo hochladen") + '</h2><p class="sub">' + esc(S.prod.title) + " · " + (tx ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + tdz + '<div class="ps-logos">' + slots + "</div>" + (Object.keys(S.logos || {}).length && !tx ? pmkHtml() : "") + (S.file ? "" : logoReqHtml(pos)) + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   // Shirt-Designer (2D): Kleidungsstück in der gewählten Farbe, je Druckposition gestalten (Text, Bilder, Formen, QR …) → Logo-PDF wie beim Upload; Druckart-Vorschlag
@@ -1805,14 +1806,14 @@
   function texPriceTell() { if (kind() === "textile" && window.PrintDesigner && window.PrintDesigner.price) window.PrintDesigner.price(texPriceText()); }
   function texKindName() { var t = (S.prod.title || "").toLowerCase(); return /hoodie|kapuz/.test(t) ? "Hoodie" : /polo/.test(t) ? "Poloshirt" : /sweat|pullover/.test(t) ? "Pullover" : /jacke|weste/.test(t) ? "Kleidungsstück" : "Shirt"; }
   function texColor() { var pr = (S.prod.props || []).filter(function (x) { return /^color/.test(x.slug); })[0], o = pr && pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; return o ? { hex: colHex(o) || "#ffffff", name: colName(o.name), img: imgOk(o.img) ? String(o.img).replace(/^https:\/\/images\.ctfassets\.net\//, "/print/bild/").replace(/\?.*$/, "") + "?fm=png&w=1200" : "" } : { hex: "#ffffff", name: "Weiß", img: "" }; }   // Produktfoto der Farbe über unseren Bild-Proxy (gleicher Ursprung → Freistellen im Browser möglich)
-  function openTexDesigner() {
+  function openTexDesigner(images) {
     var pos = logoPositions(); if (!pos.length) { toast("Bitte zuerst eine Druckposition wählen", true); return; }
     toast("Shirt-Designer wird geladen …");
     var c = texColor(), m = (S.prod.methods || []).filter(function (x) { return x.key === S.textile.method; })[0] || {}, k = (S.prod.title || "").toLowerCase();
     loadDesigner().then(function (D) {
       var tt = document.getElementById("psToast"); if (tt && /wird geladen/.test(tt.textContent)) tt.className = "ps-toast";
       var dz = S.texDesign && S.texDesign.pages && S.texDesign.pages.length === pos.length && S.texDesign.key === pos.map(function (x) { return x.slug; }).join(",") ? S.texDesign : null;
-      return D.open({ product: S.prod, sel: S.sel, labels: [], copies: totalCopies(), urgency: S.urgency, size: { w: pos[0].area[0], h: pos[0].area[1] }, bleed: 0, safe: 0, sides: pos.length, fonts: S.cat.fonts, design: dz,
+      return D.open({ product: S.prod, sel: S.sel, labels: [], copies: totalCopies(), urgency: S.urgency, size: { w: pos[0].area[0], h: pos[0].area[1] }, bleed: 0, safe: 0, sides: pos.length, fonts: S.cat.fonts, design: dz, texImages: images || null,
         textile: { pages: pos.map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), all: S.prod.positions.filter(function (x) { return (m.positions || []).indexOf(x.slug) > -1; }).map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), color: c.hex, colorName: c.name, methodName: (m.label || "").replace(/ \(.*$/, ""), kind: /zip|reißverschluss|jacke/.test(k) ? "zip" : /hoodie|kapuz/.test(k) ? "hoodie" : /polo/.test(k) ? "polo" : /sweat|pullover/.test(k) ? "sweat" : /jacke/.test(k) ? "jacke" : "tee" },
         textileSel: S.textile,
         texPrice: texPriceText(),
@@ -2331,7 +2332,8 @@
     upPop("up", 0, f.name);
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
-    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos(); } else if (j.ok) { S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos();
+        if (kind() === "textile" && !j.blocked) logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
     x.send(f);
   }
