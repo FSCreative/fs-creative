@@ -241,7 +241,8 @@
     var cur = S.view === "konto" ? "konto" : S.view === "xmas" ? "" : !S.view && root.querySelector(".ps-status[data-oid]") ? (S.me ? "konto" : "") : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
     document.querySelectorAll("[data-bn]").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-bn") === cur); });
     document.querySelectorAll("[data-saved-n]").forEach(function (b) { b.textContent = String(savedList().length); });
-    document.querySelectorAll("[data-cart-n]").forEach(function (b) { b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length; });
+    document.querySelectorAll("[data-cart-n]").forEach(function (b) { var was = +b.textContent || 0; b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length;
+      if (S.cart.length > was && was >= 0 && b.isConnected) { b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump"); } });   // kurzer Hüpfer, wenn etwas in den Warenkorb kommt
   }
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-acct-link],[data-cart-link]"); if (!a || !S.cat) return; e.preventDefault();
@@ -1178,6 +1179,10 @@
       if (!savedList().length) { toast("Noch nichts gemerkt – tippe bei einem Produkt auf „Merken“."); return; }
       S.view = ""; setPage("home"); setTimeout(function () { var x = document.querySelector(".ps-savhome"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); });
     try { headUpdate(); } catch (e) {}
+    // Platzhalter wechselt zwischen Beispielen, solange das Feld leer ist und nicht fokussiert (zeigt, was man suchen kann)
+    (function () { var inp0 = q.querySelector("input"), ex = ["Flyer", "Visitenkarten", "T-Shirts mit Logo", "Banner", "Aufkleber", "Roll-ups", "Kalender", "Tassen mit Foto"], k = 0;
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      setInterval(function () { if (document.hidden || document.activeElement === inp0 || inp0.value) return; k = (k + 1) % ex.length; inp0.setAttribute("placeholder", "Produkt suchen, z. B. " + ex[k] + " …"); }, 2600); })();
     // Suchvorschläge direkt im Kopf (wie auf der Startseite): Produkte mit Bild, Pfeiltasten, Enter öffnet
     var inp = q.querySelector("input"), box = document.createElement("div"); box.className = "ps-sug ps-v2sug"; box.setAttribute("role", "listbox"); box.hidden = true; q.appendChild(box);
     var paint = function () { if (!S || !S.cat) return; var h = sugHtml(inp.value); box.innerHTML = h; box.hidden = !h; };

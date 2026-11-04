@@ -2144,3 +2144,7 @@ html.ps-v2 #shop:has(>.ps-v2hero),html.ps-v2 #shop:has(>div>.ps-v2hero){margin-t
 .ps-v2dd.mega .tot{display:block;margin-top:8px;padding:12px 8px 6px}
 @media (max-width:900px){.ps-v2dd.mega .mg{grid-template-columns:1fr 1fr}}
 @media (max-width:640px){.ps-v2dd.mega{left:10px!important;right:10px;width:auto;padding:12px}.ps-v2dd.mega .mg{grid-template-columns:1fr;max-height:62vh}.ps-v2dd.mega .col a:not(.gh){padding-left:60px}}
+@keyframes psBump{0%{transform:scale(1)}30%{transform:scale(1.45)}60%{transform:scale(.9)}100%{transform:scale(1)}}
+.ps-cn.bump{animation:psBump .5s ease}
+@media (prefers-reduced-motion:reduce){.ps-cn.bump{animation:none}}
+.ps-fbrand .brand.ps-v2fb{display:inline-block}.ps-v2fb img{height:46px;width:auto;display:block}.ps-v2fb .dk{display:none}html:not(.light) .ps-v2fb .lt{display:none}html:not(.light) .ps-v2fb .dk{display:block}
