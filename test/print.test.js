@@ -655,7 +655,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Vorauswahl: jedes kuratierte Flachprodukt hat mit Standardauswahl einen Preis und ein Format (Designer erreichbar)", async () => {
     for (const p of cat.products.filter(x => x.kind === "flat")) {
       const r = await post("/print/api/price", { product: p.key, sel: p.defaults, copies: p.tiers[0] }); assert.strictEqual(r.status, 200, p.key + " " + JSON.stringify(r.j));
-      assert.ok(r.j.size && r.j.size.w > 0, p.key + " Format"); assert.strictEqual(p.designer, true);
+      assert.ok(r.j.size && r.j.size.w > 0, p.key + " Format"); assert.strictEqual(p.designer, true, p.key + " " + JSON.stringify(p.cat));
     }
     const ro = cat.products.find(p => p.key === "rollups"); assert.strictEqual(ro.group, "outdoor-advertising"); assert.deepStrictEqual([ro.props[0].options[0].w, ro.props[0].options[0].h], [850, 2000]);
   });

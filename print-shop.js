@@ -158,7 +158,7 @@ const PUB_MORE = [
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("20" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("21" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -865,10 +865,14 @@ module.exports = function (D) {
   const BRIEF_EXT = /^(pdf|jpe?g|png|gif|webp|svg|ai|eps|psd|tiff?|zip|docx?|txt|rtf|odt)$/i;
   const shortDesc = (cp, fb) => { const t = cp && (cmsClean(cp.s) || cmsClean(cp.d).split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(noHtml(t || fb || ""), 140); };
   const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
+  // Online-Designer nur bei flachen, rechteckigen Druckprodukten (Wunsch Simon 04.11.2026) – nicht bei Verpackungen, Displays mit Kontur, Möbeln, Werbeartikeln usw.
+  const DESIGN_OK = { "paper-print": /^(cards-envelopes|flyers-folders-posters|office-print|horeca-print)$/, "outdoor-advertising": /^(banners-outdoor|signs-banners|roller-banners)$/, "indoor-interior": /^(roller-banners|decoration)$/, "stickers-tapes": /^(loose-stickers|large-stickers|on-roll)$/ };
+  const DESIGN_NO = /envelope|presentation-folder|ring-binder|binder|facade-letters|vinyl-cut|lifesizer|cutlery-pouch|wine-hang|bunting|cardboard|letters/i;
+  const designFits = (p, g) => !!p.designer && (!p.generic || !!(DESIGN_OK[g.main] && DESIGN_OK[g.main].test(g.sub || ""))) && !DESIGN_NO.test(p.key + " " + (p.sku || ""));
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
-      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
+      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g), bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
@@ -4449,6 +4453,15 @@ module.exports = function (D) {
         catch (e) { return J(res, 200, { ok: false, error: e.message, pcOpts: n.pcOpts }); }
       }
       // Einkaufspreis testen (nur lesend, keine Bestellung): beliebige SKU + Optionen
+      if (p === "/admin/api/print/pcprobe") {   // Print.com-Abfragen zum Prüfen: Zubehör, Produktionsvorlage, Arbeitsdateien (nur Admin)
+        const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
+        try {
+          if (b.op === "acc") return J(res, 200, { ok: true, raw: await pcApi("GET", "/accessories/" + encodeURIComponent(sku)) });
+          if (b.op === "wf") return J(res, 200, { ok: true, raw: await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/workfile", { options: b.options || {} }) });
+          if (b.op === "tpl") return J(res, 200, { ok: true, raw: await pcApi("POST", "/printjobs/templates", { sku, options: b.options || {} }, { base: "https://platform.print.com" }) });
+          return J(res, 400, { ok: false, error: "op" });
+        } catch (e) { return J(res, 200, { ok: false, error: e.message, status: e.status || 0, detail: e.detail || null }); }
+      }
       if (p === "/admin/api/print/pcprice") {
         const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
         try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", Object.assign({ sku, options: b.options || {}, deliveryPromise: 0 }, Array.isArray(b.variants) ? { variants: b.variants } : {})); return J(res, 200, { ok: true, price: pr }); }

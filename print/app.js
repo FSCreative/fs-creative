@@ -1672,7 +1672,7 @@
       if (/^printtype/.test(k) && /white/.test(x)) add("White", "Weiß wird nur dort gedruckt, wo du Flächen in „White“ anlegst – z. B. unter Farbflächen und Logos");
       if (/kiss_?cut/.test(x)) add("Kisscut", "Schnittkontur als geschlossene Linie um jedes Motiv – nur die Folie wird geschnitten");
       else if (/die_?cut|thru_?cut/.test(x)) add("Thrucut", "Schnittkontur als geschlossene Linie – hier wird komplett durchgeschnitten");
-      else if (/^custom_shape/.test(k) && /shape|complex|simple|contour/.test(x)) add("Thrucut", "Schnittkontur deiner Form als eine geschlossene Vektorlinie (z. B. 3–5 mm Abstand rund um dein Motiv, ohne enge Ecken und schmale Stege) – entlang dieser Linie wird die Platte ausgeschnitten; das Motiv rund 5 mm über die Linie hinaus anlegen");
+      else if (/^custom_shape/.test(k) && /shape|complex|simple|contour/.test(x)) add("Thrucut", "Umriss als eine durchgehende, geschlossene Vektorlinie zeichnen, Sonderfarbe „Thrucut“, auf Überdrucken gestellt – entlang dieser Linie wird ausgeschnitten (ohne enge Ecken und schmale Stege). Das Design rundum 10 mm über die Linie hinaus anlegen (Beschnitt)");
       if (k === "die_cut" && !/kiss/.test(x)) add("Thrucut", "Stanzkontur deiner Form als geschlossene Linie – hier wird ausgestanzt");
       if (/^(variable_creasing_line|creasing_lines?)$/.test(k)) add("Creasing", "Lage der Rilllinie(n) als gerade Linie einzeichnen");
       if (/^spot_finish/.test(k) && !/foil|sense|3d/.test(x)) add("Scodix Spot", "Flächen, die veredelt (glänzend lackiert) werden");

@@ -185,12 +185,12 @@
         return loadPage(0, true);
       }
       if (auto && auto.pages && auto.pages.length === D.sides) {
-        return applyTemplate(PrintTemplates.list(opts.product.key)[0].id, true).then(function () {
+        return tplStart().then(function () {
           modal('<h3>Entwurf wiederherstellen?</h3><p class="pd-muted">Es gibt eine automatisch gespeicherte Gestaltung vom ' + esc(new Date(auto.at).toLocaleString("de-AT")) + '.</p><div class="foot"><button class="ps-btn" data-a="m:new">Neu beginnen</button><button class="ps-btn primary" data-a="m:resume">Wiederherstellen</button></div>', function (a) { if (a === "resume") { D.pages = auto.pages.slice(); D.hist = D.pages.map(function () { return []; }); D.fut = D.pages.map(function () { return []; }); loadPage(auto.cur > 0 && auto.cur < D.sides ? auto.cur : 0, true); } else if (a === "new") { try { localStorage.removeItem(D.akey); } catch (e) {} } });
         });
       }
-      return applyTemplate(PrintTemplates.list(opts.product.key)[0].id, true);
-    }).then(function () { setPanel(isTouch ? null : D.tex ? "text" : "tpl");
+      return tplStart();
+    }).then(function () { setPanel(isTouch ? null : D.tex || !hasTpl() ? "text" : "tpl");
       // QR-Code vom Gratis-Generator (/print/qr-code-generator) automatisch einsetzen
       var qp = null; try { qp = JSON.parse(sessionStorage.getItem("psQrPrefill") || "null"); } catch (e) {}
       if (qp && qp.mode) { try { sessionStorage.removeItem("psQrPrefill"); } catch (e) {} D.qrDraft = qp; makeQR(); setPanel("qr"); toast("Dein QR-Code ist eingefügt – Größe und Position frei anpassbar"); }
@@ -201,6 +201,8 @@
         .then(function () { return loadPage(idxs[0]); }).then(function () { texNavPaint(); toast("Dein Logo ist eingesetzt – Größe und Lage frei anpassbar"); });
     });
   }
+  function hasTpl() { return !!(D && PrintTemplates.list(D.o.product.key).length); }
+  function tplStart() { var l = PrintTemplates.list(D.o.product.key); if (l.length) return applyTemplate(l[0].id, true); D.pages = D.pages.map(function () { return { objects: [] }; }); return loadPage(0, true); }   // ohne passende Vorlage: leere Fläche
   function close(silent) {
     if (!D) return;
     try { saveCur(); } catch (e) {}
@@ -217,7 +219,7 @@
   function build() {
     var o = D.o, sideNames = D.tex ? D.tex.pages.map(function (x) { return x.title; }) : D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"];
     var root = document.createElement("div"); root.className = "pd"; root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", "Designer " + o.product.title);
-    var tools = function (cls) { return TOOLS.filter(function (t) { return !D.tex || (t[0] !== "tpl" && t[0] !== "bg"); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
+    var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg")) && (t[0] !== "tpl" || hasTpl()); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
     root.innerHTML = '<div class="pd-top"><button type="button" class="pd-ib" data-a="close" aria-label="Designer schließen" title="Schließen">' + svgI("close") + '</button>' +
       '<div class="ttl">' + esc(o.product.title) + "<small>" + (D.tex ? "Textil-Designer · " + esc(D.tex.colorName || "") + " · " + esc(D.tex.methodName || "") : D.mm.w + " × " + D.mm.h + " mm · Beschnitt " + D.b + " mm") + "</small></div>" +
       (o.motif ? '<span class="pd-mot" title="Du gestaltest Motiv ' + o.motif + (o.motifs ? " von " + o.motifs : "") + (o.motifCopies ? " (" + o.motifCopies + " Stk.)" : "") + '">Motiv ' + o.motif + (o.motifs ? "<small>/" + o.motifs + "</small>" : "") + (o.motifCopies ? "<i>" + o.motifCopies + " Stk.</i>" : "") + "</span>" : "") +
@@ -644,7 +646,7 @@
   }
   var TITLES = { tpl: "Vorlagen", text: "Text", img: "Bilder & Logo", shape: "Formen & Linien", qr: "QR-Code", bg: "Hintergrund", layers: "Ebenen", brand: "Marke", check: "Druckdaten-Check", obj: "Bearbeiten" };
   function renderPanel() {
-    if (!D || !D.panel) return; if (D.tex && (D.panel === "tpl" || D.panel === "bg")) D.panel = "text"; var p = D.panel, h = "";   // Textil: keine Papier-Vorlagen/Hintergründe
+    if (!D || !D.panel) return; if ((D.tex && (D.panel === "tpl" || D.panel === "bg")) || (D.panel === "tpl" && !hasTpl())) D.panel = "text"; var p = D.panel, h = "";   // Textil: keine Papier-Vorlagen/Hintergründe
     D.root.querySelector("#pdPT").textContent = TITLES[p] || "";
     if (p === "tpl") {
       var AI = window.PrintShop && window.PrintShop.ai;

@@ -62,6 +62,7 @@
     aufkleber: ["klar", "nacht", "bold", "natur", "elegant", "kreise", "retro", "neon", "pastell", "handmade", "verspielt", "festlich", "frisch", "sport", "street", "vintage", "markt", "kunterbunt", "impact", "diner", "tech", "notiz", "modern"],
     rollups: ["klar", "split", "nacht", "bold", "akzent", "natur", "business", "sport", "neon", "terracotta", "ozean", "editorial", "frisch", "mono", "modern", "impact", "alpin", "tech", "kanzlei", "street", "werkstatt"],
   };
+  var ALIAS = { postcards: "flyer", karten: "flyer", "postcards-with-envelopes": "flyer", "pvc-banner": "plakate", "mesh-banner": "plakate", bauzaun: "plakate", "garden-poster": "plakate", "framed-posters": "plakate", "plano-printsheets": "plakate" };
   function upper(st, s) { return st.upper ? String(s).toUpperCase() : s; }
   // grobe Höhe eines Textblocks (mm) – für das Stapeln der Elemente
   function textH(text, pt, w, lh, font) {
@@ -277,7 +278,8 @@
   }
   window.PrintTemplates = {
     styles: STYLES, texts: TXT, isDark: dk,
-    list: function (product) { return (PER[product] || PER.flyer).map(function (id) { return { id: id, name: STYLES[id].name }; }); },
+    // Vorlagen nur, wo sie zum Produkt passen (Wunsch Simon 04.11.2026: kein Sommerfest-Plakat auf dem Pappaufsteller) – sonst leere Fläche
+    list: function (product) { var k = PER[product] ? product : ALIAS[product] || ""; return (PER[k] || []).map(function (id) { return { id: id, name: STYLES[id].name }; }); },
     build: build,
     blank: function (ctx) { var p = []; for (var i = 0; i < ctx.sides; i++) p.push([{ t: "bg", fill: "#ffffff" }]); return p; },
   };
