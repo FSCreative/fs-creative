@@ -519,6 +519,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(C(br, "2026-05-10").idx, -1, "danach unter der Schwelle: zurück");
     assert.strictEqual(C(br, "2026-03-10").validUntil, "2026-01-10");
     assert.strictEqual(C([o("2026-01-05", 1500), o("2026-03-01", 900)], "2026-03-02").idx, 0, "12-Monats-Umsatz 2.400 € → Bronze");
+    const si = [o("2025-01-10", 11000), o("2025-10-01", 5500)];
+    assert.strictEqual(C(si, "2026-01-10").idx, 1, "Silber: 5.500 € in 6 Monaten ≥ halbe Schwelle 5.000 € → bleibt");
+    assert.strictEqual(C(si, "2026-05-10").idx, 0, "danach unter 5.000 € → Bronze");
   });
   await t("Kundenkonto: Registrierung mit Mail-Code, Login, Warenkorb, Checkout mit 2 Positionen = 1 Zahlung, Bestellungen im Profil", async () => {
     const em = "konto@example.com";

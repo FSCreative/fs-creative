@@ -218,7 +218,7 @@ const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 50;   // Sortenmix: bis 50 Motive (Print
 const payFee = () => ({ pct: isFinite(parseFloat(process.env.PRINT_PAY_FEE_PCT)) ? parseFloat(process.env.PRINT_PAY_FEE_PCT) : 1.8, fix: isFinite(parseFloat(process.env.PRINT_PAY_FEE_FIX)) ? parseFloat(process.env.PRINT_PAY_FEE_FIX) : 0.25 });
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
 // Stufen (Wunsch Simon 04.11.2026): erreicht der Nettoumsatz der letzten 12 Monate eine Schwelle, gilt die Stufe ab dann 12 Monate. Danach wird alle 2 Monate
-// geprüft, ob in den letzten 6 Monaten die Schwelle der aktuellen Stufe erreicht wurde – sonst eine Stufe zurück. Neuer Umsatz kann jederzeit wieder höher stufen.
+// geprüft, ob in den letzten 6 Monaten die halbe Schwelle der aktuellen Stufe erreicht wurde (Simon 04.11.2026) – sonst eine Stufe zurück. Neuer Umsatz kann jederzeit wieder höher stufen.
 // at: Stichtag (ISO-Datum) oder Jahr (= 31.12. des Jahres)
 function bonusCalc(orders, at) {
   const day = v => Date.parse(String(v).slice(0, 10) + "T00:00:00Z"), end = typeof at === "number" ? Date.UTC(at, 11, 31) : day(at);
@@ -229,7 +229,7 @@ function bonusCalc(orders, at) {
   let idx = -1, since = null, check = null, i = 0;
   for (;;) {
     const tOrd = i < ev.length && ev[i][0] <= end ? ev[i][0] : Infinity, tChk = idx > -1 && check != null && check <= end ? check : Infinity, t = Math.min(tOrd, tChk); if (t === Infinity) break;
-    if (tChk <= tOrd) { if (sum(addM(t, -6), t) < BONUS_TIERS[idx].from) idx--; check = idx > -1 ? addM(t, 2) : null; continue; }
+    if (tChk <= tOrd) { if (sum(addM(t, -6), t) < BONUS_TIERS[idx].from / 2) idx--; check = idx > -1 ? addM(t, 2) : null; continue; }
     const k = idxOf(sum(addM(t, -12), t)); if (k > idx) { idx = k; since = t; check = addM(t, 12); }
     while (i < ev.length && ev[i][0] === t) i++;
   }
