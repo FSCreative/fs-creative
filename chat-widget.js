@@ -73,11 +73,11 @@ function label(){ if(!btn) return; btn.setAttribute("aria-label","Chat öffnen �
 function setBadge(n){ if(!btn) return; if(n>0&&!isOpen){ if(!badge){ badge=h("span","fscc-n"); badge.setAttribute("aria-hidden","true"); btn.appendChild(badge); } badge.textContent=n>9?"9+":String(n); } else if(badge){ badge.remove(); badge=null; } }
 function checkStatus(){
   var q=st.cid&&st.started?"?c="+st.cid+"&a="+(st.seen||0):"";
-  api("/chat/api/status"+q).then(function(j){ if(!j||!j.ok) return; online=!!j.online; label(); setBadge(j.n||0); }).catch(function(){});
+  api("/chat/api/status"+q).then(function(j){ if(!j||!j.ok) return; online=!!j.online; label(); setBadge(j.n||0); if(j.me>0&&!isOpen) toggle(true,true); }).catch(function(){});   // Simon hat geschrieben → Chat öffnet sich
   bg();
 }
 /* geschlossen: alle 30 s nach Antworten schauen (nur wenn schon geschrieben wurde und der Tab sichtbar ist) */
-function bg(){ clearTimeout(bgT); if(st.started&&!isOpen) bgT=setTimeout(function(){ if(isOpen) return; if(!d.hidden) checkStatus(); else bg(); },30000); }
+function bg(){ clearTimeout(bgT); if(st.started&&!isOpen) bgT=setTimeout(function(){ if(isOpen) return; if(!d.hidden) checkStatus(); else bg(); },online?10000:30000); }
 
 function build(){
   built=true;
@@ -116,11 +116,11 @@ function build(){
 }
 function grow(){ el.in.style.height="auto"; el.in.style.height=Math.min(130,el.in.scrollHeight+2)+"px"; }
 function head(){ if(!built) return; el.title.textContent="FS Creative"; el.sub.textContent=online?"KI-Assistent antwortet sofort · Simon ist online und übernimmt bei Bedarf":"KI-Assistent antwortet sofort · Simon meldet sich persönlich"; el.off.style.display=online?"none":""; label(); }
-function toggle(on){
+function toggle(on,auto){
   if(on===isOpen) return; isOpen=on;
   if(on&&!built) build();
   btn.setAttribute("aria-expanded",String(on)); el.p.setAttribute("aria-hidden",String(!on)); el.p.classList.toggle("on",on);
-  if(on){ setBadge(0); start(); setTimeout(function(){ try{ el.in.focus({preventScroll:true}); }catch(e){ el.in.focus(); } },60); }
+  if(on){ setBadge(0); start(); if(!auto) setTimeout(function(){ try{ el.in.focus({preventScroll:true}); }catch(e){ el.in.focus(); } },60); }   // automatisch geöffnet: kein Fokus (am Handy sonst Tastatur)
   else { clearTimeout(pollT); btn.focus(); checkStatus(); }
 }
 function start(){

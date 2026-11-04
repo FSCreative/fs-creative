@@ -300,8 +300,8 @@ module.exports = function (D) {
       await loadAll();
       if (p === "/chat/api/status" && req.method === "GET") {
         const id = String(u.searchParams.get("c") || ""), a = parseInt(u.searchParams.get("a"), 10) || 0, c = CID_RX.test(id) && CONVS.get(id);
-        let n = 0; if (c && c.lastId > a) n = (await store.msgs(id, a, 50)).filter(m => m.from !== "v").length;
-        return J(res, 200, { ok: true, online: await online(), n });
+        let n = 0, me = 0; if (c && c.lastId > a) { const l = (await store.msgs(id, a, 50)).filter(m => m.from !== "v"); n = l.length; me = l.filter(m => m.from === "me").length; }
+        return J(res, 200, { ok: true, online: await online(), n, me });   // me: neue Nachrichten von Simon → Widget öffnet sich (Wunsch Simon 04.11.2026)
       }
       if (p === "/chat/api/poll" && req.method === "GET") {
         const id = String(u.searchParams.get("c") || ""), a = parseInt(u.searchParams.get("after"), 10) || 0;
