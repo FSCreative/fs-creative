@@ -2120,5 +2120,5 @@ html.ps-v2 #shop:has(>.ps-v2hero),html.ps-v2 #shop:has(>div>.ps-v2hero){margin-t
   .ps-v2last td:nth-child(3){order:4;font-size:13px;color:var(--text-dim);align-self:center}.ps-v2last td:nth-child(4){order:5;justify-self:end}.ps-v2last td:nth-child(5){order:2}.ps-v2last td:first-child{order:1}
   .ps-v2acct .main{padding:20px 16px 24px}.ps-v2stats{gap:10px}.ps-v2stats button{padding:14px}.ps-v2stats b{font-size:24px}}
 .ps-v2h1{margin:0 0 6px;font-size:clamp(20px,2vw,26px);letter-spacing:-.02em;line-height:1.25}.ps-v2h1 span{display:block;margin-top:4px;font-size:15px;font-weight:400;color:var(--text-dim);letter-spacing:0}
-.ps-v2hero+.ps-v2h1{margin-top:clamp(28px,4vw,48px)}
+.ps-v2usp+.ps-v2h1{margin-top:0}
 @media (max-width:700px){.pd-texnav{flex-wrap:wrap;justify-content:center;border-radius:18px;overflow:visible;width:max-content;max-width:calc(100% - 24px)}.pd-texprice{flex-basis:100%;text-align:center;border-left:0;padding:5px 0 3px;margin:2px 0 0;border-top:1px solid #e3e3e8;font-size:13px}}

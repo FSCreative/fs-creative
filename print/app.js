@@ -1186,7 +1186,9 @@
     var cats = [[P("flyer"), "Flyer & Folder"], [P("visitenkarten"), "Visitenkarten"], [P("plakate"), "Plakate & Poster"], [bn, "Banner & Planen"], [P("aufkleber"), "Aufkleber", "stickers-tapes"], [tx, "Textilien", "clothing-textile"], [mug, "Werbeartikel", "gifts-merchandise-promotional"]].filter(function (c) { return c[0]; });
     var tile = function (c) { var p = c[0], at = c[2] ? 'data-nav="produkte" data-navgroup="' + esc(c[2]) + '"' : 'data-prod="' + esc(p.key) + '"';
       return '<button type="button" class="ps-v2t" ' + at + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : "") + '</span><b>' + esc(c[1]) + ' <i aria-hidden="true">→</i></b></button>'; };
+    var usp = [["truck", "Schnelle Lieferung", "frei Haus in ganz Österreich"], ["check", "Datencheck inklusive", "automatisch – Profi-Check optional"], ["pen", "Einfach gestalten", "online im Designer oder Datei hochladen"], ["pin", "Regional & persönlich", "dein Druckpartner aus dem Montafon"]];
     return '<div class="ps-v2hero">' + sl + "</div>" +
+      '<ul class="ps-v2usp">' + usp.map(function (u) { return "<li>" + v2Ic(V2I[u[0]]) + "<span><b>" + u[1] + "</b>" + u[2] + "</span></li>"; }).join("") + "</ul>" +
       '<h1 class="ps-v2h1">Online drucken mit FS Creative <span>Flyer, Visitenkarten, Plakate, Banner, Textilien und Werbeartikel – Preis sofort, Lieferung in ganz Österreich</span></h1>' +
       '<section class="ps-hsec ps-v2cats"><div class="ps-hsec-h"><h2>Beliebte Kategorien</h2><button type="button" class="ps-link" data-nav="produkte">Alle Produkte ansehen →</button></div><div class="ps-v2grid">' + cats.map(tile).join("") +
       '<button type="button" class="ps-v2t all" data-nav="produkte"><span class="im">' + v2Ic(V2I.grid) + "</span><b>Alle Produkte <i aria-hidden=\"true\">→</i></b></button></div></section>";
