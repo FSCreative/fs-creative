@@ -1,10 +1,12 @@
 /* FS Creative – Website-Chat (ausgeliefert als /chat/w.js?v=…, Server: chat.js). Lädt mit defer, baut das Fenster erst beim ersten Öffnen.
-   Unterhaltungs-ID zufällig in localStorage „fsc-chat“ (bleibt beim Seitenwechsel), Nachrichten nur als Text (textContent, nie HTML). */
+   Unterhaltungs-ID zufällig in localStorage „fsc-chat“ (bleibt beim Seitenwechsel), Nachrichten nur als Text (textContent, nie HTML).
+   Anhänge: Büroklammer, Drag & Drop oder Bild einfügen → POST /chat/api/file (roh, max. 15 MB, JPG/PNG/WebP/PDF), nacheinander mit Fortschritt; Bilder als Vorschau (groß per Klick), PDFs als Kachel. */
 (function(){
 "use strict";
 var W=window, d=document;
 if(W.__fscChat||/^\/admin/.test(location.pathname)||!W.fetch||!W.JSON) return; W.__fscChat=1;
-var K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={};
+var K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
+var FMAX=15*1024*1024, FTYPES={"image/jpeg":1,"image/png":1,"image/webp":1,"application/pdf":1};
 try{ st=JSON.parse(localStorage.getItem(K)||"null")||{}; }catch(e){ st={}; }
 function save(){ try{ localStorage.setItem(K,JSON.stringify(st)); }catch(e){} }
 function cid(){
@@ -40,6 +42,13 @@ var CSS='.fscc-print{position:fixed;right:90px;bottom:calc(29px + var(--fscc-tb,
 '.fscc-nm:focus,.fscc-in:focus{outline:none;border-color:var(--accent,#0a84ff)}.fscc-row{display:flex;gap:8px;align-items:flex-end}.fscc-in{resize:none;max-height:130px;min-height:42px;line-height:1.35}'+
 '.fscc-s{flex:none;width:42px;height:42px;border-radius:50%;border:0;background:var(--accent,#0a84ff);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center}.fscc-s:disabled{opacity:.45;cursor:default}'+
 '.fscc-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;opacity:0}.fscc-err{font-size:12.5px;color:#ff6961;padding:0 4px}'+
+'.fscc-clip{flex:none;width:42px;height:42px;border-radius:50%;border:1px solid var(--border-2,rgba(255,255,255,.14));background:none;color:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center}.fscc-clip:focus-visible{outline:2px solid var(--accent,#0a84ff);outline-offset:2px}.fscc-clip:disabled{opacity:.45;cursor:default}'+
+'.fscc-m.file{padding:4px;white-space:normal}.fscc-m.file small{padding:0 8px 3px}.fscc-img{display:block;padding:0;border:0;background:none;cursor:zoom-in;border-radius:12px;overflow:hidden}.fscc-img img{display:block;max-width:220px;max-height:220px;width:auto;height:auto;border-radius:12px}'+
+'.fscc-pdf{display:flex;align-items:center;gap:10px;padding:8px 10px;min-width:200px}.fscc-pdf .ic{flex:none;width:36px;height:42px;border-radius:6px;background:#ff453a;color:#fff;font:800 11px/42px system-ui,sans-serif;text-align:center}.fscc-pdf .nm{min-width:0;flex:1}.fscc-pdf b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fscc-pdf span{display:block;font-size:12px;opacity:.8}'+
+'.fscc-pdf a{color:inherit;font-size:12.5px;font-weight:700;text-decoration:underline;margin-right:10px}'+
+'.fscc-p.drag::after{content:"Datei hier ablegen";position:absolute;inset:8px;border:2px dashed var(--accent,#0a84ff);border-radius:16px;background:rgba(10,132,255,.12);display:flex;align-items:center;justify-content:center;font-weight:700;pointer-events:none}'+
+'.fscc-up{font-size:12.5px;color:var(--text-dim,#a1a1aa);padding:0 4px}.fscc-up:empty,.fscc-err:empty{display:none}'+
+'.fscc-lb{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}.fscc-lb img{max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6)}.fscc-lb a{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);color:#fff;font:600 14px system-ui,sans-serif;background:rgba(255,255,255,.14);padding:8px 14px;border-radius:99px;text-decoration:none}'+
 'html.light .fscc-p{box-shadow:0 24px 60px rgba(18,20,28,.18)}html.light .fscc-b{box-shadow:0 10px 26px rgba(18,20,28,.25)}'+
 '@media(max-width:640px){.fscc-print{right:78px;bottom:calc(21px + var(--fscc-tb,0px));height:40px;padding:0 14px 0 11px}.fscc-b{right:14px;bottom:calc(14px + var(--fscc-tb,0px));width:54px;height:54px}.fscc-p{right:0;left:0;top:0;bottom:0;width:100%;max-width:none;height:100%;height:100dvh;border-radius:0;border:0}}'+
 '@media(prefers-reduced-motion:reduce){.fscc-b,.fscc-p{transition:none}}';
@@ -85,8 +94,20 @@ function build(){
   el.hp=h("input","fscc-hp"); el.hp.type="text"; el.hp.name="website"; el.hp.tabIndex=-1; el.hp.autocomplete="off"; el.hp.setAttribute("aria-hidden","true");
   var row=h("div","fscc-row"); el.in=h("textarea","fscc-in"); el.in.rows=1; el.in.maxLength=2000; el.in.placeholder="Schreib eine Nachricht …"; el.in.setAttribute("aria-label","Nachricht");
   el.s=h("button","fscc-s"); el.s.type="submit"; el.s.setAttribute("aria-label","Senden"); el.s.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
-  row.appendChild(el.in); row.appendChild(el.s); el.err=h("div","fscc-err"); el.err.setAttribute("role","status");
-  f.appendChild(el.nm); f.appendChild(el.hp); f.appendChild(row); f.appendChild(el.err); p.appendChild(f);
+  el.clip=h("button","fscc-clip"); el.clip.type="button"; el.clip.setAttribute("aria-label","Bild oder PDF anhängen (max. 15 MB)"); el.clip.title="Bild oder PDF anhängen (max. 15 MB)";
+  el.clip.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6L15.5 7"/></svg>';
+  el.file=h("input"); el.file.type="file"; el.file.multiple=true; el.file.accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"; el.file.hidden=true; el.file.tabIndex=-1;
+  el.clip.addEventListener("click",function(){ el.file.click(); });
+  el.file.addEventListener("change",function(){ queue(el.file.files); el.file.value=""; });
+  row.appendChild(el.clip); row.appendChild(el.in); row.appendChild(el.s); row.appendChild(el.file); el.err=h("div","fscc-err"); el.err.setAttribute("role","status");
+  el.up=h("div","fscc-up"); el.up.setAttribute("aria-live","polite");
+  f.appendChild(el.nm); f.appendChild(el.hp); f.appendChild(row); f.appendChild(el.up); f.appendChild(el.err); p.appendChild(f);
+  /* Drag & Drop aufs ganze Fenster, Bild aus der Zwischenablage ins Eingabefeld */
+  var dn=0; p.addEventListener("dragenter",function(e){ if(hasFiles(e)){ e.preventDefault(); dn++; p.classList.add("drag"); } });
+  p.addEventListener("dragover",function(e){ if(hasFiles(e)){ e.preventDefault(); e.dataTransfer.dropEffect="copy"; } });
+  p.addEventListener("dragleave",function(){ if(--dn<=0){ dn=0; p.classList.remove("drag"); } });
+  p.addEventListener("drop",function(e){ if(!hasFiles(e)) return; e.preventDefault(); dn=0; p.classList.remove("drag"); queue(e.dataTransfer.files); });
+  el.in.addEventListener("paste",function(e){ var it=e.clipboardData&&e.clipboardData.files; if(it&&it.length){ e.preventDefault(); queue(it); } });
   el.in.addEventListener("input",grow);
   el.in.addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); send(); } });
   f.addEventListener("submit",function(e){ e.preventDefault(); send(); });
@@ -119,10 +140,51 @@ function paint(){
   if(!msgs.length) L.appendChild(h("div","fscc-hi","Hallo! 👋 Ich bin der KI-Assistent von FS Creative – frag mich einfach (Website, Grafik, Druck …)."+(online?" Möchtest du lieber mit Simon sprechen? Schreib es einfach – er ist gerade online.":" Simon meldet sich bei Bedarf persönlich.")));
   msgs.forEach(function(m){ var b=h("div","fscc-m "+(m.from==="v"||m.from==="me"||m.from==="ki"||m.from==="sys"?m.from:"sys"));
     if(m.from==="me"||m.from==="ki") b.appendChild(h("span","who",m.from==="me"?"Simon":"KI-Assistent · Angaben unverbindlich"));
-    b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at))); L.appendChild(b); });
+    if(m.file&&m.from!=="sys"){ b.classList.add("file"); b.appendChild(fileEl(m.file)); } else b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at))); L.appendChild(b); });
   if(typing) L.appendChild(h("div","fscc-ty","schreibt …"));
   el.pv.style.display=st.started?"none":""; el.nm.style.display=st.started&&st.name?"none":"";
   if(atEnd||sending) L.scrollTop=L.scrollHeight;
+}
+/* ── Anhänge ── */
+function furl(f,dl){ return "/chat/api/file?c="+cid()+"&f="+encodeURIComponent(f.id)+(dl?"&dl=1":""); }
+function size(n){ return n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" MB":Math.max(1,Math.round(n/1024))+" KB"; }
+function fileEl(f){
+  if(/^image\//.test(f.type)){ var bt=h("button","fscc-img"), im=h("img"); bt.type="button"; bt.setAttribute("aria-label","Bild „"+f.name+"“ groß anzeigen"); im.src=furl(f); im.alt=f.name; im.loading="lazy"; bt.appendChild(im); bt.addEventListener("click",function(){ lightbox(f); }); return bt; }
+  var w=h("div","fscc-pdf"), ic=h("span","ic","PDF"), nm=h("span","nm"), o=h("a",null,"Öffnen"), dl=h("a",null,"Download"); ic.setAttribute("aria-hidden","true");
+  nm.appendChild(h("b",null,f.name)); nm.appendChild(h("span",null,"PDF · "+size(f.size))); o.href=furl(f); o.target="_blank"; o.rel="noopener"; dl.href=furl(f,1); dl.setAttribute("download",f.name);
+  var ln=h("span"); ln.appendChild(o); ln.appendChild(dl); nm.appendChild(ln); w.appendChild(ic); w.appendChild(nm); return w;
+}
+function lightbox(f){
+  var lb=h("div","fscc-lb"), im=h("img"), a=h("a",null,"Herunterladen"); lb.setAttribute("role","dialog"); lb.setAttribute("aria-label",f.name); lb.tabIndex=-1; im.src=furl(f); im.alt=f.name; a.href=furl(f,1); a.setAttribute("download",f.name);
+  var close=function(){ lb.remove(); try{ el.in.focus({preventScroll:true}); }catch(e){} };
+  lb.addEventListener("click",function(e){ if(e.target!==a) close(); }); lb.addEventListener("keydown",function(e){ if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); close(); } });
+  lb.appendChild(im); lb.appendChild(a); d.body.appendChild(lb); lb.focus();
+}
+function hasFiles(e){ var t=e.dataTransfer&&e.dataTransfer.types; return !!t&&Array.prototype.indexOf.call(t,"Files")>-1; }
+function queue(list){
+  var bad=[]; Array.prototype.forEach.call(list||[],function(f){
+    if(!FTYPES[f.type]&&!/\.(jpe?g|png|webp|pdf)$/i.test(f.name||"")) bad.push("„"+(f.name||"Datei")+"“: nur Bilder (JPG, PNG, WebP) und PDFs möglich.");
+    else if(f.size>FMAX) bad.push("„"+(f.name||"Datei")+"“ ist zu groß ("+size(f.size)+") – höchstens 15 MB.");
+    else if(!f.size) bad.push("„"+(f.name||"Datei")+"“ ist leer.");
+    else upQ.push(f); });
+  el.err.textContent=bad.join(" "); upNext();
+}
+function upErr(j,f){ var e=j&&j.error, n="„"+(f.name||"Datei")+"“";
+  return e==="too_large"?n+" ist zu groß – höchstens 15 MB.":e==="bad_type"?n+" ist kein gültiges Bild (JPG, PNG, WebP) oder PDF.":e==="too_many_files"?"Höchstens "+((j&&j.max)||40)+" Dateien pro Unterhaltung.":e==="too_many"?"Zu viele Dateien auf einmal – bitte kurz warten.":n+" konnte nicht hochgeladen werden – bitte nochmal versuchen."; }
+function upNext(){
+  if(upBusy) return; var f=upQ.shift(); if(!f){ el.up.textContent=""; el.clip.disabled=false; return; }
+  upBusy=true; el.clip.disabled=true; var rest=upQ.length, nm=el.nm.value.trim().slice(0,80), x=new XMLHttpRequest();
+  var lbl=function(pc){ el.up.textContent="Lade „"+f.name+"“ hoch … "+pc+" %"+(rest?" (noch "+rest+" weitere)":""); }; lbl(0);
+  x.open("POST","/chat/api/file?c="+cid()); x.setRequestHeader("Content-Type","application/octet-stream");
+  x.setRequestHeader("X-File-Name",encodeURIComponent(f.name||"datei")); x.setRequestHeader("X-Chat-Page",encodeURIComponent(location.pathname)); if(nm) x.setRequestHeader("X-Chat-Name",encodeURIComponent(nm));
+  x.upload.onprogress=function(e){ if(e.lengthComputable) lbl(Math.min(99,Math.round(e.loaded/e.total*100))); };
+  var done=function(j){ upBusy=false;
+    if(j&&j.ok){ st.started=1; if(nm) st.name=nm; save(); if(j.msg) add([j.msg]); typing=true; paint(); schedule(); }
+    else el.err.textContent=(el.err.textContent?el.err.textContent+" ":"")+upErr(j,f);
+    upNext(); };
+  x.onload=function(){ var j=null; try{ j=JSON.parse(x.responseText); }catch(e){ j={ok:false,error:x.status===413?"too_large":"http"}; } done(j); };
+  x.onerror=function(){ done({ok:false,error:"net"}); };
+  x.send(f);
 }
 function send(){
   var text=el.in.value.trim(); if(!text||sending) return;

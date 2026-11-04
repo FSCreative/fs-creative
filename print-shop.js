@@ -1419,6 +1419,50 @@ module.exports = function (D) {
     const c = (1 - r - k) / (1 - k), m = (1 - g - k) / (1 - k), y = (1 - b - k) / (1 - k);
     return [c, m, y, k].map(v => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 10);
   }
+  // ── Offizielle Druckvorlagen („Workfiles“): ZIP je Produkt/Ausführung vom Produktionspartner; ausgeliefert nur unter eigener Adresse (/print/api/wf/<sku>/<id>/<n>/<Name>),
+  //    deutsche Dateien bevorzugt, Mac-Ballast und andere Sprachen weg. Nie den Partnernamen zeigen: Adresse enthält nur Produkt + Datei-ID.
+  const WF_LIST = new Map(), WF_ZIP = new Map();
+  const WF_TYPES = { pdf: "application/pdf", ai: "application/postscript", eps: "application/postscript", svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", idml: "application/vnd.adobe.indesign-idml-package", indd: "application/x-indesign", psd: "image/vnd.adobe.photoshop", zip: "application/zip" };
+  async function workfileZip(rel) {
+    if (!/^[a-z0-9_-]{1,80}\/[0-9a-f-]{36}\.zip$/.test(rel)) throw new Error("Pfad");
+    let z = WF_ZIP.get(rel); if (z && Date.now() - z.at < 864e5) return z.files;
+    const r = await fetch("https://app.print.com/workfiles/" + rel, { signal: AbortSignal.timeout(30000) }); if (!r.ok) throw new Error("HTTP " + r.status);
+    const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 80e6) throw new Error("zu groß");
+    const all = require("fflate").unzipSync(new Uint8Array(buf)), names = Object.keys(all).filter(nm => !/(^|\/)(__MACOSX|\.)/.test(nm) && !/\/$/.test(nm) && WF_TYPES[(nm.split(".").pop() || "").toLowerCase()]);
+    const LANG = /[_\- (](EN|FR|NL|ES|IT|PL|PT|DA|SV|NO|FI|CS|HU)[_\-. )]/i, DE = /[_\- (](DE|AT)[_\-. )]/i;
+    const keep = names.some(nm => DE.test(nm)) ? names.filter(nm => !LANG.test(nm)) : names.some(nm => !LANG.test(nm) && !DE.test(nm)) ? names.filter(nm => !LANG.test(nm)) : names.filter(nm => /[_\- (]EN[_\-. )]/i.test(nm)).concat(names.filter(nm => !LANG.test(nm)));
+    const files = (keep.length ? keep : names).sort().map(nm => { const b = Buffer.from(all[nm]); return { name: nm.split("/").pop(), buf: b, type: WF_TYPES[(nm.split(".").pop() || "").toLowerCase()] }; });
+    WF_ZIP.set(rel, { at: Date.now(), files }); if (WF_ZIP.size > 40) WF_ZIP.delete(WF_ZIP.keys().next().value);
+    return files;
+  }
+  async function workfileGet(rel, i) { const f = (await workfileZip(rel))[i]; return f || null; }
+  async function workfileList(prod, n) {
+    if (!prod.sku) return [];
+    const opts = (n && n.pcOpts) || Object.assign({}, prod.fixed || {}), key = prod.sku + JSON.stringify(opts);
+    const hit = WF_LIST.get(key); if (hit && Date.now() - hit.at < 864e5) return hit.files;
+    const r = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/workfile", { options: opts }, { low: true });
+    const out = [];
+    for (const url of (r && r.workfiles) || []) { const m = /^https:\/\/app\.print\.com\/workfiles\/([a-z0-9_-]{1,80}\/[0-9a-f-]{36}\.zip)$/.exec(String(url)); if (!m) continue;
+      const files = await workfileZip(m[1]).catch(() => []), base = "/print/api/wf/" + m[1].replace(/\.zip$/, "");
+      files.forEach((f, i) => out.push({ name: f.name, size: f.buf.length, type: (f.name.split(".").pop() || "").toUpperCase(), url: base + "/" + i + "/" + encodeURIComponent(f.name) })); }
+    WF_LIST.set(key, { at: Date.now(), files: out }); if (WF_LIST.size > 500) WF_LIST.delete(WF_LIST.keys().next().value);
+    return out;
+  }
+  // Zubehör: Liste des Partners je Produkt → nur, was wir als Produkt führen; Name/Bild aus unserem Katalog, Ausführung aus der Partner-Konfiguration
+  const ACC_CACHE = new Map();
+  async function accessoryList(prod) {
+    if (!prod.sku) return []; const hit = ACC_CACHE.get(prod.sku); if (hit && Date.now() - hit.at < 864e5) return hit.items;
+    const raw = await pcApi("GET", "/accessories/" + encodeURIComponent(prod.sku), undefined, { low: true }), cat = await catalog(), items = [], seen = {};
+    const pub = publicCatalog(cat, await settings(), await catalogAll().catch(() => null)); await slugMap().catch(() => null);
+    for (const a of Array.isArray(raw) ? raw : []) {
+      const cur = (cat.products || []).find(x => x.sku === a.sku), c = pub.find(x => x.key === (cur ? cur.key : a.sku)); if (!c) continue;
+      const full = await findProduct(c.key).catch(() => null), conf = a.configuration || {}, sel = {}, lab = [];
+      ((full && full.props) || []).forEach(pr => { const v = conf[pr.slug]; if (v == null) return; const o = (pr.options || []).find(o => String(o.slug) === String(v)); if (o) { sel[pr.slug] = o.slug; if ((pr.options || []).length > 1) lab.push(o.name); } });
+      const k = c.key + JSON.stringify(sel); if (seen[k]) continue; seen[k] = 1;
+      items.push({ key: c.key, slug: c.slug || "", title: c.title, variant: lab.join(" · "), img: c.img || "", sel });
+    }
+    ACC_CACHE.set(prod.sku, { at: Date.now(), items }); return items;
+  }
   // ── Druckvorlage (PDF) je Produkt/Ausführung: Datenformat, Endformat, Beschnitt, Sicherheitsabstand, Falzlinien ──
   const TPL_CACHE = new Map();
   async function templatePdf(prod, n) {
@@ -3858,6 +3902,24 @@ module.exports = function (D) {
         await cms(); const inf = cmsInfo(String(prod.sku), val, prop), raw = o.dl ? { description: o.dl } : null;
         const imgs = [cmsOptImg(prop, val), inf && inf.i].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).map(x => IMG(x, 1000));
         return J(res, 200, { ok: true, text: optFull(raw, inf) || o.desc || "", imgs, chars: (inf && inf.c) || [] });
+      }
+      // Offizielle Druckvorlagen des Produktionspartners (Wunsch Simon 04.11.2026: importieren statt selbst erfinden) – Liste je Ausführung
+      if (p === "/print/api/workfiles" && req.method === "GET") {
+        if (limited("wf", ip, 60, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
+        const prod = await findProduct(u.searchParams.get("product")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
+        let b = {}; try { b = JSON.parse(String(u.searchParams.get("c") || "{}")) || {}; } catch (e) {}
+        let n = null; try { n = normalizeSel(prod, { sel: objOf(b.sel), custom: objOf(b.custom), copies: b.copies || (prod.tiers || [])[0] || 1, textile: b.textile }); } catch (e) {}
+        try { return J(res, 200, { ok: true, files: await workfileList(prod, n) }); } catch (e) { return J(res, 200, { ok: true, files: [] }); }
+      }
+      { const m = /^\/print\/api\/wf\/([a-z0-9_-]{1,80})\/([0-9a-f-]{36})\/(\d{1,3})\/[^/]{1,160}$/.exec(p);
+        if (m && req.method === "GET") { if (limited("wfd", ip, 60, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen" });
+          const f = await workfileGet(m[1] + "/" + m[2] + ".zip", +m[3]).catch(() => null); if (!f) return J(res, 404, { ok: false, error: "Vorlage nicht gefunden" });
+          res.writeHead(200, { "Content-Type": f.type, "Content-Length": f.buf.length, "Content-Disposition": "attachment; filename*=UTF-8''" + encodeURIComponent(f.name), "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" });
+          return void res.end(f.buf); } }
+      // Passendes Zubehör laut Produktionspartner (z. B. Pappaufsteller → Kartonstütze, Fußplatten), nur Produkte aus unserem Sortiment
+      if (p === "/print/api/accessories" && req.method === "GET") {
+        const prod = await findProduct(u.searchParams.get("product")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
+        try { return J(res, 200, { ok: true, items: await accessoryList(prod) }); } catch (e) { return J(res, 200, { ok: true, items: [] }); }
       }
       if (p === "/print/api/template" && req.method === "GET") {
         if (limited("tpl", ip, 80, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });

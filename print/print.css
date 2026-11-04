@@ -1942,3 +1942,27 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .pd-texnav .rm{flex:none;width:24px;height:24px;margin-left:-4px;padding:0!important;border-radius:50%!important;justify-content:center;font-size:16px!important;color:#6e6e73!important;background:transparent!important}
 .pd-texnav .rm:hover{background:rgba(255,59,48,.12)!important;color:#d70015!important}
 .pd-texprice{flex:none;align-self:center;margin:0 8px 0 6px;padding-left:10px;border-left:1px solid #e3e3e8;font:700 14px/1.2 -apple-system,Segoe UI,sans-serif;color:#1d1d1f;white-space:nowrap}
+
+/* Offizielle Druckvorlagen + Zubehör (04.11.2026) */
+.ps-wf{margin:10px 0;padding:12px 14px;border:1px solid var(--ps-line2);border-radius:12px;background:var(--surface)}
+.ps-wf-h{margin:0 0 8px;font-size:14px}.ps-wf-h small{color:var(--text-dim);margin-left:4px}
+.ps-wf-f{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;text-decoration:none;color:inherit;font-size:14px}
+.ps-wf-f:hover{background:var(--ps-chipon)}.ps-wf-f .t{font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;background:#ff375f;color:#fff}
+.ps-wf-f small{color:var(--text-dim);margin-left:auto}.ps-wf-f .dl{font-weight:700}
+.ps-acc{margin:14px 0}.ps-acc h3{font-size:16px;margin:0 0 8px}
+.ps-acc-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.ps-acc-i{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--ps-line2);border-radius:12px;text-decoration:none;color:inherit;background:var(--surface)}
+.ps-acc-i:hover{border-color:var(--accent,#0a84ff)}.ps-acc-i img,.ps-acc-i .ph{width:48px;height:48px;border-radius:8px;object-fit:cover;flex:none;display:grid;place-items:center;background:var(--ps-chipon)}
+.ps-acc-i b{display:block;font-size:14px}.ps-acc-i small{display:block;color:var(--text-dim);font-size:12.5px}.ps-acc-i .go{margin-left:auto;color:var(--text-dim)}
+
+/* Produktbilder: Vorschau + bis zu 4 kleine Bilder, Lightbox ohne Scrollen (04.11.2026) */
+.ps-cfg-ims{flex:none;display:flex;flex-direction:column;gap:6px;width:84px}
+.ps-cfg-th{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.ps-cfg-th button{position:relative;padding:0;border:0;border-radius:6px;overflow:hidden;aspect-ratio:1;background:#f2f2f0;cursor:zoom-in}
+.ps-cfg-th img{width:100%;height:100%;object-fit:cover;display:block}
+.ps-cfg-th span{position:absolute;inset:0;display:grid;place-items:center;background:rgba(60,60,67,.62);color:#fff;font-size:12px;font-weight:700}
+.ps-lb{place-items:center;overflow:hidden}
+.ps-lb img{max-height:calc(100vh - 130px);max-height:calc(100dvh - 130px);width:auto;height:auto}
+.ps-pop-g img{max-height:min(55vh,520px);width:100%;object-fit:contain}
+.ps-cfg-ims{width:116px}.ps-cfg-ims .ps-cfg-im{width:116px;height:116px}
+@media (max-width:600px){.ps-cfg-ims{width:92px}.ps-cfg-ims .ps-cfg-im{width:92px;height:92px}}

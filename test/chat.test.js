@@ -2,7 +2,8 @@
    Aufruf: node test/chat.test.js   – server.js läuft in einer Temp-Kopie ohne Datenbank (Dateispeicher), echte Dienste werden nie angesprochen.
    Geprüft: Overlay auf allen öffentlichen Seiten, Unterhaltung starten, Besucher-Nachricht, Cockpit sieht sie, Antwort, Besucher pollt die Antwort,
    Online/Offline + Ablauf des Herzschlags, KI-Antwort offline (Sonnet, max_tokens 400, kurzer Verlauf), Lead-Anlage, KI schweigt wenn Simon schreibt,
-   KI-Limit je Unterhaltung, Rate-Limit, Validierung (ID, Länge, JSON, Herkunft, Honeypot), Text bleibt Text (XSS), Admin-Schutz, Beenden/Löschen. */
+   KI-Limit je Unterhaltung, Rate-Limit, Validierung (ID, Länge, JSON, Herkunft, Honeypot), Text bleibt Text (XSS), Admin-Schutz, Beenden/Löschen,
+   Anhänge (Bild/PDF hochladen, falscher Typ/zu groß abgelehnt, fremde Unterhaltung kein Zugriff, Cockpit sendet Datei, Löschen entfernt Dateien). Nur fiktive Testdaten. */
 "use strict";
 const assert = require("assert");
 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process"), crypto = require("crypto"), http = require("http");
@@ -228,6 +229,78 @@ async function startServer(dir, env) {
     assert.strictEqual((await adm("/admin/api/chat/op", { id: R, op: "lead", name: "Eva", email: "kaputt" }))._status, 400);
     const j = await adm("/admin/api/chat/op", { id: R, op: "lead", name: "Eva Beispiel", email: "eva@example.com", phone: "+43 664 000000", topic: "Grafik & Branding", message: "Logo" });
     assert.strictEqual(j.ok, true); const l = leads().pop(); assert.strictEqual(leads().length, before + 1); assert.strictEqual(l.source, "Website-Chat"); assert.strictEqual(l.topic, "Grafik & Branding"); assert.strictEqual(j.conv.leadId, l.id);
+  });
+
+  // ── Anhänge ──
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("0000000dIHDR-fiktives-testbild")]);
+  const PDF = Buffer.from("%PDF-1.4\n% fiktives Test-PDF\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+  const up = (cid, buf, name, hdr) => fetch(B + "/chat/api/file?c=" + cid, { method: "POST", headers: Object.assign({ "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(name), "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}), body: buf })
+    .then(async r => Object.assign({ _status: r.status }, await r.json().catch(() => ({}))));
+  const FC = cidOf("fileconv"), OTHER = cidOf("otherconv");
+  let pngMsg = null;
+  await t("Anhang: Besucher lädt Bild + PDF hoch → Nachricht mit Datei, Abruf mit richtigem Typ, nosniff, inline/Download; KI bekommt nur den Hinweis", async () => {
+    ipN = 6; const n0 = mock.calls.length;
+    const r = await up(FC, PNG, "../../Mein Foto <x>.PNG", { "X-Chat-Name": encodeURIComponent("Erika Test"), "X-Chat-Page": encodeURIComponent("/druck") });
+    assert.strictEqual(r._status, 200, JSON.stringify(r)); assert.strictEqual(r.ok, true); pngMsg = r.msg;
+    assert.strictEqual(r.msg.from, "v"); assert.strictEqual(r.msg.file.type, "image/png"); assert.strictEqual(r.msg.file.size, PNG.length); assert.ok(/^[a-f0-9]{24}$/.test(r.msg.file.id));
+    assert.ok(!/[\/<>]/.test(r.msg.file.name) && /\.png$/.test(r.msg.file.name), "Name bereinigt: " + r.msg.file.name);
+    const g = await pub("/chat/api/file?c=" + FC + "&f=" + r.msg.file.id); assert.strictEqual(g.status, 200);
+    assert.strictEqual(g.headers.get("content-type"), "image/png"); assert.strictEqual(g.headers.get("x-content-type-options"), "nosniff"); assert.ok(/^inline; filename=/.test(g.headers.get("content-disposition")));
+    assert.ok(Buffer.from(await g.arrayBuffer()).equals(PNG), "gleiche Bytes");
+    assert.ok(/^attachment/.test((await pub("/chat/api/file?c=" + FC + "&f=" + r.msg.file.id + "&dl=1")).headers.get("content-disposition")));
+    const pd = await up(FC, PDF, "Angebot.pdf"); assert.strictEqual(pd._status, 200); assert.strictEqual(pd.msg.file.type, "application/pdf"); assert.strictEqual(pd.msg.file.name, "Angebot.pdf");
+    const gp = await pub("/chat/api/file?c=" + FC + "&f=" + pd.msg.file.id); assert.strictEqual(gp.headers.get("content-type"), "application/pdf");
+    const pl = await pj("/chat/api/poll?c=" + FC + "&after=0"); assert.ok(pl.msgs.some(m => m.file && m.file.id === pd.msg.file.id), "im Verlauf");
+    assert.ok(await waitFor(async () => mock.calls.slice(n0).some(c => /\[Kunde hat Datei Angebot\.pdf \(PDF\) gesendet\]/.test(JSON.stringify(c.body.messages)))), "Hinweis an die KI");
+    assert.ok(!mock.calls.slice(n0).some(c => /PDF-1\.4|fiktives Test-PDF/.test(JSON.stringify(c.body))), "kein Dateiinhalt an die KI");
+    const cv = (await adm("/admin/api/chat/conv?id=" + FC)).conv; assert.strictEqual(cv.name, "Erika Test"); assert.strictEqual(cv.page, "/druck"); assert.ok(/📎/.test(cv.last.text) || cv.last.from === "ki");
+  });
+
+  await t("Anhang: falscher Typ abgelehnt (Inhalt zählt, nicht Endung/Content-Type), leer, ohne Länge/Namen, fremde Herkunft", async () => {
+    ipN = 7;
+    const html = await up(FC, Buffer.from("<html><script>alert(1)</script></html>"), "rechnung.pdf", { "Content-Type": "application/pdf" }); assert.strictEqual(html._status, 415); assert.strictEqual(html.error, "bad_type");
+    assert.strictEqual((await up(FC, Buffer.from("GIF89a-fiktiv-gif-daten"), "bild.png"))._status, 415);
+    assert.strictEqual((await up(FC, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), "logo.webp", { "Content-Type": "image/webp" }))._status, 415);
+    assert.strictEqual((await up(FC, Buffer.alloc(0), "leer.png"))._status, 400);
+    assert.strictEqual((await up(FC, PNG, "x.png", { Origin: "https://evil.example" }))._status, 403);
+    assert.strictEqual((await up(FC, PNG, "x.png", { "Sec-Fetch-Site": "cross-site" }))._status, 403);
+    const noName = await fetch(B + "/chat/api/file?c=" + FC, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: PNG }); assert.strictEqual(noName.status, 400);
+    assert.strictEqual((await up("kurz", PNG, "x.png"))._status, 400);
+    assert.strictEqual((await adm("/admin/api/chat/conv?id=" + FC)).msgs.filter(m => m.file).length, 2, "nichts Falsches gespeichert");
+  });
+
+  await t("Anhang: zu groß (> 15 MB) → 413, nichts gespeichert", async () => {
+    ipN = 8;
+    const r = await up(FC, Buffer.concat([PNG, Buffer.alloc(15 * 1024 * 1024)]), "riesig.png"); assert.strictEqual(r._status, 413); assert.strictEqual(r.error, "too_large");
+    assert.strictEqual((await adm("/admin/api/chat/conv?id=" + FC)).msgs.filter(m => m.file).length, 2);
+  });
+
+  await t("Anhang: fremde Unterhaltung hat keinen Zugriff, Admin-Abruf nur mit Login", async () => {
+    ipN = 9; await pj("/chat/api/send", { cid: OTHER, text: "Hallo, andere Unterhaltung" });
+    const fid = pngMsg.file.id;
+    assert.strictEqual((await pub("/chat/api/file?c=" + OTHER + "&f=" + fid)).status, 404, "andere Unterhaltung");
+    assert.strictEqual((await pub("/chat/api/file?c=" + cidOf("gibtsnicht") + "&f=" + fid)).status, 404, "unbekannte Unterhaltung");
+    assert.strictEqual((await pub("/chat/api/file?c=" + FC + "&f=" + "0".repeat(24))).status, 404, "falsche Datei-ID");
+    assert.strictEqual((await pub("/chat/api/file?c=" + FC + "&f=../" + fid)).status, 400);
+    assert.strictEqual((await pub("/chat/api/file?c=" + FC + "&f=" + fid, null, { "Sec-Fetch-Site": "cross-site" })).status, 403, "fremde Seite");
+    const a = await fetch(B + "/admin/api/chat/file?id=" + FC + "&f=" + fid, { redirect: "manual" }); assert.strictEqual(a.status, 302, "Admin nur mit Login");
+    const al = await fetch(B + "/admin/api/chat/file?id=" + FC + "&f=" + fid, { headers: { cookie: COOKIE } }); assert.strictEqual(al.status, 200); assert.strictEqual(al.headers.get("content-type"), "image/png");
+    assert.strictEqual((await fetch(B + "/admin/api/chat/file?id=" + OTHER + "&f=" + fid, { headers: { cookie: COOKIE } })).status, 404, "auch im Cockpit nur passend zur Unterhaltung");
+  });
+
+  await t("Anhang aus dem Cockpit: Simon sendet PDF, Besucher sieht und lädt es; falscher Typ abgelehnt", async () => {
+    const r = await fetch(B + "/admin/api/chat/file?id=" + FC, { method: "POST", headers: { cookie: COOKIE, "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent("Entwurf Logo.pdf") }, body: PDF }).then(async x => Object.assign({ _status: x.status }, await x.json()));
+    assert.strictEqual(r._status, 200); assert.strictEqual(r.msg.from, "me"); assert.strictEqual(r.msg.file.name, "Entwurf Logo.pdf"); assert.ok(r.conv.human);
+    const pl = await pj("/chat/api/poll?c=" + FC + "&after=0"); const m = pl.msgs.find(x => x.file && x.file.id === r.msg.file.id); assert.ok(m && m.from === "me");
+    const g = await pub("/chat/api/file?c=" + FC + "&f=" + r.msg.file.id + "&dl=1"); assert.strictEqual(g.status, 200); assert.ok(/attachment; filename="Entwurf Logo\.pdf"/.test(g.headers.get("content-disposition")));
+    const bad = await fetch(B + "/admin/api/chat/file?id=" + FC, { method: "POST", headers: { cookie: COOKIE, "Content-Type": "application/octet-stream", "X-File-Name": "x.pdf" }, body: "<html></html>" }); assert.strictEqual(bad.status, 415);
+    const xs = await fetch(B + "/admin/api/chat/file?id=" + FC, { method: "POST", headers: { cookie: COOKIE, "Content-Type": "application/octet-stream", "X-File-Name": "x.pdf", Origin: "https://evil.example" }, body: PDF }); assert.strictEqual(xs.status, 403, "CSRF-Schutz");
+  });
+
+  await t("Löschen der Unterhaltung entfernt auch die Anhänge", async () => {
+    const fdir = path.join(dir, "chat", "files", FC); assert.ok(fs.existsSync(fdir) && fs.readdirSync(fdir).length >= 6);
+    assert.strictEqual((await adm("/admin/api/chat/op", { id: FC, op: "delete" })).ok, true);
+    assert.ok(!fs.existsSync(fdir), "Anhänge gelöscht"); assert.strictEqual((await pub("/chat/api/file?c=" + FC + "&f=" + pngMsg.file.id)).status, 404);
   });
 
   await t("Beenden (Besucher sieht „beendet“, neue Nachricht öffnet wieder) und Löschen", async () => {
