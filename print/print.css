@@ -1931,3 +1931,14 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 /* Shirt-Designer-Einstieg (Textil, Schritt 3) und Druckart-Vorschlag */
 .ps-texd{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;margin:0 0 14px;border:1px solid var(--ps-line2);border-radius:16px;background:var(--ps-ddbg)}.ps-texd .pd-muted{flex:1 1 220px;font-size:13.5px}
 .ps-texhint{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(48,209,88,.12);border:1px solid rgba(48,209,88,.35);font-size:14px;line-height:1.5}.ps-texhint.warn{background:rgba(255,159,10,.12);border-color:rgba(255,159,10,.4)}.ps-texhint .ps-btn{margin-left:6px}
+/* Shirt-Designer: Positionen gut sichtbar über dem Kleidungsstück */
+.pd-texnav{position:absolute;top:30px;left:50%;transform:translateX(-50%);z-index:5;display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:calc(100% - 40px);padding:5px;border-radius:999px;background:rgba(255,255,255,.92);box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.pd-texnav button{flex:none;display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:8px 13px;font:600 13.5px/1 -apple-system,Segoe UI,sans-serif;color:#1d1d1f;background:transparent;cursor:pointer;white-space:nowrap}
+.pd-texnav button[aria-current="true"]{background:#0a84ff;color:#fff}.pd-texnav button:hover:not([aria-current="true"]){background:rgba(10,132,255,.1)}
+.pd-texnav .ok[hidden]{display:none}.pd-texnav .ok{font-style:normal;font-size:12px;width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;background:#30d158;color:#fff}
+@media (max-width:700px){.pd-texnav{top:8px}.pd-texnav button{padding:8px 11px;font-size:13px}}
+.pd-texnav .pos{display:inline-flex;align-items:center;flex:none}
+.pd-texnav .add{border:1.5px dashed rgba(10,132,255,.55)!important;color:#0a66d8!important;background:#fff!important}
+.pd-texnav .rm{flex:none;width:24px;height:24px;margin-left:-4px;padding:0!important;border-radius:50%!important;justify-content:center;font-size:16px!important;color:#6e6e73!important;background:transparent!important}
+.pd-texnav .rm:hover{background:rgba(255,59,48,.12)!important;color:#d70015!important}
+.pd-texprice{flex:none;align-self:center;margin:0 8px 0 6px;padding-left:10px;border-left:1px solid #e3e3e8;font:700 14px/1.2 -apple-system,Segoe UI,sans-serif;color:#1d1d1f;white-space:nowrap}

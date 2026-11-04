@@ -760,8 +760,8 @@
         if (j.ok) { S.undo = null; S.autoFix = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
         if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); tierKick(); }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
-        renderPrice();
-      }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); });
+        renderPrice(); texPriceTell();
+      }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); texPriceTell(); });
     }, 220);
   }
   // Nicht lieferbar → naheliegende Alternativen suchen (je eine Option ändern, Nachbar-Auflagen) und mit Preis anbieten
@@ -1792,6 +1792,9 @@
     var pv = S.mode === "design" && S.previews && S.previews.length ? '<div class="ps-thumbs">' + S.previews.map(function (src, i) { return '<figure><img src="' + esc(src) + '" alt=""><figcaption>' + esc((pos[i] || {}).title || "") + "</figcaption></figure>"; }).join("") + "</div>" : "";
     return '<div class="ps-texd"><button type="button" class="ps-btn primary" data-act="texdesign">👕 ' + (S.texDesign ? "Shirt-Design bearbeiten" : "Im Shirt-Designer gestalten") + '</button><span class="pd-muted">Text, Logo, Bilder, Formen und QR-Code direkt auf dem ' + esc(texKindName()) + ' in deiner Farbe platzieren – gratis.</span></div>' + pv + hint;
   }
+  // Preis-Anzeige im Shirt-Designer (wird nach jeder Preisberechnung aktualisiert)
+  function texPriceText() { if (S.priceBusy) return "Preis wird berechnet …"; if (!S.price) return S.priceErr || ""; var co = S.ctype === "company"; return eur(co ? S.price.net : S.price.gross) + (co ? " netto" : "") + " · " + totalCopies().toLocaleString("de-AT") + " Stk. inkl. Versand"; }
+  function texPriceTell() { if (kind() === "textile" && window.PrintDesigner && window.PrintDesigner.price) window.PrintDesigner.price(texPriceText()); }
   function texKindName() { var t = (S.prod.title || "").toLowerCase(); return /hoodie|kapuz/.test(t) ? "Hoodie" : /polo/.test(t) ? "Poloshirt" : /sweat|pullover/.test(t) ? "Pullover" : /jacke|weste/.test(t) ? "Kleidungsstück" : "Shirt"; }
   function texColor() { var pr = (S.prod.props || []).filter(function (x) { return /^color/.test(x.slug); })[0], o = pr && pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; return o ? { hex: colHex(o) || "#ffffff", name: colName(o.name), img: imgOk(o.img) ? String(o.img).replace(/^https:\/\/images\.ctfassets\.net\//, "/print/bild/").replace(/\?.*$/, "") + "?fm=png&w=1200" : "" } : { hex: "#ffffff", name: "Weiß", img: "" }; }   // Produktfoto der Farbe über unseren Bild-Proxy (gleicher Ursprung → Freistellen im Browser möglich)
   function openTexDesigner() {
@@ -1802,10 +1805,12 @@
       var tt = document.getElementById("psToast"); if (tt && /wird geladen/.test(tt.textContent)) tt.className = "ps-toast";
       var dz = S.texDesign && S.texDesign.pages && S.texDesign.pages.length === pos.length && S.texDesign.key === pos.map(function (x) { return x.slug; }).join(",") ? S.texDesign : null;
       return D.open({ product: S.prod, sel: S.sel, labels: [], copies: totalCopies(), urgency: S.urgency, size: { w: pos[0].area[0], h: pos[0].area[1] }, bleed: 0, safe: 0, sides: pos.length, fonts: S.cat.fonts, design: dz,
-        textile: { pages: pos.map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), color: c.hex, colorName: c.name, photo: c.img ? { url: c.img } : null, methodName: (m.label || "").replace(/ \(.*$/, ""), kind: /hoodie|kapuz/.test(k) ? "hoodie" : /polo/.test(k) ? "polo" : /sweat|pullover/.test(k) ? "sweat" : /jacke/.test(k) ? "jacke" : "tee" },
+        textile: { pages: pos.map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), all: S.prod.positions.filter(function (x) { return (m.positions || []).indexOf(x.slug) > -1; }).map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), color: c.hex, colorName: c.name, methodName: (m.label || "").replace(/ \(.*$/, ""), kind: /zip|reißverschluss|jacke/.test(k) ? "zip" : /hoodie|kapuz/.test(k) ? "hoodie" : /polo/.test(k) ? "polo" : /sweat|pullover/.test(k) ? "sweat" : /jacke/.test(k) ? "jacke" : "tee" },
         textileSel: S.textile,
-        onDone: function (file, previews, design, meta) { S.file = file; S.logos = {}; S.previews = previews; design.key = pos.map(function (x) { return x.slug; }).join(","); S.texDesign = design; S.texMeta = meta; S.mode = "design"; render(); toast(file.blocked ? "Bitte die markierten Punkte prüfen." : "Logo-PDF aus deinem Design erstellt ✓"); },
-        onClose: function (design) { if (design) { design.key = pos.map(function (x) { return x.slug; }).join(","); S.texDesign = design; } render(); } });
+        texPrice: texPriceText(),
+        onTexPositions: function (slugs) { S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return slugs.indexOf(x) > -1; }); S.logos = {}; S.file = null; S.texDesign = null; loadPrice(); },   // Positionen im Designer an-/abgewählt → neuer Preis
+        onDone: function (file, previews, design, meta) { S.file = file; S.logos = {}; S.previews = previews; design.key = (design.slugs || pos.map(function (x) { return x.slug; })).join(","); S.texDesign = design; S.texMeta = meta; S.mode = "design"; render(); toast(file.blocked ? "Bitte die markierten Punkte prüfen." : "Logo-PDF aus deinem Design erstellt ✓"); },
+        onClose: function (design) { if (design) { design.key = (design.slugs || pos.map(function (x) { return x.slug; })).join(","); S.texDesign = design; } render(); } });
     }).catch(function (e) { toast(e.message || "Designer konnte nicht geladen werden", true); });
   }
   // Qualitäts-Ampel aus den Prüfergebnissen
