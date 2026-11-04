@@ -14,8 +14,8 @@ const button = (label, url, ghost) => '<table role="presentation" cellpadding="0
 function steps(list, cur) {
   return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:2px 0 22px"><tr>' + list.map((t, k) => {
     const done = k <= cur, c = done ? BLUE : "#e5e5ea";
-    return '<td width="' + Math.floor(100 / list.length) + '%" style="padding:0 3px;vertical-align:top"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" bgcolor="' + c + '" style="height:6px;line-height:6px;font-size:0;background:' + c + ';border-radius:3px">&nbsp;</td></tr></table>' +
-      '<div style="padding-top:7px;text-align:center;font-family:' + FONT + ";font-size:12px;color:" + (done ? INK : "#a1a1a6") + ";font-weight:" + (k === cur ? 700 : 500) + '">' + (done && k !== cur ? "✓ " : "") + esc(t) + "</div></td>"; }).join("") + "</tr></table>";
+    return '<td width="' + Math.floor(100 / list.length) + '%" style="padding:0 2px;vertical-align:top"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="6" bgcolor="' + c + '" style="height:6px;line-height:6px;font-size:0;background:' + c + ';border-radius:3px">&nbsp;</td></tr></table>' +
+      '<div style="padding-top:7px;text-align:center;white-space:nowrap;font-family:' + FONT + ";font-size:11.5px;letter-spacing:-.1px;color:" + (done ? INK : "#a1a1a6") + ";font-weight:" + (k === cur ? 700 : 500) + '">' + (done && k !== cur ? "✓&nbsp;" : "") + esc(t).replace(/ /g, "&nbsp;") + "</div></td>"; }).join("") + "</tr></table>";   // Schrittnamen ohne Umbruch (z. B. „In Produktion“)
 }
 function table(rows) {
   if (!rows || !rows.length) return "";
