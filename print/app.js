@@ -314,11 +314,13 @@
     if (me.type !== "company") return "";   // Privatkunden: Bonusprogramm (nur Firmen) nicht anzeigen
     var top = b.tiers[b.tiers.length - 1], pct = Math.min(100, Math.round(b.revenue / top.from * 100));
     return '<section class="ps-panel ps-bonus-acc"><h3>Bonusprogramm</h3>' +
-      '<div class="ps-bstat"><div><span class="pd-muted">Deine Stufe</span><b class="lvl ' + esc(b.tier || "none") + '">' + (b.name ? esc(b.name) + " · " + b.pct + " % Rabatt" : "noch keine Stufe") + '</b></div><div><span class="pd-muted">Umsatz ' + b.year + ' (netto)</span><b>' + eur(b.revenue) + "</b></div></div>" +
+      '<div class="ps-bstat"><div><span class="pd-muted">Deine Stufe</span><b class="lvl ' + esc(b.tier || "none") + '">' + (b.name ? esc(b.name) + " · " + b.pct + " % Rabatt" : "noch keine Stufe") + '</b></div><div><span class="pd-muted">Umsatz letzte 12 Monate (netto)</span><b>' + eur(b.revenue) + "</b></div></div>" +
       '<div class="ps-bbar" role="progressbar" aria-valuemin="0" aria-valuemax="' + top.from + '" aria-valuenow="' + b.revenue + '"><i style="width:' + pct + '%"></i>' + b.tiers.map(function (t) { return '<span style="left:' + (t.from / top.from * 100) + '%" title="' + esc(t.name) + '"></span>'; }).join("") + "</div>" +
       '<p class="ps-bnext">' + (b.next ? "Noch <b>" + eur(b.next.missing) + "</b> bis <b>" + esc(b.next.name) + "</b> (" + b.next.pct + " % auf alles)." : "Höchste Stufe erreicht – danke für dein Vertrauen!") + "</p>" + tiers +
-      '<p class="pd-muted" style="font-size:13px">Der Rabatt wird automatisch abgezogen, wenn du angemeldet als Firma bestellst. Zählt: Umsatz im Kalenderjahr. Am 31.12. sinkt die Stufe um zwei' + (b.resetTo !== undefined && b.name ? " (bei dir auf " + (b.resetTo || "keine Stufe") + ")" : "") + ' – mit neuem Umsatz steigst du wieder auf.</p></section>';
+      (b.name && b.validUntil ? '<p class="ps-bnext">' + (b.nextCheck && b.nextCheck > b.validUntil ? "Deine Stufe ist geprüft bis " + dNice(b.nextCheck) : "Deine Stufe gilt sicher bis " + dNice(b.validUntil)) + ". Danach zählt: mindestens " + eur(b.tiers.filter(function (t) { return t.key === b.tier; })[0].from).replace(",00", "") + " Umsatz in den letzten 6 Monaten (aktuell " + eur(b.r6) + ").</p>" : "") +
+      '<p class="pd-muted" style="font-size:13px">Der Rabatt wird automatisch abgezogen, wenn du angemeldet als Firma bestellst. Zählt: Nettoumsatz der letzten 12 Monate. Eine erreichte Stufe gilt 12 Monate; danach prüfen wir alle 2 Monate die letzten 6 Monate – wird die Schwelle nicht erreicht, geht es eine Stufe zurück' + (b.name ? " (bei dir auf " + (b.downTo || "keine Stufe") + ")" : "") + '. Mit neuem Umsatz steigst du jederzeit wieder auf.</p></section>';
   }
+  function dNice(iso) { var d = new Date(iso + "T12:00:00"); return d.getDate() + "." + (d.getMonth() + 1) + "." + d.getFullYear(); }
   function acctDo(act, form) {
     var A = S.acct, v = {}; if (form) Array.prototype.forEach.call(form.elements, function (el) { if (el.name) v[el.name] = el.type === "checkbox" ? el.checked : el.value.trim(); });
     if (v.email) A.email = v.email.toLowerCase();

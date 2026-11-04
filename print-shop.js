@@ -217,15 +217,24 @@ const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 50;   // Sortenmix: bis 50 Motive (Print
 // Zahlungsgebühr (Mollie) für die Kalkulation: Standard Kreditkarte EU 1,8 % + 0,25 € (anpassbar per Railway)
 const payFee = () => ({ pct: isFinite(parseFloat(process.env.PRINT_PAY_FEE_PCT)) ? parseFloat(process.env.PRINT_PAY_FEE_PCT) : 1.8, fix: isFinite(parseFloat(process.env.PRINT_PAY_FEE_FIX)) ? parseFloat(process.env.PRINT_PAY_FEE_FIX) : 0.25 });
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
-// Stufe je Kalenderjahr: Umsatz des Jahres ergibt eine Stufe; am 31.12. fällt die erreichte Stufe um zwei zurück (Platin → Silber, Gold → Bronze, Silber/Bronze → keine)
-function bonusCalc(orders, year) {
-  const by = {}; orders.forEach(o => { const y = +String(o.createdAt).slice(0, 4); if (y) by[y] = (by[y] || 0) + (+(o.price && o.price.net) || 0); });
+// Stufen (Wunsch Simon 04.11.2026): erreicht der Nettoumsatz der letzten 12 Monate eine Schwelle, gilt die Stufe ab dann 12 Monate. Danach wird alle 2 Monate
+// geprüft, ob in den letzten 6 Monaten die Schwelle der aktuellen Stufe erreicht wurde – sonst eine Stufe zurück. Neuer Umsatz kann jederzeit wieder höher stufen.
+// at: Stichtag (ISO-Datum) oder Jahr (= 31.12. des Jahres)
+function bonusCalc(orders, at) {
+  const day = v => Date.parse(String(v).slice(0, 10) + "T00:00:00Z"), end = typeof at === "number" ? Date.UTC(at, 11, 31) : day(at);
+  const addM = (t, m) => { const d = new Date(t); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m, d.getUTCDate()); };
+  const ev = orders.map(o => [day(o.createdAt), +(o.price && o.price.net) || 0]).filter(e => e[0] && e[1]).sort((x, y) => x[0] - y[0]);
+  const sum = (from, to) => ev.reduce((a, e) => e[0] > from && e[0] <= to ? a + e[1] : a, 0);   // Zeitraum (from, to]
   const idxOf = rev => { let k = -1; BONUS_TIERS.forEach((t, i) => { if (rev >= t.from) k = i; }); return k; };
-  const years = Object.keys(by).map(Number).filter(y => y < year).sort(); let idx = -1, prev = null;
-  for (const y of years) { if (prev != null) for (let g = prev; g < y; g++) idx = Math.max(-1, idx - 2); idx = Math.max(idx, idxOf(by[y])); prev = y; }
-  if (prev != null) for (let g = prev; g < year; g++) idx = Math.max(-1, idx - 2);
-  const carried = idx, revenue = Math.round((by[year] || 0) * 100) / 100, cur = Math.max(carried, idxOf(revenue));
-  return { revenue, idx: cur, carried, year };
+  let idx = -1, since = null, check = null, i = 0;
+  for (;;) {
+    const tOrd = i < ev.length && ev[i][0] <= end ? ev[i][0] : Infinity, tChk = idx > -1 && check != null && check <= end ? check : Infinity, t = Math.min(tOrd, tChk); if (t === Infinity) break;
+    if (tChk <= tOrd) { if (sum(addM(t, -6), t) < BONUS_TIERS[idx].from) idx--; check = idx > -1 ? addM(t, 2) : null; continue; }
+    const k = idxOf(sum(addM(t, -12), t)); if (k > idx) { idx = k; since = t; check = addM(t, 12); }
+    while (i < ev.length && ev[i][0] === t) i++;
+  }
+  const iso = t => t == null ? null : new Date(t).toISOString().slice(0, 10), r2b = v => Math.round(v * 100) / 100;
+  return { revenue: r2b(sum(addM(end, -12), end)), r6: r2b(sum(addM(end, -6), end)), idx, since: iso(since), validUntil: since != null ? iso(addM(since, 12)) : null, nextCheck: idx > -1 ? iso(check) : null };
 }
 
 // Shop-AGB: Version wird bei jeder Bestellung gespeichert (bei Änderung der AGB hochzählen, Datum = Stand)
@@ -2087,11 +2096,11 @@ module.exports = function (D) {
   async function bonusOf(c, all) {
     if (!c) return null;
     const l = (all || await store.listOrders()).filter(o => (o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)) && BONUS_COUNTS[o.status]);
-    const year = +today().slice(0, 4), b = bonusCalc(l, year), company = c.type === "company";
+    const b = bonusCalc(l, today()), company = c.type === "company";
     const cur = b.idx > -1 ? BONUS_TIERS[b.idx] : null, nx = BONUS_TIERS[b.idx + 1] || null;
-    return { company, revenue: b.revenue, year, carried: b.carried > -1 ? BONUS_TIERS[b.carried].name : "", tier: company && cur ? cur.key : "", name: company && cur ? cur.name : "", pct: company && cur ? cur.pct : 0,
+    return { company, revenue: b.revenue, r6: b.r6, since: b.since, validUntil: b.validUntil, nextCheck: b.nextCheck, tier: company && cur ? cur.key : "", name: company && cur ? cur.name : "", pct: company && cur ? cur.pct : 0,
       next: nx ? { key: nx.key, name: nx.name, from: nx.from, pct: nx.pct, missing: r2(Math.max(0, nx.from - b.revenue)) } : null, tiers: BONUS_TIERS,
-      resetTo: cur ? (BONUS_TIERS[b.idx - 2] ? BONUS_TIERS[b.idx - 2].name : "") : "", orders: l.length };
+      downTo: cur ? (BONUS_TIERS[b.idx - 1] ? BONUS_TIERS[b.idx - 1].name : "") : "", orders: l.length };
   }
 
   // „Nochmal bestellen“ (Kundenkonto): Kopie der bestellten Druckdatei ohne Bestellbezug + gleiche Ausführung → Warenkorb; der Preis wird dort neu berechnet

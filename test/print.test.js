@@ -505,14 +505,20 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/order", order({ fileId: up2.j.fileId, fileToken: up2.j.token, payment: "invoice", customer: bad, expectedGross: 38.4 }))).status, 400, "ungültige UID → keine Rechnung");
     assert.strictEqual(M.orders.length, 1, "weiterhin keine automatische Print.com-Bestellung");
   });
-  await t("Bonusprogramm: Stufe je Kalenderjahr, am 31.12. zwei Stufen zurück", async () => {
+  await t("Bonusprogramm: Stufe gilt 12 Monate, danach alle 2 Monate Prüfung der letzten 6 Monate (sonst eine Stufe zurück)", async () => {
     const C = require(path.join(dir, "print-shop.js"))._bonusCalc; if (!C) return;
-    const o = (y, n) => ({ createdAt: y + "-06-01T10:00:00Z", price: { net: n } });
-    assert.strictEqual(C([o(2025, 26000)], 2025).idx, 3, "Platin");
-    assert.strictEqual(C([o(2025, 26000)], 2026).idx, 1, "nach Jahreswechsel Silber");
-    assert.strictEqual(C([o(2025, 26000)], 2027).idx, -1, "zwei Jahre ohne Umsatz: keine Stufe");
-    assert.strictEqual(C([o(2025, 21000), o(2026, 6000)], 2026).idx, 0, "Gold → Bronze (Übertrag), 6.000 € = Bronze");
-    assert.strictEqual(C([o(2025, 21000), o(2026, 12000)], 2026).idx, 1, "mit 12.000 € im neuen Jahr wieder Silber");
+    const o = (d, n) => ({ createdAt: d + "T10:00:00Z", price: { net: n } });
+    const pl = [o("2025-06-01", 26000)];
+    assert.strictEqual(C(pl, "2025-12-31").idx, 3, "Platin");
+    assert.strictEqual(C(pl, "2026-05-31").idx, 3, "12 Monate gültig");
+    assert.strictEqual(C(pl, "2026-06-01").idx, 2, "nach 12 Monaten ohne Umsatz in 6 Monaten: Gold");
+    assert.strictEqual(C(pl, "2026-08-01").idx, 1, "2 Monate später: Silber");
+    assert.strictEqual(C(pl, "2026-12-01").idx, -1, "keine Stufe mehr");
+    const br = [o("2025-01-10", 3000), o("2025-11-01", 2500)];
+    assert.strictEqual(C(br, "2026-03-10").idx, 0, "letzte 6 Monate 2.500 € ≥ 2.000 €: Bronze bleibt");
+    assert.strictEqual(C(br, "2026-05-10").idx, -1, "danach unter der Schwelle: zurück");
+    assert.strictEqual(C(br, "2026-03-10").validUntil, "2026-01-10");
+    assert.strictEqual(C([o("2026-01-05", 1500), o("2026-03-01", 900)], "2026-03-02").idx, 0, "12-Monats-Umsatz 2.400 € → Bronze");
   });
   await t("Kundenkonto: Registrierung mit Mail-Code, Login, Warenkorb, Checkout mit 2 Positionen = 1 Zahlung, Bestellungen im Profil", async () => {
     const em = "konto@example.com";
