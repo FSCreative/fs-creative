@@ -405,7 +405,7 @@
       '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + "" + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
     return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
       (n > 1 && sides() === 2 ? '<label class="ps-cb sm ps-msb"><input type="checkbox" data-motsb="1"' + (S.mot.sameBack !== false ? " checked" : "") + '><span>' + sideNames()[1] + " für alle Motive gleich – nur einmal hochladen</span></label>" : "") +
-      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu 50 Motive, ohne Aufpreis.</p>" : "") + "</div>";
+      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu 50 Motive, ohne Aufpreis. Mit mehreren Motiven wird digital gedruckt – Offsetdruck gibt es nur mit einem Motiv.</p>" : "") + "</div>";
   }
 
   // Verständliche Namen + Erklärungen für Fachbegriffe aus dem Print.com-Katalog
