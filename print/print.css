@@ -2106,3 +2106,4 @@ html.ps-v2 header.nav .brand.ps-v2brand{display:block;flex:none;align-self:cente
 .ps-v2last .chip.ok,.ps-v2last .chip.done{background:rgba(22,163,74,.13);color:#15803d}.ps-v2last .chip.warn{background:rgba(234,179,8,.18);color:#a16207}.ps-v2last .chip.bad{background:rgba(220,38,38,.12);color:#b91c1c}
 .ps-v2acct .main .ps-panel{margin-top:0}
 @media (max-width:900px){.ps-v2acct{grid-template-columns:1fr;border-radius:16px}.ps-v2acct .side{border-right:0;border-bottom:1px solid var(--ps-line,var(--border));padding:16px}.ps-v2acct .side h2{display:none}.ps-v2acct .side nav{flex-direction:row;overflow-x:auto;scrollbar-width:none}.ps-v2acct .side button{flex:none;padding:9px 12px;font-size:14px}.ps-v2acct .side .out{margin:0}.ps-v2stats{grid-template-columns:1fr 1fr}.ps-v2last td:nth-child(2),.ps-v2last th:nth-child(2){display:none}}
+html.ps-v2 .burger span{background:#fff}html.ps-v2 .burger{background:rgba(255,255,255,.1)}

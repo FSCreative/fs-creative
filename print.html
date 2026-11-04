@@ -170,7 +170,7 @@
   window.addEventListener('scroll',function(){if(!dd.hidden)set(false);},{passive:true});
   /* Menüleiste nie scrollen: passt nicht alles hinein, fallen Punkte von rechts weg */
   var box=cat.querySelector('.in'),items=[].slice.call(box.children,1);
-  function fit(){items.forEach(function(a){a.hidden=false;});for(var k=items.length-1;k>=0&&box.scrollWidth>box.clientWidth+1;k--)items[k].hidden=true;}
+  function fit(){items.forEach(function(a){a.hidden=false;});for(var k=items.length-1;k>=0&&box.scrollWidth>box.clientWidth+1;k--)items[k].hidden=true;document.documentElement.style.setProperty('--nav-h',(hd.offsetTop+hd.offsetHeight)+'px');}
   fit();window.addEventListener('resize',fit);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();
 </script>
