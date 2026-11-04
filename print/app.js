@@ -790,7 +790,7 @@
     var co = S.ctype === "company";
     return '<div class="ps-alts"><p class="ps-alts-h">Das geht – ähnliche Ausführungen:</p>' + S.alts.map(function (a, i) { return '<button type="button" class="ps-alt" data-alt="' + i + '"><span>' + esc(a.label) + "</span><b>" + eur(co ? a.price.net : a.price.gross) + "</b><small>Übernehmen →</small></button>"; }).join("") + "</div>";
   }
-  // Banner: Preis je m² groß (lange Bahnen wie das 20-m-Vliesbanner: je Laufmeter), Gesamtpreis kleiner darunter
+  // Lange Bahnen (20-m-Vliesbanner): Preis je Laufmeter groß, Gesamtpreis darunter; Werbeartikel: Stückpreis groß; sonst Gesamtpreis groß (kein m²-Preis)
   function isPromo(p) { return !!p && (p.kind === "promo" || ((p.cat || {}).main || p.group) === "gifts-merchandise-promotional"); }   // Werbeartikel
   function unitOf() {
     var p = S.prod; if (p && isPromo(p) && kind() !== "textile") { var nn = (S.price && S.price.copies) || totalCopies() || 1; return nn > 1 ? { div: nn, unit: "Stk.", label: "Stück", piece: true } : null; }   // Werbeartikel: Stückpreis groß
@@ -798,7 +798,7 @@
     var t = p.key + " " + p.title; if (!(p.kind === "banner" || /banner|plane|bauzaun|mesh|vlies/i.test(t)) || /roll|aufsteller|display/i.test(t)) return null;
     var n = (S.price && S.price.copies) || totalCopies() || 1, L = Math.max(sz.w, sz.h), K = Math.min(sz.w, sz.h);
     if (L >= 3000 && L / K >= 8) return { div: L / 1000 * n, unit: "lfm", label: "Laufmeter" };
-    return { div: sz.w * sz.h / 1e6 * n, unit: "m²", label: "m²" };
+    return null;   // kein Preis je m² mehr (Wunsch Simon 04.11.2026: verwirrt) – groß steht der Gesamtpreis
   }
   /* Mengenhinweis (alle Produkte): nächste 1–2 größeren Auflagen rechnen; ist der Stückpreis dort ≥ 8 % günstiger → „Ab N Stk. nur … pro Stück“ (Versand fällt dann kaum ins Gewicht) */
   var tierSeq = 0;
@@ -1078,7 +1078,8 @@
     // Banner & lange Bahnen: Preis je m² bzw. Laufmeter groß, Größe dazu (sonst weiß niemand, dass „2 Stk.“ beim Vliesbanner 2 × 20 m sind)
     var bd = f && pp && (pp.dims ? { w: pp.dims[0], h: pp.dims[1] } : pp.kind === "banner" && pp.custom ? { w: Math.max(pp.custom.minW, 1000), h: Math.max(pp.custom.minH, 500) } : null);
     if (bd && (pp.kind === "banner" || /banner|plane|bauzaun|mesh|vlies/i.test(pp.key + " " + pp.title)) && !/roll|aufsteller|display/i.test(pp.key + " " + pp.title)) {
-      var L = Math.max(bd.w, bd.h), K = Math.min(bd.w, bd.h), lm = L >= 3000 && L / K >= 8, n = +f.copies || 1, dv = lm ? L / 1000 * n : bd.w * bd.h / 1e6 * n;
+      var L = Math.max(bd.w, bd.h), K = Math.min(bd.w, bd.h), lm = L >= 3000 && L / K >= 8, n = +f.copies || 1, dv = L / 1000 * n;
+      if (!lm) return (n > 1 ? n + " × " : "") + fmtSize(bd.w, bd.h) + " <b>" + eur(g0) + "</b>";   // kein Preis je m² (verwirrt) – Größe + Gesamtpreis
       return "<b>" + eur(g0 / dv).replace(/(,\d\d)\d*/, "$1") + "</b>/" + (lm ? "lfm" : "m²") + " <small>(" + (n > 1 ? n + " × " : "") + fmtSize(bd.w, bd.h) + " · " + eur(g0) + ")</small>"; }
     return f ? (+f.copies).toLocaleString("de-AT") + "\u00a0" + U(pp) + " <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];

@@ -32,7 +32,12 @@ const PRINT_PJ = "pdruckshop";
 const PRINT_COL = { paid: "pruefung", invoice_requested: "pruefung", ordered: "arbeit", in_production: "arbeit", shipped: "erledigt", delivered: "erledigt", rejected: "erledigt" };
 const PRINT_NEW = { paid: 1, invoice_requested: 1, ordered: 1, in_production: 1, problem: 1 };   // nur dafür neue Aufgaben (alte Bestellungen nicht nachtragen)
 const PRINT_STEPS = ["Druckdaten geprüft & freigegeben", "Bei Print.com bestellt", "Versendet", "Zugestellt"], PRINT_RANK = { ordered: 2, in_production: 2, shipped: 3, delivered: 4 };
+// Wunsch Simon 04.11.2026: Druckaufträge NICHT mehr als Aufgaben in „Aufträge“ anlegen/anzeigen – sie laufen nur noch unter „Druck“.
+// Bestehende Druckaufgaben bleiben gespeichert (nichts gelöscht), werden aber über auftraegeView() ausgeblendet.
+const PRINT_TASKS = false;
+const auftraegeView = A => A ? Object.assign({}, A, { projects: (A.projects || []).filter(p => p.id !== PRINT_PJ), tasks: (A.tasks || []).filter(t => !t.print && t.projectId !== PRINT_PJ) }) : A;
 function printTaskSync(o) {
+  if (!PRINT_TASKS) return false;
   if (!o || !o.id || !o.status) return false;
   const col = o.status === "problem" ? (o.pcOrder ? "arbeit" : "pruefung") : PRINT_COL[o.status]; if (!col) return false;
   const A = readAuftraege(), now = Date.now();
@@ -545,7 +550,7 @@ function dailyDigest() {
   let last = ""; try { last = JSON.parse(fs.readFileSync(DIGEST_FILE, "utf8")).day || ""; } catch (e) {}
   if (last === day) return;
   try { fs.writeFileSync(DIGEST_FILE, JSON.stringify({ day })); } catch (e) { return; }
-  const A = readAuftraege(), open = A.tasks.filter(t => t.status !== "erledigt" && t.due && t.due <= day), over = open.filter(t => t.due < day);
+  const A = auftraegeView(readAuftraege()), open = A.tasks.filter(t => t.status !== "erledigt" && t.due && t.due <= day), over = open.filter(t => t.due < day);
   if (!open.length) return;
   const parts = [];
   if (open.length) parts.push(open.length + (open.length === 1 ? " Aufgabe" : " Aufgaben") + (over.length ? " (" + over.length + " überfällig)" : ""));
@@ -4800,7 +4805,7 @@ async function handleAdmin(req, res, u, p) {
     try { const d = await cockpitData(yr, u.searchParams.get("force") === "1", u.searchParams.get("forecast") === "1"); ADMIN_SEEN = Date.now();
       // immer frisch (nicht aus dem Zwischenspeicher): Aufträge, Verbindungs-Kurzfassung (nur Cache, keine Prüfung), Mail-Status, Wetter
       weatherNow().catch(() => {});
-      const fresh = { auftraege: readAuftraege(), connections: CONN.summary(), weather: WEATHER.data || d.weather || null, platformStatus: platformStatus() };
+      const fresh = { auftraege: auftraegeView(readAuftraege()), connections: CONN.summary(), weather: WEATHER.data || d.weather || null, platformStatus: platformStatus() };
       if (d.mail) fresh.mail = Object.assign({}, d.mail, mailFlags());
       return sendGz(req, res, 200, JSON.stringify(Object.assign({}, d, fresh)), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e).slice(0, 200) }), TYPES[".json"]); }
@@ -4881,11 +4886,11 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/auftraege") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
-    if (req.method === "GET") return J(200, Object.assign({ ok: true }, readAuftraege()));
+    if (req.method === "GET") return J(200, Object.assign({ ok: true }, auftraegeView(readAuftraege())));
     if (req.method !== "POST") return J(405, { ok: false, error: "method_not_allowed" });
     let body = ""; req.on("data", c => { body += c; if (body.length > 300000) req.destroy(); });
     req.on("end", () => { let b; try { b = JSON.parse(body || "{}"); } catch (e) { return J(400, { ok: false, error: "bad_json" }); }
-      try { const r = auftragOp(b); return J(200, Object.assign({ ok: true }, r)); } catch (e) { return J(400, { ok: false, error: String(e.message || e).slice(0, 200) }); } });
+      try { const r = auftragOp(b); if (r && r.data) r.data = auftraegeView(r.data); return J(200, Object.assign({ ok: true }, r)); } catch (e) { return J(400, { ok: false, error: String(e.message || e).slice(0, 200) }); } });
     return;
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
@@ -5124,7 +5129,7 @@ function handleAnfrage(req, res) {
 }
 
 // ── KI (Claude über die Anthropic API): Logik in ki.js, hier nur die Anbindung an vorhandene Daten ──
-const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos: () => readAuftraege().tasks.map(t => ({ text: t.title, due: t.due || "", done: t.status === "erledigt" })), readLeads, cockpitData, mailSnapshot, sevMeta, readBilling,
+const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos: () => auftraegeView(readAuftraege()).tasks.map(t => ({ text: t.title, due: t.due || "", done: t.status === "erledigt" })), readLeads, cockpitData, mailSnapshot, sevMeta, readBilling,
   steuerRaw: f => steuerRaw(f), readSteuer: () => readSteuer(), background: require.main === module });
 
 // Asynchrone Handler: Fehler abfangen und 500 senden statt den ganzen Prozess zu beenden (Sicherheitsprüfung 19.10.2026)
