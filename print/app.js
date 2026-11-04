@@ -237,9 +237,10 @@
   function refreshMe() { api("/print/api/account/me").then(function (j) { if (j.ok && j.customer) S.me = j.customer; }).catch(function () {}); }
   function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) { var sp = root.querySelector(".ps-status[data-oid]"); if (sp && LIVE.o) { if (!liveBusy()) renderStatus(LIVE.o, LIVE.id, LIVE.t); } else if (!sp && !(LIVE.statusMode && !S.view)) render(); } } }).catch(function () {}); }   // Bestellseite nicht durch die Startseite ersetzen
   function headUpdate() {
-    document.querySelectorAll("[data-acct-link]").forEach(function (a) { var l = a.querySelector("[data-acct-label]"); if (l) l.textContent = S.me ? "Konto" : "Anmelden"; else a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
+    document.querySelectorAll("[data-acct-link]").forEach(function (a) { var l = a.querySelector("[data-acct-label]"); if (l && l.hasAttribute("data-fix")) return; if (l) l.textContent = S.me ? "Konto" : "Anmelden"; else a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
     var cur = S.view === "konto" ? "konto" : S.view === "xmas" ? "" : !S.view && root.querySelector(".ps-status[data-oid]") ? (S.me ? "konto" : "") : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
     document.querySelectorAll("[data-bn]").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-bn") === cur); });
+    document.querySelectorAll("[data-saved-n]").forEach(function (b) { b.textContent = String(savedList().length); });
     document.querySelectorAll("[data-cart-n]").forEach(function (b) { b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length; });
   }
   document.addEventListener("click", function (e) {
@@ -1161,27 +1162,39 @@
     sticker: '<path d="M20 12a8 8 0 1 1-8-8h8z"/><path d="M20 12h-5a3 3 0 0 1-3-3V4"/>', shirt: '<path d="M8 3 3 6l2 5 3-1v11h8V10l3 1 2-5-5-3a4 4 0 0 1-8 0z"/>',
     gift: '<rect x="3" y="8" width="18" height="5"/><path d="M5 13v8h14v-8M12 8v13M12 8S10 3 7.5 4.5 9 8 12 8zm0 0s2-5 4.5-3.5S15 8 12 8z"/>', box: '<path d="m3 7 9-4 9 4v10l-9 4-9-4z"/><path d="m3 7 9 4 9-4M12 11v10"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', chat: '<path d="M4 5h16v11H9l-5 4z"/>', cart: '<path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', star: '<path d="M12 2.6l2.7 6 6.6.7-4.9 4.4 1.4 6.5L12 16.9l-5.8 3.3 1.4-6.5-4.9-4.4 6.6-.7z"/>' };
-  var V2CAT = [["Flyer & Folder", "flyer", "/print/flyer"], ["Visitenkarten", "card", "/print/visitenkarten"], ["Plakate", "poster", "/print/plakate"], ["Banner", "banner", "/print/pvc-banner"], ["Roll-ups", "rollup", "/print/rollups"],
-    ["Aufkleber", "sticker", "", "stickers-tapes"], ["Textilien", "shirt", "", "clothing-textile"], ["Werbeartikel", "gift", "", "gifts-merchandise-promotional"], ["Verpackungen", "box", "", "packaging-bags"]];
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', heart: '<path d="M12 20s-7-4.4-9-9a4.7 4.7 0 0 1 9-3 4.7 4.7 0 0 1 9 3c-2 4.6-9 9-9 9z"/>',
+    ok: '<path d="m5 12.5 4.5 4.5L19 7.5"/>', leaf: '<path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M5 19 13 11"/>', help: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>', star: '<path d="M12 2.6l2.7 6 6.6.7-4.9 4.4 1.4 6.5L12 16.9l-5.8 3.3 1.4-6.5-4.9-4.4 6.6-.7z"/>' };
+  var V2CAT = [["Flyer & Folder", "flyer", "/print/flyer"], ["Visitenkarten", "card", "/print/visitenkarten"], ["Plakate & Poster", "poster", "/print/plakate"], ["Banner & Planen", "banner", "/print/pvc-banner"],
+    ["Aufkleber & Etiketten", "sticker", "", "stickers-tapes"], ["Textilien", "shirt", "", "clothing-textile"], ["Werbetechnik", "rollup", "", "indoor-interior"], ["Werbeartikel", "gift", "", "gifts-merchandise-promotional"]];
+  var V2GRP = [["paper-print", "Papier & Druck"], ["outdoor-advertising", "Außenwerbung"], ["indoor-interior", "Innenwerbung & Interieur"], ["stickers-tapes", "Aufkleber & Klebebänder"], ["packaging-bags", "Taschen & Verpackungen"], ["gifts-merchandise-promotional", "Werbeartikel & Geschenke"], ["clothing-textile", "Bekleidung & Textil"]];
   function v2Header() {
     var hd = document.querySelector("header.nav"), inner = hd && hd.querySelector(".nav-inner"); if (!inner || hd.querySelector(".ps-v2q")) return;
     document.documentElement.classList.add("ps-v2");
     var top = document.createElement("div"); top.className = "ps-v2top";
-    top.innerHTML = '<div class="in"><ul><li>' + v2Ic(V2I.truck) + "Versand in ganz Österreich inklusive</li><li>" + v2Ic(V2I.check) + "Datencheck gratis</li><li>" + v2Ic(V2I.pen) + "Online gestalten oder Datei hochladen</li><li>" + v2Ic(V2I.pin) + 'Persönlich aus dem Montafon</li></ul><nav aria-label="Service"><a href="/print/hilfe">So geht’s &amp; FAQ</a><a href="tel:+436641430620">+43 664 1430620</a><button type="button" data-theme-toggle>Licht an/aus</button></nav></div>';
+    top.innerHTML = '<div class="in"><ul><li>' + v2Ic(V2I.truck) + "Schnelle Lieferung in ganz Österreich</li><li>" + v2Ic(V2I.ok) + "Professionelle Druckqualität</li><li>" + v2Ic(V2I.leaf) + "Nachhaltige Materialien</li><li>" + v2Ic(V2I.help) + 'Persönlicher Support</li></ul><nav aria-label="Service"><a href="/print/hilfe#bonus">Geschäftskunden</a><i aria-hidden="true">|</i><a href="/kontakt?von=print">Kontakt</a><i aria-hidden="true">|</i><a href="/print/hilfe#faq">FAQ</a></nav></div>';
     hd.insertBefore(top, inner);
     var q = document.createElement("form"); q.className = "ps-v2q"; q.action = "/print"; q.method = "get"; q.setAttribute("role", "search");
-    q.innerHTML = v2Ic(V2I.search) + '<input type="search" name="q" placeholder="Was möchtest du drucken? (z. B. Flyer, Banner, Visitenkarten …)" aria-label="Produkt suchen" autocomplete="off" value=""><button type="submit">Suchen</button>';
+    q.innerHTML = v2Ic(V2I.search) + '<input type="search" name="q" placeholder="Produkt suchen (z. B. Flyer, Banner, Visitenkarten …)" aria-label="Produkt suchen" autocomplete="off" value="">';
     q.addEventListener("submit", function (e) { var v = q.querySelector("input").value.trim(); if (!S || !S.cat) return; e.preventDefault(); S.q = v; S.group = ""; S.sub = ""; setPage("produkte"); });
     var ic = document.createElement("div"); ic.className = "ps-v2ic";
-    ic.innerHTML = '<a href="/print?konto" data-acct-link>' + v2Ic(V2I.user) + '<span data-acct-label>Anmelden</span></a><a href="/print/hilfe#faq" data-chat-open>' + v2Ic(V2I.chat) + "<span>Hilfe &amp; Chat</span></a>" +
+    ic.innerHTML = '<a href="/print?konto" data-acct-link>' + v2Ic(V2I.user) + '<span data-acct-label data-fix>Mein Konto</span></a><a href="/print?konto" data-v2saved>' + v2Ic(V2I.heart) + '<span>Merkzettel</span><b class="ps-cn" data-saved-n>0</b></a>' +
       '<a href="/print?warenkorb" data-cart-link>' + v2Ic(V2I.cart) + '<span>Warenkorb</span><b class="ps-cn" data-cart-n hidden></b></a>';
+    ic.addEventListener("click", function (e) { var a = e.target.closest("[data-v2saved]"); if (!a || !S || !S.cat) return; e.preventDefault();
+      if (S.me) { S.acct.tab = "saved"; S.view = "konto"; render(); window.scrollTo(0, 0); return; }
+      if (!savedList().length) { toast("Noch nichts gemerkt – tippe bei einem Produkt auf „Merken“."); return; }
+      S.view = ""; setPage("home"); setTimeout(function () { var x = document.querySelector(".ps-savhome"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); });
     var brand = inner.querySelector(".brand"); inner.insertBefore(q, brand ? brand.nextSibling : inner.firstChild); inner.insertBefore(ic, q.nextSibling);
     var xn = document.querySelector(".nav-links [data-xnav]");
     var cat = document.createElement("nav"); cat.className = "ps-v2cat"; cat.setAttribute("aria-label", "Kategorien");
-    cat.innerHTML = '<div class="in"><a class="all" href="/print?produkte" data-nav="produkte">' + v2Ic(V2I.grid) + "Alle Produkte</a>" + (xn ? '<a class="xm" href="/print/weihnachten">' + v2Ic(V2I.star) + "Weihnachten</a>" : "") +
-      V2CAT.map(function (c) { return c[2] ? '<a href="' + c[2] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>" : '<a href="/print?kategorie=' + c[3] + '" data-nav="produkte" data-navgroup="' + c[3] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>"; }).join("") + "</div>";
+    cat.innerHTML = '<div class="in"><div class="ps-v2all"><button type="button" class="all" aria-expanded="false" aria-haspopup="true">' + v2Ic(V2I.grid) + 'Alle Produkte<svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="ps-v2dd" hidden>' +
+      V2GRP.map(function (g) { return '<a href="/print?kategorie=' + g[0] + '" data-nav="produkte" data-navgroup="' + g[0] + '">' + esc(g[1]) + "</a>"; }).join("") + '<a class="tot" href="/print?produkte" data-nav="produkte">Alle Produkte ansehen →</a></div></div>' +
+      V2CAT.map(function (c) { return c[2] ? '<a href="' + c[2] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>" : '<a href="/print?kategorie=' + c[3] + '" data-nav="produkte" data-navgroup="' + c[3] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>"; }).join("") + (xn ? '<a class="xm" href="/print/weihnachten">' + v2Ic(V2I.star) + "Weihnachten</a>" : "") + "</div>";
+    var allB = cat.querySelector(".ps-v2all .all"), dd = cat.querySelector(".ps-v2dd"), ddSet = function (on) { dd.hidden = !on; allB.setAttribute("aria-expanded", String(on)); };
+    allB.addEventListener("click", function (e) { e.stopPropagation(); ddSet(dd.hidden); });
+    document.addEventListener("click", function (e) { if (!dd.hidden && !e.target.closest(".ps-v2all")) ddSet(false); if (e.target.closest(".ps-v2dd a")) ddSet(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !dd.hidden) { ddSet(false); allB.focus(); } });
     hd.appendChild(cat);
+    try { headUpdate(); } catch (e) {}
   }
   // ── Vorschau neue Startseite: Slider auf Bildschirmbreite, Vorteile-Leiste, beliebte Kategorien mit Bildern ──
   function v2Home() {

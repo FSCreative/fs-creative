@@ -2010,34 +2010,43 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
   .ps-newbie{font-size:13px;padding:10px 12px}
 }
 /* ── Vorschau neuer Header + Startseite (?vorschau=start, Entwurf Simon 04.11.2026) ── */
-html.ps-v2{--nav-h:168px;--v2pad:clamp(16px,3vw,40px)}
-html.ps-v2.has-promo:not(.promo-x){--nav-h:208px}
-html.ps-v2 header.nav,html.ps-v2.has-promo:not(.promo-x) header.nav{height:auto;flex-direction:column;align-items:stretch}
-.ps-v2top{background:#070b18;color:rgba(255,255,255,.82);font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.06)}
+html.ps-v2{--nav-h:194px;--v2pad:clamp(16px,3vw,40px)}
+html.ps-v2.has-promo:not(.promo-x){--nav-h:234px}
+html.ps-v2 header.nav,html.ps-v2.has-promo:not(.promo-x) header.nav{height:auto;flex-direction:column;align-items:stretch;background:#121829;backdrop-filter:none;-webkit-backdrop-filter:none;border-bottom:0;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.ps-v2top{background:#0a0e1b;color:rgba(255,255,255,.88);font-size:13px}
 .ps-v2top .in,.ps-v2cat .in{max-width:var(--maxw);margin:0 auto;padding:0 var(--v2pad);display:flex;align-items:center}
-.ps-v2top .in{height:34px;justify-content:space-between;gap:20px}
-.ps-v2top ul{display:flex;gap:26px;list-style:none;margin:0;padding:0;overflow:hidden;white-space:nowrap}
-.ps-v2top li{display:flex;align-items:center;gap:7px}.ps-v2top svg{width:16px;height:16px;color:#7aa2ff}
-.ps-v2top nav{display:flex;gap:18px;white-space:nowrap}.ps-v2top nav a,.ps-v2top nav button{color:inherit;text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}.ps-v2top nav a:hover,.ps-v2top nav button:hover{color:#fff}
-html.ps-v2 header.nav .nav-inner{height:84px;gap:28px}
-html.ps-v2 .nav-links{display:none}
-.ps-v2q{flex:1;max-width:680px;display:flex;align-items:center;gap:10px;height:50px;padding:0 6px 0 18px;border-radius:999px;background:#fff;color:#0f172a;box-shadow:0 2px 10px rgba(0,0,0,.18)}
-.ps-v2q svg{width:20px;height:20px;flex:none;color:#64748b}
-.ps-v2q input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:15px;color:#0f172a;outline:0}
+.ps-v2top .in{height:36px;justify-content:space-between;gap:20px}
+.ps-v2top ul{display:flex;gap:34px;list-style:none;margin:0;padding:0;overflow:hidden;white-space:nowrap}
+.ps-v2top li{display:flex;align-items:center;gap:8px}.ps-v2top svg{width:18px;height:18px}
+.ps-v2top nav{display:flex;align-items:center;gap:12px;white-space:nowrap}.ps-v2top nav i{font-style:normal;opacity:.4}.ps-v2top nav a{color:inherit;text-decoration:none}.ps-v2top nav a:hover{color:#fff}
+html.ps-v2 header.nav .nav-inner{height:96px;gap:clamp(20px,4vw,64px)}
+html.ps-v2 .nav-links,html.ps-v2 .burger,html.ps-v2 .ps-mcart{display:none}
+html.ps-v2 header.nav .brand{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;column-gap:12px;align-items:center;align-self:center;color:#fff;font-size:clamp(24px,2.4vw,34px);font-weight:800;font-style:italic;letter-spacing:-.02em;line-height:1}
+html.ps-v2 header.nav .brand .mark{grid-row:1/3;position:static;width:58px;height:58px;overflow:visible}
+html.ps-v2 header.nav .brand .mark img{position:static;width:58px;height:58px;object-fit:contain}
+html.ps-v2 header.nav .brand .ps-brand-sub{grid-column:2;margin:4px 0 0;font-style:normal;font-weight:500;font-size:13px;letter-spacing:.42em;text-transform:uppercase;color:rgba(255,255,255,.85)}
+html.ps-v2.light header.nav .brand .mark img{content:url(/logos/gluehbirne-kopf.png)}
+.ps-v2q{flex:1;max-width:660px;display:flex;align-items:center;gap:14px;height:54px;padding:0 22px;border-radius:999px;background:#fff;color:#0f172a;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.ps-v2q svg{width:22px;height:22px;flex:none;color:#1e293b}
+.ps-v2q input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:15.5px;color:#0f172a;outline:0}
 .ps-v2q input::placeholder{color:#64748b}
-.ps-v2q button{height:38px;padding:0 18px;border-radius:999px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
-.ps-v2q:focus-within{box-shadow:0 0 0 3px rgba(47,107,255,.45)}
-.ps-v2ic{display:flex;gap:6px}
-.ps-v2ic a{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:76px;padding:6px 8px;border-radius:12px;color:var(--text);text-decoration:none;font-size:12.5px;font-weight:500}
-.ps-v2ic a:hover{background:var(--surface-2)}.ps-v2ic svg{width:24px;height:24px}
-.ps-v2ic .ps-cn{position:absolute;top:0;right:14px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700}
-.ps-v2cat{background:var(--surface,#11131c);border-top:1px solid var(--border)}
-.ps-v2cat .in{height:50px;gap:4px;overflow-x:auto;scrollbar-width:none}.ps-v2cat .in::-webkit-scrollbar{display:none}
-.ps-v2cat a{flex:none;display:flex;align-items:center;gap:8px;height:38px;padding:0 12px;border-radius:10px;color:var(--text);text-decoration:none;font-size:14px;font-weight:500;white-space:nowrap}
-.ps-v2cat a:hover{background:var(--surface-2)}.ps-v2cat svg{width:19px;height:19px;color:var(--text-dim)}
-.ps-v2cat a.all{background:var(--accent);color:#fff;font-weight:600;margin-right:6px}.ps-v2cat a.all svg{color:#fff}.ps-v2cat a.all:hover{filter:brightness(1.08)}
-.ps-v2cat a.xm svg{color:#f5b301}
-html.light .ps-v2cat{background:#fff}
+.ps-v2q:focus-within{box-shadow:0 0 0 3px rgba(47,107,255,.5)}
+.ps-v2ic{display:flex;gap:clamp(8px,2.4vw,40px)}
+.ps-v2ic a{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 8px;border-radius:12px;color:#fff;text-decoration:none;font-size:14px;font-weight:500;white-space:nowrap}
+.ps-v2ic a:hover{background:rgba(255,255,255,.08)}.ps-v2ic svg{width:30px;height:30px;stroke-width:1.6}
+.ps-v2ic .ps-cn{position:absolute;top:0;right:calc(50% - 26px);min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--accent);color:#fff;font-size:12px;line-height:20px;text-align:center;font-weight:700}
+.ps-v2ic .ps-cn[hidden]{display:block}.ps-v2ic .ps-cn:empty::before{content:"0"}
+.ps-v2cat{background:#fff;border-bottom:1px solid #e5e7eb}
+.ps-v2cat .in{height:62px;gap:2px;overflow-x:auto;scrollbar-width:none}.ps-v2cat .in::-webkit-scrollbar{display:none}
+.ps-v2cat .in>a{flex:none;display:flex;align-items:center;gap:9px;height:44px;padding:0 13px;border-radius:10px;color:#111827;text-decoration:none;font-size:15px;font-weight:500;white-space:nowrap}
+.ps-v2cat .in>a:hover{background:#f1f5f9}.ps-v2cat svg{width:22px;height:22px;color:#111827;stroke-width:1.6}
+.ps-v2all{position:relative;flex:none;margin-right:12px}
+.ps-v2all .all{display:flex;align-items:center;gap:9px;height:46px;padding:0 16px;border:0;border-radius:10px;background:var(--accent);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(47,107,255,.35)}
+.ps-v2all .all svg{color:#fff}.ps-v2all .all .cv{width:16px;height:16px;transition:transform .2s}.ps-v2all .all[aria-expanded=true] .cv{transform:rotate(180deg)}
+.ps-v2dd{position:fixed;margin-top:8px;min-width:260px;padding:8px;border-radius:14px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.25);z-index:120;display:flex;flex-direction:column}
+.ps-v2dd[hidden]{display:none}
+.ps-v2dd a{padding:10px 12px;border-radius:9px;color:#111827;text-decoration:none;font-size:14.5px}.ps-v2dd a:hover{background:#f1f5f9}.ps-v2dd a.tot{color:var(--accent);font-weight:600;border-top:1px solid #e5e7eb;border-radius:0 0 9px 9px;margin-top:4px}
+.ps-v2cat a.xm svg{color:#e0a100}
 /* Startseite */
 .ps-v2hero{width:100vw;margin-left:calc(50% - 50vw);margin-top:calc(-1 * clamp(8px,2vw,24px))}
 .ps-v2hero .ps-xsl{margin:0}
@@ -2055,17 +2064,16 @@ html.light .ps-v2cat{background:#fff}
 .ps-v2t.all .im{background:rgba(47,107,255,.12)}.ps-v2t.all .im svg{width:52px;height:52px;color:var(--accent)}
 .ps-v2t b{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:11px 12px;background:var(--accent);font-size:14px;font-weight:600;line-height:1.2}
 .ps-v2t b i{font-style:normal}
-@media (max-width:1100px){.ps-v2top ul li:nth-child(n+3){display:none}.ps-v2grid{grid-template-columns:repeat(4,minmax(0,1fr))}.ps-v2usp{grid-template-columns:1fr 1fr;row-gap:10px}.ps-v2usp li:nth-child(3){border-left:0}.ps-v2ic span{display:none}.ps-v2ic a{min-width:44px}}
+@media (max-width:1100px){.ps-v2top ul li:nth-child(n+3){display:none}.ps-v2grid{grid-template-columns:repeat(4,minmax(0,1fr))}.ps-v2usp{grid-template-columns:1fr 1fr;row-gap:10px}.ps-v2usp li:nth-child(3){border-left:0}}
 @media (max-width:640px){
-  html.ps-v2,html.ps-v2.has-promo:not(.promo-x){--nav-h:170px}
-  html.ps-v2.has-promo:not(.promo-x){--nav-h:210px}
+  html.ps-v2{--nav-h:184px}html.ps-v2.has-promo:not(.promo-x){--nav-h:224px}
   .ps-v2top{display:none}
-  html.ps-v2 header.nav .nav-inner{height:auto;flex-wrap:wrap;gap:0 10px;padding-top:8px;padding-bottom:10px}
-  html.ps-v2 header.nav .brand{height:52px}
-  html.ps-v2 .nav-links{display:none}html.ps-v2 .nav-toggle:checked ~ .nav .nav-links{display:flex}
-  .ps-v2q{order:5;flex:1 0 100%;max-width:none;height:44px;margin-top:6px}.ps-v2q button{display:none}
-  .ps-v2ic{display:none}
-  .ps-v2cat .in{height:46px;padding:0 12px}.ps-v2cat a{height:34px;font-size:13.5px;padding:0 10px}
+  html.ps-v2 header.nav .nav-inner{height:auto;flex-wrap:wrap;gap:0 10px;padding-top:10px;padding-bottom:12px}
+  html.ps-v2 header.nav .brand{font-size:22px}html.ps-v2 header.nav .brand .mark,html.ps-v2 header.nav .brand .mark img{width:42px;height:42px}html.ps-v2 header.nav .brand .ps-brand-sub{font-size:10.5px}
+  html.ps-v2 .burger{display:flex}html.ps-v2 .nav-toggle:checked ~ .nav .nav-links{display:flex}
+  .ps-v2q{order:5;flex:1 0 100%;max-width:none;height:46px;margin-top:10px;padding:0 16px}
+  .ps-v2ic{margin-left:auto;gap:2px}.ps-v2ic span{display:none}.ps-v2ic a{padding:6px}.ps-v2ic a[data-acct-link]{display:none}.ps-v2ic svg{width:26px;height:26px}.ps-v2ic .ps-cn{right:-2px}
+  .ps-v2cat .in{height:52px;padding:0 12px}.ps-v2cat .in>a{height:38px;font-size:14px;padding:0 10px}.ps-v2all .all{height:38px;font-size:14px;padding:0 12px}
   .ps-v2hero{margin-top:-8px}.ps-v2hero .ps-xteaser{height:auto}.ps-v2hero .ps-xteaser .tx{padding:18px 20px 26px;max-width:none}
   .ps-v2usp{grid-template-columns:1fr 1fr;padding:12px 0;margin-bottom:28px}.ps-v2usp li{padding:6px 8px;gap:9px;font-size:12px;border:0!important}.ps-v2usp svg{width:26px;height:26px}.ps-v2usp b{font-size:13.5px}
   .ps-v2grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ps-v2t b{font-size:13.5px;padding:10px}
