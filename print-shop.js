@@ -3360,6 +3360,7 @@ module.exports = function (D) {
     if (cfg().pcKey && live() && !auditLive) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
       if (wd.replace(",", "") === "Sun" && +hh >= 2 && +hh < 5) store.getMeta("print_audit").then(a => { if (!a || !a.end || Date.now() - Date.parse(a.end) > 6 * 864e5) auditRun().catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
     rememberDue().catch(e => log("Angebots-Erinnerung:", e.message));
+    payReminderDue().catch(e => log("Zahlungs-Erinnerung:", e.message));
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
@@ -3417,6 +3418,27 @@ module.exports = function (D) {
   }
   // „Angebot per Mail merken“: Konfiguration + Preis an den Besucher; auf Wunsch (eigenes Häkchen) EINE Erinnerung nach 24 h, wenn bis dahin nicht bestellt
   async function rememberGet() { const a = await store.getMeta("print_remember").catch(() => null); return Array.isArray(a) ? a : []; }
+  // Zahlungs-Erinnerung (Wunsch Simon 04.11.2026): Mollie-Bestellung nicht bezahlt → EINE Mail nach 2 h (bis 60 h nach der Bestellung, Zahlung ist 3 Tage möglich)
+  // mit allen Artikeln (Warenkorb-Gruppe zusammen), Summe und „Jetzt bezahlen“ (Bestellseite → „Erneut bezahlen“). Nicht, wenn der Kunde inzwischen eine andere Bestellung bezahlt hat.
+  let lastPayRem = 0;
+  async function payReminderDue() {
+    if (!D.mailSend || Date.now() - lastPayRem < 10 * 60e3) return; lastPayRem = Date.now();
+    const all = await store.listOrders().catch(() => []), now = Date.now(), done = {};
+    const open = all.filter(o => o && o.payment && o.payment.method === "mollie" && ["pending_payment", "payment_failed"].indexOf(o.status) > -1 && !(o.mails && o.mails.payRemind) && o.customer && o.customer.email);
+    for (const o of open) {
+      const age = now - Date.parse(o.createdAt || 0); if (age < 2 * 3600e3 || age > 60 * 3600e3) continue;
+      const key = o.groupId || o.id; if (done[key]) continue; done[key] = 1;
+      const grp = o.groupId ? open.filter(x => x.groupId === o.groupId) : [o], em = String(o.customer.email).toLowerCase();
+      if (all.some(x => x && x.customer && String(x.customer.email || "").toLowerCase() === em && Date.parse(x.createdAt || 0) > Date.parse(o.createdAt) && x.payment && x.payment.status === "paid")) { for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = "skip"; await store.putOrder(x); } continue; }
+      const sum = grp.reduce((a, x) => a + (+x.price.gross || 0), 0), link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id));
+      const rows = [].concat.apply([], grp.map(x => [[x.product.title, x.copies.toLocaleString("de-AT") + " Stk. · " + eur(x.price.gross)], ["Ausführung", (x.labels || []).filter(l => l && l[1] && !/druckverfahren/i.test(l[0])).slice(0, 5).map(l => l[1]).join(" · ")]]))
+        .concat([["Bestellnummer", grp.map(x => x.nr).join(", ")], ["Gesamt inkl. USt & Versand", eur(sum)], ["Jetzt bezahlen", link, "button"]]);
+      const ok = await mail(o.customer.email, "Deine Bestellung " + o.nr + " wartet noch auf die Zahlung", "Deine Bestellung ist noch nicht bezahlt",
+        ["Hallo " + (o.customer.firstName || "") + ",", "deine Bestellung ist bei uns gespeichert – die Zahlung wurde aber noch nicht abgeschlossen. Mit einem Klick kannst du sie jetzt bezahlen, deine Druckdaten und Einstellungen bleiben erhalten."],
+        rows, ["Sobald die Zahlung eingegangen ist, prüfen wir deine Daten und geben den Druck frei. Die Bestellung kann noch bis " + deDate(new Date(Date.parse(o.createdAt) + 3 * 864e5).toISOString()) + " bezahlt werden.", "Fragen oder etwas ändern? Antworte einfach auf diese Mail."], D.notifyTo, 0);
+      for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = ok ? nowIso() : "fehler"; if (ok) hist(x, "Zahlungs-Erinnerung per Mail gesendet"); await store.putOrder(x); }
+    }
+  }
   async function rememberDue() {
     const all = await rememberGet(); let ch = false; const now = Date.now();
     for (const r of all) {

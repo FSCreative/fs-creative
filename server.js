@@ -1975,9 +1975,12 @@ async function sevCreateOffer(pl) {
       header: String(pl.header || ("Angebot " + nr)).slice(0, 200), headText: String(pl.headText || ""), footText: foot,
       address: sevAddressText(pl, name), addressCountry: { id: countryId, objectName: "StaticCountry" },
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
-      taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false },
+      taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false,
+      alternatives: pl.alternatives === true },   // Alternativangebot: jede Position eigener Preis, keine Gesamtsumme im PDF
     orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
-      return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: parseInt(i.unity, 10) > 0 ? parseInt(i.unity, 10) : 1, objectName: "Unity" }, taxRate: r }); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
+      // Produktfotos je Position (bis 3; nur Produktbilder aus dem Druckshop-CMS bzw. unserem Bild-Proxy) – das PDF zeigt sie groß unter der Position
+      const imgs = (Array.isArray(i.images) ? i.images : []).map(String).filter(u => /^https:\/\/images\.ctfassets\.net\/|^https:\/\/www\.fs-creative\.at\/print\/bild\//.test(u)).slice(0, 3);
+      return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: parseInt(i.unity, 10) > 0 ? parseInt(i.unity, 10) : 1, objectName: "Unity" }, taxRate: r }, imgs.length ? { images: imgs } : {}); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
     orderPosDelete: null,
   };
   const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";

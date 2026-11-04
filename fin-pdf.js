@@ -109,6 +109,19 @@ module.exports = function (D) {
     const head = strip(o.headText) || (isOrder ? "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage. Gerne unterbreite ich Ihnen folgendes Angebot:" : it === "MA" ? "" : "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!\nHiermit stelle ich Ihnen die folgenden Leistungen in Rechnung:");
     if (head) { doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(head, L, y, { width: R - L, lineGap: 2 }); y = doc.y + 16; }
 
+    // Produktfotos je Position (Angebote mit Bildern): vorab laden – JPG über Contentful (pdfkit kann kein WebP), 8 s Zeitlimit, Fehler → ohne Bild
+    const IMG = {};
+    const imgUrl = u => String(u).replace(/^https:\/\/www\.fs-creative\.at\/print\/bild\//, "https://images.ctfassets.net/").replace(/[?#].*$/, "") + "?fm=jpg&w=900&q=82";
+    await Promise.all([].concat.apply([], pos.map(p => Array.isArray(p.images) ? p.images.slice(0, 3) : [])).map(async u => {
+      try { const r = await fetch(imgUrl(u), { signal: AbortSignal.timeout(8000) }); if (r.ok) IMG[u] = Buffer.from(await r.arrayBuffer()); } catch (e) {} }));
+    const alt = isOrder && (o.alternatives === true || o.alternatives === "true");
+    // Text mit Hervorhebung: Zeilen „GROSSBUCHSTABEN: …“ → Label fett (Druckart, Druckfläche, Farben …)
+    const richLines = t => String(t || "").split("\n").map(l => { const m = l.match(/^([A-ZÄÖÜ][A-ZÄÖÜ0-9 &/.-]{2,40}:)\s*(.*)$/); return m ? [m[1] + " ", m[2]] : ["", l]; });
+    const richH = (t, w, fs) => richLines(t).reduce((h, l) => h + doc.font("Helvetica").fontSize(fs).heightOfString((l[0] + l[1]) || " ", { width: w }) + 1, 0);
+    const richDraw = (t, x, y0, w, fs, col) => { let yy = y0; richLines(t).forEach(l => { const s = (l[0] + l[1]) || " ", h = doc.font("Helvetica").fontSize(fs).heightOfString(s, { width: w });
+      if (l[0]) { doc.font("Helvetica-Bold").fontSize(fs).fillColor(INK).text(l[0], x, yy, { width: w, continued: true }); doc.font("Helvetica").fillColor(col).text(l[1], { width: w }); }
+      else doc.font("Helvetica").fontSize(fs).fillColor(col).text(s, x, yy, { width: w }); yy += h + 1; }); };
+
     // Tabelle
     const showNet = String(o.showNet) !== "0" && o.showNet !== false;
     const multiTax = new Set(pos.map(p => +p.taxRate || 0)).size > 1 || pos.some(p => +p.taxRate !== +(pos[0] && pos[0].taxRate));
@@ -120,14 +133,20 @@ module.exports = function (D) {
     const unitName = u => { const x = u && u.id && ctx.get("Unity", u.id); return x ? (x.translationCode === "UNITY_PIECE" ? "Stk" : (x.name || "")) : (u && UNIT0[parseInt(u.id, 10)]) || ""; };
     pos.forEach((p, i) => {
       const q = +p.quantity || 0, U = unitOf(p, showNet), sum = U.sum, unitTxt = U.cents ? eur(U.unit) : eurX(U.unit);   // Einzelpreis passend zur Zeilensumme (A10)
-      const disc = +p.discount || 0, txt = (strip(p.text) + (disc > 0 ? (strip(p.text) ? "\n" : "") + "abzüglich " + String(disc).replace(".", ",") + " % Rabatt" : "")).trim(), hName = doc.font("Helvetica-Bold").fontSize(9).heightOfString(p.name || "", { width: 268 }), hTxt = txt ? doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2 : 0;
-      const rh = hName + hTxt + 16;
+      const pics = (Array.isArray(p.images) ? p.images : []).map(u => IMG[u]).filter(Boolean), big = pics.length > 0, TW = big ? R - L - 16 - 36 : 268, tfs = big ? 8.8 : 7.8;
+      const disc = +p.discount || 0, txt = (strip(p.text) + (disc > 0 ? (strip(p.text) ? "\n" : "") + "abzüglich " + String(disc).replace(".", ",") + " % Rabatt" : "")).trim(), hName = doc.font("Helvetica-Bold").fontSize(big ? 11 : 9).heightOfString(p.name || "", { width: 268 }), hTxt = txt ? (big ? richH(txt, TW, tfs) + 6 : doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2) : 0;
+      const PH = big ? 196 : 0, rh = hName + hTxt + 16 + (big ? PH + 14 : 0);
       if (y + rh > H - FH - 40) { doc.addPage(); y = 60; header(); }
       if (i % 2 === 1) doc.rect(L, y, R - L, rh).fill(ZEBRA);
       const ty = y + 8;
       doc.font("Helvetica").fontSize(9).fillColor(INK).text(String(i + 1), cx.pos, ty, { width: 26 });
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(INK).text(p.name || "", cx.desc, ty, { width: 268 });
-      if (txt) doc.font("Helvetica").fontSize(7.8).fillColor(MUTED).text(txt, cx.desc, ty + hName + 2, { width: 268 });
+      doc.font("Helvetica-Bold").fontSize(big ? 11 : 9).fillColor(INK).text(p.name || "", cx.desc, ty, { width: 268 });
+      if (big) {   // Fotos groß (Gesamtansicht + 2 Details), darunter die Produktinfos in voller Breite
+        const py = ty + hName + 8, gw = R - L - 52, w1 = Math.round(gw * 0.4), w2 = Math.floor((gw - w1 - 16) / 2);
+        [[cx.desc, w1], [cx.desc + w1 + 8, w2], [cx.desc + w1 + 16 + w2, w2]].slice(0, pics.length).forEach((c, k) => { doc.save(); doc.roundedRect(c[0], py, c[1], PH, 6).fill("#f3f2ef"); doc.restore();
+          try { doc.image(pics[k], c[0] + 4, py + 4, { fit: [c[1] - 8, PH - 8], align: "center", valign: "center" }); } catch (e) {} });
+        if (txt) richDraw(txt, cx.desc, py + PH + 12, TW, tfs, "#3a3a3a");
+      } else if (txt) doc.font("Helvetica").fontSize(7.8).fillColor(MUTED).text(txt, cx.desc, ty + hName + 2, { width: 268 });
       const uName = unitName(p.unity);
       doc.font("Helvetica").fontSize(9).fillColor(INK).text((Math.round(q * 100) / 100).toLocaleString("de-AT") + (uName ? " " + uName : ""), cx.qty - 30, ty, { width: 86, align: "right" })
         .text(unitTxt, cx.unit - 6, ty, { width: 62, align: "right" }).text((+p.taxRate || 0) + " %", cx.tax, ty, { width: 30, align: "right" });
@@ -142,6 +161,12 @@ module.exports = function (D) {
     const taxBy = {}; pos.forEach(p => { const r = +p.taxRate || 0; taxBy[r] = (taxBy[r] || 0) + (+p.sumTax || 0); });
     const bx = 372, bw = R - bx, sy0 = y;
     let sy = y + 8;
+    if (alt) {   // Alternativangebot: Preise je Variante, keine Summe über alle
+      doc.rect(L, sy0, R - L, 46).fill(YEL);
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text("Alternativangebot – die Positionen sind Varianten zur Auswahl.", L + 14, sy0 + 10, { width: R - L - 28 });
+      doc.font("Helvetica").fontSize(8.5).text("Preise je Position netto zzgl. " + (pos[0] ? (+pos[0].taxRate || 0) : 20) + " % USt., inklusive Druck und Versand innerhalb Österreichs. Gerne rechne ich auch andere Mengen oder Kombinationen.", L + 14, sy0 + 25, { width: R - L - 28 });
+      y = sy0 + 46 + 22;
+    } else {
     const srow = (lbl, val, bold) => { doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(9.5).fillColor(INK).text(lbl, 196, sy, { width: 110 }).text(val, 290, sy, { width: 70, align: "right" }); sy += 18; };
     srow("Summe netto", eur(o.sumNet));
     Object.keys(taxBy).sort().forEach(r => { if (+r > 0) srow("zzgl. " + r + " % USt.", eur(taxBy[r])); });
@@ -155,6 +180,7 @@ module.exports = function (D) {
     doc.font("Helvetica").fontSize(7.5).fillColor(INK).text(boxLbl, bx, sy0 + 14, { width: bw - 18, align: "right", characterSpacing: 1.6 });
     doc.font("Helvetica-Bold").fontSize(boxVal.length > 12 ? 19 : 22).fillColor(INK).text(boxVal, bx, sy0 + 30, { width: bw - 18, align: "right", lineBreak: false });
     y = Math.max(sy, sy0 + 70) + 22;
+    }
 
     // Text unten + Gruß
     // Gruß + Name setzt das PDF selbst darunter – aus sevDesk übernommene Fußtexte enthalten ihn schon („Mit freundlichen Grüßen [%KONTAKTPERSON%]“) → nicht doppelt
