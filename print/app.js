@@ -1825,9 +1825,50 @@
   }
   // Preis-Anzeige im Shirt-Designer (wird nach jeder Preisberechnung aktualisiert)
   function texPriceText() { if (S.priceBusy) return "Preis wird berechnet …"; if (!S.price) return S.priceErr || ""; var co = S.ctype === "company"; return eur(co ? S.price.net : S.price.gross) + (co ? " netto" : "") + " · " + totalCopies().toLocaleString("de-AT") + " Stk. inkl. Versand"; }
-  function texPriceTell() { if (kind() === "textile" && window.PrintDesigner && window.PrintDesigner.price) window.PrintDesigner.price(texPriceText()); }
+  function texPriceTell() { if (kind() === "textile" && window.PrintDesigner && window.PrintDesigner.price) { window.PrintDesigner.price(texPriceText()); var e = document.getElementById("pdTsPrice"); if (e) e.textContent = texPriceText(); } }
   function texKindName() { var t = (S.prod.title || "").toLowerCase(); return /hoodie|kapuz/.test(t) ? "Hoodie" : /polo/.test(t) ? "Poloshirt" : /sweat|pullover/.test(t) ? "Pullover" : /jacke|weste/.test(t) ? "Kleidungsstück" : "Shirt"; }
   function texColor() { var pr = (S.prod.props || []).filter(function (x) { return /^color/.test(x.slug); })[0], o = pr && pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; return o ? { hex: colHex(o) || "#ffffff", name: colName(o.name), img: imgOk(o.img) ? String(o.img).replace(/^https:\/\/images\.ctfassets\.net\//, "/print/bild/").replace(/\?.*$/, "") + "?fm=png&w=1200" : "" } : { hex: "#ffffff", name: "Weiß", img: "" }; }   // Produktfoto der Farbe über unseren Bild-Proxy (gleicher Ursprung → Freistellen im Browser möglich)
+  // ── Rechte Spalte im Shirt-Designer (Wunsch Simon 04.11.2026): Produkt/Marke wechseln, Farbe, Druckbereiche, Größen & Stückzahl – Preis live ──
+  function texSide(el, dapi) {
+    if (!el || kind() !== "textile") return; var p = S.prod, t = S.textile, m = (p.methods || []).filter(function (x) { return x.key === t.method; })[0] || p.methods[0];
+    var tex = S.cat.products.filter(function (x) { return x.kind === "textile" || (x.cat && x.cat.main === "clothing-textile"); }), groups = {};
+    tex.forEach(function (x) { var g = (x.cat && x.cat.subName) || "Textilien"; (groups[g] = groups[g] || []).push(x); });
+    var prodSel = '<select class="pd-in" data-tsprod aria-label="Produkt">' + Object.keys(groups).map(function (g) { return '<optgroup label="' + esc(g) + '">' + groups[g].sort(function (a, b) { return String(a.title).localeCompare(b.title, "de"); }).map(function (x) { return '<option value="' + esc(x.key) + '"' + (x.key === p.key ? " selected" : "") + ">" + esc(x.title) + "</option>"; }).join("") + "</optgroup>"; }).join("") + "</select>";
+    var cpr = (p.props || []).filter(function (x) { return /^color/.test(x.slug); })[0], cols = cpr ? cpr.options : [], cur = cpr ? S.sel[cpr.slug] : "";
+    var colH = cols.length ? '<div class="pd-tsc">' + cols.map(function (o) { var h = colHex(o) || "#ddd"; return '<button type="button" class="pd-tsw' + (o.slug === cur ? " on" : "") + '" data-tscol="' + esc(o.slug) + '" style="background:' + esc(h) + '" title="' + esc(colName(o.name)) + '" aria-label="' + esc(colName(o.name)) + '" aria-pressed="' + (o.slug === cur) + '"></button>'; }).join("") + '</div><p class="pd-muted pd-tscn">' + esc(texColor().name) + "</p>" : "";
+    var has = dapi ? dapi.has() : t.positions, posH = p.positions.filter(function (x) { return (m.positions || []).indexOf(x.slug) > -1; }).map(function (x) { var on = has.indexOf(x.slug) > -1;
+      return '<label class="pd-tsp"><input type="checkbox" data-tspos="' + esc(x.slug) + '"' + (on ? " checked" : "") + (on && has.length < 2 ? " disabled" : "") + "><span>" + esc(x.title) + "</span><small>" + (x.area ? String(x.area[0] / 10).replace(".", ",") + " × " + String(x.area[1] / 10).replace(".", ",") + " cm" : "") + "</small></label>"; }).join("");
+    var gOf = function (n) { var mm = String(n).match(/^(Herren|Damen|Unisexe?|Kinder|Kids|Baby)\s+(.*)$/i); return mm ? [mm[1].replace(/^unisexe$/i, "Unisex"), mm[2]] : ["", n]; }, grp = [];
+    p.sizes.forEach(function (x) { var g = gOf(x.name), G = grp.filter(function (y) { return y.n === g[0]; })[0]; if (!G) { G = { n: g[0], l: [] }; grp.push(G); } G.l.push({ slug: x.slug, short: g[1] }); });
+    var szH = grp.map(function (G) { return (G.n ? '<p class="pd-tsg">' + esc(G.n) + "</p>" : "") + '<div class="pd-tss">' + G.l.map(function (x) { var v = t.sizes[x.slug] || 0;
+      return '<label class="pd-tsz' + (v ? " on" : "") + '"><span>' + esc(x.short) + '</span><input type="number" inputmode="numeric" min="0" max="5000" data-tssize="' + esc(x.slug) + '" value="' + (v || "") + '" placeholder="0" aria-label="' + esc((G.n ? G.n + " " : "") + x.short) + ' Stück"></label>'; }).join("") + "</div>"; }).join("");
+    el.innerHTML = '<div class="pd-sec"><h4>Produkt</h4>' + prodSel + "</div>" + (colH ? '<div class="pd-sec"><h4>Farbe</h4>' + colH + "</div>" : "") +
+      '<div class="pd-sec"><h4>Druckbereiche</h4>' + posH + '<p class="pd-muted">Je Druckbereich eine Seite im Designer – oben umschalten.</p></div>' +
+      '<div class="pd-sec"><h4>Größen &amp; Stückzahl</h4>' + szH + '<p class="pd-muted">Gesamt: <b id="pdTsTot">' + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b>" + (m.min > 1 ? " · ab " + m.min + " Stück" : "") + "</p></div>" +
+      '<div class="pd-sec pd-tsprice"><b id="pdTsPrice">' + esc(texPriceText()) + "</b></div>";
+    if (el.__ts) return; el.__ts = 1; var tm = 0;
+    el.addEventListener("change", function (e) { var x = e.target;
+      if (x.hasAttribute("data-tsprod") && x.value !== S.prod.key) return texSwitch(x.value);
+      if (x.hasAttribute("data-tspos")) { var sl = x.getAttribute("data-tspos"); if (x.checked) dapi.add(sl); else dapi.del(sl); setTimeout(function () { texSide(el, dapi); }, 400); } });
+    el.addEventListener("input", function (e) { var x = e.target; if (!x.hasAttribute("data-tssize")) return; var n = Math.max(0, Math.min(5000, parseInt(x.value, 10) || 0)), sl = x.getAttribute("data-tssize");
+      if (n) S.textile.sizes[sl] = n; else delete S.textile.sizes[sl]; x.closest(".pd-tsz").classList.toggle("on", !!n); var tt = el.querySelector("#pdTsTot"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + "\u00a0Stk.";
+      clearTimeout(tm); tm = setTimeout(function () { S.file = null; loadPrice(); }, 450); });
+    el.addEventListener("click", function (e) { var b = e.target.closest("[data-tscol]"); if (!b || !cpr) return; S.sel[cpr.slug] = b.getAttribute("data-tscol"); fixSel(); S.file = null; loadPrice();
+      if (window.PrintDesigner && window.PrintDesigner.texColor) window.PrintDesigner.texColor(texColor().hex); texSide(el, dapi); });
+  }
+  // Produkt im Designer wechseln: Gestaltung, passende Druckbereiche, Größen und Farbe (gleicher Name) mitnehmen
+  function texSwitch(key) {
+    var snap = window.PrintDesigner && window.PrintDesigner.snapshot ? window.PrintDesigner.snapshot() : null, sizes = Object.assign({}, S.textile.sizes), colN = texColor().name, keep = snap && snap.slugs ? snap.slugs.slice() : S.textile.positions.slice();
+    if (window.PrintDesigner) window.PrintDesigner.close(true);
+    pickProduct(key, function () {
+      if (kind() !== "textile") { render(); return; }
+      var p = S.prod, m = p.methods[0], ok = keep.filter(function (sl) { return (m.positions || []).indexOf(sl) > -1; }); if (!ok.length) ok = [m.positions[0]];
+      S.textile.positions = ok; var sz = {}; Object.keys(sizes).forEach(function (sl) { if (p.sizes.some(function (x) { return x.slug === sl; })) sz[sl] = sizes[sl]; }); if (Object.keys(sz).length) S.textile.sizes = sz;
+      var cpr = (p.props || []).filter(function (x) { return /^color/.test(x.slug); })[0], co = cpr && cpr.options.filter(function (o) { return colName(o.name) === colN; })[0]; if (co) S.sel[cpr.slug] = co.slug;
+      if (snap) S.texDesign = { pages: ok.map(function (sl) { var i = snap.slugs.indexOf(sl); return i > -1 ? snap.pages[i] : { objects: [] }; }), slugs: ok, key: ok.join(",") };
+      S.step = 3; S.file = null; render(); loadPrice(); setTimeout(openTexDesigner, 300); toast("Produkt gewechselt – deine Gestaltung ist übernommen");
+    });
+  }
   function openTexDesigner(images) {
     var pos = logoPositions(); if (!pos.length) { toast("Bitte zuerst eine Druckposition wählen", true); return; }
     toast("Shirt-Designer wird geladen …");
@@ -1837,7 +1878,7 @@
       var dz = S.texDesign && S.texDesign.pages && S.texDesign.pages.length === pos.length && S.texDesign.key === pos.map(function (x) { return x.slug; }).join(",") ? S.texDesign : null;
       return D.open({ product: S.prod, sel: S.sel, labels: [], copies: totalCopies(), urgency: S.urgency, size: { w: pos[0].area[0], h: pos[0].area[1] }, bleed: 0, safe: 0, sides: pos.length, fonts: S.cat.fonts, design: dz, texImages: images || null,
         textile: { pages: pos.map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), all: S.prod.positions.filter(function (x) { return (m.positions || []).indexOf(x.slug) > -1; }).map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), color: c.hex, colorName: c.name, methodName: (m.label || "").replace(/ \(.*$/, ""), kind: /zip|reißverschluss|jacke/.test(k) ? "zip" : /hoodie|kapuz/.test(k) ? "hoodie" : /polo/.test(k) ? "polo" : /sweat|pullover/.test(k) ? "sweat" : /jacke/.test(k) ? "jacke" : "tee" },
-        textileSel: S.textile,
+        textileSel: S.textile, texSide: texSide,
         texPrice: texPriceText(),
         onTexPositions: function (slugs) { S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return slugs.indexOf(x) > -1; }); S.logos = {}; S.file = null; S.texDesign = null; loadPrice(); },   // Positionen im Designer an-/abgewählt → neuer Preis
         onDone: function (file, previews, design, meta) { S.file = file; S.logos = {}; S.previews = previews; design.key = (design.slugs || pos.map(function (x) { return x.slug; })).join(","); S.texDesign = design; S.texMeta = meta; S.mode = "design"; render(); toast(file.blocked ? "Bitte die markierten Punkte prüfen." : "Logo-PDF aus deinem Design erstellt ✓"); },

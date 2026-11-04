@@ -81,6 +81,7 @@
 
   var D = null;
   var ICON = {
+    prod: '<path d="M8 3l-5 3 2 5 2-1v11h10V10l2 1 2-5-5-3c-.5 1.7-2.1 3-4 3S8.5 4.7 8 3z"/>',
     tpl: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
     text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/>',
     shape: '<rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/>', qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
@@ -129,7 +130,7 @@
     ["truck", "Lieferung", "M2 6h12v11H2zM14 10h4l4 4v3h-8" + C(6, 18, 2) + C(18, 18, 2)], ["tag", "Preis", "M3 3h8l10 10-8 8L3 11z" + C(7.5, 7.5, 1.2)], ["cut", "Schere", C(6, 7, 3) + C(6, 17, 3) + "M8.5 8.5 20 19M8.5 15.5 20 5"]];
   var svgI = function (k) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON[k] || "") + "</svg>"; };
   var svgP = function (inner, solid) { return '<svg viewBox="0 0 24 24" fill="' + (solid ? "currentColor" : "none") + '" stroke="' + (solid ? "none" : "currentColor") + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + "</svg>"; };
-  var TOOLS = [["tpl", "Vorlagen"], ["text", "Text"], ["img", "Bilder"], ["shape", "Formen"], ["qr", "QR-Code"], ["bg", "Hinter&shy;grund"], ["layers", "Ebenen"], ["brand", "Marke"], ["check", "Prüfen"]];
+  var TOOLS = [["prod", "Produkt"], ["tpl", "Vorlagen"], ["text", "Text"], ["img", "Bilder"], ["shape", "Formen"], ["qr", "QR-Code"], ["bg", "Hinter&shy;grund"], ["layers", "Ebenen"], ["brand", "Marke"], ["check", "Prüfen"]];
 
   // Text-Box (Hintergrund mit Innenabstand/Radius) direkt im Textbox-Objekt: bleibt editierbar; im SVG ein einfaches <rect rx> vor dem Text
   function rrect(x, l, t, w, h, r) { x.moveTo(l + r, t); x.arcTo(l + w, t, l + w, t + h, r); x.arcTo(l + w, t + h, l, t + h, r); x.arcTo(l, t + h, l, t, r); x.arcTo(l, t, l + w, t, r); x.closePath(); }
@@ -190,7 +191,7 @@
         });
       }
       return tplStart();
-    }).then(function () { setPanel(isTouch ? null : D.tex || !hasTpl() ? "text" : "tpl");
+    }).then(function () { setPanel(isTouch ? null : D.tex ? (D.o.texSide ? "prod" : "text") : !hasTpl() ? "text" : "tpl");
       // QR-Code vom Gratis-Generator (/print/qr-code-generator) automatisch einsetzen
       var qp = null; try { qp = JSON.parse(sessionStorage.getItem("psQrPrefill") || "null"); } catch (e) {}
       if (qp && qp.mode) { try { sessionStorage.removeItem("psQrPrefill"); } catch (e) {} D.qrDraft = qp; makeQR(); setPanel("qr"); toast("Dein QR-Code ist eingefügt – Größe und Position frei anpassbar"); }
@@ -219,7 +220,7 @@
   function build() {
     var o = D.o, sideNames = D.tex ? D.tex.pages.map(function (x) { return x.title; }) : D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"];
     var root = document.createElement("div"); root.className = "pd"; root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", "Designer " + o.product.title);
-    var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg")) && (t[0] !== "tpl" || hasTpl()); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
+    var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg")) && (t[0] !== "tpl" || hasTpl()) && (t[0] !== "prod" || !!(D.tex && D.o.texSide)); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
     root.innerHTML = '<div class="pd-top"><button type="button" class="pd-ib" data-a="close" aria-label="Designer schließen" title="Schließen">' + svgI("close") + '</button>' +
       '<div class="ttl">' + esc(o.product.title) + "<small>" + (D.tex ? "Textil-Designer · " + esc(D.tex.colorName || "") + " · " + esc(D.tex.methodName || "") : D.mm.w + " × " + D.mm.h + " mm · Beschnitt " + D.b + " mm") + "</small></div>" +
       (o.motif ? '<span class="pd-mot" title="Du gestaltest Motiv ' + o.motif + (o.motifs ? " von " + o.motifs : "") + (o.motifCopies ? " (" + o.motifCopies + " Stk.)" : "") + '">Motiv ' + o.motif + (o.motifs ? "<small>/" + o.motifs + "</small>" : "") + (o.motifCopies ? "<i>" + o.motifCopies + " Stk.</i>" : "") + "</span>" : "") +
@@ -644,9 +645,9 @@
       (b.colors.length ? '<span class="pd-muted" style="width:100%">Markenfarben</span>' + sw(b.colors, "Markenfarbe") : "") + "</div>" +
       (cur && vivid(cur) ? '<div class="pd-warn">Sehr leuchtende Bildschirmfarbe – im Druck (CMYK) wirkt sie etwas matter.</div>' : "") + "</div>";
   }
-  var TITLES = { tpl: "Vorlagen", text: "Text", img: "Bilder & Logo", shape: "Formen & Linien", qr: "QR-Code", bg: "Hintergrund", layers: "Ebenen", brand: "Marke", check: "Druckdaten-Check", obj: "Bearbeiten" };
+  var TITLES = { prod: "Produkt, Farbe & Größen", tpl: "Vorlagen", text: "Text", img: "Bilder & Logo", shape: "Formen & Linien", qr: "QR-Code", bg: "Hintergrund", layers: "Ebenen", brand: "Marke", check: "Druckdaten-Check", obj: "Bearbeiten" };
   function renderPanel() {
-    if (!D || !D.panel) return; if ((D.tex && (D.panel === "tpl" || D.panel === "bg")) || (D.panel === "tpl" && !hasTpl())) D.panel = "text"; var p = D.panel, h = "";   // Textil: keine Papier-Vorlagen/Hintergründe
+    if (!D || !D.panel) return; if ((D.tex && (D.panel === "tpl" || D.panel === "bg")) || (D.panel === "tpl" && !hasTpl()) || (D.panel === "prod" && !(D.tex && D.o.texSide))) D.panel = "text"; var p = D.panel, h = "";   // Textil: keine Papier-Vorlagen/Hintergründe
     D.root.querySelector("#pdPT").textContent = TITLES[p] || "";
     if (p === "tpl") {
       var AI = window.PrintShop && window.PrintShop.ai;
@@ -681,7 +682,9 @@
         '<button type="button" class="ps-btn small" data-a="brand:logo">' + (bk.logo ? "Anderes Logo speichern" : "Logo hochladen & merken") + '</button><p class="pd-muted">Markenfarben und Logo werden nur in diesem Browser gespeichert (nicht auf unserem Server).</p></div>'; }
     else if (p === "check") h = checkHtml(issues(D.cur)) + '<div class="pd-sec"><div class="pd-row"><button type="button" class="ps-btn small" data-a="preview">Vorschau</button><button type="button" class="ps-btn small" data-a="savelink">Entwurf per Link speichern</button></div></div>';
     else if (p === "obj") h = objPanel();
+    else if (p === "prod") h = '<div class="pd-texside" id="pdTexSide"></div>';
     D.P.innerHTML = h;
+    if (p === "prod" && D.o.texSide) D.o.texSide(D.P.querySelector("#pdTexSide"), texApi());
   }
   function sideName(i) { return (D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[i]; }
   function pagesHtml() { if (D.sides < 2) return ""; var t = D.cur ? 0 : 1; return '<div class="pd-sec"><h4>Seiten</h4><div class="pd-row"><button type="button" class="ps-btn small" data-a="pg:dup">Seite duplizieren → ' + sideName(t) + '</button><button type="button" class="ps-btn small" data-a="pg:swap">Seiten tauschen</button></div></div>'; }
@@ -908,7 +911,7 @@
     var el = D && D.tex && D.root.querySelector(".pd-texnav"); if (!el) return;
     var sel = D.tex.pages.map(function (x) { return x.slug; }), all = D.tex.all && D.tex.all.length ? D.tex.all : D.tex.pages;
     el.innerHTML = all.map(function (pg) { var i = sel.indexOf(pg.slug);
-      if (i < 0) return '<button type="button" class="add" data-texadd="' + esc(pg.slug) + '" title="Druckposition hinzufügen – Preis wird neu berechnet">+ ' + esc(pg.title) + "</button>";
+      if (i < 0) return D.o.texSide ? "" : '<button type="button" class="add" data-texadd="' + esc(pg.slug) + '" title="Druckposition hinzufügen – Preis wird neu berechnet">+ ' + esc(pg.title) + "</button>";
       return '<span class="pos"><button type="button" role="tab" data-page="' + i + '" aria-current="' + (i === D.cur) + '"><span aria-hidden="true">' + texIc(pg.slug) + "</span>" + esc(pg.title) + '<i class="ok" hidden>✓</i></button>' + (sel.length > 1 ? '<button type="button" class="rm" data-texdel="' + esc(pg.slug) + '" title="' + esc(pg.title) + ' entfernen" aria-label="' + esc(pg.title) + ' entfernen">×</button>' : "") + "</span>"; }).join("") +
       '<span class="pd-texprice" id="pdTexPrice">' + esc(D.texPrice || "") + "</span>";
     texNavUpd();
@@ -927,6 +930,10 @@
     var nc = D.cur === idx ? Math.min(idx, D.sides - 1) : D.cur > idx ? D.cur - 1 : D.cur; D.cur = nc; texTell(); loadPage(nc, true).then(function () { texNavPaint(); toast(pg.title + " entfernt – Preis wird neu berechnet"); });
   }
   function texTell() { D.texPrice = "Preis wird berechnet …"; var el = D.root.querySelector("#pdTexPrice"); if (el) el.textContent = D.texPrice; if (D.o.onTexPositions) D.o.onTexPositions(D.tex.pages.map(function (x) { return x.slug; })); }
+  function texApi() { return { has: function () { return D.tex.pages.map(function (x) { return x.slug; }); }, add: texAdd, del: function (slug) { texDel(slug); } }; }
+  function texColorSet(hex) { if (!D || !D.tex) return; D.tex.color = hex; D.c.requestRenderAll(); }   // Kleidungsstück neu einfärben (Foto wird je Farbe zwischengespeichert)
+  function texSideRefresh() { if (D && D.tex && D.panel === "prod") renderPanel(); }
+  function snapshotDesign() { if (!D) return null; saveCur(); return { pages: D.pages.slice(), slugs: D.tex ? D.tex.pages.map(function (x) { return x.slug; }) : undefined }; }
   function texPrice(txt) { if (!D || !D.tex) return; D.texPrice = txt || ""; var el = D.root.querySelector("#pdTexPrice"); if (el) el.textContent = D.texPrice; }
   function texNavUpd() {   // Häkchen an Positionen, die schon etwas enthalten
     if (!D || !D.tex) return; D.root.querySelectorAll(".pd-texnav [data-page]").forEach(function (b) { var i = +b.getAttribute("data-page"), objs = i === D.cur ? D.c.getObjects() : ((D.pages[i] && D.pages[i].objects) || []), ok = objs.some(function (o) { return o && !o.__bg && o.role !== "ph"; }), m = b.querySelector(".ok"); if (m) m.hidden = !ok; });
@@ -1240,5 +1247,5 @@
     if (k === "+" || k === "=") { zoomTo(D.c.getZoom() * 1.25); return; } if (k === "-") { zoomTo(D.c.getZoom() / 1.25); return; } if (k === "0") { fit(); return; }
   }
 
-  window.PrintDesigner = { open: open, close: function () { close(); }, price: texPrice, _state: function () { return D; } };
+  window.PrintDesigner = { open: open, close: function (silent) { close(silent); }, price: texPrice, texColor: texColorSet, texSide: texSideRefresh, snapshot: snapshotDesign, _state: function () { return D; } };
 })();
