@@ -296,16 +296,20 @@
     D.mm = { w: a[0], h: a[1] }; D.W = a[0] * U; D.H = a[1] * U;
     D.trim = { x: 0, y: 0, w: D.W, h: D.H }; D.saferect = { x: 0, y: 0, w: D.W, h: D.H };
   }
-  //    Bildmaße (Pixel bezogen auf 1264 px): Ursprung x/y (Mitte, Halsansatz bzw. Armkugel oben), Pixel je mm waagrecht/senkrecht, Weißpunkt, Hintergrund.
-  //    Senkrecht exakt: Länge Halsansatz–Saum (Größe L) → Lage der Druckflächen ab Kragen stimmt in cm. Die KI-Fotos sind schlanker als echte Ware;
-  //    waagrecht deshalb 0,8 × senkrecht (Foto nur leicht verbreitert, sieht natürlich aus; Druckflächen wirken dadurch etwas breiter als am echten Stück).
+  //    Bildmaße (Pixel bezogen auf 1264 px): Ursprung x/y (Mitte, Halsansatz bzw. Armkugel oben), Pixel je mm waagrecht (Brustbreite) und senkrecht
+  //    (Länge Halsansatz–Saum, Größe L), Weißpunkt, Hintergrund. Die KI-Fotos sind schlanker als echte Ware: das Foto wird nie verzerrt (ein Maßstab =
+  //    Mittel aus beiden), die Mitte jeder Druckfläche aber getrennt waagrecht/senkrecht umgerechnet → sie sitzt relativ zu Kragen, Mitte und Saum richtig.
   var GARM = {
-    "tee-front": [628, 95, 1.128, 1.41, 245, "#f1f1f3"], "tee-back": [631, 97, 1.128, 1.41, 248, "#eeeef0"], "tee-side": [674, 180, 1.208, 1.51, 249, "#efeff3"],
-    "polo-front": [626, 80, 1.208, 1.51, 249, "#eeeef0"], "polo-back": [627, 75, 1.216, 1.52, 245, "#ecedef"], "polo-side": [680, 210, 1.184, 1.48, 248, "#efeff1"],
-    "hoodie-front": [618, 240, 1.072, 1.34, 247, "#eff0f3"], "hoodie-back": [627, 250, 0.984, 1.23, 248, "#efeff1"], "hoodie-side": [620, 305, 1.0, 1.25, 246, "#ededef"],
-    "zip-front": [628, 250, 1.04, 1.30, 250, "#f1f1f3"], "zip-back": [628, 255, 1.04, 1.30, 252, "#f0eff1"], "zip-side": [580, 275, 1.016, 1.27, 249, "#efeff1"],
-    "sweat-front": [631, 85, 1.24, 1.55, 248, "#f0eff1"], "sweat-back": [628, 94, 1.232, 1.54, 247, "#efeff1"], "sweat-side": [655, 285, 1.2, 1.5, 241, "#f2f2f4"]
+    "tee-front": [628, 95, 0.96, 1.41, 245, "#f1f1f3"], "tee-back": [631, 97, 0.97, 1.41, 248, "#eeeef0"], "tee-side": [674, 180, 1.03, 1.51, 249, "#efeff3"],
+    "polo-front": [626, 80, 0.995, 1.51, 249, "#eeeef0"], "polo-back": [627, 75, 1.03, 1.52, 245, "#ecedef"], "polo-side": [680, 210, 0.98, 1.48, 248, "#efeff1"],
+    "hoodie-front": [618, 240, 0.92, 1.34, 247, "#eff0f3"], "hoodie-back": [627, 250, 0.85, 1.23, 248, "#efeff1"], "hoodie-side": [620, 305, 0.85, 1.25, 246, "#ededef"],
+    "zip-front": [628, 250, 0.84, 1.30, 250, "#f1f1f3"], "zip-back": [628, 255, 0.85, 1.30, 252, "#f0eff1"], "zip-side": [580, 275, 0.86, 1.27, 249, "#efeff1"],
+    "sweat-front": [631, 85, 0.885, 1.55, 248, "#f0eff1"], "sweat-back": [628, 94, 0.95, 1.54, 247, "#efeff1"], "sweat-side": [655, 285, 0.9, 1.5, 241, "#f2f2f4"]
   };
+  function garmVis(P, m) {   // linke obere Ecke der Druckfläche im unverzerrten Foto (mm-Raum mit Ursprung am Halsansatz) und Foto-Maßstab
+    var su = Math.sqrt(m[2] * m[3]), w = D.mm.w, h = D.mm.h;
+    return { su: su, ox: (P.ax + w / 2) * m[2] / su - w / 2, oy: (P.ay + h / 2) * m[3] / su - h / 2 };
+  }
   var GIMG = {}, GTINT = {};
   function garmKey(view) { return texKind() + "-" + (/sleeve/.test(view) ? "side" : view); }
   function garmOf(view) {   // { m: Maße, img: eingefärbtes Bild (Canvas) oder null, solange es lädt }
@@ -328,22 +332,22 @@
     GTINT[tk] = cv; return { m: m, img: cv };
   }
   function garmentBox() {   // Ausschnitt in Arbeitsflächen-Einheiten (für Einpassen und Vorschau): Foto ohne Randbereich
-    var P = texPlace(D.cur), m = GARM[garmKey(P.view)] || [632, 100, 1], cx = P.view === "sleeveR" ? 1264 - m[0] : m[0];
-    var sx = m[2], sy = m[3] || m[2], b = [(60 - cx) / sx, (30 - m[1]) / sy, (1204 - cx) / sx, (1234 - m[1]) / sy];
-    return { x: (b[0] - P.ax) * U, y: (b[1] - P.ay) * U, w: (b[2] - b[0]) * U, h: (b[3] - b[1] + 70) * U };
+    var P = texPlace(D.cur), m = GARM[garmKey(P.view)] || [632, 100, 1, 1], V = garmVis(P, m), su = V.su, cx = P.view === "sleeveR" ? 1264 - m[0] : m[0];
+    var b = [(60 - cx) / su, (30 - m[1]) / su, (1204 - cx) / su, (1234 - m[1]) / su];
+    return { x: (b[0] - V.ox) * U, y: (b[1] - V.oy) * U, w: (b[2] - b[0]) * U, h: (b[3] - b[1] + 70) * U };
   }
   function garment(e) {
     if (!D || !D.tex || (D.exporting && !D.pvGarment)) return;
-    var c = D.c, ctx = (e && e.ctx) || c.contextContainer, v = c.viewportTransform, P = texPlace(D.cur), z = v[0] * U, G = garmOf(P.view);
-    ctx.save(); ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]); ctx.translate(-P.ax * U, -P.ay * U); ctx.scale(U, U);
+    var c = D.c, ctx = (e && e.ctx) || c.contextContainer, v = c.viewportTransform, P = texPlace(D.cur), z = v[0] * U, G = garmOf(P.view), V = garmVis(P, G ? G.m : [632, 100, 1, 1]);
+    ctx.save(); ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]); ctx.translate(-V.ox * U, -V.oy * U); ctx.scale(U, U);
     ctx.fillStyle = G ? G.m[5] : "#eef0f3"; ctx.fillRect(-8000, -8000, 16000, 16000);   // Studio-Hintergrund des Fotos über die ganze Fläche
     if (G && G.img) {
       var m = G.m, f = 1264 / G.img.width;   // Bild → 1264er-Pixel
       ctx.save(); if (P.view === "sleeveR") ctx.scale(-1, 1);   // rechter Ärmel = gespiegelte Seitenansicht
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.drawImage(G.img, -m[0] / m[2], -m[1] / m[3], G.img.width * f / m[2], G.img.height * f / m[3]); ctx.restore();
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.drawImage(G.img, -m[0] / V.su, -m[1] / V.su, G.img.width * f / V.su, G.img.height * f / V.su); ctx.restore();
     }
     if (!D.exporting && G) {
-      var yb = (1234 - G.m[1]) / G.m[3] + 22, fs = 13 / z;
+      var yb = (1234 - G.m[1]) / V.su + 22, fs = 13 / z;
       var lab = (P.side ? "Ärmel " + P.side : P.view === "front" ? "Vorderseite" : "Rückseite") + " · Druckfläche max. " + (D.mm.w / 10).toString().replace(".", ",") + " × " + (D.mm.h / 10).toString().replace(".", ",") + " cm";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "rgba(60,60,67,.75)"; ctx.font = "600 " + fs + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText(lab, 0, yb);   // Schrift zoomunabhängig
       ctx.fillStyle = "rgba(60,60,67,.6)"; ctx.font = (11.5 / z) + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText("Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.", 0, yb + fs * 1.5);
