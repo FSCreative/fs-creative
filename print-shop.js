@@ -4336,6 +4336,12 @@ module.exports = function (D) {
         x.updated = nowIso(); await briefsSet(all); return J(res, 200, { ok: true, brief: x });
       }
       // Preis-Aufschlüsselung wie im Shop (nur lesend): Einkauf Produkt/Versand, Aufschlag, Verkauf; optional Print.com-Optionen überschreiben (pcOverride)
+      // alle Produktfotos aus dem Print.com-CMS (Shop zeigt nur 7) – z. B. Farbvarianten für Angebote mit Fotos
+      if (p === "/admin/api/print/gallery") {
+        const prod = await findProduct(b.product || u.searchParams.get("product")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
+        await cms(); const cp = cmsProd(prod.sku); const all = cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).map(x => IMG(x, 1000)) : [];
+        return J(res, 200, { ok: true, images: all });
+      }
       if (p === "/admin/api/print/quote") {
         const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
         const n = normalizeSel(prod, b); if (b.pcOverride && typeof b.pcOverride === "object") { n.pcOpts = Object.assign({}, n.pcOpts, b.pcOverride); n.pcMore = null; n.pmAlts = null; }
