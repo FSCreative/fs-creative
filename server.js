@@ -5165,6 +5165,9 @@ const server = http.createServer((req, res) => {
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
     if (p === "/nda" || p.indexOf("/nda/") === 0 || p.indexOf("/admin/api/nda/") === 0) return void guard(res, NDA.handle(req, res, u, p));
+    // Datei-Upload per Link (uploads.js): öffentliche Seite /upload/<token> (Stück-Upload ohne Größenlimit) und Cockpit-API /admin/api/uploads… (eigene Anmeldeprüfung)
+    if (p.indexOf("/upload/") === 0) return void guard(res, UPLOADS.handlePublic(req, res, u, p));
+    if (p === "/admin/api/uploads" || p.indexOf("/admin/api/uploads/") === 0) return void guard(res, UPLOADS.handleAdmin(req, res, u, p));
     // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml; Ersatz bei Shop offline in <!--PRINT_OFF-->…<!--/PRINT_OFF-->)
     if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/leistungen" || p === "/leistungen.html" || p === "/sitemap.xml")) {
       const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
@@ -5430,6 +5433,7 @@ FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
 if (require.main === module) setInterval(() => PRINT.pollActive().catch(e => console.error("Druck-Status:", e.message)), 30 * 60 * 1000).unref();   // laufende Druckaufträge: Status/Tracking alle 30 min
 // ── Vertraulichkeitsvereinbarungen (nda.js): Links aus dem Cockpit „Rechtliches“, online unterschreiben, PDF an beide Seiten ──
+const UPLOADS = require("./uploads.js")({ DATA_DIR, ORIGIN, send, sendGz, adminAuthed, push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m), mailReady: () => !!(MAIL.url && MAIL.token) });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);

@@ -25,7 +25,7 @@ const pos = (id, inv, n, name, price, qty, extra) => ["InvoicePos", Object.assig
   await L.load();
   const r2 = n => Math.round(n * 100) / 100, sevNum = x => parseFloat(x) || 0;
   const snapshot = async () => ({ invoices: L.all("Invoice").map(o => ({ id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType, status: +o.status, date: String(o.invoiceDate || "").slice(0, 10), origin: o.origin ? String(o.origin.id) : "", cancelled: !!o.cancelled })) });
-  const O = require(path.join(ROOT, "sevdesk-ops.js", "mail-card.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
+  const O = require(path.join(ROOT, "sevdesk-ops.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
     sevDateDE: d => d, sevNet: (g, r) => r2(g / (1 + r / 100)), viennaToday: () => "2026-10-20", sevMeta: async () => ({}), snapshot, invalidate: () => {}, sevBook: async () => ({}) });
   // wie server.js sevCreateInvoice: Positionen aus dem Formular (brutto) → Body, dann invoiceUpdateBody
   const save = async (items) => {

@@ -6,7 +6,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 (async () => {
   const SIG = 'Liebe Grüße<br><br><table><tr><td><p style="margin:0"><b>Simon Felder</b></p><p>FS Creative · Webdesign &amp; Digitalagentur</p><p>+43 664 1430620</p></td></tr></table>';
   let sig = SIG; const sent = [];
-  const O = require(path.join(__dirname, "..", "sevdesk-ops.js", "mail-card.js"))({ sev: async (m, p, o) => { if (/sendViaEmail/.test(p)) sent.push(o.body); return { objects: {} }; }, sevAll: async () => [], sevNum: x => +x || 0, sevDay: x => String(x || "").slice(0, 10),
+  const O = require(path.join(__dirname, "..", "sevdesk-ops.js"))({ sev: async (m, p, o) => { if (/sendViaEmail/.test(p)) sent.push(o.body); return { objects: {} }; }, sevAll: async () => [], sevNum: x => +x || 0, sevDay: x => String(x || "").slice(0, 10),
     sevName: x => (x && x.name) || "", sevDateDE: d => d, sevNet: (g, r) => g / (1 + r / 100), viennaToday: () => "2026-10-20", sevMeta: async () => ({}), snapshot: async () => ({}), invalidate: () => {}, sevBook: async () => ({}), mailSignature: () => sig });
   const inv = { nr: "RE-1300", gross: 120, contact: { name: "Muster GmbH" }, type: "RE" };
   await t("Vorschlagstext: Gruß und Name entfallen, wenn die Signatur grüßt", async () => {

@@ -82,6 +82,9 @@ function fileName(o){ return (label(o)+".pdf").replace(/[\\\/:*?"<>|]+/g,"_"); }
 var ORG_RE=/\b(gmbh|e\.?\s?u\.?|ag|kg|og|gesbr|gbr|ug|ltd|inc|verein|verband|gemeinde|stadt|land|tourismus|hotel|gasthof|pension|restaurant|bäckerei|metzgerei|feuerwehr|schule|kirche|club|team|holding|genossenschaft|wirtschafts\w*|kammer|institut|stiftung|erholungswelt|alpinarium|dokumentation|zentrum|betrieb)\b/i;
 function greeting(name){ name=String(name||"").trim(); return !name||ORG_RE.test(name)||name.split(/\s+/).length>3?"Sehr geehrte Damen und Herren":"Guten Tag "+name; }
 function mailText(o,sigOn){ var sum=o.gross!=null&&o.gross!==""?eur(+o.gross):"";
+  if(F.anrede&&(F.anrede("offer",o.id)||F.anrede("contact",o.contact))==="du"){ var nm=String(o.contact||"").trim(), first=!nm||ORG_RE.test(nm)||nm.split(/\s+/).length>3?"":nm.split(/\s+/)[0];
+    return "Hallo"+(first?" "+first:"")+",\n\nanbei bekommst du unser Angebot"+(o.nr?" "+o.nr:"")+(sum?" über "+sum:"")+"."+(o.validUntil?" Es gilt bis "+F.de(o.validUntil)+".":"")+
+      "\n\nBei Fragen meld dich gerne – ich freue mich auf deine Rückmeldung."+(sigOn?"":"\n\nLiebe Grüße\nSimon Felder\nFS Creative"); }
   return greeting(o.contact)+",\n\nanbei erhalten Sie unser Angebot"+(o.nr?" "+o.nr:"")+(sum?" über "+sum:"")+"."+(o.validUntil?" Es ist gültig bis "+F.de(o.validUntil)+".":"")+
     "\n\nBei Fragen melden Sie sich gerne – ich freue mich auf Ihre Rückmeldung."+(sigOn?"":"\n\nFreundliche Grüße\nSimon Felder\nFS Creative"); }
 /* Karte im Dialog: „lädt …“ anzeigen, alle Knöpfe sperren; zurück → wiederherstellen + Fehler */

@@ -690,6 +690,15 @@ module.exports = function createKi(deps) {
   const OFFER_SYSTEM = INVOICE_SYSTEM.replace("Du bereitest Ausgangsrechnungen von", "Du bereitest Angebote (Kostenvoranschläge, noch keine Rechnungen) von") +
     "\nDies ist ein ANGEBOT, keine Rechnung: invoiceDate = Angebotsdatum (heute), validUntil = gültig bis (Standard heute + 30 Tage, außer anders verlangt), deliveryDate = geplanter Leistungsbeginn oder leer. " +
     "header: kurzer Betreff, z. B. „Angebot Website-Relaunch“. headText: 1–2 freundliche Sätze („Vielen Dank für Ihre Anfrage – gerne biete ich Ihnen an …“). footText: Gültigkeit, Ablauf/Zahlungsmodalitäten (z. B. 50 % bei Auftrag, Rest bei Fertigstellung, nur wenn genannt) + ggf. Steuerhinweis; KEIN „Zahlbar innerhalb …“. Optionale Leistungen als eigene Position mit „optional“ im Text.";
+  // Angebots-/Rechnungstexte zwischen Du- und Sie-Form umschreiben (Auswahl „Anrede“ im Dialog, Wunsch Simon 04.11.2026); Inhalt, Zahlen und Zeilen bleiben gleich
+  async function rewriteAnrede(pl) {
+    const to = pl && pl.to === "du" ? "du" : "sie", T = pl && pl.texts && typeof pl.texts === "object" && !Array.isArray(pl.texts) ? pl.texts : {}, keys = Object.keys(T).filter(k => /^[\w-]{1,40}$/.test(k) && String(T[k] || "").trim()).slice(0, 40);
+    if (!keys.length) return { texts: {} };
+    const schema = obj(Object.fromEntries(keys.map(k => [k, S.str])));
+    const msg = await claude("rechnung", { system: "Du schreibst deutsche Geschäftstexte (Angebote/Rechnungen von FS Creative, Simon Felder) in eine andere Anrede um. Ändere NUR die Anrede (Pronomen, Verbformen, Begrüßung) – Inhalt, Zahlen, Preise, Zeilenumbrüche, Großbuchstaben-Labels wie „FARBE:“ und Fachbegriffe bleiben exakt gleich. Leere Felder bleiben leer.", effort: "low", maxTokens: 6000, schema,
+      messages: [{ role: "user", content: (to === "du" ? "Anrede: DU-Form (Wunsch Simon). Kopftext, Fußtext und Positionstexte durchgehend per du/dir/dich/dein, Begrüßung „Hallo <Vorname>,“ (bei Firmen/Vereinen ohne Ansprechperson „Hallo,“ bzw. „Hallo zusammen,“), freundlich-locker, aber professionell." : "Anrede: SIE-Form. Kopftext, Fußtext und Positionstexte durchgehend per Sie/Ihnen/Ihr, Begrüßung „Guten Tag <Name>,“ bzw. „Sehr geehrte Damen und Herren,“.") + "\n\nTexte (JSON):\n" + JSON.stringify(Object.fromEntries(keys.map(k => [k, clip(T[k], 4000)]))) }] });
+    const x = jsonOf(msg) || {}; return { texts: Object.fromEntries(keys.map(k => [k, typeof x[k] === "string" && x[k].trim() ? clip(x[k], 4000) : T[k]])) };
+  }
   async function draftInvoice(pl) {
     const offer = pl && pl.kind === "offer";
     const today = deps.viennaToday(); const parts = [];
@@ -710,7 +719,7 @@ module.exports = function createKi(deps) {
       items: { type: "array", items: obj({ name: S.str, text: S.str, qty: S.num, unit: S.str, priceNet: S.num, taxRate: S.num }) }, invoiceDate: S.str, deliveryDate: S.str, deliveryUntil: S.str, timeToPay: { type: "integer" }, headText: S.str, footText: S.str, notes: S.str, confidence: S.num };
     if (offer) Object.assign(fields, { validUntil: S.str, header: S.str });
     const schema = obj(fields);
-    const msg = await claude("rechnung", { system: offer ? OFFER_SYSTEM : INVOICE_SYSTEM, system2: ctx, effort: "medium", maxTokens: 8000, schema, messages: [{ role: "user", content: parts.join("\n\n") + (offer ? "\n\nBitte das Angebot vorbereiten." : "\n\nBitte die Rechnung vorbereiten.") }] });
+    const msg = await claude("rechnung", { system: offer ? OFFER_SYSTEM : INVOICE_SYSTEM, system2: ctx, effort: "medium", maxTokens: 8000, schema, messages: [{ role: "user", content: parts.join("\n\n") + (pl.anrede === "du" ? "\n\nAnrede: DU-Form (Wunsch Simon). Kopftext, Fußtext und Positionstexte durchgehend per du/dir/dich/dein, Begrüßung „Hallo <Vorname>,“ (bei Firmen/Vereinen ohne Ansprechperson „Hallo,“ bzw. „Hallo zusammen,“), freundlich-locker, aber professionell." : pl.anrede === "sie" ? "\n\nAnrede: SIE-Form. Kopftext, Fußtext und Positionstexte durchgehend per Sie/Ihnen/Ihr, Begrüßung „Guten Tag <Name>,“ bzw. „Sehr geehrte Damen und Herren,“." : "") + (offer ? "\n\nBitte das Angebot vorbereiten." : "\n\nBitte die Rechnung vorbereiten.") }] });
     const x = jsonOf(msg), d = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "";
     const existing = contacts.find(n => n.toLowerCase() === String(x.existingContact || "").trim().toLowerCase()) || "";
     const zero = x.taxCase !== "inland", uid = clip(x.uid, 20).replace(/\s/g, "").toUpperCase();
@@ -813,6 +822,7 @@ module.exports = function createKi(deps) {
         const f = UPLOADS.get(String(u.searchParams.get("id") || "")); if (!f) return deps.send(res, 404, "Upload abgelaufen", "text/plain; charset=utf-8");
         res.writeHead(200, { "Content-Type": f.ctype, "Content-Disposition": "inline; filename=\"" + f.fname.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "_") + "\"", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" }); return res.end(f.buf);
       }
+      if (p === "/admin/api/ki/anrede" && req.method === "POST") { const pl = await body(req, 60000); return json(res, Object.assign({ ok: true }, await rewriteAnrede(pl))); }
       if (p === "/admin/api/ki/rechnung" && req.method === "POST") { const pl = await body(req, 100000); return json(res, Object.assign({ ok: true }, await draftInvoice(pl))); }
       if (p === "/admin/api/ki/queue" && req.method === "GET") return json(res, { ok: true, queue: cache().queue.filter(q => q.status === "neu").slice().reverse(), scan: SCAN_LAST });
       if (p === "/admin/api/ki/queue" && req.method === "POST") {

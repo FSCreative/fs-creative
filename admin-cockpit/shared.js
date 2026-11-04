@@ -18,6 +18,13 @@ F.mailRef=function(m){ if(m&&typeof m!=="object"){ var id=String(m); m=(F.M&&F.M
   return m&&m.id?{id:m.id,account:m.account||"",folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}:null; };
 function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" list="invParts" placeholder="Bezeichnung oder Artikel" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"'+(it.priceNet!=null&&it.priceNet!==""&&isFinite(+it.priceNet)&&it.priceGross!=null?' data-net="'+esc(+it.priceNet)+'" data-g0="'+esc(it.priceGross)+'" data-t0="'+esc(tax)+'"':'')+'><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"><input type="hidden" data-i="unity" value="'+esc(it.unity||"")+'">'+(+it.discount>0?'<input type="hidden" data-i="disc" value="'+esc(it.discount)+'"><span class="irdisc">abzüglich '+esc(String(+it.discount).replace(".",","))+' % Rabatt</span>':'')+'</div>'; }
 var INVCTX=null, PARTS=[];
+/* Anrede Du/Sie für Angebote (Wunsch Simon 04.11.2026): Auswahl vor dem Text, gemerkt je Kunde und je Angebot (für die Mail beim Senden) */
+var ANRK="fsc-anrede";
+function anrStore(){ try{ return JSON.parse(localStorage.getItem(ANRK)||"null")||{c:{},o:{}}; }catch(e){ return {c:{},o:{}}; } }
+function anrKey(n){ return String(n||"").toLowerCase().replace(/\s+/g," ").trim(); }
+F.anrede=function(kind,key,val){ var s=anrStore(); s.c=s.c||{}; s.o=s.o||{}; var m=kind==="offer"?s.o:s.c, k=kind==="offer"?String(key||""):anrKey(key); if(!k) return ""; if(val===undefined) return m[k]||""; m[k]=val; try{ localStorage.setItem(ANRK,JSON.stringify(s)); }catch(e){} return val; };
+function anrCur(){ var r=document.querySelector('form[data-form="invoice"] [name="anrede"]:checked'); return r?r.value:""; }
+F.anrCur=anrCur;
 F.addDays=function(iso,n){ var d=new Date(String(iso).slice(0,10)+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
 /* Anschrift: Einzelfelder ↔ mehrzeiliger Adressblock (Name / z. H. / Straße / PLZ Ort / Land) */
 var LAND={AT:"Österreich",DE:"Deutschland",CH:"Schweiz",IT:"Italien",LI:"Liechtenstein",FR:"Frankreich",NL:"Niederlande",BE:"Belgien",LU:"Luxemburg",ES:"Spanien",PL:"Polen",CZ:"Tschechien",SK:"Slowakei",HU:"Ungarn",SI:"Slowenien",HR:"Kroatien",DK:"Dänemark",SE:"Schweden",GB:"Vereinigtes Königreich",US:"USA"};
@@ -113,7 +120,7 @@ F.openInvoice=function(pre){
   var A=pre.street||pre.zip||pre.city?{contactPerson:pre.contactPerson||"",street:pre.street||"",zip:pre.zip||"",city:pre.city||"",country:pre.country||""}:F.parseAddress(pre.address&&pre.address!==pre.contactName?pre.address:"",pre.contactName);
   var cname=pre.contactName||A.name||"", land=landName(A.country||pre.country)||"Österreich";
   F.modal('<form data-form="invoice" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(pre.title||(offer?"Neues Angebot":"Neue Rechnung"))+'</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">'+(pre.id?'Du bearbeitest einen Entwurf. Die Positionen werden ersetzt.':'Wird als <b>Entwurf</b> angelegt. Danach kannst du ihn direkt hier ansehen und per Mail senden.')+'</p>'+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
+    '<p class="muted" style="margin:0">'+(pre.id?'Du bearbeitest einen Entwurf. Die Positionen werden ersetzt.':'Wird als <b>Entwurf</b> angelegt. Danach kannst du ihn direkt hier ansehen und per Mail senden.')+'</p>'+(offer?(function(){ var a=pre.anrede||F.anrede("contact",cname)||"sie"; return '<fieldset class="fl" style="border:0;padding:0;margin:0"><legend style="padding:0;margin-bottom:6px">Anrede im Angebot</legend><div class="row wrap" role="radiogroup">'+[["sie","Sie (förmlich)"],["du","Du (persönlich)"]].map(function(x){ return '<label style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;cursor:pointer"><input type="radio" name="anrede" value="'+x[0]+'"'+(a===x[0]?" checked":"")+'> '+x[1]+'</label>'; }).join("")+'<span class="muted small" id="anrHint" aria-live="polite">KI-Texte werden in dieser Form geschrieben – Umschalten formuliert vorhandene Texte um.</span></div></fieldset>'; })():'')+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
     (pre.paidNote?'<div class="notice" style="background:var(--info-soft)"><span>'+pre.paidNote+'</span></div><label class="fl">Bezahlt auf Konto<select class="f" name="paidacc">'+(pre.paidAccounts||[]).map(function(a){ return '<option value="'+esc(a.id)+'"'+(/kasse/i.test(a.name)?" selected":"")+'>'+esc(a.name)+'</option>'; }).join("")+'</select></label>':'')+
     '<div class="grid2"><label class="fl">Firma / Name<input class="f" name="contact" data-sugg="invcontact" required autocomplete="off" placeholder="Name eintippen – Bestandskunden werden vorgeschlagen" value="'+esc(cname)+'"><span class="muted small" id="invCustHint" aria-live="polite"></span></label><label class="fl">E-Mail<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label></div>'+
     '<div class="grid2"><label class="fl"><span>z. H. <span class="muted small">(optional)</span></span><input class="f" name="attn" placeholder="Ansprechperson" value="'+esc(A.contactPerson||"")+'"></label><label class="fl"><span>UID <span class="muted small">(optional)</span></span><input class="f" name="uid" placeholder="ATU12345678" value="'+esc(pre.uid||"")+'"></label></div>'+
@@ -153,6 +160,20 @@ function netTax(r){ var pe=r&&r.querySelector('[data-i="price"]'), tx=r&&r.query
   if(parseFloat(pe.getAttribute("data-g0"))!==parseFloat(pe.value)) return;   /* Preis von Hand geändert → der eingegebene Bruttopreis gilt */
   var g=Math.round(parseFloat(pn)*(1+(parseFloat(tx.value)||0)/100)*100)/100; pe.value=String(g); pe.setAttribute("data-g0",String(g)); pe.setAttribute("data-t0",String(parseFloat(tx.value)||0)); }
 F.listen("input","#irows",invSum);
+/* Anrede umschalten: Einleitung, Positionstexte und Fußtext per KI in die andere Form umschreiben (nur Anrede, Inhalt bleibt) */
+F.listen("change",'form[data-form="invoice"] [name="anrede"]',function(el){
+  var form=el.closest("form"), to=el.value, hint=document.getElementById("anrHint"), T={}, ctx=INVCTX||{};
+  if(form.head.value.trim()) T.head=form.head.value; if(ctx.footText) T.foot=ctx.footText;
+  form.querySelectorAll('#irows [data-i="text"]').forEach(function(x,i){ if(x.value.trim()) T["i"+i]=x.value; });
+  if(!Object.keys(T).length) return;
+  var rs=form.querySelectorAll('[name="anrede"]'); rs.forEach(function(r){ r.disabled=true; }); if(hint) hint.textContent="KI formuliert die Texte in die "+(to==="du"?"Du":"Sie")+"-Form um …";
+  F.api("/admin/api/ki/anrede",{body:{to:to,texts:T}}).then(function(j){ rs.forEach(function(r){ r.disabled=false; });
+    if(!j||!j.ok){ if(hint) hint.textContent="Umschreiben nicht möglich: "+((j&&j.error)||"Fehler")+" – bitte Texte selbst anpassen."; return; }
+    var X=j.texts||{}; if(X.head!=null) form.head.value=X.head; if(X.foot!=null) ctx.footText=X.foot;
+    form.querySelectorAll('#irows [data-i="text"]').forEach(function(x,i){ if(X["i"+i]!=null) x.value=X["i"+i]; });
+    if(hint) hint.textContent="Texte sind jetzt in der "+(to==="du"?"Du":"Sie")+"-Form"+(ctx.footText?" (inkl. Fußtext)":"")+".";
+  }).catch(function(){ rs.forEach(function(r){ r.disabled=false; }); if(hint) hint.textContent="Keine Verbindung – Texte bitte selbst anpassen."; });
+});
 F.listen("change","#irows",invSum);
 F.listen("change",'#irows [data-i="tax"]',function(el){ netTax(el.closest(".irow")); invSum(); });
 /* Artikel gewählt → Preis, USt und Text übernehmen */
@@ -196,13 +217,15 @@ F.form("invoice",function(form){
 });
 /* Angebot anlegen (gleicher Dialog). Danach optional Lead in Phase „Angebot“ schieben (nur vorwärts). */
 function saveOffer(form,items,contact,err,btn){
-  var ctx=INVCTX||{}, body={contactName:contact,email:form.email.value.trim(),orderDate:form.date.value,validUntil:form.valid.value,header:form.header.value.trim()||"Angebot",headText:form.head.value.trim(),items:items};
+  var ctx=INVCTX||{}, body={contactName:contact,email:form.email.value.trim(),orderDate:form.date.value,validUntil:form.valid.value,header:form.header.value.trim()||"Angebot",headText:form.head.value.trim(),items:items}, anr=anrCur();
+  if(anr) F.anrede("contact",contact,anr);
   ["taxRule","footText"].forEach(function(k){ if(ctx[k]) body[k]=ctx[k]; });
   invAddrBody(form,contact,body);
   var lbl="Angebot als Entwurf anlegen"; btn.disabled=true; err.textContent=""; btn.textContent="Lege Angebot an …";
   F.api("/admin/api/sevdesk/offer",{body:body}).then(function(j){
     if(!j||!j.ok){ btn.disabled=false; btn.textContent=lbl; err.textContent="Abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
     if(!body.contactId) META=null;
+    if(anr&&j.id) F.anrede("offer",j.id,anr);
     var lid=ctx.after&&ctx.after.leadId, l=lid&&F.D&&(F.D.leads||[]).find(function(x){ return x.id===lid; });
     var order=["anfrage","entwurf","angebot","auftrag","live"], move=l&&order.indexOf(l.stage||"anfrage")<order.indexOf("angebot");
     var patch=move?{stage:"angebot"}:null;

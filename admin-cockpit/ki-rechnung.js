@@ -34,7 +34,7 @@ function fill(inv,pre){
   var nm=inv.contactName||pre.contactName, same=String(nm||"").toLowerCase().replace(/\s+/g," ").trim()===String(pre.contactName||"").toLowerCase().replace(/\s+/g," ").trim();
   F.openInvoice(Object.assign({},pre,{contactName:nm,email:inv.email||pre.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
     items:inv.items.map(function(i){ return {name:i.name,text:i.text,qty:i.qty,priceGross:i.priceGross,taxRate:i.taxRate}; }),
-    taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv,
+    taxRule:inv.taxRule||undefined,footText:inv.footText,anrede:(F.anrCur&&F.anrCur())||pre.anrede||undefined,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv,
     contactId:same?pre.contactId:undefined},   /* andere Firma laut KI → vorher bekannter Kontakt gilt nicht mehr */
     pre.kind==="offer"?{validUntil:inv.validUntil||undefined,header:inv.header||pre.header}:{}));
 }
@@ -49,6 +49,7 @@ F.action("kiinvfill",function(){
   var t=document.getElementById("kiInvText"), s=document.getElementById("kiInvSrc"), err=document.getElementById("kiInvErr");
   var req={text:(t&&t.value||"").trim()}, v=s&&s.value||"";
   if(/^lead:/.test(v)) req.leadId=v.slice(5); if(/^mail:/.test(v)) req.mailId=v.slice(5);
+  var an=F.anrCur&&F.anrCur(); if(an) req.anrede=an;   /* Du/Sie aus dem Angebotsdialog */
   if(!req.text&&!req.leadId&&!req.mailId){ err.textContent=PRE&&PRE.kind==="offer"?"Bitte beschreiben, was angeboten wird, oder eine Mail/Anfrage wählen.":"Bitte beschreiben, was verrechnet wird, oder eine Mail/Anfrage wählen."; return; }
   if(K.st&&!K.st.configured){ err.textContent=K.NOT_SET; return; }
   var b=document.querySelector('[data-act="kiinvfill"]'); if(b){ b.disabled=true; b.textContent="KI füllt aus …"; } err.textContent="";
