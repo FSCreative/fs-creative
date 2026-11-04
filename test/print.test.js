@@ -114,6 +114,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Katalog: kuratierte Produkte, nur freigegebene Eigenschaften, Auflagen-Stufen, deutschsprachige Anfrage", async () => {
     cat = await (await fetch(B + "/print/api/catalog")).json();
     assert.strictEqual(cat.ready, true, JSON.stringify(cat));
+    // schlanker Katalog: kuratierte Produkte ohne Optionen/Regeln (lite) – Details wie im Shop über /print/api/product nachladen
+    const lites = cat.products.filter(p => p.lite); assert.ok(lites.length > 0 && lites.every(p => !p.props && !p.excludes), "Katalog ohne Optionen/Regeln");
+    for (const p of lites) { const j = await (await fetch(B + "/print/api/product?key=" + encodeURIComponent(p.key))).json(); assert.ok(j.ok && j.product.props, p.key); cat.products[cat.products.indexOf(p)] = Object.assign({}, p, j.product, { slug: p.slug, lite: false }); }
     // innerhalb der Hauptgruppe nach Beliebtheit laut Print.com (Flyer 55 240 > Faltblätter > Plakate > Visitenkarten), die Beliebtesten als Bestseller markiert
     const pp = cat.products.filter(p => p.group === "paper-print");
     assert.deepStrictEqual(pp.map(p => p.key), ["flyer", "folder", "plakate", "visitenkarten"]);

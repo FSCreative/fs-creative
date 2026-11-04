@@ -704,9 +704,9 @@
   }
   function pickProduct(key, cb) {
     var p = prodByKey(key); if (!p) return;
-    if (p.lazy) { // allgemeine Produkte: Details erst jetzt laden
-      toast("Produkt wird geladen …");
-      api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); fixLabels([j.product]); if (p.slug && !j.product.slug) j.product.slug = p.slug; S.cat.products[i] = j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
+    if (p.lazy || p.lite) { // allgemeine Produkte bzw. schlanker Katalog: Details erst jetzt laden
+      if (p.lazy) toast("Produkt wird geladen …");
+      api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); fixLabels([j.product]); if (p.slug && !j.product.slug) j.product.slug = p.slug; S.cat.products[i] = p.lite ? Object.assign({}, p, j.product, { lite: false }) : j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
       return;
     }
     if (!S.prod || S.prod.key !== key) {
@@ -1096,8 +1096,8 @@
       if (!lm) return (n > 1 ? n + " × " : "") + fmtSize(bd.w, bd.h) + " <b>" + eur(g0) + "</b>";   // kein Preis je m² (verwirrt) – Größe + Gesamtpreis
       return "<b>" + eur(g0 / dv).replace(/(,\d\d)\d*/, "$1") + "</b>/" + (lm ? "lfm" : "m²") + " <small>(" + (n > 1 ? n + " × " : "") + fmtSize(bd.w, bd.h) + " · " + eur(g0) + ")</small>"; }
     return f ? (+f.copies).toLocaleString("de-AT") + "\u00a0" + U(pp) + " <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
-  function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
-    if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + "\u00a0" + U(p) + "");
+  function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [], nS = sz ? sz.options.length : p.nSz || 0, nM = mt ? mt.options.length : p.nMat || 0;
+    if (nS > 1) l.push(nS + " Formate"); if (nM > 1) l.push(nM + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + "\u00a0" + U(p) + "");
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer");
     var rv = S.cat && S.cat.ratings && S.cat.ratings[p.key]; if (rv) l.unshift("★ " + String(rv.avg).replace(".", ",") + " · " + rv.n + " Bewertungen");   // echte Kundenbewertungen (ab 3)
     return l.slice(0, 4); }
