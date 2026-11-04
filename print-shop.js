@@ -211,7 +211,7 @@ function scrubPub(v, key) {
   return v;
 }
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
-const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
+const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 2000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
 // Datencheck: „self“ = Kunde gibt frei (automatische Hinweise), bezahlte Aufträge gehen sofort an Print.com; „pro“ = Profi-Check gegen Aufpreis (je Warenkorb), landet in der Warteschlange
 const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 50;   // Sortenmix: bis 50 Motive (Print.com „designs“, ohne Aufpreis)
 // Zahlungsgebühr (Mollie) für die Kalkulation: Standard Kreditkarte EU 1,8 % + 0,25 € (anpassbar per Railway)
