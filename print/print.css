@@ -1996,3 +1996,16 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 @media (max-width:560px){.ps-urk .c{min-height:50px;padding:4px}.ps-urk .c .pp{font-size:10.5px;gap:2px}.ps-urk .c .n small{display:none}.ps-urk .c .pp .d{display:none}}
 
 .ps-remrow{display:flex;flex-wrap:wrap;gap:4px 14px}
+
+/* Handy intuitiver (Wunsch Simon 04.11.2026): Erklärung unter der Wahl in eigener Zeile, Produkttext gekürzt mit „Mehr lesen“, Motive in einer Reihe, „Weitere Optionen“ kompakt */
+.ps-about-more{display:none}
+@media (max-width:600px){
+  .ps-cfg .ps-dd .v small{display:block;margin:3px 0 0;font-size:12.5px;line-height:1.4}
+  .ps-cfg .ps-chg{font-size:13px}
+  .ps-cfgv .ps-about.clamp>:not(p:first-child):not(.ps-about-more){display:none}
+  .ps-cfgv .ps-about.clamp>p:first-child{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .ps-cfgv .ps-about.clamp>.ps-about-more{display:inline;margin-top:4px;font-size:14px}
+  .ps-more>summary span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ps-cfg .ps-mot .ps-mns{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}.ps-cfg .ps-mot .ps-mn{min-width:0;padding:0}.ps-cfg .ps-mot .ps-mn.ps-mnin input{width:100%}
+  .ps-newbie{font-size:13px;padding:10px 12px}
+}

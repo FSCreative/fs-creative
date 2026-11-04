@@ -1595,9 +1595,10 @@
     var head = paras.slice(0, headN), tail = paras.slice(headN), li = function (l) { return l.length ? "<ul>" + l.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : ""; };
     if (!lines.length) return '<div class="ps-about"><p>' + esc(lead(p.summary)) + "</p></div>";
     var shortBul = bul.length <= 6 && !tail.length;
-    return '<div class="ps-about">' + head.map(function (x) { return "<p>" + esc(x) + "</p>"; }).join("") + (shortBul ? li(bul) : "") +
-      (tail.length || !shortBul ? '<details class="ps-more-txt"><summary>Mehr zum Produkt</summary>' + tail.map(function (x) { return "<p>" + esc(x) + "</p>"; }).join("") + (shortBul ? "" : li(bul)) + "</details>" : "") + "</div>";
+    return '<div class="ps-about' + (len > 160 || tail.length || bul.length ? " clamp" : "") + '">' + head.map(function (x) { return "<p>" + esc(x) + "</p>"; }).join("") + (shortBul ? li(bul) : "") +
+      (tail.length || !shortBul ? '<details class="ps-more-txt"><summary>Mehr zum Produkt</summary>' + tail.map(function (x) { return "<p>" + esc(x) + "</p>"; }).join("") + (shortBul ? "" : li(bul)) + "</details>" : "") + '<button type="button" class="ps-link ps-about-more" data-aboutmore="1">Mehr lesen</button></div>';
   }
+  document.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-aboutmore]"); if (b && b.parentNode) { b.parentNode.classList.remove("clamp"); b.remove(); } });   // Handy: Produkttext erst gekürzt
   // ── Technische Daten: Format, Material, Druck, fest vorgegebene Ausstattung (z. B. Ösen, Druckverfahren) + Einsatz/Beständigkeit je Material ──
   function fmtSize(w, h) { if (Math.max(w, h) < 1000) return mmF(w) + " × " + mmF(h) + " mm"; var big = Math.max(w, h) >= 10000, u = function (v) { return big && v >= 1000 ? String(Math.round(v / 10) / 100).replace(".", ",") + " m" : String(Math.round(v) / 10).replace(".", ",") + " cm"; }; return u(w) + " × " + u(h); }
   var USE = [   // [Muster im Material/Produkt, Einsatz, Eigenschaften] – erste passende Regel gilt
