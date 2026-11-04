@@ -15,7 +15,7 @@
   if (!root) return;
   // Neue Startseite + Header (Entwurf Simon 04.11.2026) – vorerst nur als Vorschau: /print?vorschau=start (bleibt für den Besuch an), /print?vorschau=aus beendet sie
   var V2 = (function () { var q = new URLSearchParams(location.search); try { if (q.has("vorschau")) { if (q.get("vorschau") === "aus") sessionStorage.removeItem("psV2"); else sessionStorage.setItem("psV2", "1"); } return sessionStorage.getItem("psV2") === "1"; } catch (e) { return q.get("vorschau") === "start"; } })();
-  if (V2) v2Header();
+  if (V2) setTimeout(function () { try { v2Header(); } catch (e) {} }, 0);   // erst nach dem Laden des Skripts (Symbole/Kategorien sind dann definiert)
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
   var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
@@ -1185,7 +1185,7 @@
   }
   // ── Vorschau neue Startseite: Slider auf Bildschirmbreite, Vorteile-Leiste, beliebte Kategorien mit Bildern ──
   function v2Home() {
-    var sl = xmasTeaser(); if (!sl) return "";
+    var sl = ""; try { sl = xmasTeaser(); } catch (e) {} if (!sl) return "";
     var P = function (k) { return prodByKey(k); }, bn = P("pvc-banner") || S.cat.products.filter(function (p) { return p.kind === "banner"; })[0], tx = P("tshirt-basic"), mug = P("tasse");
     var cats = [[P("flyer"), "Flyer & Folder"], [P("visitenkarten"), "Visitenkarten"], [P("plakate"), "Plakate & Poster"], [bn, "Banner & Planen"], [P("aufkleber"), "Aufkleber", "stickers-tapes"], [tx, "Textilien", "clothing-textile"], [mug, "Werbeartikel", "gifts-merchandise-promotional"]].filter(function (c) { return c[0]; });
     var tile = function (c) { var p = c[0], at = c[2] ? 'data-nav="produkte" data-navgroup="' + esc(c[2]) + '"' : 'data-prod="' + esc(p.key) + '"';
