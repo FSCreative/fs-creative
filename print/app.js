@@ -270,6 +270,12 @@
     var me = S.me, co = me.type === "company", tab = A.tab || "start", fm = function (k) { return A.form === k ? msg : ""; };
     var TABS = [["start", "Übersicht"], ["orders", "Bestellungen" + (S.orders.length ? " (" + S.orders.length + ")" : "")], ["saved", "Merkliste" + ((me.saved || []).length ? " (" + me.saved.length + ")" : "")], ["drafts", "Entwürfe" + ((me.drafts || []).length ? " (" + me.drafts.length + ")" : "")], ["address", "Adresse"], ["settings", "Einstellungen"]];
     var ini = ((me.firstName || "")[0] || "") + ((me.lastName || "")[0] || "") || (me.email || "?")[0];
+    if (V2) {   // Vorschau Kundenportal (Entwurf Simon 04.11.2026): Menü links, Begrüßung, Kennzahlen, letzte Bestellungen als Tabelle
+      var AIC = { start: V2I.home, orders: V2I.box, saved: V2I.heart, drafts: V2I.pen, address: V2I.pin, settings: V2I.user };
+      var NM = { address: "Adressbuch", settings: "Profil & Einstellungen" };
+      h += '<div class="ps-v2acct"><aside class="side"><h2>Mein Konto</h2><nav role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + v2Ic(AIC[t[0]]) + "<span>" + esc(NM[t[0]] || t[1]) + "</span></button>"; }).join("") +
+        '<button type="button" class="out" data-act="aclogout">' + v2Ic(V2I.logout) + "<span>Abmelden</span></button></nav></aside><div class=\"main\"><h1 class=\"hi\">Hallo" + (me.firstName ? ", " + esc(me.firstName + (me.lastName ? " " + me.lastName : "")) : "") + ' <span aria-hidden="true">👋</span></h1><p class="pd-muted sub">Verwalte hier deine Bestellungen, Merkliste und Kontodaten.' + (co && me.company ? " · " + esc(me.company) : "") + "</p>";
+    } else
     h += back + '<div class="ps-acct-hd"><span class="av" aria-hidden="true">' + esc(ini.toUpperCase()) + '</span><div class="nm"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><div class="ps-acct-meta"><span class="em">' + esc(me.email).replace("@", "@<wbr>") + '</span><span class="ps-acct-type ' + (co ? "co" : "pr") + '">' + (co ? "Firmenkonto" : "Privatkonto") + "</span>" + (co && me.company ? '<span class="cn">' + esc(me.company) + "</span>" : "") + '</div></div><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>' +
       '<nav class="ps-acct-nav" role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
     // Bestellzeile: Produkt + Preis, Metazeile, Fortschritt (Punkte + Status + Datum), Knöpfe
@@ -277,7 +283,14 @@
     var orderRow = function (o) {
       return '<li class="ps-ord"><div class="hd"><a class="t" href="' + ordUrl(o) + '"><b>' + esc(o.product) + "</b>" + ordMeta(o) + "</a>" + price(o) + "</div>" +
         '<div class="ft">' + miniTrack(o) + ordActs(o) + "</div></li>"; };
-    if (tab === "start") {
+    if (tab === "start" && V2) {
+      var st = [[S.orders.length, "Bestellungen", "atab:orders"], [(me.saved || []).length, "Gemerkt", "atab:saved"], [(me.drafts || []).length, "Gespeicherte Entwürfe", "atab:drafts"], [S.cart.length, "Im Warenkorb", ""]];
+      h += '<div class="ps-v2stats">' + st.map(function (x) { return '<button type="button" ' + (x[2] ? 'data-act="' + x[2] + '"' : "data-cart-link") + "><b>" + x[0] + "</b><span>" + x[1] + "</span></button>"; }).join("") + "</div>";
+      h += '<section class="ps-v2last"><div class="hd"><h2>Letzte Bestellungen</h2>' + (S.orders.length ? '<button type="button" class="ps-link" data-act="atab:orders">Alle Bestellungen →</button>' : "") + "</div>" +
+        (S.orders.length ? '<div class="tbl"><table><thead><tr><th>Bestellnummer</th><th>Produkt</th><th>Datum</th><th>Status</th><th class="r">Betrag</th></tr></thead><tbody>' + S.orders.slice(0, 5).map(function (o) { var c = CHIP[o.status] || [o.statusText || o.status, ""];
+          return '<tr><td><a href="' + ordUrl(o) + '">' + esc(o.nr) + "</a></td><td>" + esc(o.product) + "</td><td>" + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + '</td><td><span class="chip ' + esc(c[1]) + '">' + esc(c[0]) + '</span></td><td class="r">' + eur(co ? o.net : o.gross) + "</td></tr>"; }).join("") + "</tbody></table></div>"
+          : '<p class="pd-muted">Noch keine Bestellungen – such dir ein Produkt aus und gestalte es online oder lade deine Datei hoch.</p><button type="button" class="ps-btn primary small" data-act="shop">Produkte ansehen</button>') + "</section>" + bonusHtml();
+    } else if (tab === "start") {
       var lo = S.orders[0];
       h += '<div class="ps-acct-grid ps-acct-start">';
       h += '<section class="ps-panel ps-lastord"><h3>Letzte Bestellung</h3>' + (lo ? '<div class="ps-ord ps-ord1"><div class="hd"><a class="t" href="' + ordUrl(lo) + '"><b>' + esc(lo.product) + "</b>" + ordMeta(lo) + "</a>" + price(lo) + "</div>" +
@@ -327,7 +340,7 @@
         '<details class="ps-del"><summary>Konto löschen</summary><form class="ps-form" data-acct-form="delete" novalidate><p class="pd-muted">Dein Konto wird gelöscht. Bestellungen bewahren wir aus steuerlichen Gründen auf.</p>' + acctField("password", "Passwort zur Bestätigung", "password", "", "current-password") + fm("delete") + '<button type="submit" class="ps-btn">Konto endgültig löschen</button></form></details></section>';
       h += "</div>";
     }
-    return h + "</div>";
+    return h + (V2 ? "</div></div>" : "") + "</div>";
   }
   function bonusHtml() {
     var b = S.bonus, me = S.me; if (!b) return "";
@@ -1154,47 +1167,16 @@
   }
 
   // ── Vorschau neuer Header: Leiste mit Vorteilen, große Suche, Konto/Hilfe/Warenkorb, Kategorien-Leiste mit Symbolen ──
-  function v2Ic(d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + "</svg>"; }
-  var V2I = { truck: '<path d="M3 6h11v9H3zM14 9h4l3 3v3h-7"/><circle cx="7" cy="17" r="1.8"/><circle cx="17" cy="17" r="1.8"/>', check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16.5 9"/>', pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>', pin: '<path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
-    grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
-    flyer: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h5"/>', card: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 11h5M7 14h8"/>',
-    poster: '<path d="M6 3h12v18l-6-4-6 4z"/>', banner: '<path d="M4 4v17M4 5h15l-3 4 3 4H4"/>', rollup: '<path d="M7 3h10v15H7zM5 18h14M12 18v3M9 21h6"/>',
-    sticker: '<path d="M20 12a8 8 0 1 1-8-8h8z"/><path d="M20 12h-5a3 3 0 0 1-3-3V4"/>', shirt: '<path d="M8 3 3 6l2 5 3-1v11h8V10l3 1 2-5-5-3a4 4 0 0 1-8 0z"/>',
-    gift: '<rect x="3" y="8" width="18" height="5"/><path d="M5 13v8h14v-8M12 8v13M12 8S10 3 7.5 4.5 9 8 12 8zm0 0s2-5 4.5-3.5S15 8 12 8z"/>', box: '<path d="m3 7 9-4 9 4v10l-9 4-9-4z"/><path d="m3 7 9 4 9-4M12 11v10"/>',
-    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', chat: '<path d="M4 5h16v11H9l-5 4z"/>', cart: '<path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', heart: '<path d="M12 20s-7-4.4-9-9a4.7 4.7 0 0 1 9-3 4.7 4.7 0 0 1 9 3c-2 4.6-9 9-9 9z"/>',
-    ok: '<path d="m5 12.5 4.5 4.5L19 7.5"/>', leaf: '<path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M5 19 13 11"/>', help: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>', star: '<path d="M12 2.6l2.7 6 6.6.7-4.9 4.4 1.4 6.5L12 16.9l-5.8 3.3 1.4-6.5-4.9-4.4 6.6-.7z"/>' };
-  var V2CAT = [["Flyer & Folder", "flyer", "/print/flyer"], ["Visitenkarten", "card", "/print/visitenkarten"], ["Plakate & Poster", "poster", "/print/plakate"], ["Banner & Planen", "banner", "/print/pvc-banner"],
-    ["Aufkleber & Etiketten", "sticker", "", "stickers-tapes"], ["Textilien", "shirt", "", "clothing-textile"], ["Werbetechnik", "rollup", "", "indoor-interior"], ["Werbeartikel", "gift", "", "gifts-merchandise-promotional"]];
-  var V2GRP = [["paper-print", "Papier & Druck"], ["outdoor-advertising", "Außenwerbung"], ["indoor-interior", "Innenwerbung & Interieur"], ["stickers-tapes", "Aufkleber & Klebebänder"], ["packaging-bags", "Taschen & Verpackungen"], ["gifts-merchandise-promotional", "Werbeartikel & Geschenke"], ["clothing-textile", "Bekleidung & Textil"]];
+  // Vorschau-Header baut print.html selbst (window.psV2, auch auf Hilfe/Ratgeber ohne dieses Skript) – hier nur Symbole und Shop-Anbindung
+  function v2Ic(d) { return window.psV2 ? window.psV2.ic(d) : ""; }
+  var V2I = (window.psV2 && window.psV2.I) || {};
   function v2Header() {
-    var hd = document.querySelector("header.nav"), inner = hd && hd.querySelector(".nav-inner"); if (!inner || hd.querySelector(".ps-v2q")) return;
-    document.documentElement.classList.add("ps-v2");
-    var top = document.createElement("div"); top.className = "ps-v2top";
-    top.innerHTML = '<div class="in"><ul><li>' + v2Ic(V2I.truck) + "Schnelle Lieferung in ganz Österreich</li><li>" + v2Ic(V2I.ok) + "Professionelle Druckqualität</li><li>" + v2Ic(V2I.leaf) + "Nachhaltige Materialien</li><li>" + v2Ic(V2I.help) + 'Persönlicher Support</li></ul><nav aria-label="Service"><a href="/print/hilfe#bonus">Geschäftskunden</a><i aria-hidden="true">|</i><a href="/kontakt?von=print">Kontakt</a><i aria-hidden="true">|</i><a href="/print/hilfe#faq">FAQ</a></nav></div>';
-    hd.insertBefore(top, inner);
-    var q = document.createElement("form"); q.className = "ps-v2q"; q.action = "/print"; q.method = "get"; q.setAttribute("role", "search");
-    q.innerHTML = v2Ic(V2I.search) + '<input type="search" name="q" placeholder="Produkt suchen (z. B. Flyer, Banner, Visitenkarten …)" aria-label="Produkt suchen" autocomplete="off" value="">';
-    q.addEventListener("submit", function (e) { var v = q.querySelector("input").value.trim(); if (!S || !S.cat) return; e.preventDefault(); S.q = v; S.group = ""; S.sub = ""; setPage("produkte"); });
-    var ic = document.createElement("div"); ic.className = "ps-v2ic";
-    ic.innerHTML = '<a href="/print?konto" data-acct-link>' + v2Ic(V2I.user) + '<span data-acct-label data-fix>Mein Konto</span></a><a href="/print?konto" data-v2saved>' + v2Ic(V2I.heart) + '<span>Merkzettel</span><b class="ps-cn" data-saved-n>0</b></a>' +
-      '<a href="/print?warenkorb" data-cart-link>' + v2Ic(V2I.cart) + '<span>Warenkorb</span><b class="ps-cn" data-cart-n hidden></b></a>';
-    ic.addEventListener("click", function (e) { var a = e.target.closest("[data-v2saved]"); if (!a || !S || !S.cat) return; e.preventDefault();
+    var hd = document.querySelector("header.nav"), q = hd && hd.querySelector(".ps-v2q"), ic = hd && hd.querySelector(".ps-v2ic"); if (!q) return;
+    q.addEventListener("submit", function (e) { var v = q.querySelector("input").value.trim(); if (!S || !S.cat) return; e.preventDefault(); S.q = v; S.group = ""; S.sub = ""; S.view = ""; setPage("produkte"); });
+    if (ic) ic.addEventListener("click", function (e) { var a = e.target.closest("[data-v2saved]"); if (!a || !S || !S.cat) return; e.preventDefault();
       if (S.me) { S.acct.tab = "saved"; S.view = "konto"; render(); window.scrollTo(0, 0); return; }
       if (!savedList().length) { toast("Noch nichts gemerkt – tippe bei einem Produkt auf „Merken“."); return; }
       S.view = ""; setPage("home"); setTimeout(function () { var x = document.querySelector(".ps-savhome"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); });
-    var brand = inner.querySelector(".brand"); if (brand) { brand.classList.add("ps-v2brand"); brand.innerHTML = '<img src="/logos/druckshop-logo-weiss.png" alt="FS Creative Druckshop" width="705" height="195">'; }   // neues Druckshop-Logo (Simon 04.11.2026), weiße Schrift für den dunklen Kopf
-    inner.insertBefore(q, brand ? brand.nextSibling : inner.firstChild); inner.insertBefore(ic, q.nextSibling);
-    var xn = document.querySelector(".nav-links [data-xnav]");
-    var cat = document.createElement("nav"); cat.className = "ps-v2cat"; cat.setAttribute("aria-label", "Kategorien");
-    cat.innerHTML = '<div class="in"><div class="ps-v2all"><button type="button" class="all" aria-expanded="false" aria-haspopup="true">' + v2Ic(V2I.grid) + 'Alle Produkte<svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="ps-v2dd" hidden>' +
-      V2GRP.map(function (g) { return '<a href="/print?kategorie=' + g[0] + '" data-nav="produkte" data-navgroup="' + g[0] + '">' + esc(g[1]) + "</a>"; }).join("") + '<a class="tot" href="/print?produkte" data-nav="produkte">Alle Produkte ansehen →</a></div></div>' +
-      V2CAT.map(function (c) { return c[2] ? '<a href="' + c[2] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>" : '<a href="/print?kategorie=' + c[3] + '" data-nav="produkte" data-navgroup="' + c[3] + '">' + v2Ic(V2I[c[1]]) + esc(c[0]) + "</a>"; }).join("") + (xn ? '<a class="xm" href="/print/weihnachten">' + v2Ic(V2I.star) + "Weihnachten</a>" : "") + "</div>";
-    var allB = cat.querySelector(".ps-v2all .all"), dd = cat.querySelector(".ps-v2dd"), ddSet = function (on) { dd.hidden = !on; allB.setAttribute("aria-expanded", String(on)); };
-    allB.addEventListener("click", function (e) { e.stopPropagation(); ddSet(dd.hidden); });
-    document.addEventListener("click", function (e) { if (!dd.hidden && !e.target.closest(".ps-v2all")) ddSet(false); if (e.target.closest(".ps-v2dd a")) ddSet(false); });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !dd.hidden) { ddSet(false); allB.focus(); } });
-    hd.appendChild(cat);
     try { headUpdate(); } catch (e) {}
   }
   // ── Vorschau neue Startseite: Slider auf Bildschirmbreite, Vorteile-Leiste, beliebte Kategorien mit Bildern ──
