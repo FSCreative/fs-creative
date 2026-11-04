@@ -945,7 +945,7 @@ module.exports = function (D) {
     Object.keys(used).filter(k => !ms.some(m => m.slug === k)).forEach(k => out.push({ slug: k, name: groupName(k), img: "", subs: Object.keys(used[k]).map(x => ({ slug: x, name: groupName(x) })) }));
     return out;
   }
-  function sidesOf(sel) { const t = String(sel.printtype || ""); const m = t.match(/^(\d)(\d)$/); return m && m[2] !== "0" ? 2 : 1; }
+  function sidesOf(sel) { const t = String(sel.printtype || ""); const m = t.match(/^(\d)(\d)(?:_|$)/); return m && m[2] !== "0" ? 2 : 1; }   // auch „55_full_color_plus_white“, „40_pms“
   // Mehrseitige Produkte (Broschüren, Bücher, Kalender): benötigte PDF-Seiten laut Auswahl „pages“ (inkl. Umschlag) bzw. „N Blätter“ (× 2 bei beidseitigem Druck)
   function pagesOf(prod, all) {
     const pr = prod.props.find(x => x.slug === "pages"), v = all.pages != null ? all.pages : all.number_of_pages; if (v == null) return null;
