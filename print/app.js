@@ -1396,7 +1396,7 @@
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + " " + U() + '"></label>'; }
     var ur = urTile(p);
-    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">' + (U(p) === "m" ? "Länge" : "Auflage") + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + meterHint(p) + "</div>" + ur + motHtml();
+    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">' + (U(p) === "m" ? "Länge" : "Auflage") + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + meterHint(p) + "</div>" + motHtml() + ur   // Motive direkt unter der Auflage, Lieferung/Kalender immer zuletzt (Simon 04.11.2026);
   }
   // Produktion: Schnell/Express nur zeigen, wenn sie wirklich früher liefern als eine günstigere Stufe (Termine kommen über /print/api/deltas)
   var UR_ORD = ["standard", "quick", "urgent"];
