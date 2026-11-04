@@ -1738,7 +1738,7 @@
       '<g class="tx"><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 10) + '" width="' + Math.min(70, W - 2 * ps - 16) + '" height="6" rx="3"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 22) + '" width="' + Math.min(110, W - 2 * ps - 16) + '" height="4" rx="2"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 31) + '" width="' + Math.min(90, W - 2 * ps - 16) + '" height="4" rx="2"/></g></svg>';
   }
   function reqHtml(open) {
-    var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = +p.safe || 3, dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
+    var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = p.imprint ? 0 : +p.safe || 3, dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
     if (!sz) return "";
     var fileW = sz.w + 2 * b, fileH = sz.h + 2 * b, unit = function (v) { return big && v >= 1000 ? mmF(v / 10) + " cm" : mmF(v) + " mm"; };
     var pgN = pagesNeeded(), pagesTxt = pgN ? "<b>" + pgN + " Seiten in einer PDF</b> (inkl. Umschlag) – Einzelseiten in Leserichtung, keine Doppelseiten: Seite 1 = Titel, Seite " + pgN + " = Rückseite; leere Seiten bitte mitzählen"
@@ -1752,7 +1752,13 @@
       ["🔤", "Schriften", "In der PDF <b>einbetten</b> oder in Pfade umwandeln; Schriftgröße ab " + (big ? "20 pt" : "6 pt") + ", feine Linien ab 0,25 pt"],
       ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 50 MB · keine Schnittmarken"]
     ];
-    var spi = spotItem(); if (spi) items.splice(5, 0, spi);
+    // Aufdruck (Werbeartikel, Taschen, Textil, Tampon-/Siebdruck): Druckfläche statt Endformat, kein Beschnitt, kein Sicherheitsabstand
+    if (p.imprint) { var pms = /pantone|sonderfarbe/i.test(labelOf("printtype") || "");
+      items = [["📏", "Druckfläche", "<b>max. " + unit(sz.w) + " × " + unit(sz.h) + "</b> – dein Motiv in dieser Größe oder kleiner anlegen, <b>ohne Beschnitt</b>; wir platzieren es mittig in der Druckfläche"],
+        ["✒️", "Logo", "Am besten als <b>Vektor</b> (PDF, AI, EPS oder SVG); Schriften in Pfade umwandeln, feine Linien ab 0,3 pt" + (pms ? ". Fotos und Farbverläufe sind im " + esc(labelOf("printtype")) + " nicht möglich" : "")],
+        ["🎨", "Farben", pms ? "<b>Pantone-Farben</b> laut gewählter Farbanzahl – bitte die Pantone-Nummern in der Datei angeben" : "<b>CMYK</b> anlegen – RGB wird beim Druck umgerechnet"],
+        ["📦", "Datei", "<b>PDF</b> mit nur dem Motiv – ohne Hintergrundfläche, ohne Rahmen und Schnittmarken · max. 50 MB"]]; }
+    var spi = spotItem(); if (spi && !p.imprint) items.splice(5, 0, spi);
     var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
@@ -1941,7 +1947,7 @@
   function pfvRender() {
     var box = document.getElementById("psPfv"); if (!box || !S.file) return; var f = S.file, key = f.fileId + (S.pfvOff ? ":0" : ":1"), c = box.querySelector(".ps-pfv-c");
     if (PFV[key]) { c.innerHTML = PFV[key].html; document.getElementById("psPfvW").innerHTML = PFV[key].warn; return; }
-    var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = S.prod.safe || 3;
+    var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = S.prod.imprint ? 0 : S.prod.safe || 3;
     if (!trim) { c.textContent = ""; return; }
     pdfjs().then(function (L) { return L.getDocument({ url: "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1", withCredentials: true }).promise; }).then(function (doc) {
       var n = Math.min(doc.numPages, 2), jobs = []; for (var i = 1; i <= n; i++) jobs.push(doc.getPage(i));
@@ -2018,7 +2024,7 @@
   }
   // ── Druck auf dem Produkt: Produktfoto mit Motiv/Logo in der Druckfläche (Textil, Werbeartikel, Taschen) bzw. Blatt-Vorschau (Papier) ──
   var PMK = {};
-  function onPhoto() { var k = kind(); return (k === "textile" || k === "promo" || !!S.prod.dimsArea) && galImgs(S.prod).length > 0; }
+  function onPhoto() { var k = kind(); return (k === "textile" || k === "promo" || (!!S.prod.dimsArea && !S.prod.generic)) && galImgs(S.prod).length > 0; }   // allgemeine Produkte: Lage auf dem Foto unbekannt → keine Montage (Simon 04.11.2026: Vorschauen falsch)
   function pmkSides() { return !isLogo() && sides() === 2 && !(S.price && S.price.folds) && S.file && (S.file.pages || 0) >= 2 && !S.file.needBack; }
   function pmkHtml() { var sd = pmkSides() ? '<div class="ps-pmk-sd" role="group" aria-label="Seite">' + sideNames().map(function (n, i) { return '<button type="button" data-pmkside="' + i + '" aria-pressed="' + ((S.pmkSide || 0) === i) + '">' + n + "</button>"; }).join("") + "</div>" : "";
     return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div>' + sd + '<div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }

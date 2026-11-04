@@ -160,7 +160,7 @@ const PUB_MORE = [
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("22" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("23" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -672,6 +672,11 @@ module.exports = function (D) {
       // Weißdruck (Print.com blendet „white_print“ aus): bei Druck „Farbe + Weiß“ (5/…) muss er mit, sonst gibt es keinen Preis (Acrylglas, Fotokacheln …)
       white: by.white_print && !exposed.some(x => x.slug === "white_print") && fixed.white_print == null ? (wo => ({ yes: wo.find(v => !NONE_SLUG.test(v)) || "", no: wo.find(v => NONE_SLUG.test(v)) || "" }))((by.white_print.options || []).map(o => String(o.slug))) : null,
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
+    // Aufdruck statt Drucksache (Wunsch Simon 04.11.2026, z. B. Sonnenbrille: 65 × 8 mm auf dem Bügel): Werbeartikel, Taschen, Textilien, Produkte mit Druckposition
+    // oder reinem Pantone-/Tampondruck → Maße sind die Druckfläche, kein Beschnitt, kein Sicherheitsabstand (sonst „Datei mit Beschnitt 69 × 12 mm“)
+    if (kind === "flat" && c.generic) { const mainC = (prod.cat && prod.cat.main) || "", pt = by.printtype && (by.printtype.options || []).map(o => String(o.slug));
+      const pantoneOnly = pt && pt.length && !pt.some(v => /^(4\d|5\d)$|full_color|cmyk/i.test(v)), hasPos = Object.keys(by).some(k => /print(ing)?_position|imprint_position|print_side/.test(k));
+      if (/^(gifts-merchandise-promotional|packaging-bags|clothing-textile)$/.test(mainC) || hasPos || pantoneOnly) { prod.imprint = true; prod.bleed = 0; prod.safe = 0; if (prod.dims) prod.dimsArea = true; } }
     prod.excludes = (Array.isArray(pd.excludes) ? pd.excludes : []).filter(Array.isArray).slice(0, 600).map(rule => rule.filter(x => x && x.property && Array.isArray(x.options)).map(x => ({ property: String(x.property), options: x.options.map(o => String(o && typeof o === "object" ? o.slug : o)) }))).filter(r => r.length);
     // Vorauswahl: bevorzugte Optionen zuerst (kuratiert bzw. Papier 115–170 g Bilderdruck), dann die erste Kombination ohne Ausschluss
     const pref = c.prefer || {}, paper = c.paper !== undefined ? c.paper : kind === "flat" ? [115, 170] : null;
@@ -902,7 +907,7 @@ module.exports = function (D) {
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
-      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g), bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
+      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g), bleed: p.bleed, safe: p.safe, imprint: !!p.imprint, generic: !!p.generic, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
@@ -1502,10 +1507,10 @@ module.exports = function (D) {
   const TPL_CACHE = new Map();
   async function templatePdf(prod, n) {
     const PDFDocument = require("pdfkit");
-    const bleed = n.kind === "textile" || n.kind === "promo" ? 0 : +prod.bleed || 0, safe = +prod.safe || 3;
+    const bleed = n.kind === "textile" || n.kind === "promo" || prod.imprint ? 0 : +prod.bleed || 0, safe = prod.imprint ? 0 : +prod.safe || 3;
     const shapeTxt = (n.labels || []).map(l => l[1]).join(" "), round = /\b(rund|kreis|oval|round|circle)/i.test(shapeTxt) && !/eckig/i.test(shapeTxt);
     const sheets = [];
-    if (n.size) { const sd = n.folds ? 2 : Math.max(1, Math.min(2, n.sides || 1)); for (let i = 0; i < sd; i++) sheets.push({ w: n.size.w, h: n.size.h, b: bleed, title: n.folds ? (i ? "Innenseite" : "Außenseite") : sd > 1 ? (i ? "Rückseite" : "Vorderseite") : "Motiv", side: i }); }
+    if (n.size) { const sd = n.folds ? 2 : Math.max(1, Math.min(2, n.sides || 1)); for (let i = 0; i < sd; i++) sheets.push({ w: n.size.w, h: n.size.h, b: bleed, title: n.folds ? (i ? "Innenseite" : "Außenseite") : sd > 1 ? (i ? "Rückseite" : "Vorderseite") : "Motiv", side: i, area: !!prod.imprint }); }
     else (n.positions || []).forEach(p => { if (p.area) sheets.push({ w: p.area[0], h: p.area[1], b: 0, title: "Druckfläche " + p.title, side: 0, area: true }); });
     if (!sheets.length) throw Object.assign(new Error("Für dieses Produkt gibt es keine feste Vorlage – lade einfach dein Motiv hoch, wir prüfen es."), { status: 404 });
     const doc = new PDFDocument({ autoFirstPage: false, margin: 0, info: { Title: "Druckvorlage " + prod.title, Author: "FS Creative", Producer: "FS Creative Druckshop", Subject: "Hilfslinien für Endformat, Beschnitt, Sicherheitsabstand und Falz" } });
