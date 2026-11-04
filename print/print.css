@@ -1979,3 +1979,17 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .pd-tsprice b{font-size:15px}
 
 .ps-bonus-tag.best{color:var(--text-dim)}
+
+/* Liefertermin als Kalender Mo–So (Variante B, 04.11.2026) */
+.ps-urk{grid-column:1/-1;border:1px solid var(--ps-line2);border-radius:12px;overflow:hidden}
+.ps-urk .hd,.ps-urk .wk{display:grid;grid-template-columns:repeat(5,1fr) .55fr .55fr}
+.ps-urk .hd span{font-size:12px;color:var(--text-dim);text-align:center;padding:7px 0;border-bottom:1px solid var(--ps-line)}
+.ps-urk .c{min-height:58px;padding:6px 7px;border-right:1px solid var(--ps-line);border-bottom:1px solid var(--ps-line);display:flex;flex-direction:column;justify-content:space-between;font-size:12px}
+.ps-urk .wk .c:nth-child(7){border-right:0}.ps-urk .wk:last-child .c{border-bottom:0}
+.ps-urk .c .n{font-weight:600;font-size:14.5px;color:var(--text)}.ps-urk .c .n small{font-weight:400;color:var(--text-dim);font-size:11px;margin-left:3px}
+.ps-urk .c .pp{display:flex;align-items:center;gap:4px;font-weight:600;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text)}
+.ps-urk .c.past,.ps-urk .c.none,.ps-urk .c.we{background:rgba(127,127,127,.06)}.ps-urk .c.past .n,.ps-urk .c.none .n,.ps-urk .c.we .n{color:var(--text-dim);opacity:.6}
+.ps-urk .c.has{cursor:pointer}.ps-urk .c.has:hover{background:var(--ps-chipon)}
+.ps-urk .c.on{background:rgba(10,132,255,.1);box-shadow:inset 0 0 0 2px var(--accent,#0a84ff)}
+.ps-urk-l{grid-column:1/-1;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-dim);margin:8px 0 4px}.ps-urk-l span{display:flex;align-items:center;gap:5px}
+@media (max-width:560px){.ps-urk .c{min-height:50px;padding:4px}.ps-urk .c .pp{font-size:10.5px;gap:2px}.ps-urk .c .n small{display:none}.ps-urk .c .pp .d{display:none}}

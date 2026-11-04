@@ -1431,9 +1431,15 @@
     var WD = ["So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."], MO = ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."];
     var chips = '<div class="ps-urc">' + opts.map(function (o) { var on = o.slug === S.urgency && !(S.price && S.price.wish);
       return '<button type="button" class="' + (on ? "on" : "") + '" data-ddpick="urgency|' + esc(o.slug) + '" aria-pressed="' + on + '"><i class="d ' + o.c + '"></i><b>' + esc(o.name) + "</b>" + (o.price != null ? '<span class="pr">' + eur(o.price) + "</span>" : '<span class="ps-spin"></span>') + (o.slug === S.urgency ? "" : dlSpan("urgency", { val: o.slug })) + "</button>"; }).join("") + "</div>";   // dlSpan: lädt Termine + Preise der anderen Produktionszeiten
-    var strip = '<div class="ps-urs" role="grid" aria-label="Liefertermine"><div class="ps-urs-r">' + days.map(function (d) { var k = iso(d), we = d.getDay() === 0 || d.getDay() === 6, o = by[k], on = k === selDay;
-      return '<div class="c' + (we ? " we" : "") + (o ? " has" : "") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-ddpick="urgency|' + esc(o.slug) + "|" + k + '"' : "") + '><span class="wd">' + WD[d.getDay()] + '</span><span class="dn">' + d.getDate() + '</span><span class="mo">' + MO[d.getMonth()] + "</span>" +
-        '<span class="pp">' + (o ? '<i class="d ' + o.c + '"></i>' + eur(on && cur != null ? cur : o.price) : "") + "</span></div>"; }).join("") + "</div></div>";
+    // Kalenderansicht Mo–So (Wunsch Simon 04.11.2026, Variante B): ganze Wochen ohne Scrollen, Preis im Tag, Farbpunkt = Produktionszeit, Wochenende schmal
+    var mon = new Date(start.getFullYear(), start.getMonth(), start.getDate() - ((start.getDay() + 6) % 7)), lastD = days[days.length - 1], cells = [];
+    for (var d1 = new Date(mon); d1 <= lastD || cells.length % 7; d1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate() + 1)) { cells.push(d1); if (cells.length > 42) break; }
+    var used = {}; Object.keys(by).forEach(function (k) { used[by[k].c] = 1; });
+    var strip = '<div class="ps-urk" role="grid" aria-label="Liefertermine"><div class="hd">' + ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(function (w) { return "<span>" + w + "</span>"; }).join("") + "</div>" +
+      [0, 1, 2, 3, 4, 5].filter(function (w) { return w * 7 < cells.length; }).map(function (w) { return '<div class="wk">' + cells.slice(w * 7, w * 7 + 7).map(function (d, j) { var k = iso(d), we = j > 4, o = by[k], on = k === selDay, past = d < start;
+        return '<div class="c' + (we ? " we" : "") + (past ? " past" : o ? " has" : " none") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-ddpick="urgency|' + esc(o.slug) + "|" + k + '" aria-label="' + WD[d.getDay()] + " " + d.getDate() + ". " + MO[d.getMonth()] + " – " + eur(on && cur != null ? cur : o.price) + '"' : "") + '><span class="n">' + d.getDate() + (j === 0 || d.getDate() === 1 ? "<small>" + MO[d.getMonth()] + "</small>" : "") + "</span>" +
+          (o ? '<span class="pp"><i class="d ' + o.c + '"></i>' + eur(on && cur != null ? cur : o.price) + "</span>" : "") + "</div>"; }).join("") + "</div>"; }).join("") + "</div>" +
+      '<div class="ps-urk-l">' + [["g", "Standard"], ["p", "Schnell"], ["y", "Express"]].filter(function (x) { return used[x[0]]; }).map(function (x) { return '<span><i class="d ' + x[0] + '"></i>' + x[1] + "</span>"; }).join("") + "</div>";
     return '<div class="ps-tile wide ps-urtile" data-urtile><span class="ps-tl">Lieferung</span>' + chips + strip + '<span class="ps-td">Lieferung frei Haus innerhalb Österreichs · Zustellung durch den Paketdienst, in Einzelfällen auch erst am darauffolgenden Werktag.</span></div>';
   }
 
