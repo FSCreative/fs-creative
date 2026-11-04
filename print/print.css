@@ -2047,6 +2047,8 @@ html.ps-v2.light header.nav .brand .mark img{content:url(/logos/gluehbirne-kopf.
 .ps-v2dd[hidden]{display:none}
 .ps-v2dd a{padding:10px 12px;border-radius:9px;color:#111827;text-decoration:none;font-size:14.5px}.ps-v2dd a:hover{background:#f1f5f9}.ps-v2dd a.tot{color:var(--accent);font-weight:600;border-top:1px solid #e5e7eb;border-radius:0 0 9px 9px;margin-top:4px}
 .ps-v2cat a.xm svg{color:#e0a100}
+html.ps-v2 header.nav .brand.ps-v2brand{display:block;flex:none;align-self:center;height:auto}html.ps-v2 header.nav .brand.ps-v2brand img{display:block;height:62px;width:auto}
+@media (max-width:640px){html.ps-v2 header.nav .brand.ps-v2brand img{height:42px}}
 /* Startseite */
 .ps-v2hero{width:100vw;margin-left:calc(50% - 50vw);margin-top:calc(-1 * clamp(8px,2vw,24px))}
 .ps-v2hero .ps-xsl{margin:0}
