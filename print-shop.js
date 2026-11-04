@@ -155,10 +155,12 @@ const PUB_MORE = [
   { key: "fabrics" }, { key: "custom-banner" }, { key: "flat-cubes" }, { key: "slipcases" }, { key: "chocolate-boxes" }, { key: "luxury-paper-bag" },
   { key: "t-shirt-budget-8" }, { key: "t-shirt-budget-4" }, { key: "t-shirt-basic-3" }, { key: "t-shirt-budget-10" }, { key: "t-shirt-basic-workwear-1" }, { key: "polo-budget-2" },
   { key: "polo-budget-9" }, { key: "t-shirt-premium-5" },
+  // Pappaufsteller (Wunsch Simon 04.11.2026: Suchmaschinen, Google Shopping, KI)
+  { key: "lifesizers" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("21" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("22" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -1284,10 +1286,14 @@ module.exports = function (D) {
     // Ein Mitbewerberpreis hebt unseren Preis höchstens anchorRaiseMaxPct (Standard 25 %) über den normalen Aufschlag – eine teure Einzelquelle soll uns nicht teuer machen
     const mkp = b => Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping, raiseMax = s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25;
     const ancCap = b => { const a = ancOf(b); return a ? Math.min(a, mkp(b) * (1 + (ancX ? 0 : raiseMax) / 100)) : 0; };
-    const netOf0 = b => Math.max(floorA(b), ancCap(b) || mkp(b));
+    // Viel günstiger als der Mitbewerber (Wunsch Simon 04.11.2026, alle Artikel): liegt unser normaler Bruttopreis mehr als cheapBelowPct (45 %) unter dem Anker,
+    // rechnen wir mit cheapMarginPct (35 %) Marge vom Nettopreis – nie über dem Anker abzüglich Abstand, die 25-%-Grenze gilt hier nicht
+    const cheapB = s.cheapBelowPct != null && isFinite(+s.cheapBelowPct) ? +s.cheapBelowPct : 45, cheapM = s.cheapMarginPct != null && isFinite(+s.cheapMarginPct) ? +s.cheapMarginPct : 35;
+    const cheapOf = b => { const a = ancOf(b); if (!a || promoCap != null || mkp(b) * 1.2 >= (1 - cheapB / 100) * ancGross) return 0; return Math.min(a, (b.product + b.shipping) / (1 - cheapM / 100)); };
+    const netOf0 = b => Math.max(floorA(b), ancCap(b) || mkp(b), cheapOf(b));
     const capOf = b => Math.max(b.product * (1 + promoCap / 100) + b.shipping, (b.product + b.shipping + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100));
     // auf 10 Cent: aufrunden – nur ein Preis knapp unter dem Mitbewerber wird abgerundet, damit der Abstand nicht unter anchorGap fällt (Mindestmarge sichert netFin)
-    const netOf = b => { const v0 = netOf0(b), v = promoCap != null ? Math.min(v0, capOf(b)) : v0, a = ancCap(b); return (a && v === v0 && v0 === a ? Math.floor(v * 10 + 1e-6) : Math.ceil(v * 10 - 1e-6)) / 10; };
+    const netOf = b => { const v0 = netOf0(b), v = promoCap != null ? Math.min(v0, capOf(b)) : v0, a = Math.max(ancCap(b), cheapOf(b) === ancOf(b) ? ancOf(b) : 0); return (a && v === v0 && v0 === a ? Math.floor(v * 10 + 1e-6) : Math.ceil(v * 10 - 1e-6)) / 10; };
     const tax = taxFor(country, cust);
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
@@ -2876,7 +2882,15 @@ module.exports = function (D) {
       faq: [["Wo kann ich in Österreich Autoaufkleber drucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Autoaufkleber und Fahrzeugfolien in Wunschgröße ab 1 Stück – Preis sofort online, Versand in ganz Österreich inklusive."],
         ["Welche Folie ist die richtige für mein Auto?", "Für Türen, Heck und ebene Flächen reicht die Polymerfolie Orajet 3551 (ca. 5 Jahre), mit Luftkanal (RapidAir) lässt sie sich blasenfrei trocken verkleben. Für stark gewölbte Flächen ist die gegossene 3M-Fahrzeugfolie IJ280 gedacht, für befristete Aktionen die ablösbare Monomerfolie."],
         ["Brauche ich ein Schutzlaminat?", "Empfohlen für Fahrzeuge: Das Laminat Oraguard 215 (glänzend oder matt) schützt vor UV-Licht und Kratzern und verlängert die Haltbarkeit des Drucks."],
-        ["Welche Größe ist möglich?", "Wunschgröße ab 5 × 5 cm, bei der Polymerfolie bis 146 cm Breite und 750 cm Länge – der Preis wird für deine Größe sofort berechnet."]] }
+        ["Welche Größe ist möglich?", "Wunschgröße ab 5 × 5 cm, bei der Polymerfolie bis 146 cm Breite und 750 cm Länge – der Preis wird für deine Größe sofort berechnet."]] },
+    { id: "lifesizer", slug: "pappaufsteller-drucken", main: "indoor-interior", sub: "displays-pos-material", rx: /pappaufsteller|lifesizer|lebensgro|kartonaufsteller|pappfigur|aufsteller/i,
+      h: "Pappaufsteller & Kartonaufsteller", h1: "Lebensgroße Pappaufsteller drucken – in deiner Form, ab 1 Stück",
+      title: "Pappaufsteller drucken lassen – lebensgroß in Wunschform | FS Creative", desc: "Lebensgroße Pappaufsteller in Wunschgröße und eigener Form: 2 mm Displaykarton, 10 oder 16 mm Re-Board, Konturschnitt, ein- oder beidseitig bedruckt – ab 1 Stück, Versand in Österreich inklusive.",
+      txt: "Lebensgroße Pappaufsteller und Kartonaufsteller in Wunschgröße, entlang deiner Form konturgeschnitten (eine zusammenhängende Kontur, z. B. Person, Maskottchen oder Produkt): 2 mm Displaykarton weiß/weiß für leichte Aufsteller, 10 mm oder 16 mm Re-Board® Sandwichplatte für robuste, leichte Displays. Druck einseitig (4/0) oder beidseitig (4/4) im UV-Großformatdruck. Für die Druckdatei zeichnest du den Umriss als durchgehende Linie in der Sonderfarbe „Thrucut“ (Überdrucken) und ziehst dein Design rundum 10 mm über die Linie hinaus – die offizielle Druckvorlage gibt es direkt im Konfigurator. Passendes Zubehör wie Kartonstützen und Fußplatten findest du beim Produkt.",
+      faq: [["Wo kann ich in Österreich einen lebensgroßen Pappaufsteller drucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Pappaufsteller in Wunschgröße und eigener Form ab 1 Stück – Preis sofort online, Versand in ganz Österreich inklusive."],
+        ["Wie lege ich die Kontur für den Aufsteller an?", "Zeichne den Umriss der Platte als durchgehende, geschlossene Vektorlinie, gib ihr die Sonderfarbe „Thrucut“ und stelle sie auf Überdrucken. Das Design rundum 10 mm über die Linie hinaus anlegen (Beschnitt)."],
+        ["Welches Material ist das richtige?", "2 mm Displaykarton ist leicht und günstig für kurze Aktionen. 10 mm oder 16 mm Re-Board® ist eine stabile Sandwichplatte für Messen, Geschäfte und längeren Einsatz."],
+        ["Wie steht der Aufsteller?", "Mit einer Kartonstütze auf der Rückseite oder mit Fußplatten – passendes Zubehör wird direkt beim Produkt angezeigt."]] }
   ];
   const topicOf = (main, sub) => LLM_TOPICS.find(t => t.main === main && t.sub === sub) || null;
   // sprechende Adresse je Thema (/print/t-shirts-bedrucken …) – Kanonische Adresse der Kategorie, in Sitemap, IndexNow und llms.txt; im Browser zeigt die App dieselbe Kategorie
