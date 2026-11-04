@@ -158,7 +158,7 @@ const PUB_MORE = [
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("19" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("20" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -640,7 +640,7 @@ module.exports = function (D) {
     if (!sizeLabel && fixed.size && by.size) { const so = (by.size.options || []).find(o => o && String(o.slug) === fixed.size); if (so && so.name && !/^custom$/i.test(so.slug)) sizeLabel = clip(String(so.name), 80); }
     // Sehr große bzw. extrem lange Formate (z. B. 20 m × 76 cm): Großformat-Auflösung, kein Online-Designer (nur Datei-Upload, Maßstab 1:10)
     const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10), large = dims && Math.max(dims[0], dims[1]) >= 1000;
-    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null, safe: c.safe || 3, sku: String(sku),
+    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null && !/shape|complex|simple|die_?cut|thru_?cut|contour/i.test(String(fixed.custom_shape || "").replace(/^clean_cut$/, "")), safe: c.safe || 3, sku: String(sku),
       bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
       props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       // Weißdruck (Print.com blendet „white_print“ aus): bei Druck „Farbe + Weiß“ (5/…) muss er mit, sonst gibt es keinen Preis (Acrylglas, Fotokacheln …)
