@@ -540,7 +540,7 @@
   function ddHtml(key, title, items, cur) {
     DDI[key] = items;
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key, col = S.step === 2 && !S.view;   // Ausführung: jede Zeile startet eingeklappt (aktuelle Wahl + „Ändern“)
-    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + (col && c.sub ? " <small>" + esc(c.sub) + "</small>" : "") + '</span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>";
+    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + (col && (c.sub || c.plain) ? " <small>" + esc([c.sub, c.plain].filter(Boolean).join(" · ")) + "</small>" : "") + '</span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>";
     if (col && !open) return btn;
     if (col) return btn + optPanel(key, title, items, cur);
     if (items.length <= 4 && key !== "copies") return (col ? btn : "") + '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
@@ -662,9 +662,25 @@
     if (g && pr.slug === "material") { var w = +g[1]; d = (d ? d + " " : "") + (w <= 100 ? "Mit " + w + " g/m² leicht und dünn – gut für große Auflagen, Beilagen und Handzettel." : w <= 150 ? "Mit " + w + " g/m² die klassische Flyer-Stärke: stabil genug, angenehm in der Hand." : w <= 200 ? "Mit " + w + " g/m² spürbar fester – wirkt hochwertiger, ideal für Plakate und edlere Flyer." : w <= 300 ? "Mit " + w + " g/m² ein leichter Karton – für Postkarten, Umschläge und Karten." : "Mit " + w + " g/m² ein fester Karton – typisch für Visitenkarten und hochwertige Karten."); }
     return d;
   }
+  // „Einfach erklärt“ (Wunsch Simon: für Leute, die sich nicht auskennen): kurze Alltagsvergleiche unter der aktuellen Wahl – Format, Papierstärke/-oberfläche, Veredelung
+  var A_FMT = [[841, 1189, "riesiges Plakat"], [594, 841, "großes Plakat"], [420, 594, "Poster-Größe"], [297, 420, "doppelt so groß wie A4"], [210, 297, "so groß wie ein normales Blatt Papier"], [148, 210, "halbe A4-Seite – der Flyer-Klassiker"], [105, 148, "Postkartengröße"], [74, 105, "kleiner als eine Postkarte"], [99, 210, "passt ins normale Briefkuvert"], [55, 85, "Scheckkartengröße"]];
+  function plainOf(pr, o) {
+    var n = String(o.name || "") + " " + o.slug;
+    if (pr.slug === "size" && o.w && o.h) { var a = Math.min(o.w, o.h), b = Math.max(o.w, o.h);
+      for (var i = 0; i < A_FMT.length; i++) if (Math.abs(a - A_FMT[i][0]) <= 2 && Math.abs(b - A_FMT[i][1]) <= 2) return A_FMT[i][2];
+      return Math.abs(a - b) <= 2 ? "quadratisch" : ""; }
+    if (pr.slug === "material") { var g = n.match(/(\d{2,4})\s*g/), w = g ? +g[1] : 0; if (!w) return "";
+      var t = w <= 90 ? "dünn wie Prospektpapier" : w <= 120 ? "etwas fester als Druckerpapier" : w <= 170 ? "typische Flyer-Stärke" : w <= 250 ? "fest, wie dünner Karton" : w <= 350 ? "steif wie eine Postkarte" : "sehr steif, wie eine dicke Visitenkarte";
+      var f = /gl(ä|a)nz|gloss/i.test(n) ? "glänzend, Farben leuchten" : /matt|silk|satin/i.test(n) ? "matt, edel und beschreibbar" : /ungestrichen|offset|natur|recycl/i.test(n) ? "natürlich, gut beschreibbar" : "";
+      return t + (f ? " · " + f : ""); }
+    if (pr.slug === "finish") { if (NONE_RX.test(String(o.name).trim()) || /^(geen|keine?|ohne|none)\b/i.test(n)) return "ohne Schutzfolie – günstigste Variante";
+      if (/soft.?touch/i.test(n)) return "samtig-weiche Folie, fühlt sich edel an"; if (/cellophan|lamination|kaschier/i.test(n)) return "dünne Schutzfolie – robuster und edler";
+      if (/uv.?lack|spot/i.test(n)) return "glänzender Lack-Effekt"; }
+    return "";
+  }
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
-    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", more: !!o.more, group: gname(o) };
+    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), plain: plainOf(pr, o), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", more: !!o.more, group: gname(o) };
       if (pr.slug === "size" && o.w && o.h && !/\d\s*[x×]\s*\d/.test(o.name)) it.sub = fmtSize(o.w, o.h);
       if (pr.slug === "size" && o.slug === S.sel.size && S.price && S.price.folds && S.price.size) it.sub = (it.sub ? it.sub + " · " : "") + "offen " + fmtSize(S.price.size.w, S.price.size.h);
       if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + C0.minW / f0 + " × " + C0.minH / f0 + " bis " + C0.maxW / f0 + " × " + C0.maxH / f0 + " " + C0.unit; if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
@@ -1574,6 +1590,7 @@
     var body = (lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return "<p>" + esc(x.replace(/[#*_]+/g, "")) + "</p>"; }).join("")) + (bul.length ? "<ul>" + bul.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : "");
     // Produkttext immer sichtbar (Anfang), alles Weitere von Print.com eingeklappt darunter
     var paras = lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return x.replace(/[#*_]+/g, ""); }), headN = 0, len = 0;
+    if (!bul.length) paras = paras.map(function (x) { return /:\s*$/.test(x) ? x.replace(/(^|[.!?])\s*[^.!?]*:\s*$/, "$1").trim() : x; }).filter(Boolean);   // „Vorteile …:“ ohne Liste darunter abschneiden
     while (headN < paras.length && (headN === 0 || len + paras[headN].length < 380)) { len += paras[headN].length; headN++; }
     var head = paras.slice(0, headN), tail = paras.slice(headN), li = function (l) { return l.length ? "<ul>" + l.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : ""; };
     if (!lines.length) return '<div class="ps-about"><p>' + esc(lead(p.summary)) + "</p></div>";
@@ -1659,7 +1676,8 @@
     if (l.length < 2 && !lite && !todo.length) return "";
     return '<section class="ps-sec ps-pre" id="psPre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + l.map(function (x) { var pr = price(x.sel), on = isOn(x.sel);
       return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + (lite ? '<div class="ps-preb ps-prepc"><span class="pi" aria-hidden="true">🖥️</span><b>Weitere Optionen</b><small>Alle Papiere, Formate und Veredelungen findest du am PC.</small><button type="button" class="ps-link" data-act="moball">Hier alle zeigen</button></div>' : "") + "</div>" +
-      '<p class="ps-pre-more">' + (lite ? "Unten siehst du die beliebtesten Optionen – Format, Papier, Veredelung und Auflage." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.") + "</p></section>";
+      '<p class="ps-pre-more">' + (lite ? "Unten siehst du die beliebtesten Optionen – Format, Papier, Veredelung und Auflage." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.") + "</p>" +
+      '<p class="ps-newbie"><span aria-hidden="true">👋</span> <span><b>Neu beim Drucken?</b> Die Vorauswahl passt für die meisten – einfach auf „Weiter zur Gestaltung“. Dort lädst du deine Datei hoch, gestaltest online oder lässt uns gestalten. Unsicher? <a class="ps-link" href="#" data-chat-open>Frag uns im Chat</a>.</span></p></section>';
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
@@ -1674,7 +1692,7 @@
       (more.length ? '<div class="ps-cfg-th">' + more.slice(0, 4).map(function (u, i) { var rest = i === 3 && more.length > 4 ? more.length - 3 : 0;   // max. 4 kleine Bilder, auf dem vierten „+N“ (Wunsch Simon 04.11.2026)
         return '<button type="button" data-galpop="' + (i + 1) + '" aria-label="' + (rest ? "Alle " + im.length + " Bilder ansehen" : "Bild " + (i + 2) + " ansehen") + '"><img src="' + esc(String(u).replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy">' + (rest ? "<span>+" + rest + "</span>" : "") + "</button>"; }).join("") + "</div>" : "") + "</div>" : "";
     var fct = facts(p), sz = sizeOf(), b0 = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
-    var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Datei mit " + b0 + " mm Beschnitt (" + (sz.w + 2 * b0) + " × " + (sz.h + 2 * b0) + " mm)" : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
+    var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Eigene Datei: bitte rundherum " + String(b0).replace(".", ",") + " mm mehr Hintergrund anlegen, der beim Schneiden wegfällt (" + mmF(sz.w + 2 * b0) + " × " + mmF(sz.h + 2 * b0) + " mm)" + (p.designer ? " – im Online-Designer automatisch" : "") : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
     return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h2>' + esc(p.title) + '</h2><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + cfgBarHtml() + "</div></div>" +
       (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) + accHtml(p) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +

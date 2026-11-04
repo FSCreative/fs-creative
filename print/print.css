@@ -904,6 +904,7 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-prepc{cursor:default;border-style:dashed;background:transparent}.ps-prepc:hover{transform:none;border-color:var(--ps-line2)}.ps-prepc .pi{background:var(--surface)}.ps-prepc .ps-link{margin-top:auto;padding:0;font-size:13.5px}
 .ps-morepc{display:block;margin-top:6px}.ps-morepc .ps-link{padding:0;font-size:inherit}
 .ps-pre-more{margin:10px 0 0;font-size:13.5px;color:var(--text-dim)}
+.ps-newbie{display:flex;gap:10px;align-items:flex-start;margin:12px 0 0;padding:11px 14px;border-radius:12px;background:rgba(47,107,255,.08);border:1px solid rgba(47,107,255,.22);font-size:13.5px;line-height:1.5;color:var(--text-dim)}.ps-newbie b{color:var(--text)}
 @media(max-width:640px){.ps-pres{grid-template-columns:1fr}.ps-preb{display:grid;grid-template-columns:30px 1fr auto;column-gap:10px;align-items:center}.ps-preb .pi{grid-row:span 2;margin:0}.ps-preb b{grid-column:2}.ps-preb small{grid-column:2;min-height:0}.ps-preb .pp{grid-column:3;grid-row:1/span 2;margin:0;font-size:17px}.ps-preb .ck{position:static;grid-column:2}}
 .ps-modes{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important}
 .ps-mode-agency{text-decoration:none;color:inherit;border-style:dashed!important;font:inherit;text-align:left;cursor:pointer}
