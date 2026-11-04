@@ -1508,10 +1508,13 @@ module.exports = function (D) {
           row.official = (await workfileList(prod, n).catch(e => { row.wfErr = String(e.message || e).slice(0, 120); if (e.status === 429 || /429/.test(row.wfErr)) TPL_AUDIT.stop = true; return []; })).map(f => f.name);
           if (n && prod.kind !== "textile" && prod.kind !== "promo") { try { const t = await templatePdf(prod, n); row.own = t.sheets.map(x => Math.round(x.w) + "×" + Math.round(x.h) + (x.b ? "+" + x.b : "") + (x.area ? " Fläche" : "")).join(", "); row.folds = n.folds ? n.folds.slug : ""; } catch (e) { row.ownErr = String(e.message || e).slice(0, 120); } }
         } catch (e) { row.err = String(e.message || e).slice(0, 120); }
-        finally { TPL_AUDIT.rows.push(row); TPL_AUDIT.done++; await new Promise(r => setTimeout(r, 3000)); }   // langsam: Kundenanfragen haben Vorrang
+        finally { TPL_AUDIT.rows.push(row); TPL_AUDIT.done++; if (TPL_AUDIT.done % 25 === 0) await tplAuditSave(); await new Promise(r => setTimeout(r, 3000)); }   // langsam: Kundenanfragen haben Vorrang
       }
-    } finally { TPL_AUDIT.busy = false; }
+    } finally { TPL_AUDIT.busy = false; await tplAuditSave(); }
   }
+  // Ergebnisse überleben Neustarts; geplanter Start (z. B. abends) über print_tplaudit_plan
+  async function tplAuditSave() { await store.setMeta("print_tplaudit", { at: TPL_AUDIT.at, done: TPL_AUDIT.done, total: TPL_AUDIT.total, stopped: !!TPL_AUDIT.stop, rows: TPL_AUDIT.rows }).catch(() => {}); }
+  const tplPlanT = setInterval(async () => { const pl = await store.getMeta("print_tplaudit_plan").catch(() => null); if (!pl || !pl.runAt || Date.parse(pl.runAt) > Date.now() || TPL_AUDIT.busy) return; await store.setMeta("print_tplaudit_plan", {}).catch(() => {}); tplAuditRun().catch(() => {}); }, 60e3); if (tplPlanT.unref) tplPlanT.unref();
   async function accessoryList(prod) {
     if (!prod.sku) return []; const hit = ACC_CACHE.get(prod.sku); if (hit && Date.now() - hit.at < 864e5) return hit.items;
     await accLoad(); const known = ACC_MAP.map && ACC_MAP.map[prod.sku];
@@ -4594,6 +4597,8 @@ module.exports = function (D) {
       if (p === "/admin/api/print/pcprobe") {   // Print.com-Abfragen zum Prüfen: Zubehör, Produktionsvorlage, Arbeitsdateien (nur Admin)
         const sku = String(b.sku || "x"); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
         try {
+          if (b.op === "tplauditplan") { const at = String(b.at || ""); if (!Date.parse(at)) return J(res, 400, { ok: false, error: "at" }); await store.setMeta("print_tplaudit_plan", { runAt: new Date(at).toISOString() }); return J(res, 200, { ok: true, runAt: new Date(at).toISOString() }); }
+          if (b.op === "tplauditsaved") return J(res, 200, Object.assign({ ok: true, plan: await store.getMeta("print_tplaudit_plan").catch(() => null) }, (await store.getMeta("print_tplaudit").catch(() => null)) || {}));
           if (b.op === "tplauditstop") { TPL_AUDIT.stop = true; return J(res, 200, { ok: true }); }
           if (b.op === "tplaudit") { tplAuditRun().catch(() => {}); return J(res, 200, { ok: true, started: true }); }
           if (b.op === "tplauditstate") return J(res, 200, { ok: true, busy: TPL_AUDIT.busy, at: TPL_AUDIT.at, done: TPL_AUDIT.done, total: TPL_AUDIT.total, rows: b.rows ? TPL_AUDIT.rows : undefined });
