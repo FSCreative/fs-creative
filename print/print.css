@@ -1993,3 +1993,5 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .ps-urk .c.on{background:rgba(10,132,255,.1);box-shadow:inset 0 0 0 2px var(--accent,#0a84ff)}
 .ps-urk-l{grid-column:1/-1;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-dim);margin:8px 0 4px}.ps-urk-l span{display:flex;align-items:center;gap:5px}
 @media (max-width:560px){.ps-urk .c{min-height:50px;padding:4px}.ps-urk .c .pp{font-size:10.5px;gap:2px}.ps-urk .c .n small{display:none}.ps-urk .c .pp .d{display:none}}
+
+.ps-remrow{display:flex;flex-wrap:wrap;gap:4px 14px}

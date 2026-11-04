@@ -857,7 +857,7 @@
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
     return a || b ? '<p class="ps-social">' + [a, b].filter(Boolean).join(" · ") + "</p>" : ""; }
   function trustHtml() { return '<ul class="ps-trust"><li>Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>Datencheck inklusive</li><li>Persönlich erreichbar – aus dem Montafon</li></ul>' +
-    '<button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button>'; }
+    '<div class="ps-remrow"><button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button><button type="button" class="ps-link ps-remb" data-act="cfglink">🔗 Link kopieren</button></div>'; }
   function rememberPop() { var exit = false;
     var p = S.prod, pr = S.price; if (!p) return; var co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "", link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
     var labels = (pr && pr.labels ? pr.labels : []).map(function (l) { return l[0] + ": " + l[1]; }), me = S.me || {}, cu = S.customer || {}, back = document.activeElement;
@@ -868,11 +868,12 @@
       '<label class="ps-cb"><input type="checkbox" id="rmRem"><span>Erinnere mich morgen einmal daran (optional)</span></label>' +
       '<input type="text" id="rmHp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">' +
       '<p class="pd-muted" style="font-size:12.5px">Wir verwenden deine Adresse nur für diese Mail' + " (und die eine Erinnerung, falls gewählt) – kein Newsletter. " + '<a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></p>' +
-      '<p class="ps-err" id="rmErr" hidden></p><div class="ps-pop-a"><button type="button" class="ps-btn primary" id="rmSend">Angebot schicken</button><button type="button" class="ps-btn" data-popx="1">Abbrechen</button></div></div>' +
+      '<p class="ps-err" id="rmErr" hidden></p><div class="ps-pop-a"><button type="button" class="ps-btn primary" id="rmSend">Angebot schicken</button><button type="button" class="ps-btn" id="rmCopy">🔗 Link kopieren</button></div><p class="pd-muted" style="font-size:12.5px">Den Link kannst du auch einfach weiterschicken – jeder öffnet damit genau diese Konfiguration mit aktuellem Preis.</p></div>' +
       '<button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
     var q = function (id) { return m.querySelector("#" + id); }, err = function (t) { var e = q("rmErr"); e.textContent = t || ""; e.hidden = !t; };
     var close = function () { m.remove(); document.removeEventListener("keydown", k0); if (back && back.focus) back.focus(); }, k0 = function (e) { if (e.key === "Escape") close(); };
     m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) close(); });
+    q("rmCopy").addEventListener("click", function () { var b = this; copyText(link).then(function () { b.textContent = "✓ Link kopiert"; toast("Link kopiert – du kannst ihn weiterschicken"); }, function () { window.prompt("Link kopieren:", link); }); });
     q("rmSend").addEventListener("click", function () { var b = this, mail = q("rmMail").value.trim(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { err("Bitte eine gültige E-Mail-Adresse angeben."); return; }
       err(""); b.disabled = true; b.textContent = "Wird gesendet …";
       api("/print/api/remember", { email: mail, remind: q("rmRem").checked, title: p.title, copies: totalCopies(), price: priceTxt, link: link, labels: labels, website: q("rmHp").value }).then(function (j) {
@@ -2262,6 +2263,7 @@
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
     if (k === "remember") { rememberPop(); return; }
+    if (k === "cfglink") { var lk = ""; try { lk = cfgLink(S.prod.key, cfgPack()); } catch (e2) {} if (!lk) return; copyText(lk).then(function () { toast("Link kopiert – damit öffnet jeder genau diese Konfiguration"); }, function () { window.prompt("Link kopieren:", lk); }); return; }
     if (k === "settier") { var tn = +v; if (tn > 0) { S.copies = tn; S.tierHint = null; var qx2 = document.getElementById("psQty"); if (qx2) qx2.value = ""; render(); loadPrice(); toast(tn.toLocaleString("de-AT") + "\u00a0Stück übernommen"); } return; }
     if (k === "xmall") { var xs = t.closest(".xm-sec"); if (xs) xs.classList.add("open"); t.remove(); return; }   // Weihnachtsabteilung (Handy): alle Ideen eines Themas
     if (k === "cwarn") { warnPop(v); return; }
