@@ -2163,3 +2163,6 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-v2why li svg{width:24px;height:24px;flex:none;color:#ffd23f;margin-top:1px}.ps-v2why b{display:block;color:#fff;font-size:15px}
 @media (max-width:860px){.ps-v2login{grid-template-columns:minmax(0,1fr)}.ps-v2why{order:2}}
 .ps-v2login .ps-seg{margin-bottom:18px}
+/* Tastatur: sichtbarer Fokus für die neuen Kopf-Elemente */
+.ps-v2cat a:focus-visible,.ps-v2all .all:focus-visible,.ps-v2ic a:focus-visible,.ps-v2top a:focus-visible,.ps-v2dd a:focus-visible,.ps-v2t:focus-visible,.ps-v2acct .side button:focus-visible,.ps-v2stats button:focus-visible{outline:3px solid #ffd23f;outline-offset:2px}
+.ps-v2brand:focus-visible{outline:3px solid #ffd23f;outline-offset:4px;border-radius:8px}
