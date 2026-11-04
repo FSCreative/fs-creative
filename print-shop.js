@@ -427,13 +427,16 @@ module.exports = function (D) {
   const pcSlot = low => new Promise(res => { if (pcActive < (low ? PC_MAX - 2 : PC_MAX)) { pcActive++; res(); } else (low ? pcLow : pcWait).push(res); }).then(async () => {
     for (;;) { const now = Date.now(); while (pcStarts.length && now - pcStarts[0] > 1000) pcStarts.shift(); if (pcStarts.length < (low ? PC_RATE - 2 : PC_RATE)) { pcStarts.push(now); return; } await new Promise(r => setTimeout(r, 1000 - (now - pcStarts[0]) + 5)); } });
   const pcFree = () => { const n = pcWait.shift() || pcLow.shift(); if (n) n(); else pcActive--; };
+  let PC_COOL = 0;   // Drosselung durch den Partner (429): bis dahin keine Anfragen schicken – Wiederholungen halten die Sperre sonst am Laufen
   async function pcApi(method, p, body, opts) {
+    if (Date.now() < PC_COOL) { const e = new Error("Print.com: HTTP 429 (Pause)"); e.status = 429; throw e; }
     for (let a = 0; ; a++) {
       await pcSlot(!!(opts && opts.low)); let e0 = null, out;
       try { out = await pcApi1(method, p, body, opts); } catch (e) { e0 = e; } finally { pcFree(); }
       if (!e0) return out;
       // kurze Störungen bei Print.com: 429/502/503 immer, 500 nur bei Preis-/Versandabfragen (z. B. „calculating urgency prices failed: UNAVAILABLE“)
-      const transient = e0.status === 429 || e0.status === 502 || e0.status === 503 || e0.status === 504 || (e0.status === 500 && /\/price$|^\/shipping\//.test(p));
+      if (e0.status === 429) { PC_COOL = Date.now() + Math.min(300, Math.max(20, +e0.retryAfter || 60)) * 1000; throw e0; }
+      const transient = e0.status === 502 || e0.status === 503 || e0.status === 504 || (e0.status === 500 && /\/price$|^\/shipping\//.test(p));
       if (!transient || a >= 3 || (opts && opts.form)) throw e0;
       await new Promise(r => setTimeout(r, [700, 1800, 4000][a] + Math.random() * 400));
     }
@@ -447,7 +450,7 @@ module.exports = function (D) {
     if (opts.form) payload = opts.form; else if (body !== undefined) { headers["content-type"] = "application/json"; payload = JSON.stringify(body); }
     const r = await fetch((opts.base || c.pcBase) + p, { method, headers, body: payload, signal: AbortSignal.timeout(opts.timeout || 30000) });
     const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) {}
-    if (!r.ok) { const m = (j && (j.message || (j.error && (j.error.message || j.error)) || (Array.isArray(j.errors) && j.errors.map(x => x.message || x).join("; ")))) || txt.slice(0, 200) || "HTTP " + r.status; const e = new Error("Print.com: " + String(m).slice(0, 300)); e.status = r.status; e.detail = j; throw e; }
+    if (!r.ok) { const m = (j && (j.message || (j.error && (j.error.message || j.error)) || (Array.isArray(j.errors) && j.errors.map(x => x.message || x).join("; ")))) || txt.slice(0, 200) || "HTTP " + r.status; const e = new Error("Print.com: " + String(m).slice(0, 300)); e.status = r.status; e.retryAfter = parseInt(r.headers.get("retry-after"), 10) || 0; e.detail = j; throw e; }
     return j;
   }
   const firstOf = j => (j && Array.isArray(j.results) ? j.results[0] : j) || {};
@@ -3704,6 +3707,7 @@ module.exports = function (D) {
   }
   async function readJson(req, max) { if (req.__json) return req.__json; const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
+  const J0 = J;
   const feedId = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8);   // wie im Merchant-Feed
   const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
@@ -3759,7 +3763,10 @@ module.exports = function (D) {
       if (/^[\w-]{0,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks)) { try { html = await catSeo(html, km, ks); } catch (e) { log("Kategorie-SEO:", e.message); } } }
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
+  // Öffentliche Fehlermeldungen ohne Partnernamen (Simon: Print.com darf für Kunden nie sichtbar sein)
+  const pubErr = m => { const t = String(m || ""); if (!/print\.?com/i.test(t)) return t; return /429|too many|rate/i.test(t) ? "Gerade sehr viele Anfragen – bitte in einer Minute nochmal versuchen." : "Gerade ist keine Verbindung zur Druckerei möglich – bitte gleich nochmal versuchen."; };
   async function handlePublic(req, res, u, p) {
+    const J = (res, code, o) => J0(res, code, o && typeof o.error === "string" ? Object.assign({}, o, { error: pubErr(o.error) }) : o);
     await settings().catch(() => null);
     const open = live(), view = viewOnly(), admin = !!(D.adminAuthed && D.adminAuthed(req));
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
