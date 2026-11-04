@@ -2126,3 +2126,4 @@ html.ps-v2 #shop:has(>.ps-v2hero),html.ps-v2 #shop:has(>div>.ps-v2hero){margin-t
 .ps-v2t b,.ps-v2t b i{color:#fff!important}.ps-v2t b{background:#1f6feb}
 .ps-v2t{background:#1f6feb;border-color:#1f6feb}.ps-v2t b{flex:1}
 .ps-v2t.all .im{background:#e8f0ff}
+.ps-v2top ul{flex-wrap:wrap;height:36px;align-content:flex-start;row-gap:0;min-width:0;flex:1}.ps-v2top li{height:36px}

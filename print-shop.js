@@ -3833,7 +3833,7 @@ module.exports = function (D) {
         html = html.replace(/\{\{(\w+)\}\}/g, (m, k) => k === "agbVersion" ? deDate(AGB_VERSION) : escH(F[k] != null && String(F[k]).trim() ? F[k] : FIRM_DEFAULT[k] || ""));
         try {   // neuer Shop-Kopf (Logo, Suche, Kategorien) auch auf den AGB – Skripte aus print.html übernehmen
           const ph = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"), hs = (ph.match(/<script>\/\* Neuer Look[\s\S]*?<\/script>/) || [""])[0], i = ph.indexOf("<script>\n/* Vorschau neuer Header"), j = ph.indexOf("<script>\nwindow.fscToggleTheme");
-          if (hs && i > -1 && j > i) html = html.replace("</head>", () => '<link rel="stylesheet" href="/print/print.css?v=' + ASSET_V + '" />\n' + hs + "\n</head>").replace("</body>", () => ph.slice(i, j) + "</body>");
+          if (hs && i > -1 && j > i) html = html.replace('<nav class="nav-links" style="display:flex">', '<nav class="nav-links">').replace("</head>", () => '<link rel="stylesheet" href="/print/print.css?v=' + ASSET_V + '" />\n' + hs + "\n</head>").replace("</body>", () => ph.slice(i, j) + "</body>");
         } catch (e) {}
         return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
       }

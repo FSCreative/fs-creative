@@ -149,7 +149,7 @@
   var top=document.createElement('div');top.className='ps-v2top';
   top.innerHTML='<div class="in"><ul><li>'+ic(I.truck)+'Schnelle Lieferung in ganz Österreich</li><li>'+ic(I.ok)+'Professionelle Druckqualität</li><li>'+ic(I.leaf)+'Nachhaltige Materialien</li><li>'+ic(I.help)+'Persönlicher Support</li></ul><nav aria-label="Service"><a href="/print/hilfe#bonus">Geschäftskunden</a><i aria-hidden="true">|</i><a href="/kontakt?von=print">Kontakt</a><i aria-hidden="true">|</i><a href="/print/hilfe#faq">FAQ</a></nav></div>';
   hd.insertBefore(top,inner);
-  var brand=inner.querySelector('.brand');if(brand){brand.classList.add('ps-v2brand');brand.innerHTML='<img src="/logos/druckshop-logo-weiss.png" alt="FS Creative Druckshop" width="705" height="195">';}
+  var brand=inner.querySelector('.brand');if(brand){brand.classList.add('ps-v2brand');brand.setAttribute('href','/print');brand.innerHTML='<img src="/logos/druckshop-logo-weiss.png" alt="FS Creative Druckshop" width="705" height="195">';}
   var f=document.createElement('form');f.className='ps-v2q';f.action='/print';f.method='get';f.setAttribute('role','search');
   f.innerHTML=ic(I.search)+'<input type="search" name="q" placeholder="Produkt suchen (z. B. Flyer, Banner, Visitenkarten …)" aria-label="Produkt suchen" autocomplete="off">';
   var n=0,sv=0;try{var c=JSON.parse(localStorage.getItem('fsc-print-cart')||'null');n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;sv=(JSON.parse(localStorage.getItem('fsc-print-saved')||'[]')||[]).length;}catch(e){}
