@@ -14,7 +14,7 @@
   var root = document.getElementById("shop");
   if (!root) return;
   // Neue Startseite + Header (Entwurf Simon 04.11.2026) – vorerst nur als Vorschau: /print?vorschau=start (bleibt für den Besuch an), /print?vorschau=aus beendet sie
-  var V2 = (function () { var q = new URLSearchParams(location.search); try { if (q.has("vorschau")) { if (q.get("vorschau") === "aus") sessionStorage.removeItem("psV2"); else sessionStorage.setItem("psV2", "1"); } return sessionStorage.getItem("psV2") === "1"; } catch (e) { return q.get("vorschau") === "start"; } })();
+  var V2 = !!window.__psV2;   // neuer Look (Header baut print.html, siehe window.psV2)
   if (V2) setTimeout(function () { try { v2Header(); } catch (e) {} }, 0);   // erst nach dem Laden des Skripts (Symbole/Kategorien sind dann definiert)
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
   var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
@@ -1186,9 +1186,8 @@
     var cats = [[P("flyer"), "Flyer & Folder"], [P("visitenkarten"), "Visitenkarten"], [P("plakate"), "Plakate & Poster"], [bn, "Banner & Planen"], [P("aufkleber"), "Aufkleber", "stickers-tapes"], [tx, "Textilien", "clothing-textile"], [mug, "Werbeartikel", "gifts-merchandise-promotional"]].filter(function (c) { return c[0]; });
     var tile = function (c) { var p = c[0], at = c[2] ? 'data-nav="produkte" data-navgroup="' + esc(c[2]) + '"' : 'data-prod="' + esc(p.key) + '"';
       return '<button type="button" class="ps-v2t" ' + at + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : "") + '</span><b>' + esc(c[1]) + ' <i aria-hidden="true">→</i></b></button>'; };
-    var usp = [["truck", "Schnelle Lieferung", "frei Haus in ganz Österreich"], ["check", "Datencheck inklusive", "automatisch – Profi-Check optional"], ["pen", "Einfach gestalten", "online im Designer oder Datei hochladen"], ["pin", "Regional & persönlich", "dein Druckpartner aus dem Montafon"]];
     return '<div class="ps-v2hero">' + sl + "</div>" +
-      '<ul class="ps-v2usp">' + usp.map(function (u) { return "<li>" + v2Ic(V2I[u[0]]) + "<span><b>" + u[1] + "</b>" + u[2] + "</span></li>"; }).join("") + "</ul>" +
+      '<h1 class="ps-v2h1">Online drucken mit FS Creative <span>Flyer, Visitenkarten, Plakate, Banner, Textilien und Werbeartikel – Preis sofort, Lieferung in ganz Österreich</span></h1>' +
       '<section class="ps-hsec ps-v2cats"><div class="ps-hsec-h"><h2>Beliebte Kategorien</h2><button type="button" class="ps-link" data-nav="produkte">Alle Produkte ansehen →</button></div><div class="ps-v2grid">' + cats.map(tile).join("") +
       '<button type="button" class="ps-v2t all" data-nav="produkte"><span class="im">' + v2Ic(V2I.grid) + "</span><b>Alle Produkte <i aria-hidden=\"true\">→</i></b></button></div></section>";
   }
@@ -1233,7 +1232,7 @@
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
     var im = function (img, w) { return "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=75"; };
     var slide = function (z, i, href, eb, title, text, btn) {
-      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img src="' + esc(im(z.img, 1200)) + '" srcset="' + esc(im(z.img, 800)) + " 800w, " + esc(im(z.img, 1200)) + " 1200w, " + esc(im(z.img, 1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' + xmTeaserSpots(z) +
+      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img src="' + esc(im(z.img, 1200)) + '" srcset="' + esc(im(z.img, 800)) + " 800w, " + esc(im(z.img, 1200)) + " 1200w, " + esc(im(z.img, 1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
         '<span class="tx"><span class="xm-eb">' + esc(eb) + "</span><b>" + esc(title) + "</b><span>" + esc(text) + '</span><span class="ps-btn primary">' + esc(btn) + ' <span aria-hidden="true">→</span></span></span></a>'; };
     var list = [slide(x, 0, "/print/weihnachten", "Weihnachten " + x.year, "Weihnachten mit deinem Design", "Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : "."), "Zur Weihnachtsabteilung")]
       .concat((x.slides || []).map(function (z, i) { return slide(z, i + 1, "/print/weihnachten#" + z.slug, "Neues Jahr " + (+x.year + 1), z.title, z.text, z.n + " Ideen ansehen"); }))

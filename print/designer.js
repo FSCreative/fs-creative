@@ -358,7 +358,10 @@
       var yb = (1234 - G.m[1]) / V.su + 22, fs = 13 / z;
       var lab = (P.side ? "Ärmel " + P.side : P.view === "front" ? "Vorderseite" : "Rückseite") + " · Druckfläche max. " + (D.mm.w / 10).toString().replace(".", ",") + " × " + (D.mm.h / 10).toString().replace(".", ",") + " cm";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "rgba(60,60,67,.75)"; ctx.font = "600 " + fs + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText(lab, 0, yb);   // Schrift zoomunabhängig
-      ctx.fillStyle = "rgba(60,60,67,.6)"; ctx.font = (11.5 / z) + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText("Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.", 0, yb + fs * 1.5);
+      ctx.fillStyle = "rgba(60,60,67,.6)"; ctx.font = (11.5 / z) + "px -apple-system,Segoe UI,sans-serif";
+      var nw = ((ctx.canvas.clientWidth || 360) - 24) / z, ln = [], cur = "";   // Hinweis am Handy umbrechen statt abschneiden
+      "Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.".split(" ").forEach(function (w) { var t = cur ? cur + " " + w : w; if (cur && ctx.measureText(t).width > nw) { ln.push(cur); cur = w; } else cur = t; }); if (cur) ln.push(cur);
+      ln.forEach(function (t, i) { ctx.fillText(t, 0, yb + fs * 1.5 + i * 15 / z); });
     }
     ctx.restore();
   }

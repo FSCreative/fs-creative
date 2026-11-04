@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<script>try{var v2=/[?&]vorschau=start/.test(location.search)||(sessionStorage.getItem('psV2')==='1'&&!/[?&]vorschau=aus/.test(location.search));if(v2||localStorage.getItem('fsc-theme')==='light')document.documentElement.className+=' light';}catch(e){}</script>
+<script>/* Neuer Look ab 04.11.2026 23:30 (Freigabe Simon); ?vorschau=start/aus schaltet für den Besuch um. Hell ist im neuen Look Standard. */(function(){var v2=Date.now()>=Date.parse('2026-11-04T22:30:00Z'),q=location.search,t=null;try{var ss=sessionStorage;if(/[?&]vorschau=aus/.test(q))ss.setItem('psV2','0');else if(/[?&]vorschau=start/.test(q))ss.setItem('psV2','1');var f=ss.getItem('psV2');if(f==='1')v2=true;else if(f==='0')v2=false;}catch(e){}window.__psV2=v2;try{t=localStorage.getItem('fsc-theme');}catch(e){}var R=document.documentElement;if(v2)R.className+=' ps-v2';if(t==='light'||(v2&&t!=='dark'))R.className+=' light';})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Online drucken – Flyer, Visitenkarten &amp; mehr | FS Creative</title>
 <meta name="description" content="Flyer, Visitenkarten, Plakate &amp; Aufkleber online gestalten oder Druckdaten hochladen – Preis sofort inkl. Versand in ganz Österreich." />
@@ -130,8 +130,7 @@
 <script>
 /* Vorschau neuer Header (Entwurf Simon 04.11.2026) – nur mit ?vorschau=start (bleibt für den Besuch), ?vorschau=aus beendet. Läuft auf allen Shop-Seiten, auch ohne app.js */
 (function(){
-  var q=new URLSearchParams(location.search),on=false;try{if(q.has('vorschau')){if(q.get('vorschau')==='aus')sessionStorage.removeItem('psV2');else sessionStorage.setItem('psV2','1');}on=sessionStorage.getItem('psV2')==='1';}catch(e){on=q.get('vorschau')==='start';}
-  if(!on)return;
+  if(!window.__psV2)return;
   function ic(d){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';}
   var I = { truck: '<path d="M3 6h11v9H3zM14 9h4l3 3v3h-7"/><circle cx="7" cy="17" r="1.8"/><circle cx="17" cy="17" r="1.8"/>', check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16.5 9"/>', pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>', pin: '<path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
     grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
@@ -157,7 +156,7 @@
   var icn=document.createElement('div');icn.className='ps-v2ic';
   icn.innerHTML='<a href="/print?konto" data-acct-link>'+ic(I.user)+'<span data-acct-label data-fix>Mein Konto</span></a><a href="/print?konto" data-v2saved>'+ic(I.heart)+'<span>Merkzettel</span><b class="ps-cn" data-saved-n>'+sv+'</b></a><a href="/print?warenkorb" data-cart-link>'+ic(I.cart)+'<span>Warenkorb</span><b class="ps-cn" data-cart-n>'+n+'</b></a>';
   inner.insertBefore(f,brand?brand.nextSibling:inner.firstChild);inner.insertBefore(icn,f.nextSibling);
-  var xn=document.querySelector('.nav-links [data-xnav]');
+  var xn=document.querySelector('.nav-links .ps-xnav');
   var cat=document.createElement('nav');cat.className='ps-v2cat';cat.setAttribute('aria-label','Kategorien');
   var lk=function(c){return c[2]?'<a href="'+c[2]+'">'+ic(I[c[1]])+c[0].replace(/&/g,'&amp;')+'</a>':'<a href="/print?kategorie='+c[3]+'" data-nav="produkte" data-navgroup="'+c[3]+'">'+ic(I[c[1]])+c[0].replace(/&/g,'&amp;')+'</a>';};
   cat.innerHTML='<div class="in"><div class="ps-v2all"><button type="button" class="all" aria-expanded="false" aria-haspopup="true">'+ic(I.grid)+'Alle Produkte<svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="ps-v2dd" hidden>'+
@@ -170,9 +169,17 @@
   window.addEventListener('scroll',function(){if(!dd.hidden)set(false);},{passive:true});
   /* Menüleiste nie scrollen: passt nicht alles hinein, fallen Punkte von rechts weg */
   var box=cat.querySelector('.in'),items=[].slice.call(box.children,1);
-  function fit(){items.forEach(function(a){a.hidden=false;});for(var k=items.length-1;k>=0&&box.scrollWidth>box.clientWidth+1;k--)items[k].hidden=true;document.documentElement.style.setProperty('--nav-h',(hd.offsetTop+hd.offsetHeight)+'px');}
+  function fit(){items.forEach(function(a){a.hidden=false;});for(var k=items.length-1;k>=0&&box.scrollWidth>box.clientWidth+1;k--)items[k].hidden=true;var R=document.documentElement;if(!R.classList.contains('ps-v2s'))R.style.setProperty('--v2h0',(hd.offsetTop+hd.offsetHeight)+'px');R.style.setProperty('--nav-h',(hd.offsetTop+hd.offsetHeight)+'px');}
+  /* beim Scrollen schlanker Kopf: Vorteile-Leiste (und am Handy die Kategorien) blenden aus */
+  var sc=false;window.addEventListener('scroll',function(){var s=window.scrollY>90;if(s===sc)return;sc=s;document.documentElement.classList.toggle('ps-v2s',s);fit();},{passive:true});
   fit();window.addEventListener('resize',fit);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();
+</script>
+<script>
+/* Handy-Menü schließt sich nach einem Klick auf einen Punkt, beim Tippen daneben und beim Seitenwechsel */
+(function(){var t=document.getElementById('navtoggle');if(!t)return;var off=function(){if(t.checked)t.checked=false;};
+document.addEventListener('click',function(e){if(!t.checked)return;var x=e.target;if(x===t||x.closest&&x.closest('label.burger'))return;if(x.closest&&x.closest('.nav-links')&&!x.closest('a,button'))return;setTimeout(off,0);});
+window.addEventListener('popstate',off);window.addEventListener('pageshow',off);document.addEventListener('keydown',function(e){if(e.key==='Escape')off();});})();
 </script>
 <script>
 window.fscToggleTheme=function(){var el=document.documentElement;el.classList.add('theming');var light=el.classList.toggle('light');try{localStorage.setItem('fsc-theme',light?'light':'dark');}catch(_){}setTimeout(function(){el.classList.remove('theming');},650);};
