@@ -1496,15 +1496,16 @@ module.exports = function (D) {
     try {
       const s = await settings(), cat = await catalog(), list = publicCatalog(cat, s, await catalogAll().catch(() => null)); TPL_AUDIT.total = list.length;
       for (const p of list) {
+        if (TPL_AUDIT.stop) break;   // Notbremse (Admin bzw. Drosselung durch den Produktionspartner)
         const row = { key: p.key, title: p.title, cat: ((p.cat || {}).main || "") + "/" + ((p.cat || {}).sub || "") };
         try {
           const prod = await findProduct(p.key, s, true); if (!prod) { row.err = "nicht ladbar"; continue; }
           Object.assign(row, { kind: prod.kind, imprint: !!prod.imprint, bleed: prod.bleed, safe: prod.safe, dims: prod.dims, dimsArea: !!prod.dimsArea, sizeLabel: prod.sizeLabel || "" });
           let n = null; try { n = normalizeSel(prod, stdInput(prod) || {}); } catch (e) { row.selErr = String(e.message || e).slice(0, 120); }
-          row.official = (await workfileList(prod, n).catch(e => { row.wfErr = String(e.message || e).slice(0, 120); return []; })).map(f => f.name);
+          row.official = (await workfileList(prod, n).catch(e => { row.wfErr = String(e.message || e).slice(0, 120); if (e.status === 429 || /429/.test(row.wfErr)) TPL_AUDIT.stop = true; return []; })).map(f => f.name);
           if (n && prod.kind !== "textile" && prod.kind !== "promo") { try { const t = await templatePdf(prod, n); row.own = t.sheets.map(x => Math.round(x.w) + "×" + Math.round(x.h) + (x.b ? "+" + x.b : "") + (x.area ? " Fläche" : "")).join(", "); row.folds = n.folds ? n.folds.slug : ""; } catch (e) { row.ownErr = String(e.message || e).slice(0, 120); } }
         } catch (e) { row.err = String(e.message || e).slice(0, 120); }
-        finally { TPL_AUDIT.rows.push(row); TPL_AUDIT.done++; await new Promise(r => setTimeout(r, 400)); }
+        finally { TPL_AUDIT.rows.push(row); TPL_AUDIT.done++; await new Promise(r => setTimeout(r, 3000)); }   // langsam: Kundenanfragen haben Vorrang
       }
     } finally { TPL_AUDIT.busy = false; }
   }
@@ -4586,6 +4587,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/pcprobe") {   // Print.com-Abfragen zum Prüfen: Zubehör, Produktionsvorlage, Arbeitsdateien (nur Admin)
         const sku = String(b.sku || "x"); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
         try {
+          if (b.op === "tplauditstop") { TPL_AUDIT.stop = true; return J(res, 200, { ok: true }); }
           if (b.op === "tplaudit") { tplAuditRun().catch(() => {}); return J(res, 200, { ok: true, started: true }); }
           if (b.op === "tplauditstate") return J(res, 200, { ok: true, busy: TPL_AUDIT.busy, at: TPL_AUDIT.at, done: TPL_AUDIT.done, total: TPL_AUDIT.total, rows: b.rows ? TPL_AUDIT.rows : undefined });
           if (b.op === "accsync") { accSync(true).catch(() => {}); return J(res, 200, { ok: true, started: true }); }
