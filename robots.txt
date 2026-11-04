@@ -1,4 +1,25 @@
+# FS Creative – Suchmaschinen und KI-Assistenten sind willkommen.
+# Kurzinfos für KI: https://www.fs-creative.at/llms.txt · alle Produkte: https://www.fs-creative.at/llms-full.txt
+
 User-agent: *
+Allow: /
+Disallow: /admin
+
+# KI-Suche und -Assistenten ausdrücklich erlaubt (ChatGPT, Gemini/Google-KI, Copilot/Bing, Claude, Perplexity, Apple)
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: GPTBot
+User-agent: Google-Extended
+User-agent: Bingbot
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Applebot
+User-agent: Applebot-Extended
+User-agent: DuckAssistBot
+User-agent: MistralAI-User
 Allow: /
 Disallow: /admin
 

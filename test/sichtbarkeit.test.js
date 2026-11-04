@@ -228,6 +228,19 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
       assert.ok(/Kein Rücktrittsrecht bei individuell angefertigten Waren/.test(agb) && /§ 18 Abs\. 1 Z 3 FAGG/.test(agb) && /ausschließlich an Adressen in Österreich/.test(agb), "AGB tragen die Angaben");
       const pp = await (await fetch(B + "/print/preise")).text(); assert.ok(/"returnPolicyCategory":"https:\/\/schema.org\/MerchantReturnNotPermitted"/.test(pp), "auch in der Preisübersicht");
     });
+    await t("KI-Assistenten: Produkt als Markdown (/print/<slug>.md, nicht im Index), Verweis im Kopf, Shop als OnlineStore mit Suche, Hinweise in der llms.txt", async () => {
+      const r = await fetch(B + "/print/flyer.md"), md = await r.text();
+      assert.strictEqual(r.status, 200); assert.ok(/text\/markdown/.test(r.headers.get("content-type")), r.headers.get("content-type"));
+      assert.ok(/noindex/.test(r.headers.get("x-robots-tag") || "") && /<https:\/\/www\.fs-creative\.at\/print\/flyer>; rel="canonical"/.test(r.headers.get("link") || ""), "nur die Produktseite ist kanonisch");
+      assert.ok(/^# Flyer/m.test(md) && /\d Stück: [\d.,]+ €/.test(md) && /## Bestellen/.test(md) && !/<[a-z]/i.test(md.replace(/^<!--.*-->$/m, "")), md.slice(0, 400));
+      assert.ok(!/print\.?com/i.test(md), "Produktionspartner nie nennen");
+      assert.strictEqual((await fetch(B + "/print/gibt-es-nicht.md")).status, 404);
+      const html = await (await fetch(B + "/print/flyer")).text(); assert.ok(html.indexOf('<link rel="alternate" type="text/markdown" href="https://www.fs-creative.at/print/flyer.md"') > -1);
+      const prod = ldOf(html).find(x => x["@type"] === "Product"); assert.ok(prod.sku && prod.description.length > 40 && prod.offers.offers.every(o => o.seller["@id"] === SITE + "/print#shop"));
+      const home = ldOf(await (await fetch(B + "/print")).text()); assert.ok(home.find(x => x["@type"] === "OnlineStore" && x.address && x.address.addressCountry === "AT"));
+      const ws = home.find(x => x["@type"] === "WebSite"); assert.ok(ws && /\/print\?q=\{search_term_string\}/.test(ws.potentialAction.target.urlTemplate));
+      const lt = await (await fetch(B + "/llms.txt")).text(); assert.ok(/Hinweise für KI-Assistenten/.test(lt) && /flyer\.md/.test(lt));
+    });
     await t("Feed: zwischengespeichert, nicht in der Sitemap, robots.txt erlaubt ihn; keine IndexNow-Meldung außerhalb der Produktion", async () => {
       const n0 = M.log.length, again = await (await fetch(B + "/print/merchant.xml")).text(); assert.strictEqual(again, feed); assert.strictEqual(M.log.length, n0, "kein Abruf beim Druckpartner");
       const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/flyer<\/loc>/.test(sm) && !/merchant/.test(sm) && !/produkt=/.test(sm));

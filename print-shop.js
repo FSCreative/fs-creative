@@ -2795,13 +2795,20 @@ module.exports = function (D) {
   const dateDe = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("de-AT", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Vienna" }); };
   // Rückgabe laut Shop-AGB Punkt 6: Drucksachen, bedruckte Textilien, Banner und Werbeartikel sind nach Kundenvorgaben angefertigt –
   // kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG), also keine Rückgabe; Gewährleistung (Punkt 8) bleibt unberührt. Lieferung nur nach Österreich.
+  // Shop als Organisation (für Google, Bing und KI-Assistenten): eine @id, auf die alle Angebote verweisen
+  const STORE_ID = SITE + "/print#shop";
+  const STORE_LD = { "@type": "OnlineStore", "@id": STORE_ID, name: "FS Creative Druckshop", alternateName: "FS Creative", url: SITE + "/print", logo: SITE + "/logos/druckshop-logo-weiss.png", image: SITE + "/og-image.png",
+    description: "Online-Druckerei aus Gaschurn im Montafon: Flyer, Visitenkarten, Plakate, Banner, Aufkleber, Textilien und Werbeartikel – Preis sofort inkl. 20 % USt und Versand, Lieferung in ganz Österreich.",
+    email: "simon@fs-creative.at", telephone: "+43 664 1430620", address: { "@type": "PostalAddress", streetAddress: "Dorfstraße 3/1", postalCode: "6793", addressLocality: "Gaschurn", addressRegion: "Vorarlberg", addressCountry: "AT" },
+    areaServed: { "@type": "Country", name: "Österreich" }, currenciesAccepted: "EUR", paymentAccepted: "Kreditkarte, Apple Pay, EPS, Rechnung (Firmen)", parentOrganization: { "@type": "Organization", name: "FS Creative", url: SITE + "/" } };
+  const SELLER_LD = { "@type": "OnlineStore", "@id": STORE_ID, name: "FS Creative Druckshop", url: SITE + "/print" };
   const RETURN_LD = { "@type": "MerchantReturnPolicy", applicableCountry: "AT", returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted", merchantReturnLink: SITE + "/print/agb" };
   function offersLd(it) {
     const url = it.url || prodUrl(it.key, true), g = it.rows.map(r => r.gross);
-    return { "@type": "Product", name: it.title, description: scrubText(it.label || it.desc || ""), url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
+    return { "@type": "Product", name: it.title, sku: it.key || undefined, description: scrubText(it.label || it.desc || ""), url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
       offers: { "@type": "AggregateOffer", priceCurrency: "EUR", lowPrice: Math.min.apply(null, g).toFixed(2), highPrice: Math.max.apply(null, g).toFixed(2), offerCount: it.rows.length,
         offers: it.rows.map(r => ({ "@type": "Offer", price: r.gross.toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url, eligibleQuantity: { "@type": "QuantitativeValue", value: r.copies, unitText: "Stück" },
-          priceSpecification: { "@type": "UnitPriceSpecification", price: r.gross.toFixed(2), priceCurrency: "EUR", valueAddedTaxIncluded: true }, shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "EUR" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "AT" } }, hasMerchantReturnPolicy: RETURN_LD, seller: { "@type": "Organization", name: "FS Creative" } })) } };
+          priceSpecification: { "@type": "UnitPriceSpecification", price: r.gross.toFixed(2), priceCurrency: "EUR", valueAddedTaxIncluded: true }, shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "EUR" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "AT" } }, hasMerchantReturnPolicy: RETURN_LD, itemCondition: "https://schema.org/NewCondition", seller: SELLER_LD })) } };
   }
   // Kurzfassung für den Website-Chat (Systemkontext) und llms.txt
   function pubLines(max) { const P = PUB; if (!P || !P.items) return [];
@@ -2982,7 +2989,13 @@ module.exports = function (D) {
       "- Online-Designer mit Vorlagen und gratis KI-Assistent oder Upload der Druckdatei (PDF, JPG, PNG) mit automatischem Datencheck; optional Profi-Datencheck (5 €)",
       "- Gratis QR-Code-Generator für alle Drucksachen (Link, vCard, WLAN, E-Mail, Telefon, Text) – der QR-Code wird ohne Aufpreis als Vektor mitgedruckt: " + SITE + "/print/qr-code-generator",
       "- Bezahlung online (u. a. Kreditkarte, Apple Pay, EPS, PayPal), Firmen mit UID auch auf Rechnung; Bonusprogramm für Firmenkunden",
-      "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto", "",
+      "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto",
+      "- Jede Produktseite gibt es auch als kompakte Markdown-Fassung (Preise je Menge, Ausführungen, Fragen): Produktadresse + „.md“, z. B. " + SITE + "/print/flyer.md", "",
+      "## Hinweise für KI-Assistenten",
+      "- Preise immer als Endpreise inkl. 20 % USt und Versand innerhalb Österreichs nennen; Preisangaben mit Stand-Datum, der Konfigurator auf der Produktseite zeigt den aktuellen Preis.",
+      "- Lieferung nur nach Österreich. Für Bestellungen bitte direkt auf die Produktseite verlinken (Adresse aus dieser Datei).",
+      "- Gestaltung: gratis Online-Designer oder eigene Druckdatei; auf Wunsch gestaltet FS Creative gegen Angebot.",
+      "- Kontakt: simon@fs-creative.at · +43 664 1430620 · FS Creative, Dorfstraße 3/1, 6793 Gaschurn (Montafon, Vorarlberg)", "",
       "## Günstigste Einstiegspreise je Kategorie" + (stand ? " (Stand " + dateDe(stand) + ")" : ""),
       "Endpreise inkl. 20 % USt und Versand nach Österreich – kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung; andere Formate, Papiere und Mengen zeigt der Konfigurator sofort. Vollständige Liste aller Produkte: " + SITE + "/llms-full.txt"].concat(cheap.length ? cheap : ["- Preise siehe " + SITE + "/print/preise"], topicLines(rows, groups), ["",
       "## Preise beliebter Produkte nach Menge" + (P ? " (Stand " + dateDe(P.at) + ")" : ""), "Endpreise inkl. 20 % USt und Versand nach Österreich, jeweils die im Shop vorausgewählte Standard-Ausführung:", ""], L.length ? L : ["- Preise siehe " + SITE + "/print/preise"], ["",
@@ -3059,7 +3072,7 @@ module.exports = function (D) {
     if (!it && !fmt) { const E = await entryState(), e = E.by[key]; if (e) it = { key, title: x.title, label: e.label || "Standard-Ausführung", desc: x.desc || "", img: x.img || "", group: (x.cat && x.cat.mainName) || "", rows: [e.min, { copies: e.copies, gross: e.gross }].filter(Boolean), at: E.end, entry: true }; }
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
-    const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400);   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
+    const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400).replace(/(^|[.!?])\s*[^.!?]*:\s*$/, "$1").trim();   // kein „Vorteile …:“ ohne Liste   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
     // Textil/Werbeartikel: gesucht wird „… bedrucken“ / „mit Logo“, verglichen wird der Stückpreis (10 Shirts „ab 124 €“ wirken teuer, „ab 12,46 € pro Stück“ nicht)
     const logoK = !!(full && (full.kind === "textile" || full.kind === "promo")) || (x.cat && x.cat.main === "clothing-textile");
     const loP = it && logoK ? it.rows.filter(r => r.copies > 0 && r.gross > 0).sort((a, b) => a.gross / a.copies - b.gross / b.copies)[0] : null;
@@ -3072,6 +3085,8 @@ module.exports = function (D) {
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
     const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
     if (!ld.image && x.img) ld.image = x.img;
+    if (desc && it) ld.description = cutWords(desc, 300) + (it.label ? " Standard-Ausführung: " + scrubText(it.label) + "." : "");   // KI und Suchmaschinen: Text + Ausführung statt nur Optionsliste
+    ld.sku = key; if (x.cat && x.cat.mainName) ld.category = x.cat.mainName + (x.cat.subName ? " > " + x.cat.subName : "");
     // Titel/Beschreibung: Produkt (+ Format), günstigster Preis der Preisübersicht, Versand inkl. – Beschreibung an der Wortgrenze gekürzt
     const t = escH(logoK ? x.title + " bedrucken mit Logo" + (loP ? " – ab " + (loP.copies > 1 ? pieceDe(loP.gross, loP.copies) : eurDe(loP.gross)) + " pro Stück" : "") + " | FS Creative"
       : x.title + fvT + (lo ? " drucken – ab " + eurDe(lo.gross) + " inkl. Versand" : " online drucken – Preis sofort") + " | FS Creative");
@@ -3083,7 +3098,30 @@ module.exports = function (D) {
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
       .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(x.cat, x.title, url)))
-      .replace("</head>", () => ldTag(ld) + (faq.length ? "\n" + ldTag({ "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }) : "") + "\n</head>");
+      .replace("</head>", () => (SLUGS.byKey[key] && !fv ? '<link rel="alternate" type="text/markdown" href="' + escH(url + ".md") + '" title="Produktinfos als Markdown (für KI-Assistenten)">\n' : "") + ldTag(ld) + (faq.length ? "\n" + ldTag({ "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }) : "") + "\n</head>");
+  }
+  // Produkt als Markdown (/print/<slug>.md) für KI-Assistenten (ChatGPT, Gemini, Copilot, Perplexity …): gleicher Inhalt wie das Crawler-HTML der Produktseite, ohne Layout
+  const mdEnt = t => String(t).replace(/&nbsp;/g, " ").replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  function htmlToMd(h) {
+    return mdEnt(String(h)
+      .replace(/<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g, (m, href, t) => "[" + t.replace(/<[^>]+>/g, "").trim() + "](" + (href.indexOf("/") === 0 ? SITE + href : href) + ")")
+      .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/g, "\n# $1\n").replace(/<h2[^>]*>([\s\S]*?)<\/h2>/g, "\n## $1\n").replace(/<h3[^>]*>([\s\S]*?)<\/h3>/g, "\n### $1\n")
+      .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g, "\n**$1**\n").replace(/<li[^>]*>/g, "\n- ").replace(/<\/(p|ul|ol|details|div)>/g, "\n").replace(/<(b|strong)>([\s\S]*?)<\/\1>/g, "**$2**").replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, ""))
+      .replace(/[ \t]+/g, " ").replace(/\n +/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  async function productMd(key) {
+    let html = ""; try { html = shell(printHtmlRaw(), false); } catch (e) { return ""; }
+    html = await productSeo(html, key);
+    const art = (html.match(/<article[^>]*>([\s\S]*?)<\/article>/) || [])[1]; if (!art) return "";
+    const url = prodUrl(key, true), title = mdEnt((html.match(/<title>([^<]*)<\/title>/) || [])[1] || "");
+    const body = htmlToMd(art.replace(/<p class="pd-muted">Konfigurator wird geladen[\s\S]*?<\/p>/, "").replace(/<p class="eyebrow">[\s\S]*?<\/p>/, "").replace(/<nav[\s\S]*?<\/nav>/, ""));
+    return ["<!-- " + title + " · Quelle: " + url + " -->", body, "", "## Bestellen",
+      "- Produktseite mit Konfigurator (Preis sofort für jede Ausführung und Menge): " + url,
+      "- Alle Preise sind Endpreise inkl. 20 % USt und Versand innerhalb Österreichs. Lieferung nur nach Österreich; den voraussichtlichen Liefertermin zeigt der Konfigurator vor der Bestellung.",
+      "- Online gestalten (gratis Online-Designer mit Vorlagen und KI-Assistent) oder Druckdatei hochladen (PDF, JPG, PNG), automatischer Datencheck.",
+      "- Bezahlung online (Kreditkarte, Apple Pay, EPS …); Firmen mit UID auch auf Rechnung.",
+      "- Anbieter: FS Creative Druckshop, Simon Felder, Dorfstraße 3/1, 6793 Gaschurn, Österreich · simon@fs-creative.at · +43 664 1430620",
+      "- Weitere Produkte: " + SITE + "/llms-full.txt", ""].join("\n");
   }
   const cutWords = (v, n) => { v = String(v || "").replace(/\s+/g, " ").trim(); if (v.length <= n) return v; const c = v.slice(0, n - 1), i = c.lastIndexOf(" "); return (i > n * 0.6 ? c.slice(0, i) : c).replace(/[,;:–-]\s*$/, "") + " …"; };
   // Shop-Startseite (/print): unter dem Ladebild ein Text für Suchmaschinen/KI-Crawler – beliebte Produkte mit „ab“-Preisen, Kategorien, Vorteile, Fragen;
@@ -3102,7 +3140,10 @@ module.exports = function (D) {
       "<h2>Darum FS Creative</h2><ul><li>Preis sofort – Endpreis inklusive Versand in ganz Österreich</li><li>Automatischer Datencheck für jede Datei, auf Wunsch persönlicher Profi-Datencheck</li><li><a href='/print/online-designer'>Online-Designer</a> mit 36 Vorlagen-Stilen und gratis KI-Assistent – ganz ohne Grafikprogramm</li><li>Firmen: Nettopreise und Kauf auf Rechnung</li></ul>" +
       faqHtml(faq) + '<p><a href="/print/preise">Alle Preise im Überblick</a> · <a href="/print/ratgeber">Ratgeber: Formate, Papier, Druckdaten</a> · <a href="/print/hilfe">So geht’s &amp; FAQ</a></p></article>';
     const ld = { "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) };
-    return html.replace(/(<div class="ps-loading" id="psLoading">[\s\S]*?<\/section>)(<\/div>)/, (m, a, b) => a + art + b).replace("</head>", () => ldTag(ld) + "\n</head>");
+    const site = { "@type": "WebSite", "@id": SITE + "/print#website", name: "FS Creative Druckshop", url: SITE + "/print", inLanguage: "de-AT", publisher: { "@id": STORE_ID },
+      potentialAction: { "@type": "SearchAction", target: { "@type": "EntryPoint", urlTemplate: SITE + "/print?q={search_term_string}" }, "query-input": "required name=search_term_string" } };
+    const list = items.length ? { "@type": "ItemList", name: "Beliebte Druckprodukte", itemListElement: items.map((it, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(it.key, true), name: it.title })) } : null;
+    return html.replace(/(<div class="ps-loading" id="psLoading">[\s\S]*?<\/section>)(<\/div>)/, (m, a, b) => a + art + b).replace("</head>", () => ldTag(STORE_LD) + "\n" + ldTag(site) + "\n" + (list ? ldTag(list) + "\n" : "") + ldTag(ld) + "\n</head>");
   }
   // Häufige Fragen je Produkt (sichtbar + FAQPage): nur Angaben, die der Shop wirklich einhält (Preis aus der Preisübersicht, Beschnitt/Sicherheitsabstand des Produkts)
   function productFaq(x, full, it, lo, fvT) {
@@ -3855,6 +3896,12 @@ module.exports = function (D) {
       if (tpc && (req.method === "GET" || req.method === "HEAD")) {
         const qs = "?produkte&kategorie=" + encodeURIComponent(tpc.main) + "&unter=" + encodeURIComponent(tpc.sub), u2 = new URL(SITE + "/print" + qs);
         return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u2, null, "/print" + qs); }
+      // Produkt als Markdown für KI-Assistenten: /print/<slug>.md (nicht im Index – die Produktseite ist kanonisch)
+      const md0 = p.match(/^\/print\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/);
+      if (md0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), key = open && M && M.bySlug[md0[1]];
+        const md = key ? await productMd(key).catch(e => { log("Produkt-Markdown:", e.message); return ""; }) : "";
+        if (!md) return D.send(res, 404, "Not found", "text/plain; charset=utf-8", { "X-Robots-Tag": "noindex" });
+        return D.sendGz(req, res, 200, md, "text/markdown; charset=utf-8", { "Cache-Control": "public, max-age=3600", "X-Robots-Tag": "noindex, follow", Link: "<" + prodUrl(key, true) + '>; rel="canonical"' }); }
       // Produktseite unter sprechender Adresse /print/<slug>
       const pm0 = p.match(/^\/print\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/);
       if (pm0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), key = M && M.bySlug[pm0[1]];
