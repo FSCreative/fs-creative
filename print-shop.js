@@ -156,12 +156,16 @@ const PUB_MORE = [
   { key: "polo-budget-9" }, { key: "t-shirt-premium-5" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("19" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
+const CUR_V = require("crypto").createHash("sha1").update("19" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
 // Brust und Ärmel je 100 × 100 mm. Shirts/Polos/Pullover ohne Tasche: vorne wie Rücken 280 × 400 mm.
-function texArea(slug, name) {
+// Je Modell abweichende Druckflächen laut Print.com-Produktseiten: print-tex-areas.json { "<product key>": { front: [w,h], back, chest, chest_right, sleeve_left, sleeve_right, src } }
+function texArea(slug, name, key) {
+  const own = TEX_AREAS[key] && TEX_AREAS[key][String(slug).replace(/^positions_/, "")];
+  if (Array.isArray(own) && own.length === 2 && own.every(n => n > 0 && n < 1000)) return own.slice();
   const hood = /hood|kapuz/i.test(String(name || ""));
   if (slug === "positions_front") return hood ? [280, 220] : [280, 400];
   if (slug === "positions_back") return [280, 400];
@@ -601,7 +605,7 @@ module.exports = function (D) {
     let sizes = null, positions = null, methods = null, maxCopies = null;
     if (kind === "textile") {
       sizes = ((by.textile_sizes && by.textile_sizes.options) || []).filter(o => o && o.slug != null).map(o => ({ slug: String(o.slug), name: (L.textile_sizes && L.textile_sizes[o.slug]) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : String(o.slug).replace(/^unisex_/, "").toUpperCase()).replace(/^Unisexe\b/i, "Unisex") }));
-      positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: texArea(x[0], sku + " " + (c.title || "") + " " + ((pd && pd.titleSingle) || "")), opts: by[x[0]].options.map(o => String(o.slug)) }));
+      positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: texArea(x[0], sku + " " + (c.title || "") + " " + ((pd && pd.titleSingle) || ""), c.key), opts: by[x[0]].options.map(o => String(o.slug)) }));
       const pm = by.printingmethod && Array.isArray(by.printingmethod.options) ? by.printingmethod.options.map(o => String(o.slug)) : null;
       methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);
       // Mützen, Schals, Schürzen, Socken & Co.: keine Druckpositionen/Größen wie bei Shirts → als Werbeartikel (Logo auf der Druckfläche) anbieten statt gar nicht
