@@ -422,7 +422,8 @@
   };
   // Klebebuchstaben: „Anzahl der Konturlinien“ verständlich erklären (Wunsch Simon 04.11.2026) – jede geschnittene Form bzw. jedes Loch ist eine Kontur
   var CONTOUR_HELP = "So zählst du: Jede einzeln ausgeschnittene Form ist eine Kontur – jeder Buchstabe, jede Ziffer, jedes Logo-Teil. Löcher in Buchstaben (z. B. bei A, B, O, R, a, e) und i-Punkte/Umlautpunkte zählen extra. Beispiele: „OPEN“ = 6, „Bäckerei“ = 16. Dasselbe Motiv nur einmal in die Datei setzen – mehrere Stück wählst du bei der Menge. Unsicher? Lieber etwas mehr wählen oder uns im Chat fragen.";
-  var PDESC = { "vinyl-cut-letters": "Einzeln aus Folie geschnittene Buchstaben, Zahlen und Logos in vielen Farben – mit Übertragungsfolie zum einfachen Aufkleben, bis zu 8 Jahre haltbar." };
+  var PDESC = { "vinyl-cut-letters": "Einzeln aus Folie geschnittene Buchstaben, Zahlen und Logos in vielen Farben – mit Übertragungsfolie zum einfachen Aufkleben, bis zu 8 Jahre haltbar.",
+    "doming-stickers": "Gel-Aufkleber mit 3D-Effekt – geliefert auf Bögen: mehrere pro Bogen, einzeln zum Abziehen (nicht einzeln geschnitten)." };
   function fixLabels(list) { (list || []).forEach(function (p) { if (PDESC[p.key]) p.desc = PDESC[p.key];
     (p.props || []).forEach(function (pr) { if (pr.slug === "number_of_contour_lines") { pr.title = "Anzahl Konturen (Schnittformen)"; pr.options.forEach(function (o) { o.name = o.slug + (o.slug === "1" ? " Kontur" : " Konturen"); o.desc = CONTOUR_HELP; delete o.more; }); }
     });

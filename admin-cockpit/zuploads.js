@@ -3,7 +3,7 @@
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, de=F.de;
-var ST=null, busy=false, OPEN={};
+var ST=null, busy=false, OPEN={}, CUR={};   // CUR[linkId] = geöffneter Ordner („Logos/Varianten“, "" = oberste Ebene)
 function hb(n){ n=+n||0; return n>=1073741824?(n/1073741824).toFixed(1).replace(".",",")+" GB":n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" MB":Math.max(1,Math.round(n/1024))+" KB"; }
 function dt(iso){ return iso?de(String(iso).slice(0,10))+" "+String(iso).slice(11,16):""; }
 function load(){ if(busy) return; busy=true; F.api("/admin/api/uploads").then(function(j){ busy=false; ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",links:[]}; F.render(); }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",links:[]}; F.render(); }); }
@@ -11,6 +11,8 @@ function isNew(l){ return l.lastAt&&(!l.seenAt||l.lastAt>l.seenAt); }
 F.css('.up-l{display:grid}.up-r{border-top:1px solid var(--line);padding:14px 18px;display:grid;gap:10px}.up-r:first-child{border-top:0}.up-h{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}.up-h>div{flex:1 1 260px;min-width:0}.up-h b{font-size:15px}'+
   '.up-url{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.up-url code{font-size:12.5px;background:var(--sunk);padding:4px 8px;border-radius:6px;overflow-wrap:anywhere}.up-f{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;font-size:13.5px;padding:6px 0;border-top:1px dashed var(--line)}'+
   '.up-f span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.up-msg{font-size:13px;background:var(--sunk);border-radius:8px;padding:8px 10px;white-space:pre-line}.up-new{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--warn);margin-right:6px}'+
+  '.up-cr{display:flex;flex-wrap:wrap;gap:2px;align-items:center;font-size:13.5px}.up-cr button{background:none;border:0;padding:3px 6px;border-radius:6px;cursor:pointer;color:var(--ink);font:inherit}.up-cr button:hover,.up-cr button.drop{background:var(--sunk)}'+
+  '.up-d{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;font-size:13.5px;padding:6px 0;border-top:1px dashed var(--line)}.up-d>button:first-child{display:flex;gap:8px;align-items:center;background:none;border:0;padding:2px 4px;border-radius:6px;cursor:pointer;color:var(--ink);font:inherit;font-weight:600;text-align:left;min-width:0}.up-d>button:first-child span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.up-d.drop,.up-d>button:first-child:hover{background:var(--sunk)}.up-f[draggable=true]{cursor:grab}'+
   '@media(max-width:700px){.up-f{grid-template-columns:minmax(0,1fr) auto}.up-f .muted{display:none}}');
 function linkRow(l){
   var o=OPEN[l.id], files=l.files||[], part=files.filter(function(f){ return !f.done; });
@@ -22,9 +24,28 @@ function linkRow(l){
     '<button type="button" class="btn sm" data-act="uptoggle:'+esc(l.id)+'">'+(l.active?"Schließen":"Wieder öffnen")+'</button><button type="button" class="btn sm" data-act="upopen:'+esc(l.id)+'" aria-expanded="'+!!o+'">'+(o?"Dateien zu":"Dateien")+'</button></div></div>'+
     '<div class="up-url"><code>'+esc(l.url)+'</code></div>'+
     (o?((l.msgs||[]).map(function(m){ return '<div class="up-msg"><b>Nachricht '+dt(m.at)+':</b> '+esc(m.text)+'</div>'; }).join("")+
-      (files.length?files.map(function(f){ return '<div class="up-f"><span title="'+esc(f.name)+'">'+esc(f.name)+'</span><span class="muted">'+(f.done?hb(f.size):Math.floor(100*f.got/f.size)+" % von "+hb(f.size))+'</span><span class="muted">'+dt(f.doneAt||f.at)+'</span><span class="row" style="gap:4px">'+
-        (f.done?'<a class="btn sm" href="/admin/api/uploads/file?link='+encodeURIComponent(l.id)+'&f='+encodeURIComponent(f.id)+'" download>'+F.svg("download")+'</a>':'')+'<button type="button" class="btn sm" data-act="updelf:'+esc(l.id)+'|'+esc(f.id)+'" title="Datei löschen" aria-label="Datei löschen">✕</button></span></div>'; }).join(""):'<div class="muted" style="font-size:13px">Noch keine Dateien.</div>')+
+      folderHtml(l)+
       '<div><button type="button" class="link" data-act="updell:'+esc(l.id)+'" style="color:var(--bad)">Link samt Dateien löschen</button></div>'):'')+'</div>';
+}
+var FOLDER='<svg width="18" height="18" viewBox="0 0 24 24" fill="var(--warn)" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>';
+function inDir(fd,d){ fd=fd||""; return !d||fd===d||fd.indexOf(d+"/")===0; }
+function kids(l,d){ var pre=d?d+"/":"", n=d?d.split("/").length+1:1; return (l.dirs||[]).filter(function(x){ return x.indexOf(pre)===0&&x.split("/").length===n; }); }
+// Dateimanager je Link: Pfad oben, Unterordner, Dateien des Ordners; Dateien per Ziehen auf Ordner/Pfad oder „Verschieben“
+function folderHtml(l){
+  var d=CUR[l.id]||"", files=(l.files||[]).filter(function(f){ return (f.dir||"")===d; }), p=d?d.split("/"):[];
+  if(d&&(l.dirs||[]).indexOf(d)<0){ d=""; CUR[l.id]=""; return folderHtml(l); }
+  var cr='<div class="row-between wrap" style="gap:8px;margin-top:4px"><nav class="up-cr" aria-label="Ordner"><button type="button" data-act="updir:'+esc(l.id)+'|" data-updrop="'+esc(l.id)+'|">'+FOLDER+' Alle Dateien</button>'+
+    p.map(function(x,i){ var q=p.slice(0,i+1).join("/"); return ' › <button type="button" data-act="updir:'+esc(l.id)+'|'+esc(q)+'" data-updrop="'+esc(l.id)+'|'+esc(q)+'"'+(i===p.length-1?' aria-current="true" style="font-weight:700"':'')+'>'+esc(x)+'</button>'; }).join("")+'</nav>'+
+    '<span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="upmkdir:'+esc(l.id)+'">'+F.svg("plus")+' Neuer Ordner</button>'+
+    (d?'<a class="btn sm" href="/admin/api/uploads/zip?link='+encodeURIComponent(l.id)+'&dir='+encodeURIComponent(d)+'" download>'+F.svg("download")+' Ordner (ZIP)</a>':'')+'</span></div>';
+  var ds=kids(l,d).map(function(x){ var fs=(l.files||[]).filter(function(f){ return f.done&&inDir(f.dir,x); }), by=fs.reduce(function(a,f){ return a+f.size; },0);
+    return '<div class="up-d" data-updrop="'+esc(l.id)+'|'+esc(x)+'"><button type="button" data-act="updir:'+esc(l.id)+'|'+esc(x)+'">'+FOLDER+'<span>'+esc(x.split("/").pop())+'</span></button><span class="muted">'+fs.length+' Datei'+(fs.length===1?'':'en')+(by?' · '+hb(by):'')+'</span>'+
+      '<span class="row" style="gap:4px"><button type="button" class="btn sm" data-act="upren:'+esc(l.id)+'|'+esc(x)+'" title="Umbenennen / verschieben" aria-label="Ordner umbenennen">✎</button><button type="button" class="btn sm" data-act="uprmdir:'+esc(l.id)+'|'+esc(x)+'" title="Ordner löschen" aria-label="Ordner löschen">✕</button></span></div>'; }).join("");
+  var fl=files.map(function(f){ return '<div class="up-f" draggable="true" data-updrag="'+esc(l.id)+'|'+esc(f.id)+'"><span title="'+esc(f.name)+'">'+esc(f.name)+'</span><span class="muted">'+(f.done?hb(f.size):Math.floor(100*f.got/f.size)+" % von "+hb(f.size))+'</span><span class="muted">'+dt(f.doneAt||f.at)+'</span><span class="row" style="gap:4px">'+
+      (f.done?'<a class="btn sm" href="/admin/api/uploads/file?link='+encodeURIComponent(l.id)+'&f='+encodeURIComponent(f.id)+'" download title="Herunterladen" aria-label="Herunterladen">'+F.svg("download")+'</a>':'')+
+      ((l.dirs||[]).length?'<button type="button" class="btn sm" data-act="upmv:'+esc(l.id)+'|'+esc(f.id)+'" title="In anderen Ordner verschieben" aria-label="Verschieben">↪</button>':'')+
+      '<button type="button" class="btn sm" data-act="updelf:'+esc(l.id)+'|'+esc(f.id)+'" title="Datei löschen" aria-label="Datei löschen">✕</button></span></div>'; }).join("");
+  return cr+ds+(fl||(ds?'':'<div class="muted" style="font-size:13px">'+(d?'Dieser Ordner ist leer.':'Noch keine Dateien.')+'</div>'));
 }
 function render(){
   if(!ST){ load(); return F.head("Uploads","Links für Kunden-Dateien")+'<div class="muted" style="padding:20px">Lade …</div>'; }
@@ -36,6 +57,34 @@ function render(){
 function link(id){ return ((ST&&ST.links)||[]).find(function(l){ return l.id===id; })||null; }
 function post(body,msg){ return F.api("/admin/api/uploads",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return null; } if(msg) F.toast(msg); load(); return j; }); }
 function copy(t){ try{ navigator.clipboard.writeText(t).then(function(){ F.toast("Link kopiert"); },function(){ F.toast("Kopieren nicht möglich – bitte markieren",true); }); }catch(e){ F.toast("Kopieren nicht möglich – bitte markieren",true); } }
+F.action("updir",function(v){ var i=String(v).indexOf("|"); CUR[v.slice(0,i)]=v.slice(i+1); F.render(); });
+function nameModal(title,label,val,fn){
+  F.modal('<form data-form="upname" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(title)+'</h2>'+F.btnClose()+'</div><label class="fl">'+esc(label)+'<input class="f" name="n" required maxlength="300" value="'+esc(val||"")+'"></label>'+
+    '<div class="foot"><span class="err" id="upNErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">OK</button></span></div></form>',"narrow");
+  NAMEFN=fn; setTimeout(function(){ var i=document.querySelector('[data-form="upname"] input'); if(i){ i.focus(); i.select(); } },30);
+}
+var NAMEFN=null;
+F.forms.upname=function(form){ var v=form.n.value.trim().replace(/^\/+|\/+$/g,""); if(!v){ document.getElementById("upNErr").textContent="Bitte einen Namen eingeben."; return; } if(NAMEFN) NAMEFN(v); };
+F.action("upmkdir",function(id){ var d=CUR[id]||"";
+  nameModal("Neuer Ordner",d?"Name (in „"+d.split("/").pop()+"“)":"Name","",function(n){ post({op:"mkdir",id:id,parent:d,name:n.replace(/\//g,"-")}).then(function(j){ if(!j) return; F.closeModal(); CUR[id]=j.dir; }); }); });
+F.action("upren",function(v){ var p=String(v).split("|"), id=p[0], d=p.slice(1).join("|");
+  nameModal("Ordner umbenennen","Name bzw. Pfad (mit / in einen anderen Ordner verschieben)",d,function(n){ post({op:"renameDir",id:id,from:d,to:n},"Ordner geändert").then(function(j){ if(j) F.closeModal(); }); }); });
+F.action("uprmdir",function(v){ var p=String(v).split("|"), id=p[0], d=p.slice(1).join("|"), l=link(id); if(!l) return;
+  var n=(l.files||[]).filter(function(f){ return inDir(f.dir,d); }).length;
+  if(!n) return void post({op:"rmdirEmpty",id:id,dir:d},"Ordner gelöscht");
+  ask("Ordner löschen?","„"+d.split("/").pop()+"“ samt Unterordnern und "+n+" Datei(en) wird endgültig vom Server gelöscht.","Ordner und Dateien löschen",function(){ post({op:"deleteDir",id:id,dir:d,confirm:true},"Ordner gelöscht"); }); });
+F.action("upmv",function(v){ var p=String(v).split("|"), l=link(p[0]), f=l&&(l.files||[]).find(function(x){ return x.id===p[1]; }); if(!f) return;
+  var opts=[""].concat(l.dirs||[]).map(function(x){ return '<option value="'+esc(x)+'"'+(x===(f.dir||"")?" selected":"")+'>'+(x?esc(x.split("/").map(function(){ return ""; }).join("\u2003")+"📁 "+x.split("/").pop()):"Alle Dateien (oberste Ebene)")+'</option>'; }).join("");
+  F.modal('<form data-form="upmv" class="stackf"><div class="row-between"><h2 style="font-size:20px">Verschieben</h2>'+F.btnClose()+'</div><p class="muted" style="margin:0">'+esc(f.name)+'</p><input type="hidden" name="id" value="'+esc(l.id)+'"><input type="hidden" name="f" value="'+esc(f.id)+'"><label class="fl">Nach<select class="f" name="dir">'+opts+'</select></label>'+
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Verschieben</button></span></div></form>',"narrow"); });
+F.forms.upmv=function(form){ post({op:"moveFiles",id:form.id.value,files:[form.f.value],dir:form.dir.value},"Verschoben").then(function(j){ if(j) F.closeModal(); }); };
+// Ziehen & Ablegen: Datei auf einen Ordner oder in den Pfad oben ziehen
+document.addEventListener("dragstart",function(e){ var r=e.target.closest&&e.target.closest("[data-updrag]"); if(!r) return; e.dataTransfer.setData("text/x-fsupload",r.getAttribute("data-updrag")); e.dataTransfer.effectAllowed="move"; });
+function dropT(e){ return e.target.closest&&e.target.closest("[data-updrop]"); }
+document.addEventListener("dragover",function(e){ var t=dropT(e); if(!t||[].indexOf.call(e.dataTransfer.types||[],"text/x-fsupload")<0) return; e.preventDefault(); t.classList.add("drop"); });
+document.addEventListener("dragleave",function(e){ var t=dropT(e); if(t) t.classList.remove("drop"); });
+document.addEventListener("drop",function(e){ var t=dropT(e); if(!t) return; var v=e.dataTransfer.getData("text/x-fsupload"); if(!v) return; e.preventDefault(); t.classList.remove("drop");
+  var a=v.split("|"), b=t.getAttribute("data-updrop"), i=b.indexOf("|"); if(a[0]!==b.slice(0,i)) return; post({op:"moveFiles",id:a[0],files:[a[1]],dir:b.slice(i+1)},"Verschoben"); });
 F.action("upreload",function(){ ST=null; F.render(); });
 F.action("upnew",function(){
   F.modal('<form data-form="upnew" class="stackf"><div class="row-between"><h2 style="font-size:20px">Neuer Upload-Link</h2>'+F.btnClose()+'</div>'+

@@ -41,6 +41,29 @@ srv.listen(0, "127.0.0.1", async () => {
     const zr = await fetch(base + "/admin/api/uploads/zip?link=" + lk.id), zb = Buffer.from(await zr.arrayBuffer());
     ok(zr.status === 200 && zb.subarray(0, 2).toString() === "PK", "ZIP");
     const { unzipSync } = require("fflate"); const un = unzipSync(new Uint8Array(zb)); ok(Buffer.from(un[f.name]).equals(data), "ZIP-Inhalt identisch");
+    // Ordner: Kunde legt Ordner an, lädt hinein; Cockpit benennt um, verschiebt, ZIP mit Ordnern, Ordner löschen
+    const mk = await J(B + "/mkdir", { method: "POST", headers: H, body: JSON.stringify({ dir: "Logos/../Varianten:neu" }) });
+    ok(mk.ok && mk.dir === "Logos/Varianten_neu" && mk.dirs.includes("Logos"), "Kunde: Ordner anlegen (Pfad bereinigt, Eltern mit)");
+    const small = Buffer.from("hallo welt");
+    const i3 = await J(B + "/init", { method: "POST", headers: H, body: JSON.stringify({ name: "a.txt", size: small.length, dir: "Fotos/Sommer" }) });
+    await J(B + "/chunk?f=" + i3.id + "&o=0", { method: "PUT", headers: { "X-Upload": "1", "Content-Type": "application/octet-stream" }, body: small });
+    const A = (o) => J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ id: c.link.id }, o)) });
+    let s1 = (await J("/admin/api/uploads")).links[0];
+    ok(s1.dirs.includes("Fotos") && s1.dirs.includes("Fotos/Sommer") && s1.files.find(x => x.id === i3.id).dir === "Fotos/Sommer", "Upload in Unterordner");
+    ok((await A({ op: "mkdir", parent: "Fotos", name: "Winter" })).dir === "Fotos/Winter", "Cockpit: Ordner anlegen");
+    ok((await A({ op: "renameDir", from: "Fotos", to: "Fotos/x" })).status === 400, "Ordner nicht in sich selbst");
+    let rn = await A({ op: "renameDir", from: "Fotos", to: "Bilder" });
+    ok(rn.ok && rn.link.dirs.includes("Bilder/Sommer") && !rn.link.dirs.includes("Fotos") && rn.link.files.find(x => x.id === i3.id).dir === "Bilder/Sommer", "Umbenennen inkl. Unterordner und Dateien");
+    let mv = await A({ op: "moveFiles", files: [i1.id], dir: "Logos" }); ok(mv.link.files.find(x => x.id === i1.id).dir === "Logos", "Datei verschieben");
+    const zb2 = Buffer.from(await (await fetch(base + "/admin/api/uploads/zip?link=" + c.link.id)).arrayBuffer()), un2 = unzipSync(new Uint8Array(zb2));
+    ok(un2["Bilder/Sommer/a.txt"] && un2["Logos/Logo Mappe.pdf"], "ZIP mit Ordnerstruktur");
+    const zb3 = Buffer.from(await (await fetch(base + "/admin/api/uploads/zip?link=" + c.link.id + "&dir=Bilder")).arrayBuffer()), un3 = unzipSync(new Uint8Array(zb3));
+    ok(Object.keys(un3).join() === "Sommer/a.txt", "ZIP nur eines Ordners");
+    ok((await A({ op: "rmdirEmpty", dir: "Bilder" })).status === 400, "voller Ordner nicht ohne Rückfrage löschbar");
+    ok((await A({ op: "deleteDir", dir: "Bilder" })).status === 400, "Ordner löschen ohne confirm abgewiesen");
+    const dd = await A({ op: "deleteDir", dir: "Bilder", confirm: true });
+    ok(dd.ok && !dd.link.dirs.some(x => x.indexOf("Bilder") === 0) && !dd.link.files.some(x => x.id === i3.id), "Ordner samt Dateien gelöscht");
+    await A({ op: "moveFiles", files: [i1.id], dir: "" });
     // Nachricht
     ok((await J(B + "/note", { method: "POST", headers: H, body: JSON.stringify({ text: "Hallo" }) })).ok, "Nachricht");
     // ohne Anmeldung kein Cockpit
