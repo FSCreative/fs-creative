@@ -16,7 +16,7 @@ srv.listen(0, "127.0.0.1", async () => {
     const c = await J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "create", title: "Testprojekt", note: "Bitte Logos" }) });
     ok(c.ok && c.link && /^[A-Za-z0-9_-]{32}$/.test(c.link.token), "Link anlegen");
     const T = c.link.token, B = "/upload/" + T;
-    const pg = await fetch(base + B).then(r => r.text()); ok(/Dateien hochladen/.test(pg) && /Testprojekt/.test(pg) && /Bitte Logos/.test(pg), "Seite zeigt Titel und Notiz");
+    const pg = await fetch(base + B).then(r => r.text()); ok(/Geteilter Ordner/.test(pg) && /Testprojekt/.test(pg) && /Bitte Logos/.test(pg), "Seite zeigt Titel und Notiz");
     ok((await fetch(base + "/upload/" + "x".repeat(32))).status === 404, "falscher Token → 404");
     // ohne X-Upload-Kopfzeile abgewiesen (CSRF)
     ok((await J(B + "/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "a.bin", size: 10 }) })).status === 403, "ohne X-Upload → 403");
@@ -64,6 +64,18 @@ srv.listen(0, "127.0.0.1", async () => {
     const dd = await A({ op: "deleteDir", dir: "Bilder", confirm: true });
     ok(dd.ok && !dd.link.dirs.some(x => x.indexOf("Bilder") === 0) && !dd.link.files.some(x => x.id === i3.id), "Ordner samt Dateien gelöscht");
     await A({ op: "moveFiles", files: [i1.id], dir: "" });
+    // Simon lädt im Cockpit hoch; Kunde sieht Liste, lädt herunter und löscht
+    const ai = await A({ op: "init", name: "Entwurf.pdf", size: 5, dir: "Von FS" });
+    const ac = await J("/admin/api/uploads/chunk?link=" + c.link.id + "&f=" + ai.id + "&o=0", { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: Buffer.from("12345") });
+    ok(ai.ok && ac.ok && ac.done, "Cockpit-Upload in Stücken");
+    const pl = await J(B + "/list"); const ef = pl.files.find(x => x.name === "Entwurf.pdf");
+    ok(pl.ok && ef && ef.fs && ef.dir === "Von FS" && pl.dirs.includes("Von FS") && !("token" in pl), "Kunde: Liste mit Simons Datei");
+    const pd = await fetch(base + B + "/file?f=" + ef.id).then(r => r.text()); ok(pd === "12345", "Kunde: Download");
+    ok((await fetch(base + B + "/zip")).status === 200, "Kunde: ZIP");
+    ok((await J(B + "/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files: [ef.id], confirm: true }) })).status === 403, "Kunde: Löschen ohne X-Upload → 403");
+    ok((await J(B + "/delete", { method: "POST", headers: H, body: JSON.stringify({ files: [ef.id] }) })).status === 400, "Kunde: Löschen ohne Bestätigung abgewiesen");
+    const kd = await J(B + "/delete", { method: "POST", headers: H, body: JSON.stringify({ dirs: ["Von FS"], confirm: true }) });
+    ok(kd.ok && kd.deleted === 1 && !(await J(B + "/list")).dirs.includes("Von FS"), "Kunde: Ordner samt Datei gelöscht");
     // Nachricht
     ok((await J(B + "/note", { method: "POST", headers: H, body: JSON.stringify({ text: "Hallo" }) })).ok, "Nachricht");
     // ohne Anmeldung kein Cockpit

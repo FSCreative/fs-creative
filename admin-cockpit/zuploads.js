@@ -36,17 +36,59 @@ function folderHtml(l){
   if(d&&(l.dirs||[]).indexOf(d)<0){ d=""; CUR[l.id]=""; return folderHtml(l); }
   var cr='<div class="row-between wrap" style="gap:8px;margin-top:4px"><nav class="up-cr" aria-label="Ordner"><button type="button" data-act="updir:'+esc(l.id)+'|" data-updrop="'+esc(l.id)+'|">'+FOLDER+' Alle Dateien</button>'+
     p.map(function(x,i){ var q=p.slice(0,i+1).join("/"); return ' › <button type="button" data-act="updir:'+esc(l.id)+'|'+esc(q)+'" data-updrop="'+esc(l.id)+'|'+esc(q)+'"'+(i===p.length-1?' aria-current="true" style="font-weight:700"':'')+'>'+esc(x)+'</button>'; }).join("")+'</nav>'+
-    '<span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="upmkdir:'+esc(l.id)+'">'+F.svg("plus")+' Neuer Ordner</button>'+
+    '<span class="row" style="gap:6px"><label class="btn sm primary" title="Dateien für den Kunden in diesen Ordner hochladen">'+F.svg("upload")+' Hochladen<input type="file" multiple hidden data-upin="'+esc(l.id)+'"></label><label class="btn sm" title="Ganzen Ordner hochladen">Ordner hochladen<input type="file" multiple webkitdirectory hidden data-upin="'+esc(l.id)+'"></label><button type="button" class="btn sm" data-act="upmkdir:'+esc(l.id)+'">'+F.svg("plus")+' Neuer Ordner</button>'+
     (d?'<a class="btn sm" href="/admin/api/uploads/zip?link='+encodeURIComponent(l.id)+'&dir='+encodeURIComponent(d)+'" download>'+F.svg("download")+' Ordner (ZIP)</a>':'')+'</span></div>';
   var ds=kids(l,d).map(function(x){ var fs=(l.files||[]).filter(function(f){ return f.done&&inDir(f.dir,x); }), by=fs.reduce(function(a,f){ return a+f.size; },0);
     return '<div class="up-d" data-updrop="'+esc(l.id)+'|'+esc(x)+'"><button type="button" data-act="updir:'+esc(l.id)+'|'+esc(x)+'">'+FOLDER+'<span>'+esc(x.split("/").pop())+'</span></button><span class="muted">'+fs.length+' Datei'+(fs.length===1?'':'en')+(by?' · '+hb(by):'')+'</span>'+
       '<span class="row" style="gap:4px"><button type="button" class="btn sm" data-act="upren:'+esc(l.id)+'|'+esc(x)+'" title="Umbenennen / verschieben" aria-label="Ordner umbenennen">✎</button><button type="button" class="btn sm" data-act="uprmdir:'+esc(l.id)+'|'+esc(x)+'" title="Ordner löschen" aria-label="Ordner löschen">✕</button></span></div>'; }).join("");
-  var fl=files.map(function(f){ return '<div class="up-f" draggable="true" data-updrag="'+esc(l.id)+'|'+esc(f.id)+'"><span title="'+esc(f.name)+'">'+esc(f.name)+'</span><span class="muted">'+(f.done?hb(f.size):Math.floor(100*f.got/f.size)+" % von "+hb(f.size))+'</span><span class="muted">'+dt(f.doneAt||f.at)+'</span><span class="row" style="gap:4px">'+
+  var fl=files.map(function(f){ return '<div class="up-f" draggable="true" data-updrag="'+esc(l.id)+'|'+esc(f.id)+'"><span title="'+esc(f.name)+'">'+esc(f.name)+(f.fs?' <span class="tag grey">von dir</span>':'')+'</span><span class="muted">'+(f.done?hb(f.size):Math.floor(100*f.got/f.size)+" % von "+hb(f.size))+'</span><span class="muted">'+dt(f.doneAt||f.at)+'</span><span class="row" style="gap:4px">'+
       (f.done?'<a class="btn sm" href="/admin/api/uploads/file?link='+encodeURIComponent(l.id)+'&f='+encodeURIComponent(f.id)+'" download title="Herunterladen" aria-label="Herunterladen">'+F.svg("download")+'</a>':'')+
       ((l.dirs||[]).length?'<button type="button" class="btn sm" data-act="upmv:'+esc(l.id)+'|'+esc(f.id)+'" title="In anderen Ordner verschieben" aria-label="Verschieben">↪</button>':'')+
       '<button type="button" class="btn sm" data-act="updelf:'+esc(l.id)+'|'+esc(f.id)+'" title="Datei löschen" aria-label="Datei löschen">✕</button></span></div>'; }).join("");
-  return cr+ds+(fl||(ds?'':'<div class="muted" style="font-size:13px">'+(d?'Dieser Ordner ist leer.':'Noch keine Dateien.')+'</div>'));
+  var q=UPS[l.id], prog=q&&q.n?'<div class="up-msg" id="upprog-'+esc(l.id)+'">'+progTxt(q)+'</div>':'';
+  return '<div data-upos="'+esc(l.id)+'">'+cr+prog+ds+(fl||(ds?'':'<div class="muted" style="font-size:13px">'+(d?'Dieser Ordner ist leer.':'Noch keine Dateien.')+' Du kannst Dateien auch direkt hierher ziehen.</div>'))+'</div>';
 }
+// Simon lädt selbst hoch (in Stücken wie beim Kunden, landet im offenen Ordner, beim Kunden „von FS Creative“)
+var UPS={};
+function progTxt(q){ return 'Lade hoch: '+q.done+' von '+q.n+' Datei'+(q.n===1?'':'en')+(q.cur?' · '+esc(q.cur)+' '+q.pct+' %':'')+(q.err?' · <span style="color:var(--bad)">'+esc(q.err)+'</span>':''); }
+function progShow(id){ var e=document.getElementById("upprog-"+id); if(e) e.innerHTML=progTxt(UPS[id]); else F.render(); }
+function upQueue(id,items){
+  var q=UPS[id]||(UPS[id]={n:0,done:0,list:[],run:false}); q.n+=items.length; q.list=q.list.concat(items); q.err=""; progShow(id); if(!q.run) upNext(id);
+}
+function upNext(id){
+  var q=UPS[id]; if(!q.list.length){ q.run=false; var ok=q.done, bad=q.n-q.done; delete UPS[id]; F.toast(ok+" Datei"+(ok===1?"":"en")+" hochgeladen"+(bad?" · "+bad+" fehlgeschlagen":""),!!bad); load(); return; }
+  q.run=true; var x=q.list.shift(), f=x.f, tries=0; q.cur=f.name; q.pct=0; progShow(id);
+  function fail(m){ q.err=f.name+": "+m; progShow(id); upNext(id); }
+  function init(){ return F.api("/admin/api/uploads",{body:{op:"init",id:id,name:f.name,size:f.size,type:f.type,dir:x.dir}}); }
+  init().then(function(j){ if(!j||!j.ok) return fail((j&&j.error)||"Fehler"); var fid=j.id, CH=j.chunk||16777216, g=j.got||0;
+    (function put(){
+      if(g>=f.size){ q.done++; q.cur=""; upNext(id); return; }
+      fetch("/admin/api/uploads/chunk?link="+encodeURIComponent(id)+"&f="+encodeURIComponent(fid)+"&o="+g,{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/octet-stream"},body:f.slice(g,Math.min(f.size,g+CH))})
+        .then(function(r){ return r.json().catch(function(){ return {ok:false}; }).then(function(k){ k.status=r.status; return k; }); })
+        .then(function(k){ if(k.ok){ tries=0; g=k.got; q.pct=Math.floor(100*g/f.size); progShow(id); put(); return; } if(k.status===404||k.status===507||k.status===401) return fail(k.error||"Fehler"); retry(); }).catch(retry);
+      function retry(){ if(++tries>8) return fail("Verbindung unterbrochen"); setTimeout(function(){ init().then(function(k){ if(k&&k.ok){ fid=k.id; g=k.got; } put(); }).catch(put); },Math.min(30000,1500*tries*tries)); }
+    })();
+  }).catch(function(){ fail("Keine Verbindung"); });
+}
+function relDir(f){ var r=f.webkitRelativePath||""; return r.indexOf("/")>0?r.slice(0,r.lastIndexOf("/")):""; }
+function joinD(a,b){ return [a,b].filter(Boolean).join("/"); }
+document.addEventListener("change",function(e){ var t=e.target; if(!t.getAttribute||!t.getAttribute("data-upin")) return; var id=t.getAttribute("data-upin"), d=CUR[id]||"";
+  var items=[].filter.call(t.files||[],function(f){ return f.size>0; }).map(function(f){ return {f:f,dir:joinD(d,relDir(f))}; }); t.value=""; if(items.length) upQueue(id,items); });
+// Dateien vom Mac direkt in die geöffnete Dateiliste ziehen (ganze Ordner behalten ihre Struktur)
+function walkE(en,dir,out){ return new Promise(function(res){
+  if(en.isFile){ en.file(function(f){ out.push({f:f,dir:dir}); res(); },function(){ res(); }); return; }
+  if(!en.isDirectory){ res(); return; }
+  var d=joinD(dir,en.name), r=en.createReader(), all=[]; out.push({mk:d});
+  (function more(){ r.readEntries(function(es){ if(!es.length){ Promise.all(all.map(function(x){ return walkE(x,d,out); })).then(res); return; } all=all.concat([].slice.call(es)); more(); },function(){ res(); }); })(); }); }
+function osFiles(e){ return e.dataTransfer&&[].indexOf.call(e.dataTransfer.types||[],"Files")>=0; }
+document.addEventListener("dragover",function(e){ if(!osFiles(e)) return; var t=e.target.closest&&e.target.closest("[data-upos]"); if(!t) return; e.preventDefault(); e.dataTransfer.dropEffect="copy"; });
+document.addEventListener("drop",function(e){ if(!osFiles(e)) return; var t=e.target.closest&&e.target.closest("[data-upos]"); if(!t) return; e.preventDefault();
+  var id=t.getAttribute("data-upos"), fo=e.target.closest("[data-updrop]"), d=fo?fo.getAttribute("data-updrop").split("|").slice(1).join("|"):(CUR[id]||""), dt=e.dataTransfer;
+  var ens=dt.items&&dt.items.length&&dt.items[0].webkitGetAsEntry?[].map.call(dt.items,function(i){ return i.webkitGetAsEntry&&i.webkitGetAsEntry(); }).filter(Boolean):null;
+  if(!ens||!ens.some(function(x){ return x.isDirectory; })){ var it=[].filter.call(dt.files||[],function(f){ return f.size>0; }).map(function(f){ return {f:f,dir:d}; }); if(it.length) upQueue(id,it); return; }
+  var out=[]; Promise.all(ens.map(function(x){ return walkE(x,d,out); })).then(function(){
+    out.filter(function(o){ return o.mk; }).forEach(function(o){ F.api("/admin/api/uploads",{body:{op:"mkdir",id:id,parent:"",name:o.mk}}); });
+    var it=out.filter(function(o){ return o.f&&o.f.size>0; }); if(it.length) upQueue(id,it); }); });
 function render(){
   if(!ST){ load(); return F.head("Uploads","Links für Kunden-Dateien")+'<div class="muted" style="padding:20px">Lade …</div>'; }
   if(!ST.ok) return F.head("Uploads","")+'<div class="notice"><span>'+esc(ST.error)+'</span><button type="button" class="btn sm" data-act="upreload">Erneut</button></div>';
