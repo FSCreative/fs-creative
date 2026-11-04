@@ -3675,7 +3675,7 @@ module.exports = function (D) {
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
-      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js") {
+      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flats.js") {
         let js = ""; try { js = fs.readFileSync(path.join(__dirname, "print", p.slice(7))); } catch (e) { return D.send(res, 404, "Not found"); }
         return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache" });
       }

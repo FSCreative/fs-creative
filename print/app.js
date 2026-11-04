@@ -1135,7 +1135,7 @@
     return '<span class="xm-hsl" data-ratio="' + (+x.ratio || 2.3) + '" data-px="74">' + hs.map(function (h) {
       return '<span class="xm-hs" role="link" tabindex="0" data-prod="' + esc(h.k) + '" data-x="' + (+h.x) + '" data-y="' + (+h.y) + '" aria-label="' + esc(h.name) + '"><i aria-hidden="true"></i><span class="xm-hsc"><img src="' + esc(h.photo) + '" width="160" height="120" alt="" loading="lazy"><b>' + esc(h.name) + "</b>" + (h.price ? "<small>" + esc(h.price) + "</small>" : "") + "</span></span>"; }).join("") + "</span>";
   }
-  // Startseiten-Slider in der Saison: „Weihnachten“ + Themen mit eigenem Banner (Server: catalog.xmas.slides, z. B. „Planen fürs neue Jahr“) – wechselt alle 7 s, pausiert bei Maus darüber
+  // Startseiten-Slider in der Saison: „Weihnachten“ + Themen mit eigenem Banner (Server: catalog.xmas.slides, z. B. „Planen fürs neue Jahr“) – wechselt alle 4,5 s (Wunsch Simon 04.11.2026), pausiert bei Maus darüber
   function xmasTeaser() {
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
     var im = function (img, w) { return "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=75"; };
@@ -1162,7 +1162,7 @@
     w.addEventListener("focusin", function () { xsHold = true; }); w.addEventListener("focusout", function () { xsHold = false; });
     w.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-xsgo]"); if (b) { e.preventDefault(); xsGo(+b.getAttribute("data-xsgo")); } });
     if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    xsT = setInterval(function () { var w2 = document.getElementById("psXsl"); if (!w2) { clearInterval(xsT); return; } if (xsHold || document.hidden) return; var cur = w2.querySelector(".ps-xteaser.on"); xsGo((+(cur && cur.getAttribute("data-xs")) || 0) + 1); }, 7000);
+    xsT = setInterval(function () { var w2 = document.getElementById("psXsl"); if (!w2) { clearInterval(xsT); return; } if (xsHold || document.hidden) return; var cur = w2.querySelector(".ps-xteaser.on"); xsGo((+(cur && cur.getAttribute("data-xs")) || 0) + 1); }, 4500);
   }
   function setPage(pg, push) {
     S.view = ""; S.page = pg; S.step = 1; S.dd = "";
