@@ -2154,3 +2154,12 @@ html.ps-v2 #shop:has(>.ps-v2hero),html.ps-v2 #shop:has(>div>.ps-v2hero){margin-t
   html.ps-v2 .xm-hero .xm-hero-t{padding-left:max(var(--v2pad),calc((100vw - var(--maxw)) / 2 + var(--v2pad)))}}
 html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:first-child){margin-top:0}
 @media (max-width:760px){html.ps-v2 .xm-hero{width:100vw;margin-left:calc(50% - 50vw);border-radius:0;margin-top:0}}
+.ps-v2login{display:grid;grid-template-columns:minmax(0,480px) minmax(0,420px);gap:28px;justify-content:center;align-items:start;margin-top:8px}
+.ps-v2login>.ps-panel{margin:0}
+.ps-v2why{padding:26px 28px;border-radius:20px;background:linear-gradient(160deg,#121829,#1d2a52);color:#fff}
+.ps-v2why h2{margin:0;font-size:22px;color:#fff}.ps-v2why .pd-muted{color:rgba(255,255,255,.7);margin:6px 0 18px}
+.ps-v2why ul{list-style:none;margin:0;padding:0;display:grid;gap:16px}
+.ps-v2why li{display:flex;gap:12px;align-items:flex-start;font-size:14px;color:rgba(255,255,255,.78);line-height:1.4}
+.ps-v2why li svg{width:24px;height:24px;flex:none;color:#ffd23f;margin-top:1px}.ps-v2why b{display:block;color:#fff;font-size:15px}
+@media (max-width:860px){.ps-v2login{grid-template-columns:minmax(0,1fr)}.ps-v2why{order:2}}
+.ps-v2login .ps-seg{margin-bottom:18px}
