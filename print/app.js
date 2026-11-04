@@ -1183,7 +1183,8 @@
       if (S.me) { S.acct.tab = "saved"; S.view = "konto"; render(); window.scrollTo(0, 0); return; }
       if (!savedList().length) { toast("Noch nichts gemerkt – tippe bei einem Produkt auf „Merken“."); return; }
       S.view = ""; setPage("home"); setTimeout(function () { var x = document.querySelector(".ps-savhome"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); });
-    var brand = inner.querySelector(".brand"); if (brand) { brand.classList.add("ps-v2brand"); brand.innerHTML = '<img src="/logos/druckshop-logo-weiss.png" alt="FS Creative Druckshop" width="705" height="195">'; }   // neues Druckshop-Logo (Simon 04.11.2026), weiße Schrift für den dunklen Kopf inner.insertBefore(q, brand ? brand.nextSibling : inner.firstChild); inner.insertBefore(ic, q.nextSibling);
+    var brand = inner.querySelector(".brand"); if (brand) { brand.classList.add("ps-v2brand"); brand.innerHTML = '<img src="/logos/druckshop-logo-weiss.png" alt="FS Creative Druckshop" width="705" height="195">'; }   // neues Druckshop-Logo (Simon 04.11.2026), weiße Schrift für den dunklen Kopf
+    inner.insertBefore(q, brand ? brand.nextSibling : inner.firstChild); inner.insertBefore(ic, q.nextSibling);
     var xn = document.querySelector(".nav-links [data-xnav]");
     var cat = document.createElement("nav"); cat.className = "ps-v2cat"; cat.setAttribute("aria-label", "Kategorien");
     cat.innerHTML = '<div class="in"><div class="ps-v2all"><button type="button" class="all" aria-expanded="false" aria-haspopup="true">' + v2Ic(V2I.grid) + 'Alle Produkte<svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="ps-v2dd" hidden>' +
