@@ -198,4 +198,12 @@ function send(){
   }).catch(function(){ sending=false; el.s.disabled=false; el.err.textContent="Keine Verbindung – bitte nochmal versuchen."; });
 }
 if(d.readyState==="loading") d.addEventListener("DOMContentLoaded",init); else init();
+/* Besucherzählung Druckshop (Simon 04.11.2026): /print-Seiten ohne Shop-Skript (Preise, Ratgeber, Hilfe, Landingpages, QR-Generator) senden dasselbe
+   anonyme Lebenszeichen wie der Shop – Zufalls-ID je Tab (sessionStorage), kein Cookie, nichts Persönliches */
+(function(){ if(!/^\/print(\/|$)/.test(location.pathname)||d.querySelector('script[src*="/print/app.js"]')) return;
+  var sid=""; try{ sid=sessionStorage.getItem("psSid")||""; if(!sid){ sid=Math.random().toString(36).slice(2,12)+Date.now().toString(36); sessionStorage.setItem("psSid",sid); } }catch(e){ sid=Math.random().toString(36).slice(2,14)+"t"; }
+  var lastBg=0, beat=function(bye){ var bg=d.hidden&&!bye; if(bg){ if(Date.now()-lastBg<55000) return; lastBg=Date.now(); }
+    try{ fetch("/print/api/hb",{method:"POST",keepalive:true,credentials:"same-origin",headers:{"Content-Type":"application/json","X-Print-Shop":"1"},body:JSON.stringify({sid:sid,path:location.pathname,step:0,prod:"",view:"seite",cart:0,items:[],bg:bg,bye:!!bye})}).catch(function(){}); }catch(e){} };
+  setTimeout(beat,1500); setInterval(beat,25000); d.addEventListener("visibilitychange",function(){ if(!d.hidden) beat(); }); window.addEventListener("pagehide",function(){ beat(true); });
+})();
 })();
