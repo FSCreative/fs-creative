@@ -156,9 +156,17 @@ const PUB_MORE = [
   { key: "polo-budget-9" }, { key: "t-shirt-premium-5" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("18" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("19" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
-const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
+const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
+// Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
+// Brust und Ärmel je 100 × 100 mm. Shirts/Polos/Pullover ohne Tasche: vorne wie Rücken 280 × 400 mm.
+function texArea(slug, name) {
+  const hood = /hood|kapuz/i.test(String(name || ""));
+  if (slug === "positions_front") return hood ? [280, 220] : [280, 400];
+  if (slug === "positions_back") return [280, 400];
+  return [100, 100];
+}
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
   { key: "embroidery", label: "Stick (nur Brust)", pm: "embroidering", val: "embroidery", min: 1, only: /^positions_chest/ }];
 // bei „alle Optionen“ nicht anbieten: braucht eigene Dateien/Stanzformen/Daten oder betrifft Verpackung & Palettenlieferung
@@ -593,7 +601,7 @@ module.exports = function (D) {
     let sizes = null, positions = null, methods = null, maxCopies = null;
     if (kind === "textile") {
       sizes = ((by.textile_sizes && by.textile_sizes.options) || []).filter(o => o && o.slug != null).map(o => ({ slug: String(o.slug), name: (L.textile_sizes && L.textile_sizes[o.slug]) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : String(o.slug).replace(/^unisex_/, "").toUpperCase()).replace(/^Unisexe\b/i, "Unisex") }));
-      positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: x[2].slice(), opts: by[x[0]].options.map(o => String(o.slug)) }));
+      positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: texArea(x[0], sku + " " + (c.title || "") + " " + ((pd && pd.titleSingle) || "")), opts: by[x[0]].options.map(o => String(o.slug)) }));
       const pm = by.printingmethod && Array.isArray(by.printingmethod.options) ? by.printingmethod.options.map(o => String(o.slug)) : null;
       methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);
       // Mützen, Schals, Schürzen, Socken & Co.: keine Druckpositionen/Größen wie bei Shirts → als Werbeartikel (Logo auf der Druckfläche) anbieten statt gar nicht
@@ -1825,7 +1833,31 @@ module.exports = function (D) {
     const target = { product: prod.key, sel: n.fileSel, size: null, bleed: 0, sides: n.positions.length, pages: n.positions.length };
     return newFile("logos", "logos.pdf", pdf, target, checks, { pageMap, logos: metas.map(x => x[1].id) });
   }
+  // Textil-Designer: je Druckposition eine SVG-Seite (Größe = max. Druckfläche, ohne Beschnitt, transparent) → eine Logo-PDF wie bei mergeLogos (Seite je Position)
+  async function designTextile(input, prod) {
+    const { n } = await targetOf(input, true);
+    const pages = Array.isArray(input.pages) ? input.pages : [], pos = n.positions || [];
+    if (!pos.length || pages.length !== pos.length) throw bad("Anzahl der Druckpositionen passt nicht (" + pos.length + " benötigt)");
+    const { PDFDocument } = require("pdf-lib"), out = await PDFDocument.create(), images = [];
+    try {
+      for (let i = 0; i < pos.length; i++) {
+        const r = await svgPagesToPdf([svgSafe(pages[i])], { w: pos[i].area[0], h: pos[i].area[1] }, 0);
+        const src = await PDFDocument.load(r.buf), [pg] = await out.copyPages(src, [0]); out.addPage(pg);
+        r.images.forEach(x => images.push(Object.assign({}, x, { page: i + 1 })));
+      }
+    } catch (e) { log("Textil-Designer-PDF:", e.message); throw Object.assign(new Error("PDF konnte nicht erstellt werden"), { status: 400 }); }
+    const pdf = Buffer.from(await out.save());
+    const pageMap = pos.map((p, i) => ({ page: i + 1, pos: p.slug, title: p.title, area: p.area }));
+    const checks = [{ level: "ok", text: "Logo-PDF aus dem Designer: " + pageMap.map(p => "Seite " + p.page + " = " + p.title + " (" + p.area[0] + " × " + p.area[1] + " mm)").join(", ") + " – Hintergrund transparent, Schriften eingebettet." }];
+    const low = images.filter(x => x.dpi < 150);
+    low.forEach(x => checks.push({ level: x.dpi < 100 ? "error" : "warn", text: pos[x.page - 1].title + ": Bild hat bei " + x.mm[0] + " × " + x.mm[1] + " mm nur " + x.dpi + " dpi (empfohlen ≥ 200)." + (x.dpi < 100 ? " Bitte größeres Bild verwenden oder kleiner platzieren." : " Der Druck kann unscharf wirken.") }));
+    if (images.length && !low.length) checks.push({ level: "ok", text: images.length + " Bild(er) mit ausreichender Auflösung." });
+    (Array.isArray(input.warnings) ? input.warnings : []).slice(0, 10).forEach(w => checks.push({ level: "warn", text: clip(w, 200) }));
+    const target = { product: prod.key, sel: n.fileSel, size: null, bleed: 0, sides: pos.length, pages: pos.length };
+    return newFile("logos", "gestaltung.pdf", pdf, target, checks, { pageMap, design: true });
+  }
   async function handleDesign(input) {
+    { const p0 = await findProduct(input.product); if (p0 && p0.kind === "textile") return designTextile(input, p0); }
     const { prod, target } = await targetOf(input);
     if (!prod.designer) throw bad("Für dieses Produkt bitte eine Datei hochladen");
     const pages = Array.isArray(input.pages) ? input.pages : [];
@@ -2756,7 +2788,25 @@ module.exports = function (D) {
         ["Was kostet ein Roll-up mit Druck?", "Den aktuellen Endpreis inklusive Druck, System, Tasche und Versand zeigt der Konfigurator sofort – je nach Breite und System. Wir vergleichen laufend mit Saxoprint, Flyeralarm und druck.at für dieselbe Ausführung und liegen bei vergleichbarem Material darunter oder gleichauf."],
         ["Welches Roll-up-System ist das richtige?", "Budget und Basic sind leichte Alu-Kassetten für gelegentliche Einsätze, Premium ist stabiler und für häufigen Messeeinsatz, Luxe ist zusätzlich höhenverstellbar. Alle werden mit Tragetasche geliefert."],
         ["Kann ich das Roll-up online selbst gestalten?", "Ja – im kostenlosen Online-Designer mit Vorlagen, eigenen Fotos, Logo und QR-Code; Format, Beschnitt und Sicherheitsabstand sind eingezeichnet, am Ende entsteht ein druckfertiges PDF. Eigene PDF hochladen geht natürlich auch."],
-        ["Welche Druckdaten brauche ich für ein Roll-up?", "PDF im Endformat plus Beschnitt, Bilder mit mindestens 100 dpi in Endgröße, wichtige Inhalte nicht in den unteren 15 cm (verschwinden in der Kassette) – der automatische Datencheck prüft das beim Hochladen."]] }
+        ["Welche Druckdaten brauche ich für ein Roll-up?", "PDF im Endformat plus Beschnitt, Bilder mit mindestens 100 dpi in Endgröße, wichtige Inhalte nicht in den unteren 15 cm (verschwinden in der Kassette) – der automatische Datencheck prüft das beim Hochladen."]] },
+    // Beachflags & Fahnen (Wunsch Simon 04.11.2026; Vergleich 04.11.: in gleicher Ausführung günstiger als druck.at, Flyeralarm, Saxoprint)
+    { id: "flags", slug: "beachflags-bedrucken", main: "outdoor-advertising", sub: "flags-outdoor", rx: /beach|flag|fahne|flagge|skydancer/i,
+      h: "Beachflags & Fahnen mit Logo", h1: "Beachflags bedrucken – Drop, Square & Beach-Flag ab 1 Stück",
+      title: "Beachflags bedrucken ab 1 Stück | FS Creative", desc: "Beachflags mit Logo: Drop-, Square- und Beach-Flags in S bis L, Fahne mit Mast und Tasche, Füße einzeln wählbar – ab 1 Stück, Versand in Österreich inklusive.",
+      txt: "Beachflags in 6 Formen (Beach-Flag unten gerade, schräg, Halbmond oder rund, Square-Flag, Drop-Flag) und 8 Größen – von 67 × 210 cm bis 75 × 440 cm –, im Sublimationsdruck auf 110 g Flaggenstoff oder 115 g Longlife (franst weniger aus). Wahlweise nur die Fahne (Ersatzdruck), mit Fiberglas-Mast oder als Set mit Mast und Polstertasche; den passenden Fuß wählst du separat: Kreuzfuß, Erddübel, Metallplatte, Wassertank oder Wandbefestigung, dazu Drehgelenke und Gewichte. Außerdem Hissflaggen, Fassaden- und Kioskflaggen, Fensterfahnen und Skydancer. Unsere Preise vergleichen wir regelmäßig mit druck.at, Flyeralarm und Saxoprint für dieselbe Ausführung inklusive Versand.",
+      faq: [["Wo kann ich in Österreich Beachflags bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Beachflags in Drop-, Square- und Beach-Flag-Form, S bis L, ab 1 Stück – Preis sofort online, Versand in ganz Österreich inklusive."],
+        ["Ist ein Fuß bei der Beachflag dabei?", "Nein – die Beachflag gibt es als Fahne, mit Mast oder mit Mast und Tasche. Den Fuß wählst du passend zum Untergrund separat: Kreuzfuß oder Metallplatte für harten Boden, Erddübel für Wiese und Sand, Wassertank für Wind."],
+        ["Welche Form ist die richtige?", "Drop-Flags (Tropfen) bleiben auch bei wenig Wind gut lesbar, Square-Flags bieten die größte rechteckige Fläche für Logo und Text, Beach-Flags (Segel) wirken besonders hoch und schlank."],
+        ["Wie wird die Beachflag bedruckt?", "Im Sublimationsdruck einseitig – auf der Rückseite ist das Motiv spiegelverkehrt sichtbar. Der Fahnenstoff ist wetterfest; Longlife-Stoff franst durch seine Struktur weniger aus."]] },
+    // Große Aufkleber & Fahrzeugbeschriftung (Wunsch Simon 04.11.2026; Preise laufend mit Saxoprint, druck.at, Flyeralarm verglichen)
+    { id: "carsticker", slug: "autoaufkleber-drucken", main: "stickers-tapes", sub: "large-stickers", rx: /fahrzeug|auto|car|vinyl|fenster|boden|wand|klebebuchstab/i,
+      h: "Autoaufkleber, Fahrzeugfolien & große Aufkleber", h1: "Autoaufkleber & Fahrzeugbeschriftung drucken – in Wunschgröße ab 1 Stück",
+      title: "Autoaufkleber drucken in Wunschgröße | FS Creative", desc: "Autoaufkleber und Fahrzeugfolien in Wunschgröße: Orajet-Polymerfolie, RapidAir mit Luftkanal, 3M-Fahrzeugfolie, mit Schutzlaminat – ab 1 Stück, Versand in Österreich inklusive.",
+      txt: "Aufkleber für Fahrzeuge in Wunschgröße ab 5 × 5 cm: Polymerfolie Orajet 3551 (70 µm, permanent, ca. 5 Jahre) für ebene und leicht gewölbte Flächen, RapidAir mit Luftkanal-Kleber für blasenfreies Verkleben, ablösbare Monomerfolie Orajet 3162 für befristete Aktionen und gegossene 3M-Fahrzeugfolie IJ280 (ca. 10 Jahre) für stark gewölbte Flächen; Schutzlaminat Oraguard 215 glänzend oder matt macht den Druck UV- und kratzbeständiger. Dazu Fenster-, Boden- und Wandaufkleber, Klebebuchstaben und Vinyl-Aufkleber. Unsere Preise vergleichen wir regelmäßig mit Saxoprint, druck.at und Flyeralarm für dieselbe Folie und Größe inklusive Versand.",
+      faq: [["Wo kann ich in Österreich Autoaufkleber drucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Autoaufkleber und Fahrzeugfolien in Wunschgröße ab 1 Stück – Preis sofort online, Versand in ganz Österreich inklusive."],
+        ["Welche Folie ist die richtige für mein Auto?", "Für Türen, Heck und ebene Flächen reicht die Polymerfolie Orajet 3551 (ca. 5 Jahre), mit Luftkanal (RapidAir) lässt sie sich blasenfrei trocken verkleben. Für stark gewölbte Flächen ist die gegossene 3M-Fahrzeugfolie IJ280 gedacht, für befristete Aktionen die ablösbare Monomerfolie."],
+        ["Brauche ich ein Schutzlaminat?", "Empfohlen für Fahrzeuge: Das Laminat Oraguard 215 (glänzend oder matt) schützt vor UV-Licht und Kratzern und verlängert die Haltbarkeit des Drucks."],
+        ["Welche Größe ist möglich?", "Wunschgröße ab 5 × 5 cm, bei der Polymerfolie bis 146 cm Breite und 750 cm Länge – der Preis wird für deine Größe sofort berechnet."]] }
   ];
   const topicOf = (main, sub) => LLM_TOPICS.find(t => t.main === main && t.sub === sub) || null;
   // sprechende Adresse je Thema (/print/t-shirts-bedrucken …) – Kanonische Adresse der Kategorie, in Sitemap, IndexNow und llms.txt; im Browser zeigt die App dieselbe Kategorie
@@ -2997,7 +3047,12 @@ module.exports = function (D) {
     { slug: "speisekarte-online-gestalten", key: "menu-cards", name: "Speisekarten", h1: "Speisekarte online gestalten – kostenlos, mit Vorlagen und KI", hint: "Für Gasthaus, Café, Hütte und Bar – Stile wie Kreidetafel, Elegant oder Natur, mit QR-Code zur Online-Karte." },
     { slug: "karten-online-gestalten", key: "postcards", name: "Karten", h1: "Karten und Einladungen online gestalten – kostenlos", hint: "Weihnachts-, Einladungs-, Danke- und Postkarten – mit eigenen Fotos, Stilen wie Festlich oder Handgemacht." },
     { slug: "folder-online-gestalten", key: "folder", name: "Folder", h1: "Folder online gestalten – kostenlos, mit Falzlinien und Vorlagen", hint: "Wickel- und Zickzackfalz, Falzlinien im Designer eingezeichnet, Außen- und Innenseite." },
-    { slug: "rollup-online-gestalten", key: "rollups", name: "Roll-ups", h1: "Roll-up online gestalten – kostenlos, mit Vorlagen und KI", hint: "85 × 200 cm und weitere Größen – große Schrift, Logo und Bild für Messe, Event und Geschäft." }];
+    { slug: "rollup-online-gestalten", key: "rollups", name: "Roll-ups", h1: "Roll-up online gestalten – kostenlos, mit Vorlagen und KI", hint: "85 × 200 cm und weitere Größen – große Schrift, Logo und Bild für Messe, Event und Geschäft." },
+    // Shirt-Designer (Wunsch Simon 04.11.2026): echtes Produktfoto von Print.com in der gewählten Farbe, Druckflächen je Position maßstabsgetreu
+    { slug: "t-shirt-online-gestalten", key: "tshirt-basic", tex: true, name: "T-Shirts", h1: "T-Shirt online gestalten – kostenlos im Shirt-Designer",
+      hint: "Shirt-Designer mit echtem Produktfoto in deiner Farbe (Fruit of the Loom, Stanley/Stella, B&C): Text, Logo, Bilder und QR-Code direkt auf Brust, Vorderseite, Rücken oder Ärmel – die maximale Druckfläche ist maßstabsgetreu eingezeichnet. Transferdruck schon ab 1 Stück, bei einfarbigen Motiven schlägt der Designer ab 25 Stück den günstigeren Siebdruck vor. Größen frei mischbar." },
+    { slug: "hoodie-online-gestalten", key: "hoodie-bio", tex: true, name: "Hoodies", h1: "Hoodie online gestalten – kostenlos im Shirt-Designer",
+      hint: "Hoodies (z. B. Stanley/Stella Slammer aus Bio-Baumwolle) im Shirt-Designer mit echtem Produktfoto in deiner Farbe gestalten: vorne 28 × 22 cm über der Bauchtasche, Rücken 28 × 40 cm, Brust und Ärmel 10 × 10 cm – Text, Logo und Bilder einfach platzieren. Druck ab 1 Stück, Versand in Österreich inklusive." }];
   const CMP = [
     { slug: "canva-alternative", other: "Canva", crumb: "Canva-Alternative", title: "Kostenlose Canva-Alternative für Drucksachen", eyebrow: "Canva-Alternative · gratis",
       h1: "Kostenlose Canva-Alternative für Drucksachen – gestalten und drucken in einem",
@@ -3019,9 +3074,13 @@ module.exports = function (D) {
         ["Kann ich Photoshop-Dateien drucken lassen?", "Ja, als PDF, JPG oder PNG mit Beschnitt exportieren und hochladen – die Datei wird automatisch geprüft (Auflösung, Format, Beschnitt)."],
         ["Was kostet das?", "Der Designer ist gratis, du bezahlst nur die Drucksache inklusive Versand in Österreich."]] }];
   async function gestMain(g) {
-    const PB = await pubState().catch(() => null), it = PB && PB.items && PB.items.find(x => x.key === g.key), lo = it && it.rows && it.rows.slice().sort((a, b) => a.gross - b.gross)[0], href = prodUrl(g.key);
-    const lead = g.hint + " Komplett gratis im Browser: " + DFACTS.styles + " Vorlagen-Stile, gratis KI-Assistent, " + DFACTS.fonts + " Schriften, Bilder, QR-Code und Druckkontrolle – das druckfertige PDF entsteht automatisch" + (lo ? ", gedruckt ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück inkl. Versand." : ".");
-    const faq = [["Kann ich " + g.name + " kostenlos online gestalten?", "Ja. Der Online-Designer mit Vorlagen und KI-Assistent ist gratis – ohne Abo, ohne Installation, ohne Wasserzeichen. Du bezahlst nur den Druck" + (lo ? " (ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück inkl. Versand)" : "") + "."],
+    const PB = await pubState().catch(() => null), it = PB && PB.items && PB.items.find(x => x.key === g.key), lo = it && it.rows && it.rows.slice().sort((a, b) => a.gross - b.gross)[0], href = prodUrl(g.key) + (g.tex ? "?gestalten" : "");
+    const lead = g.tex ? g.hint + " Komplett gratis im Browser – das Druck-PDF je Position entsteht automatisch." : g.hint + " Komplett gratis im Browser: " + DFACTS.styles + " Vorlagen-Stile, gratis KI-Assistent, " + DFACTS.fonts + " Schriften, Bilder, QR-Code und Druckkontrolle – das druckfertige PDF entsteht automatisch" + (lo ? ", gedruckt ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück inkl. Versand." : ".");
+    const faq = g.tex ? [["Kann ich " + g.name + " kostenlos online gestalten?", "Ja. Der Shirt-Designer ist gratis – ohne Abo, ohne Installation, ohne Wasserzeichen. Du bezahlst nur den Druck inklusive Versand in Österreich" + (lo ? " (ab " + eurDe(lo.gross) + ")" : "") + "."],
+      ["Wie sehe ich, wie das Motiv auf dem Shirt wirkt?", "Der Designer zeigt das echte Produktfoto in der gewählten Farbe; die maximale Druckfläche jeder Position (Brust, vorne, Rücken, Ärmel) ist maßstabsgetreu eingezeichnet. Nur was in der Fläche liegt, wird gedruckt."],
+      ["Welche Druckart ist die richtige?", "Transferdruck ist fotorealistisch und schon ab 1 Stück möglich. Ist dein Design einfarbig, schlägt der Designer ab 25 Stück Siebdruck vor – meist günstiger und besonders langlebig."],
+      ["Kann ich Größen mischen?", "Ja – Stückzahl je Größe frei wählen, der Preis gilt für die Gesamtmenge."]] :
+      [["Kann ich " + g.name + " kostenlos online gestalten?", "Ja. Der Online-Designer mit Vorlagen und KI-Assistent ist gratis – ohne Abo, ohne Installation, ohne Wasserzeichen. Du bezahlst nur den Druck" + (lo ? " (ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück inkl. Versand)" : "") + "."],
       ["Brauche ich ein Grafikprogramm wie Canva oder Photoshop?", "Nein. Der Designer hat Ebenen, Bildbearbeitung, Verläufe, Bogentext und QR-Codes eingebaut und erstellt das druckfertige PDF mit Beschnitt selbst."],
       ["Wie schnell kommen die " + g.name + "?", "Das voraussichtliche Lieferdatum zeigt der Konfigurator vor der Bestellung; der Versand innerhalb Österreichs ist inklusive."]];
     return heroHtml(g.name + " gestalten", "Gratis online gestalten", g.h1, lead, g.name + " jetzt gestalten", href) + stepsHtml(g.name, href) + featHtml() + faqBlock(faq) + '<p class="pd-muted" style="font-size:13px">Siehe auch: <a href="/print/canva-alternative">Canva-Alternative für Drucksachen</a> · <a href="/print/photoshop-alternative">Photoshop-Alternative</a> · <a href="/print/qr-code-generator">QR-Code-Generator</a></p></div></main>';

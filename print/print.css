@@ -1928,3 +1928,6 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .pd-ctx kbd{font:inherit;font-size:12px;opacity:.6}
 .pd-ctx hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:5px 4px}
 @media (pointer:coarse){.pd-ctx button{padding:11px 12px;font-size:15px}}
+/* Shirt-Designer-Einstieg (Textil, Schritt 3) und Druckart-Vorschlag */
+.ps-texd{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;margin:0 0 14px;border:1px solid var(--ps-line2);border-radius:16px;background:var(--ps-ddbg)}.ps-texd .pd-muted{flex:1 1 220px;font-size:13.5px}
+.ps-texhint{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(48,209,88,.12);border:1px solid rgba(48,209,88,.35);font-size:14px;line-height:1.5}.ps-texhint.warn{background:rgba(255,159,10,.12);border-color:rgba(255,159,10,.4)}.ps-texhint .ps-btn{margin-left:6px}

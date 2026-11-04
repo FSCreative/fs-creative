@@ -736,6 +736,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.deepStrictEqual(r.j.positions[0].area, [70, 6]);
     M.price.salesPrice = 0; { const z = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" } }); assert.strictEqual(z.status, 502); assert.ok(/keinen Preis/.test(z.j.error)); } M.price.salesPrice = 20;
   });
+  await t("Textil-Designer: je Position eine SVG-Seite → Logo-PDF in Größe der Druckfläche (Seitenzuordnung), falsche Seitenzahl abgewiesen", async () => {
+    const TXD = { product: "tshirt-basic", sel: { color_textile: "black_tshirt_fotl_original" }, textile: { method: "transfer", positions: ["positions_back", "positions_chest"], sizes: { m: 10 } } };
+    const sv = (w, h) => '<svg xmlns="http://www.w3.org/2000/svg" width="' + w * 4 + '" height="' + h * 4 + '" viewBox="0 0 ' + w * 4 + " " + h * 4 + '"><text x="20" y="60" font-family="Montserrat" font-size="40" fill="#ffffff">Team</text></svg>';
+    let r = await post("/print/api/design", Object.assign({}, TXD, { pages: [sv(100, 100)] })); assert.strictEqual(r.status, 400, "Seitenzahl muss passen");
+    r = await post("/print/api/design", Object.assign({}, TXD, { pages: [sv(100, 100), sv(280, 400)] })); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    assert.ok(/Logo-PDF aus dem Designer/.test(JSON.stringify(r.j.checks)) && !r.j.blocked);
+    const pdf = await (await fetch(srv.base + "/print/api/file/" + r.j.fileId + "?t=" + r.j.token + "&pdf=1")).arrayBuffer();
+    const { PDFDocument } = require(path.join(ROOT, "node_modules", "pdf-lib")), d = await PDFDocument.load(pdf);
+    assert.deepStrictEqual(d.getPages().map(p => Math.round(p.getSize().width * 25.4 / 72) + "x" + Math.round(p.getSize().height * 25.4 / 72)), ["100x100", "280x400"], "Reihenfolge der Positionen: Brust, Rücken");
+  });
   await t("Textil: Größen-Mix → copies = Summe, Logos je Position als mehrseitige PDF, Bestellung mit variants und Seitenzuordnung", async () => {
     const ts = cat.products.find(p => p.key === "tshirt-basic"); assert.strictEqual(ts.kind, "textile"); assert.deepStrictEqual(ts.positions.map(p => p.slug), ["positions_chest", "positions_front", "positions_back", "positions_sleeve_left"]);
     assert.deepStrictEqual(ts.methods.map(m => m.key), ["transfer", "screen1"]);
@@ -754,7 +764,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const mg = await post("/print/api/logos", Object.assign({}, TX, { logos: { positions_chest: { fileId: l1.j.fileId, token: l1.j.token }, positions_back: { fileId: l2.j.fileId, token: l2.j.token } } }));
     assert.strictEqual(mg.status, 200, JSON.stringify(mg.j)); assert.strictEqual(mg.j.pages, 2); assert.deepStrictEqual(mg.j.pageMap.map(p => p.pos), ["positions_chest", "positions_back"], "feste Reihenfolge");
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + mg.j.fileId + "?t=" + mg.j.token + "&pdf=1")).arrayBuffer()).toString("latin1");
-    const boxes = (pdf.match(/\/MediaBox\s*\[[^\]]+\]/g) || []).map(b => b.match(/[\d.]+/g).map(Number).slice(2).map(mm)); assert.deepStrictEqual(boxes, [[100, 100], [280, 380]]);
+    const boxes = (pdf.match(/\/MediaBox\s*\[[^\]]+\]/g) || []).map(b => b.match(/[\d.]+/g).map(Number).slice(2).map(mm)); assert.deepStrictEqual(boxes, [[100, 100], [280, 400]]);
     const firm = Object.assign({}, cust, { type: "company", company: "Testfirma GmbH", uid: "ATU12345678" });
     const pr = await post("/print/api/price", Object.assign({}, TX, { customerType: "company", uid: "ATU12345678" }));
     const od = await post("/print/api/order", Object.assign({}, TX, { fileId: mg.j.fileId, fileToken: mg.j.token, customer: firm, payment: "invoice", acceptTerms: true, acceptFagg: true, acceptProof: true, expectedGross: pr.j.price.gross }));
