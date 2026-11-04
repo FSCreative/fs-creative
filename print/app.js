@@ -206,7 +206,9 @@
   document.addEventListener("error", function (e) { var t = e.target; if (t && t.tagName === "IMG" && t.closest && t.closest(".ps-ci-img")) { var fb = t.getAttribute("data-fb"); if (fb && t.src !== fb) { t.removeAttribute("data-fb"); t.src = fb; } else t.style.visibility = "hidden"; } }, true);
   function vCart() {
     var co = S.ctype === "company", t = cartTotals();
-    if (!S.cart.length) return '<div class="ps-panel ps-empty"><h2>Dein Warenkorb ist leer</h2><p class="sub">Such dir ein Produkt aus, gestalte es online oder lade deine Druckdaten hoch – dein Warenkorb bleibt 30 Tage gespeichert.</p><div class="ps-nav"><span></span><button type="button" class="ps-btn primary" data-act="shop">Produkte ansehen</button></div></div>';
+    if (!S.cart.length) { setTimeout(function () { if (typeof fromObserve === "function") fromObserve(); }, 0); var pop = ["flyer", "visitenkarten", "plakate", "pvc-banner", "aufkleber", "tshirt-basic"].map(prodByKey).filter(Boolean);
+      return '<div class="ps-panel ps-empty"><span class="ps-empty-ic" aria-hidden="true">' + (V2 ? v2Ic(V2I.cart) : "🛒") + '</span><h2>Dein Warenkorb ist leer</h2><p class="sub">Such dir ein Produkt aus, gestalte es online oder lade deine Druckdaten hoch – dein Warenkorb bleibt 30 Tage gespeichert.</p><div class="ps-nav"><span></span><button type="button" class="ps-btn primary" data-act="shop">Produkte ansehen</button></div></div>' +
+        (pop.length ? '<section class="ps-hsec ps-empty-pop"><div class="ps-hsec-h"><h2>Beliebt bei unseren Kunden</h2></div><div class="ps-pcs">' + pop.map(cardSm).join("") + "</div></section>" : "") + savedHomeHtml() + recentHtml(); }
     var h = '<div class="ps-layout"><div class="ps-panel"><h2>Warenkorb</h2><p class="sub">' + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · wird 30 Tage gespeichert" + (S.me ? " – auch in deinem Kundenkonto" : ' · <button type="button" class="ps-link" data-act="konto">Anmelden</button>, um ihn auf allen Geräten zu haben') + "</p><ul class=\"ps-cart\">";
     S.cart.forEach(function (x) {
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
@@ -1059,7 +1061,7 @@
     var xnl = document.querySelector(".nav-links [data-xnav]"); if (xnl) { xnl.classList.toggle("active", S.view === "xmas"); if (S.view === "xmas") xnl.setAttribute("aria-current", "page"); else xnl.removeAttribute("aria-current"); }
     if (S.view === "xmas" && XM_HTML) { root.innerHTML = XM_HTML; headUpdate(); try { document.title = document.title; } catch (e) {} xmHotspots(); return; }
     if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
-    var h = S.step > 1 ? stepsHtml() : "";
+    var h = S.step > 1 && !(S.step === 4 && !S.cart.length && !S.view) ? stepsHtml() : "";   // leerer Warenkorb: keine Bestellschritte (verwirrt nur)
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
