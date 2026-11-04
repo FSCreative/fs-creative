@@ -1178,6 +1178,29 @@
       if (!savedList().length) { toast("Noch nichts gemerkt – tippe bei einem Produkt auf „Merken“."); return; }
       S.view = ""; setPage("home"); setTimeout(function () { var x = document.querySelector(".ps-savhome"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); });
     try { headUpdate(); } catch (e) {}
+    // Suchvorschläge direkt im Kopf (wie auf der Startseite): Produkte mit Bild, Pfeiltasten, Enter öffnet
+    var inp = q.querySelector("input"), box = document.createElement("div"); box.className = "ps-sug ps-v2sug"; box.setAttribute("role", "listbox"); box.hidden = true; q.appendChild(box);
+    var paint = function () { if (!S || !S.cat) return; var h = sugHtml(inp.value); box.innerHTML = h; box.hidden = !h; };
+    var hide = function () { box.hidden = true; };
+    inp.addEventListener("input", paint); inp.addEventListener("focus", function () { if (inp.value.trim()) paint(); });
+    inp.addEventListener("keydown", function (e) { var its = [].slice.call(box.querySelectorAll(".ps-sug-it")), cur = its.findIndex(function (b) { return b.getAttribute("aria-selected") === "true"; });
+      if (e.key === "Escape") { hide(); return; }
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && its.length && !box.hidden) { e.preventDefault(); var n = e.key === "ArrowDown" ? Math.min(its.length - 1, cur + 1) : Math.max(0, cur - 1); its.forEach(function (b, i) { b.setAttribute("aria-selected", String(i === n)); }); its[n].scrollIntoView({ block: "nearest" }); return; }
+      if (e.key === "Enter" && !box.hidden && cur > -1 && its[cur] && inp.value.trim().length >= 2) { e.preventDefault(); its[cur].click(); } });
+    box.addEventListener("mousedown", function (e) { e.preventDefault(); });   // Fokus im Feld lassen, sonst schließt die Liste vor dem Klick
+    box.addEventListener("click", function (e) { var b = e.target.closest("button"); if (!b) return;
+      if (b.hasAttribute("data-prod")) { e.preventDefault(); e.stopPropagation(); hide(); inp.blur(); S.view = ""; pickProduct(b.getAttribute("data-prod"), function () { go(2); }); return; }
+      if (b.getAttribute("data-act") === "searchall") { e.preventDefault(); e.stopPropagation(); hide(); q.requestSubmit ? q.requestSubmit() : q.submit(); } });
+    document.addEventListener("click", function (e) { if (!box.hidden && !q.contains(e.target)) hide(); });
+    q.addEventListener("submit", hide);
+    // „Alle Produkte“: Hauptkategorien mit ihren Unterkategorien (aus dem Katalog), sobald der geladen ist
+    var tries = 0, mega = setInterval(function () { if (++tries > 60) clearInterval(mega); if (!S || !S.cat || !S.cat.groups) return; clearInterval(mega);
+      var dd = document.querySelector(".ps-v2dd"); if (!dd) return; var gs = S.cat.groups.filter(function (g) { return g.subs && g.subs.length && S.cat.products.some(function (p) { return (p.cat || {}).main === g.slug; }); });
+      if (!gs.length) return; dd.classList.add("mega");
+      dd.innerHTML = '<div class="mg">' + gs.map(function (g) { var n = S.cat.products.filter(function (p) { return (p.cat || {}).main === g.slug; }).length;
+        return '<div class="col"><a class="gh" href="/print?produkte&kategorie=' + esc(g.slug) + '" data-nav="produkte" data-navgroup="' + esc(g.slug) + '">' + (imgOk(g.img) ? '<img src="' + esc(g.img) + '" alt="" loading="lazy">' : "") + "<span>" + esc(g.name) + "<small>" + n + " Produkte</small></span></a>" +
+          g.subs.map(function (u) { return '<a href="/print?produkte&kategorie=' + esc(g.slug) + "&unter=" + esc(u.slug) + '" data-nav="produkte" data-navgroup="' + esc(g.slug) + '" data-navsub="' + esc(u.slug) + '">' + esc(u.name) + "</a>"; }).join("") + "</div>"; }).join("") +
+        '</div><a class="tot" href="/print?produkte" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte ansehen →</a>"; }, 300);
   }
   // ── Vorschau neue Startseite: Slider auf Bildschirmbreite, Vorteile-Leiste, beliebte Kategorien mit Bildern ──
   function v2Home() {
@@ -1260,7 +1283,7 @@
   }
   function setPage(pg, push) {
     S.view = ""; S.page = pg; S.step = 1; S.dd = "";
-    if (push !== false) try { history.pushState({ pg: pg }, "", pg === "produkte" ? "/print?produkte" + (S.group ? "&kategorie=" + encodeURIComponent(S.group) : "") : "/print"); } catch (e) {}
+    if (push !== false) try { history.pushState({ pg: pg }, "", pg === "produkte" ? "/print?produkte" + (S.group ? "&kategorie=" + encodeURIComponent(S.group) + (S.sub ? "&unter=" + encodeURIComponent(S.sub) : "") : "") : "/print"); } catch (e) {}
     render(); window.scrollTo({ top: 0 });
   }
   window.addEventListener("popstate", function () { if (!S.cat) return; var st = history.state;
@@ -1269,7 +1292,7 @@
     var qq = new URLSearchParams(location.search); if (qq.has("konto")) { S.view = "konto"; render(); return; } if (qq.has("warenkorb")) { S.view = ""; go(4, true); return; } S.group = qq.get("kategorie") || ""; S.sub = qq.get("unter") || ""; S.q = qq.get("q") || ""; setPage(qq.has("produkte") ? "produkte" : "home", false); });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-nav]"); if (!a || !S.cat) return; e.preventDefault();
-    var pg = a.getAttribute("data-nav"); S.group = a.getAttribute("data-navgroup") || ""; S.sub = ""; S.q = "";
+    var pg = a.getAttribute("data-nav"); S.group = a.getAttribute("data-navgroup") || ""; S.sub = a.getAttribute("data-navsub") || ""; S.q = "";
     setPage(pg);
   });
 

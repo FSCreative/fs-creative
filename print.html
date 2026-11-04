@@ -172,6 +172,9 @@
   function fit(){items.forEach(function(a){a.hidden=false;});for(var k=items.length-1;k>=0&&box.scrollWidth>box.clientWidth+1;k--)items[k].hidden=true;var R=document.documentElement;if(!R.classList.contains('ps-v2s'))R.style.setProperty('--v2h0',(hd.offsetTop+hd.offsetHeight)+'px');R.style.setProperty('--nav-h',(hd.offsetTop+hd.offsetHeight)+'px');}
   /* beim Scrollen schlanker Kopf: Vorteile-Leiste (und am Handy die Kategorien) blenden aus */
   var sc=false;window.addEventListener('scroll',function(){var s=window.scrollY>90;if(s===sc)return;sc=s;document.documentElement.classList.toggle('ps-v2s',s);fit();},{passive:true});
+  /* aktiver Menüpunkt: Produktseite oder Kategorie der aktuellen Adresse (auch nach Wechseln innerhalb des Shops) */
+  function mark(){var p=location.pathname,k=new URLSearchParams(location.search).get('kategorie')||'';items.forEach(function(a){var h=a.getAttribute('href')||'',g=a.getAttribute('data-navgroup');var on=g?(k===g):(h===p);a.classList.toggle('on',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});}
+  ['pushState','replaceState'].forEach(function(f){var o=history[f];history[f]=function(){var r=o.apply(this,arguments);try{mark();}catch(e){}return r;};});window.addEventListener('popstate',mark);mark();
   fit();window.addEventListener('resize',fit);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
 })();
 </script>
