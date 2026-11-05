@@ -728,7 +728,9 @@ module.exports = function (D) {
     if (!de || !/^[\w.-]{1,120}\.json$/.test(String(de.fileName || ""))) throw new Error("CMS: keine deutsche Datei");
     const t = cmsTrim(await get(cmsBase() + "/" + de.fileName, 90000));
     if (!t.mains.length && !Object.keys(t.products).length) throw new Error("CMS: leer");
+    const oldV = CMS && CMS.v;
     CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 6 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
+    if (oldV !== CMS.v && CAT) { CAT.cv = "cms-" + CMS.v; catalog(false).catch(() => {}); }   // neues CMS-Format (z. B. Optionsbilder aus Infotexten) → kuratierte Produkte gleich neu aufbauen, nicht erst nach 24 h
     return CMS;
   }
   async function cms(force) {
