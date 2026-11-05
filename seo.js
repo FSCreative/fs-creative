@@ -304,6 +304,10 @@ module.exports = function (D) {
     if (o.image) body.media = [{ mediaFormat: "PHOTO", sourceUrl: o.image }];
     return api("POST", B.gbp4 + "/" + loc.account + "/" + loc.name + "/localPosts", { token: await gTok(loc.acct), json: body });
   }
+  // Profil-Grunddaten (Kategorien, Website, Beschreibung) lesen und gezielt ändern – Wunsch Simon 05.11.2026: Kategorie „Druckerei“ + Shop-Link für die lokale Suche
+  async function gbpProfile(loc) { return api("GET", B.gbpInfo + "/" + loc.name + "?readMask=title,categories,websiteUri,profile,serviceItems", { token: await gTok(loc.acct) }); }
+  async function gbpCategories(q) { return ((await api("GET", B.gbpInfo + "/categories?regionCode=AT&languageCode=de&view=BASIC&pageSize=20&filter=" + encodeURIComponent("displayname=" + q), { token: await gTok(S().gAcc[0] && S().gAcc[0].email) })).categories || []).map(c => ({ name: c.name, displayName: c.displayName })); }
+  async function gbpPatch(loc, mask, json) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=" + encodeURIComponent(mask), { token: await gTok(loc.acct), json }); CACHE.delete("gbp:loc"); }
   async function gbpHours(loc, periods) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=regularHours", { token: await gTok(loc.acct), json: { regularHours: { periods } } }); CACHE.delete("gbp:loc"); }
 
   // Profile teilen (Wunsch Simon 27.10.2026): alle Standorte eines verbundenen Kontos bekommen ein weiteres Konto als Administrator (MANAGER);
@@ -347,6 +351,14 @@ module.exports = function (D) {
       if (p === "/admin/api/seo/google/connect" && req.method === "POST") return J(res, 200, { ok: true, url: authUrl() }), true;
       if (p === "/admin/api/seo/google/disconnect" && req.method === "POST") { const pl = await body(req), e = String(pl.email || ""); S().gAcc = e ? S().gAcc.filter(x => x.email !== e) : []; S().google = S().gAcc[0] || {}; CACHE.clear(); save(); return J(res, 200, { ok: true }), true; }
       if (p === "/admin/api/seo/gsc" && req.method === "GET") { const s = await siteOf(u.searchParams.get("id")); if (!gConnected()) return J(res, 200, { ok: true, gsc: { connected: false } }), true; return J(res, 200, { ok: true, gsc: await gsc(s, u.searchParams.get("force") === "1") }), true; }
+      // Suchbegriff × Seite (z. B. nur /print…) für gezielte Verbesserungen bei Positionen 4–30
+      if (p === "/admin/api/seo/gsc-pages" && req.method === "GET") { const s = await siteOf(u.searchParams.get("id")); if (!gConnected()) return J(res, 200, { ok: false, error: "Google nicht verbunden" }), true;
+        const prop = await propOf(s); if (!prop) return J(res, 200, { ok: false, error: "Keine Search-Console-Property" }), true;
+        const end = new Date(Date.now() - 2 * 864e5), start = new Date(end.getTime() - 27 * 864e5), pre = String(u.searchParams.get("prefix") || "");
+        const json = { startDate: ymd(start), endDate: ymd(end), dimensions: ["query", "page"], rowLimit: 2000, dataState: "all" };
+        if (pre) json.dimensionFilterGroups = [{ filters: [{ dimension: "page", operator: "contains", expression: pre.slice(0, 100) }] }];
+        const r = await api("POST", B.gsc + "/sites/" + encodeURIComponent(prop) + "/searchAnalytics/query", { token: await gTok(PROP_ACC[prop]), json });
+        return J(res, 200, { ok: true, from: json.startDate, to: json.endDate, rows: (r.rows || []).map(x => ({ q: x.keys[0], page: x.keys[1], clicks: x.clicks, imp: x.impressions, pos: Math.round(x.position * 10) / 10 })) }), true; }
       if (p === "/admin/api/seo/inspect" && req.method === "POST") { const pl = await body(req), s = await siteOf(pl.id); return J(res, 200, { ok: true, result: await inspectUrl(s, String(pl.url || s.url)) }), true; }
       if (p === "/admin/api/seo/sitemap" && req.method === "POST") { const pl = await body(req), s = await siteOf(pl.id); await submitSitemap(s, String(pl.sitemap || (s.url + "sitemap.xml"))); return J(res, 200, { ok: true }), true; }
       if (p === "/admin/api/seo/gbp" && req.method === "GET") {
@@ -365,6 +377,21 @@ module.exports = function (D) {
         const pl = await body(req), s = await siteOf(pl.id), loc = (await gbpOf(s)).find(l => l.name === String(pl.location || "")); if (!loc) throw fail(404, "Standort nicht gefunden");
         if (p === "/admin/api/seo/gbp/reply") { await gbpReply(loc, String(pl.review || ""), String(pl.text || "")); return J(res, 200, { ok: true }), true; }
         if (p === "/admin/api/seo/gbp/post") { if (!clip(pl.text, 10)) throw fail(400, "Bitte einen Text eingeben"); const r = await gbpPost(loc, pl); return J(res, 200, { ok: true, post: { name: r.name || "", url: r.searchUrl || "" } }), true; }
+        if (p === "/admin/api/seo/gbp/profile") {
+          const op = String(pl.op || "read");
+          if (op === "read") return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true;
+          if (op === "categories") return J(res, 200, { ok: true, categories: await gbpCategories(clip(pl.q, 60)) }), true;
+          if (pl.confirm !== true) throw fail(400, "Bitte bestätigen");
+          const cur = await gbpProfile(loc), cats = cur.categories || {};
+          if (op === "addCategory") { const n = String(pl.category || ""); if (!/^categories\/gcid:[a-z0-9_]+$/.test(n)) throw fail(400, "Ungültige Kategorie");
+            const add = (cats.additionalCategories || []).map(c => ({ name: c.name })); if ((cats.primaryCategory || {}).name !== n && !add.some(c => c.name === n)) add.push({ name: n });
+            await gbpPatch(loc, "categories", { categories: { primaryCategory: { name: cats.primaryCategory.name }, additionalCategories: add.slice(0, 9) } }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
+          if (op === "website") { const w = String(pl.website || "").trim(); if (!/^https:\/\/[^\s"'<>]{4,200}$/.test(w)) throw fail(400, "Ungültige Adresse");
+            await gbpPatch(loc, "websiteUri", { websiteUri: w }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
+          if (op === "description") { const d = clip(pl.description, 750); if (d.length < 50) throw fail(400, "Beschreibung zu kurz");
+            await gbpPatch(loc, "profile.description", { profile: { description: d } }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
+          throw fail(400, "Unbekannte Aktion");
+        }
         if (p === "/admin/api/seo/gbp/hours") { await gbpHours(loc, Array.isArray(pl.periods) ? pl.periods.slice(0, 28) : []); return J(res, 200, { ok: true }), true; }
       }
       return J(res, 404, { ok: false, error: "Nicht gefunden" }), true;
