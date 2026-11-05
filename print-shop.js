@@ -2037,6 +2037,13 @@ module.exports = function (D) {
     const text = [title, ""].concat(intro, [""], (rows || []).map(r => r[0] + ": " + r[1]), [""], outro || [], ["", "FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn"]).join("\n");
     try { await D.mailSend({ to, subject, text, html: mailHtml(title, intro, rows, outro, prog), replyTo }); return true; } catch (e) { log("Mail an " + String(to).replace(/^[^@]+/, "…") + " fehlgeschlagen:", e.message); return false; }
   }
+  // „Kundenkonto anlegen“ in den Kundenmails (Wunsch Simon 05.11.2026) – nur für Gastbestellungen, solange es zur Adresse noch kein Konto gibt; führt zur Bestellseite (Passwort setzen)
+  async function acctRows(o) {
+    if (!o || o.customerId || !o.customer || !o.customer.email) return [];
+    const ex = await accountMod().byEmail(o.customer.email).catch(() => null); if (ex) return [];
+    return [["Kundenkonto anlegen", cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#konto", "button"]];
+  }
+  const ACCT_HINT = "Mit einem Kundenkonto hast du alle Bestellungen, Rechnungen und Druckdaten an einem Ort und bestellst mit einem Klick nach – einfach Passwort festlegen.";
   const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.filter(l => l && l[1] && !/^(ohne|nein|keine?\b.*|none|unbedruckt)$/i.test(String(l[1]).trim()) && !/druckverfahren/i.test(l[0])).map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) + " (ggf. auch am darauffolgenden Werktag)" : "")],
     ["Lieferadresse", [o.customer.company, o.customer.firstName + " " + o.customer.lastName, o.customer.street, o.customer.zip + " " + o.customer.city, COUNTRIES[o.customer.country]].filter(Boolean).join(", ")],
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
@@ -2401,10 +2408,10 @@ module.exports = function (D) {
     if (!o.mails.confirm) {
       o.mails.confirm = await mail(o.customer.email, "Bestellbestätigung " + o.nr + " · FS Creative Druck", "Danke für deine Bestellung!",
         ["Hallo " + o.customer.firstName + ",", "wir haben deine Bestellung erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung bekommst du, sobald der Auftrag in Produktion geht.") + (o.check === "review" ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : o.check === "graphic" ? " Wir machen deine Grafik jetzt druckfertig und schicken sie dir vor dem Druck zur Freigabe – gedruckt wird erst, wenn du sie freigegeben hast." : o.check === "self" ? " Du hast deine Druckdaten direkt freigegeben – wir geben den Auftrag " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion." : " Du hast den Profi-Datencheck gewählt: Wir prüfen deine Druckdaten persönlich und melden uns bei Fragen, bevor gedruckt wird.")],
-        orderRows(o), ["Den Versand bestätigen wir dir mit Sendungsverfolgung per E-Mail.",
+        orderRows(o).concat(await acctRows(o)), ["Den Versand bestätigen wir dir mit Sendungsverfolgung per E-Mail."].concat(o.customerId ? [] : [ACCT_HINT], [
           "Es gelten unsere AGB für den Druckshop (Stand " + deDate(AGB_VERSION) + "), die du bei der Bestellung akzeptiert hast: " + cfg().publicUrl + "/print/agb",
           "Hinweis: Da die Drucksachen nach deinen Vorgaben angefertigt werden, besteht kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG).",
-          "Bei Fragen antworte einfach auf diese Mail."], D.notifyTo, 0) ? nowIso() : null;
+          "Bei Fragen antworte einfach auf diese Mail."]), D.notifyTo, 0) ? nowIso() : null;
       if (D.notifyTo) await mail(D.notifyTo, "Druckshop: neue Bestellung " + o.nr + " – " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck" : o.check === "graphic" ? " · Grafikaufbereitung" : ""), "Neue Bestellung im Druckshop", [(o.check === "pro" ? "PROFI-DATENCHECK gebucht: Druckdaten bitte persönlich prüfen (Format, Beschnitt, Auflösung, Texte am Rand), erst dann bestellen. " : o.check === "graphic" ? "DATENCHECK MIT GRAFIKAUFBEREITUNG gebucht: Grafik druckfertig machen, im Cockpit „Druckdaten austauschen“ und „Zur Freigabe senden“ – bestellt wird erst nach der Freigabe des Kunden. " : "") + "Bitte im Cockpit unter „Druckaufträge“ prüfen und bei Print.com bestellen. Einkauf " + eur(o.price.purchase.total) + ", Marge " + eur(o.price.margin) + "."], orderRows(o).concat([["E-Mail", o.customer.email], ["Telefon", o.customer.phone]].concat(o.customer.uid ? [["UID", o.customer.uid + (o.customer.uidValid ? " (gültig)" : " (nicht bestätigt)")]] : [])), [], o.customer.email);
       await store.putOrder(o);
     }
@@ -2595,7 +2602,7 @@ module.exports = function (D) {
     if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) {
       o.mails.shipped = await mail(o.customer.email, "Deine Drucksachen sind unterwegs · " + o.nr, "Deine Bestellung ist versendet",
         ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) ist gedruckt und auf dem Weg zu dir."],
-        [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(tracks.map((t, i) => ["Sendungsverfolgung" + (tracks.length > 1 ? " " + (i + 1) : ""), t])), tracks.length ? ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."] : ["Die Sendungsverfolgung schicken wir dir nach, sobald sie verfügbar ist."], D.notifyTo, 2) ? nowIso() : null;
+        [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(tracks.map((t, i) => ["Sendungsverfolgung" + (tracks.length > 1 ? " " + (i + 1) : ""), t]), await acctRows(o)), tracks.length ? ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."] : ["Die Sendungsverfolgung schicken wir dir nach, sobald sie verfügbar ist."], D.notifyTo, 2) ? nowIso() : null;
       if (o.mails.shipped) { hist(o, "Versandmail gesendet"); if (tracks.length) o.mails.tracking = o.mails.shipped; }
     } else if (o.mails.shipped && !o.mails.tracking && tracks.length) {   // Versandmail ging ohne Tracking raus → Tracking nachschicken
       o.mails.tracking = await mail(o.customer.email, "Sendungsverfolgung zu deiner Bestellung · " + o.nr, "Hier kannst du dein Paket verfolgen",
@@ -3867,9 +3874,11 @@ module.exports = function (D) {
   const fileLink = id => "/print/api/file/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(sig("file", id)) + "&pdf=1";
   const proofPublic = o => o.proof && o.proof.fileId ? { status: o.proof.status, sentAt: o.proof.sentAt, note: o.proof.note || "", answeredAt: o.proof.answeredAt || "", reply: o.proof.reply || "",
     files: (o.proof.files || [o.proof.fileId]).map((id, i, a) => ({ url: fileLink(id), label: a.length > 1 ? "Motiv " + (i + 1) : "Druck-PDF" })) } : null;
+  // Druckdaten der Bestellung für die Kundin/den Kunden (Bestellseite und Kundenkonto): die zuletzt gültige Druck-PDF, bei mehreren Motiven je Motiv
+  const orderFiles = o => (Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map((m, i) => ({ id: m.fileId, label: "Motiv " + (i + 1) })) : o.fileId ? [{ id: o.fileId, label: "Druckdaten" }] : []).filter(f => f.id).map(f => ({ url: fileLink(f.id), label: f.label }));
   const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
-    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o),
+    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o), files: orderFiles(o),
     canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
     trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!foundOf(o) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
@@ -4852,7 +4861,7 @@ module.exports = function (D) {
           const link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#freigabe";
           const sent = await mail(o.customer.email, "Bitte freigeben: deine Druckdaten · " + o.nr, "Deine Druckdaten sind bereit zur Freigabe",
             [(o.customer.firstName ? "Hallo " + o.customer.firstName + "," : "Hallo,"), "wir haben deine Druckdaten für " + o.product.title + " (" + o.copies + " Stk.) " + (o.check === "graphic" ? "druckfertig aufbereitet" : "geprüft und angepasst") + ". Bitte sieh sie dir an und gib sie frei – erst dann geht der Auftrag in den Druck."].concat(o.proof.note ? ["Hinweis von uns: " + o.proof.note] : []),
-            [["Druckdaten ansehen & freigeben", link, "button"]], ["Passt etwas nicht? Dann wähle auf der Seite „Änderung wünschen“ und schreib kurz dazu, was wir ändern sollen."], D.notifyTo);
+            [["Druckdaten ansehen & freigeben", link, "button"]].concat(await acctRows(o)), ["Passt etwas nicht? Dann wähle auf der Seite „Änderung wünschen“ und schreib kurz dazu, was wir ändern sollen."], D.notifyTo);
           hist(o, "Druckdaten zur Freigabe gesendet" + (o.proof.round > 1 ? " (Runde " + o.proof.round + ")" : "") + (sent ? "" : " – Mail fehlgeschlagen")); stamp(o); await store.putOrder(o);
           return J(res, 200, { ok: !!sent, order: o, error: sent ? undefined : "Mail an den Kunden fehlgeschlagen" });
         }

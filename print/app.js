@@ -2871,31 +2871,33 @@
     var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t), pf = k === "pay" || k === "rejected" ? "" : proofHtml(o, id, t);
     var body = k === "pay" ? '<div class="btn-row" style="justify-content:center"><button type="button" class="ps-btn primary" data-act="retrypay:' + esc(id) + "|" + esc(t) + '">Erneut bezahlen</button></div>'
       : k === "rejected" ? "" : k === "shipped" ? tc + tr + fb : k === "delivered" ? fb + tr + tc : pf + tr + tc + fb;
+    var ofl = (o.files || []).length && k !== "pay" ? '<p class="ps-ofiles">' + o.files.map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ") + "</p>" : "";
+    body += ofl;
     var h = '<div class="big" aria-hidden="true">' + hd.icon + "</div><h2>" + hd.title + "</h2>" + (k === "pay" ? "" : hd.sub) + hd.html + body +
       (o.groupSize > 1 && k !== "pay" && k !== "rejected" ? '<p class="pd-muted ps-grp">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
       (k === "pay" ? "" : '<div class="btn-row ps-sbtns"><a class="ps-btn" href="/print">' + (k === "rejected" || k === "problem" ? "Zum Shop" : "Weitere Drucksachen bestellen") + "</a>" + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>");
     var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
-    if (!pv && !S.me && o.canAccount && k !== "pay" && k !== "rejected") h += '<div class="ps-verify ps-mkacct"><h3>Als Kundenkonto speichern?</h3><p>Du hast als Gast bestellt. Mit einem Passwort wird daraus dein Kundenkonto – Bestellungen, Rechnungen und Sendungsverfolgung an einem Ort, nachbestellen mit einem Klick.</p>' +
+    if (!pv && !S.me && o.canAccount && k !== "pay" && k !== "rejected") h += '<div class="ps-verify ps-mkacct" id="konto"><h3>Als Kundenkonto speichern?</h3><p>Du hast als Gast bestellt. Mit einem Passwort wird daraus dein Kundenkonto – Bestellungen, Rechnungen und Sendungsverfolgung an einem Ort, nachbestellen mit einem Klick.</p>' +
       '<form class="ps-form" data-mkacct="' + esc(id) + "|" + esc(t) + '" novalidate><div class="ps-uidrow"><input type="password" name="password" autocomplete="new-password" minlength="8" placeholder="Passwort (mind. 8 Zeichen)" aria-label="Passwort (mind. 8 Zeichen)"><button type="submit" class="ps-btn primary small">Konto anlegen</button></div><p class="ps-err" role="alert" hidden></p></form></div>';
     if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
     root.innerHTML = '<div class="ps-panel ps-status st-' + k + '" data-oid="' + esc(id) + '" data-t="' + esc(t) + '" data-st="' + esc(o.status) + '" data-sig="' + esc(liveSig(o)) + '">' + h + "</div>";
     headUpdate();   // Bestellseite: in der Handy-Leiste nicht „Start“ markieren
-    if (location.hash === "#freigabe" && !S.pfScrolled) { var pfx = document.getElementById("freigabe"); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); }, 150); } }
+    if ((location.hash === "#freigabe" || location.hash === "#konto") && !S.pfScrolled) { var pfx = document.getElementById(location.hash.slice(1)); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); var pw = pfx.querySelector('input[type="password"]'); if (pw) pw.focus({ preventScroll: true }); }, 150); } }   // aus der Mail: Freigabe bzw. „Kundenkonto anlegen“
   }
   // Druckfreigabe (Wunsch Simon 05.11.2026): aufbereitete bzw. ausgetauschte Druckdaten ansehen und freigeben – oder Änderung wünschen
   function proofHtml(o, id, t) {
     var pf = o.proof; if (!pf) return "";
     var files = (pf.files || []).map(function (f) { return '<a class="ps-btn small" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ");
-    if (pf.status === "approved") return '<div class="ps-proof ok" id="freigabe"><h3>✓ Druckdaten freigegeben</h3><p>Danke! Wir geben deinen Auftrag jetzt in den Druck.</p><p>' + files + "</p></div>";
-    if (pf.status === "changes") return '<div class="ps-proof" id="freigabe"><h3>Änderungswunsch ist angekommen</h3><p>Wir passen die Druckdaten an und schicken sie dir erneut zur Freigabe.' + (pf.reply ? "<br><i>„" + esc(pf.reply) + "“</i>" : "") + "</p></div>";
-    return '<div class="ps-proof warn" id="freigabe" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte deine Druckdaten freigeben</h3><p>Wir haben deine Druckdaten ' + (o.check === "graphic" ? "druckfertig aufbereitet" : "geprüft und angepasst") + '. Sieh sie dir bitte an – gedruckt wird erst nach deiner Freigabe.</p>' +
-      (pf.note ? '<p class="ps-proof-n"><b>Hinweis von uns:</b> ' + esc(pf.note) + "</p>" : "") + "<p>" + files + "</p>" +
+    if (pf.status === "approved") return '<div class="ps-pfx ok" id="freigabe"><h3>✓ Druckdaten freigegeben</h3><p>Danke! Wir geben deinen Auftrag jetzt in den Druck.</p><p>' + files + "</p></div>";
+    if (pf.status === "changes") return '<div class="ps-pfx" id="freigabe"><h3>Änderungswunsch ist angekommen</h3><p>Wir passen die Druckdaten an und schicken sie dir erneut zur Freigabe.' + (pf.reply ? "<br><i>„" + esc(pf.reply) + "“</i>" : "") + "</p></div>";
+    return '<div class="ps-pfx warn" id="freigabe" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte deine Druckdaten freigeben</h3><p>Wir haben deine Druckdaten ' + (o.check === "graphic" ? "druckfertig aufbereitet" : "geprüft und angepasst") + '. Sieh sie dir bitte an – gedruckt wird erst nach deiner Freigabe.</p>' +
+      (pf.note ? '<p class="ps-pfx-n"><b>Hinweis von uns:</b> ' + esc(pf.note) + "</p>" : "") + "<p>" + files + "</p>" +
       '<div class="btn-row"><button type="button" class="ps-btn primary" data-pfok>Druckdaten freigeben</button><button type="button" class="ps-btn" data-pfchg>Änderung wünschen</button></div>' +
-      '<div class="ps-proof-c" hidden><textarea rows="3" maxlength="2000" placeholder="Was sollen wir ändern?" aria-label="Was sollen wir ändern?"></textarea><button type="button" class="ps-btn small" data-pfsend>Änderungswunsch senden</button></div><p class="ps-err" role="alert" hidden></p></div>';
+      '<div class="ps-pfx-c" hidden><textarea rows="3" maxlength="2000" placeholder="Was sollen wir ändern?" aria-label="Was sollen wir ändern?"></textarea><button type="button" class="ps-btn small" data-pfsend>Änderungswunsch senden</button></div><p class="ps-err" role="alert" hidden></p></div>';
   }
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-pfok],[data-pfchg],[data-pfsend]"); if (!b) return;
-    var bx = b.closest(".ps-proof"), err = bx.querySelector(".ps-err"), c = bx.querySelector(".ps-proof-c");
+    var bx = b.closest(".ps-pfx"), err = bx.querySelector(".ps-err"), c = bx.querySelector(".ps-pfx-c");
     if (b.hasAttribute("data-pfchg")) { c.hidden = !c.hidden; if (!c.hidden) c.querySelector("textarea").focus(); return; }
     var body = b.hasAttribute("data-pfok") ? { op: "approve" } : { op: "change", text: c.querySelector("textarea").value };
     b.disabled = true; err.hidden = true;
@@ -2989,6 +2991,7 @@
     var tr = o.tracks && o.tracks.length, ship = tr && o.status === "shipped";
     return '<div class="ps-oacts">' + (tr ? '<a class="ps-btn small' + (ship ? " primary" : "") + '" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a>' : "") +
       (o.canReorder ? '<button type="button" class="ps-btn small' + (big && !ship ? " primary" : "") + '" data-act="reorder:' + esc(o.id) + '">Nochmal bestellen</button>' : "") +
+      (o.files || []).map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + "</a>"; }).join("") +   // Druck-PDF ansehen (Wunsch Simon 05.11.2026)
       '<a class="ps-btn small ghost" href="' + ordUrl(o) + '">Details</a></div>';
   }
   // Sendungsverfolgung: Paketdienst, Sendungsnummer mit Kopier-Knopf, Link; „Status aktualisieren“ fragt Print.com (höchstens alle 15 min)
