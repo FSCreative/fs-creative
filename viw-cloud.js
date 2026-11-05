@@ -7,6 +7,8 @@
 // Große Dateien bei Anmeldung in Teilen zu 10 MB (Nextcloud-Chunking); über einen Freigabe-Link in einem Stück (durchgereicht). Cockpit-Seite: admin-cockpit/zviw.js
 "use strict";
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { Readable } = require("stream");
 
 module.exports = function (D) {
@@ -199,21 +201,43 @@ module.exports = function (D) {
   }
   // Teil-Upload (Nextcloud-Chunking v2): Ordner anlegen → Teile 00001… → „.file“ ans Ziel verschieben
   const chunkId = id => { if (!/^fsc-[a-f0-9]{16,40}$/.test(String(id || ""))) throw fail(400, "Ungültige Upload-Kennung"); return String(id); };
-  async function chunkStart(p) { const c = await acct(), id = "fsc-" + crypto.randomBytes(12).toString("hex"); const r = await dav("MKCOL", uploadsUrl(c, id), { headers: { Destination: filesUrl(c, p) } }); if (r.status !== 201) throw davError(r, "Upload vorbereiten"); return { id }; }
+  // Freigabe-Link (Wunsch Simon 05.11.2026 – „hängt bei 9 %“): Der Upload lief dort in EINEM Stück durch Cloudflare, das nur ~100 MB je Anfrage durchlässt.
+  // Jetzt auch hier Teile zu 10 MB: der Server sammelt sie im Datenordner und schickt die Datei danach selbst in einem Stück an die Nextcloud –
+  // im Hintergrund (Abschluss kann länger als die 100 s dauern, die Cloudflare auf eine Antwort wartet); das Cockpit fragt den Stand mit „chunkstatus“ ab.
+  const TMP = path.join(D.DATA_DIR || require("os").tmpdir(), "viw-tmp"), JOBS = new Map();
+  const tmpOf = id => path.join(TMP, chunkId(id));
+  try { fs.mkdirSync(TMP, { recursive: true }); for (const d of fs.readdirSync(TMP)) { const f = path.join(TMP, d); if (Date.now() - fs.statSync(f).mtimeMs > 24 * 3600e3) fs.rmSync(f, { recursive: true, force: true }); } } catch (e) {}
+  async function* partsStream(dir, names) { for (const n of names) { for await (const c of fs.createReadStream(path.join(dir, n))) yield c; } }
+  async function shareDone(id, p, total, mtime, overwrite) {
+    const dir = tmpOf(id), names = fs.readdirSync(dir).filter(n => /^\d{5}$/.test(n)).sort(), size = names.reduce((a, n) => a + fs.statSync(path.join(dir, n)).size, 0);
+    if (+total && size !== +total) throw fail(400, "Upload unvollständig (" + size + " von " + total + " Bytes) – bitte erneut hochladen");
+    JOBS.set(id, { state: "run", path: norm(p), at: Date.now() });
+    putStream(p, Readable.from(partsStream(dir, names)), size, { overwrite, mtime })
+      .then(r => JOBS.set(id, { state: "done", path: r.path, at: Date.now() }))
+      .catch(e => JOBS.set(id, { state: "err", error: e.message === "exists" ? "exists" : e.message, at: Date.now() }))
+      .finally(() => { fs.rmSync(dir, { recursive: true, force: true }); setTimeout(() => JOBS.delete(id), 3600e3).unref(); });
+    return { pending: true, id };
+  }
+  function chunkStatus(id) { const j = JOBS.get(chunkId(id)); if (!j) throw fail(404, "Upload nicht gefunden – bitte erneut hochladen"); if (j.state === "err") throw fail(j.error === "exists" ? 409 : 502, j.error); return j.state === "done" ? { done: true, path: j.path } : { pending: true }; }
+  async function chunkStart(p) { const c = await acct(), id = "fsc-" + crypto.randomBytes(12).toString("hex");
+    if (c.mode === "share") { fs.mkdirSync(tmpOf(id), { recursive: true }); return { id }; }
+    const r = await dav("MKCOL", uploadsUrl(c, id), { headers: { Destination: filesUrl(c, p) } }); if (r.status !== 201) throw davError(r, "Upload vorbereiten"); return { id }; }
   async function chunkPut(id, n, p, total, buf) {
     const c = await acct(); n = parseInt(n, 10); if (!(n >= 1 && n <= 10000)) throw fail(400, "Ungültiger Teil");
+    if (c.mode === "share") { const d = tmpOf(id); if (!fs.existsSync(d)) throw fail(404, "Upload abgelaufen – bitte erneut hochladen"); fs.writeFileSync(path.join(d, String(n).padStart(5, "0")), buf); return { n }; }
     const r = await dav("PUT", uploadsUrl(c, chunkId(id), String(n).padStart(5, "0")), { headers: { Destination: filesUrl(c, p), "OC-Total-Length": String(+total || 0), "Content-Type": "application/octet-stream", "Content-Length": String(buf.length) }, body: buf, timeout: 600000 });
     if (r.status !== 201 && r.status !== 204) throw davError(r, "Teil " + n + " hochladen");
     return { n };
   }
   async function chunkDone(id, p, total, mtime, overwrite) {
+    if ((await acct()).mode === "share") return shareDone(chunkId(id), p, total, mtime, overwrite);
     const c = await acct(), h = { Destination: filesUrl(c, p), "OC-Total-Length": String(+total || 0), Overwrite: overwrite ? "T" : "F" };
     if (mtime > 0) h["X-OC-Mtime"] = String(Math.floor(mtime));
     const r = await dav("MOVE", uploadsUrl(c, chunkId(id), ".file"), { headers: h, timeout: 600000 });
     if (r.status !== 201 && r.status !== 204) { dav("DELETE", uploadsUrl(c, id)).catch(() => {}); throw davError(r, "zusammensetzen"); }
     return { path: norm(p) };
   }
-  async function chunkAbort(id) { await dav("DELETE", uploadsUrl(await acct(), chunkId(id))).catch(() => {}); return { id }; }
+  async function chunkAbort(id) { if ((await acct()).mode === "share") { fs.rmSync(tmpOf(id), { recursive: true, force: true }); return { id }; } await dav("DELETE", uploadsUrl(await acct(), chunkId(id))).catch(() => {}); return { id }; }
 
   function readBody(req, max) {
     return new Promise((resolve, reject) => { const ch = []; let n = 0;
@@ -287,6 +311,7 @@ module.exports = function (D) {
         if (op === "exists") return J(res, 200, { ok: true, exists: await exists(pl.path) });
         if (op === "chunkstart") return J(res, 200, Object.assign({ ok: true }, await chunkStart(pl.path)));
         if (op === "chunkdone") return J(res, 200, Object.assign({ ok: true }, await chunkDone(pl.id, pl.path, pl.total, +pl.mtime || 0, !!pl.overwrite)));
+        if (op === "chunkstatus") return J(res, 200, Object.assign({ ok: true }, chunkStatus(pl.id)));
         if (op === "chunkabort") return J(res, 200, Object.assign({ ok: true }, await chunkAbort(pl.id)));
         if (op === "frommail") {   // Mail-Anhänge ablegen: { mails:[{folder,uid,index,account,filename}], dir } – vorhandene Namen bekommen „(2)“
           if (!mailAttachment) throw fail(503, "Postfach nicht verbunden");

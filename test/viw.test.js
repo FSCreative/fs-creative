@@ -133,13 +133,20 @@ async function startServer(dir, env) {
     const sget = async (base, p) => (await fetch(base + p, { headers: { cookie: COOKIE } })).json();
     const sop = async (base, body) => (await fetch(base + "/admin/api/viw/op", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) })).json();
     const sup = async (base, p, buf) => (await fetch(base + "/admin/api/viw/upload?path=" + encodeURIComponent(p), { method: "PUT", headers: { cookie: COOKIE, "content-type": "application/octet-stream" }, body: buf })).json();
-    await t("Freigabe-Link mit Passwort: Status, nur der freigegebene Ordner, Hochladen (auch groß in einem Stück), kein Teil-Upload", async () => {
+    await t("Freigabe-Link mit Passwort: Status, nur der freigegebene Ordner, Hochladen (auch groß in einem Stück und in Teilen)", async () => {
       const s = await sget(shs.base, "/admin/api/viw/status?check=1"); assert.strictEqual(s.mode, "share"); assert.strictEqual(s.reachable, true, JSON.stringify(s)); assert.strictEqual(s.web, SH + "/index.php/s/AbCdEf12345"); assert.strictEqual(s.user, "");
       const l = await sget(shs.base, "/admin/api/viw/list?path=/"); assert.ok(l.ok, JSON.stringify(l)); assert.deepStrictEqual(l.items.map(x => x.name), ["Plan.pdf"]);
       let r = await sop(shs.base, { op: "mkdir", dir: "/", name: "Fotos" }); assert.ok(r.ok, JSON.stringify(r)); assert.ok(sh.state.files.has("/Freigabe/Fotos"));
       r = await sup(shs.base, "/Fotos/klein.jpg", Buffer.from("jpg")); assert.ok(r.ok, JSON.stringify(r)); assert.ok(sh.state.files.has("/Freigabe/Fotos/klein.jpg"));
       const big = Buffer.alloc(11 * 1024 * 1024, 7); r = await sup(shs.base, "/Fotos/gross.mov", big); assert.ok(r.ok, JSON.stringify(r)); assert.strictEqual(sh.state.files.get("/Freigabe/Fotos/gross.mov").data.length, big.length);
-      r = await sop(shs.base, { op: "chunkstart", path: "/x.bin" }); assert.strictEqual(r.ok, false);
+      // Teil-Upload auch beim Freigabe-Link (05.11.2026: in einem Stück blockte Cloudflare ab ~100 MB): Server sammelt die Teile und schickt die Datei im Hintergrund weiter
+      r = await sop(shs.base, { op: "chunkstart", path: "/Fotos/teile.bin" }); assert.ok(r.ok && r.id, JSON.stringify(r)); const cid = r.id;
+      const p1 = Buffer.alloc(1000, 1), p2 = Buffer.alloc(500, 2);
+      for (const [n, b] of [[1, p1], [2, p2]]) { const cr = await (await fetch(shs.base + "/admin/api/viw/chunk?id=" + cid + "&n=" + n + "&total=1500&path=" + encodeURIComponent("/Fotos/teile.bin"), { method: "PUT", headers: { cookie: COOKIE, "content-type": "application/octet-stream" }, body: b })).json(); assert.ok(cr.ok, JSON.stringify(cr)); }
+      r = await sop(shs.base, { op: "chunkdone", id: cid, path: "/Fotos/teile.bin", total: 1500 }); assert.ok(r.ok && r.pending, JSON.stringify(r));
+      for (let i = 0; i < 40 && !(r.done); i++) { await new Promise(z => setTimeout(z, 50)); r = await sop(shs.base, { op: "chunkstatus", id: cid }); assert.ok(r.ok, JSON.stringify(r)); }
+      assert.ok(r.done, JSON.stringify(r)); assert.ok(Buffer.concat([p1, p2]).equals(sh.state.files.get("/Freigabe/Fotos/teile.bin").data), "Teile in richtiger Reihenfolge zusammengesetzt");
+      r = await sop(shs.base, { op: "chunkdone", id: cid, path: "/Fotos/teile.bin", total: 1500 }); assert.strictEqual(r.ok, false, "Teile nach dem Abschluss aufgeräumt");
       const d = await fetch(shs.base + "/admin/api/viw/file?path=" + encodeURIComponent("/Plan.pdf"), { headers: { cookie: COOKIE } }); assert.strictEqual(await d.text(), "%PDF plan");
       const pv = await fetch(shs.base + "/admin/api/viw/preview?fileid=2", { headers: { cookie: COOKIE } }); assert.strictEqual(pv.status, 404);
       assert.ok(!sh.state.files.has("/Privat/Plan.pdf") && !sh.state.log.some(l => /Privat/.test(l)), "nichts außerhalb der Freigabe");

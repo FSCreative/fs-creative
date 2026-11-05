@@ -266,12 +266,13 @@ function run(it){
   if(it.dirOnly) return ensureDir(target).then(function(){ it.state="done"; });
   var mtime=it.file.lastModified?Math.floor(it.file.lastModified/1000):0;
   return ensureDir(dir).then(function(){
-    var small=it.size<=SMALL||(ST&&ST.mode==="share");   /* Freigabe-Link: immer in einem Stück (Server reicht durch) */
+    var small=it.size<=SMALL;   /* große Dateien immer in Teilen – auch beim Freigabe-Link (der Server setzt sie zusammen; in einem Stück blockte Cloudflare ab ~100 MB) */
     var attempt=function(overwrite,nm){ var path=join(dir,nm);
       if(small) return xhrPut("/admin/api/viw/upload?path="+encodeURIComponent(path)+"&overwrite="+(overwrite?1:0)+"&mtime="+mtime,it.file,it,0);
       return (overwrite?Promise.resolve({exists:false}):op({op:"exists",path:path})).then(function(j){ if(j.exists) throw new Error("exists");
         return op({op:"chunkstart",path:path}).then(function(s){ it.upId=s.id; var n=Math.ceil(it.size/CHUNK);
-          return (function part(i){ if(i>n) return op({op:"chunkdone",id:s.id,path:path,total:it.size,mtime:mtime,overwrite:overwrite});
+          var wait=function(){ return new Promise(function(r){ setTimeout(r,2500); }).then(function(){ return op({op:"chunkstatus",id:s.id}); }).then(function(j){ return j.done?j:wait(); }); };   /* Freigabe-Link: Server schickt die Datei im Hintergrund weiter */
+          return (function part(i){ if(i>n) return op({op:"chunkdone",id:s.id,path:path,total:it.size,mtime:mtime,overwrite:overwrite}).then(function(j){ return j.pending?wait():j; });
             var from=(i-1)*CHUNK, blob=it.file.slice(from,Math.min(it.size,from+CHUNK)), tries=0;
             var put=function(){ return xhrPut("/admin/api/viw/chunk?id="+encodeURIComponent(s.id)+"&n="+i+"&total="+it.size+"&path="+encodeURIComponent(path),blob,it,from).catch(function(e){ if(it.stop||++tries>=3) throw e; return new Promise(function(r){ setTimeout(r,1500*tries); }).then(put); }); };
             return put().then(function(){ return part(i+1); }); })(1).catch(function(e){ op({op:"chunkabort",id:s.id}).catch(function(){}); throw e; }); }); }); };
