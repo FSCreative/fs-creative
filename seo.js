@@ -306,7 +306,7 @@ module.exports = function (D) {
   }
   // Profil-Grunddaten (Kategorien, Website, Beschreibung) lesen und gezielt ändern – Wunsch Simon 05.11.2026: Kategorie „Druckerei“ + Shop-Link für die lokale Suche
   async function gbpProfile(loc) { return api("GET", B.gbpInfo + "/" + loc.name + "?readMask=title,categories,websiteUri,profile,serviceItems", { token: await gTok(loc.acct) }); }
-  async function gbpCategories(q) { return ((await api("GET", B.gbpInfo + "/categories?regionCode=AT&languageCode=de&view=BASIC&pageSize=20&filter=" + encodeURIComponent("displayname=" + q), { token: await gTok(S().gAcc[0] && S().gAcc[0].email) })).categories || []).map(c => ({ name: c.name, displayName: c.displayName })); }
+  async function gbpCategories(loc, q) { return ((await api("GET", B.gbpInfo + "/categories?regionCode=AT&languageCode=de&view=BASIC&pageSize=20&filter=" + encodeURIComponent("displayname=" + q), { token: await gTok(loc.acct) })).categories || []).map(c => ({ name: c.name, displayName: c.displayName })); }
   async function gbpPatch(loc, mask, json) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=" + encodeURIComponent(mask), { token: await gTok(loc.acct), json }); CACHE.delete("gbp:loc"); }
   async function gbpHours(loc, periods) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=regularHours", { token: await gTok(loc.acct), json: { regularHours: { periods } } }); CACHE.delete("gbp:loc"); }
 
@@ -377,10 +377,10 @@ module.exports = function (D) {
         const pl = await body(req), s = await siteOf(pl.id), loc = (await gbpOf(s)).find(l => l.name === String(pl.location || "")); if (!loc) throw fail(404, "Standort nicht gefunden");
         if (p === "/admin/api/seo/gbp/reply") { await gbpReply(loc, String(pl.review || ""), String(pl.text || "")); return J(res, 200, { ok: true }), true; }
         if (p === "/admin/api/seo/gbp/post") { if (!clip(pl.text, 10)) throw fail(400, "Bitte einen Text eingeben"); const r = await gbpPost(loc, pl); return J(res, 200, { ok: true, post: { name: r.name || "", url: r.searchUrl || "" } }), true; }
-        if (p === "/admin/api/seo/gbp/profile") {
+        if (p === "/admin/api/seo/gbp/profile") try {   // Fehler als JSON mit Status 200 (ein 502 von Google würde Cloudflare durch eine eigene Fehlerseite ersetzen)
           const op = String(pl.op || "read");
           if (op === "read") return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true;
-          if (op === "categories") return J(res, 200, { ok: true, categories: await gbpCategories(clip(pl.q, 60)) }), true;
+          if (op === "categories") return J(res, 200, { ok: true, categories: await gbpCategories(loc, clip(pl.q, 60)) }), true;
           if (pl.confirm !== true) throw fail(400, "Bitte bestätigen");
           const cur = await gbpProfile(loc), cats = cur.categories || {};
           if (op === "addCategory") { const n = String(pl.category || ""); if (!/^categories\/gcid:[a-z0-9_]+$/.test(n)) throw fail(400, "Ungültige Kategorie");
@@ -391,7 +391,7 @@ module.exports = function (D) {
           if (op === "description") { const d = clip(pl.description, 750); if (d.length < 50) throw fail(400, "Beschreibung zu kurz");
             await gbpPatch(loc, "profile.description", { profile: { description: d } }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
           throw fail(400, "Unbekannte Aktion");
-        }
+        } catch (e) { return J(res, 200, { ok: false, status: e.status || 500, error: String(e.message || e).slice(0, 300) }), true; }
         if (p === "/admin/api/seo/gbp/hours") { await gbpHours(loc, Array.isArray(pl.periods) ? pl.periods.slice(0, 28) : []); return J(res, 200, { ok: true }), true; }
       }
       return J(res, 404, { ok: false, error: "Nicht gefunden" }), true;
