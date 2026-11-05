@@ -162,7 +162,7 @@ const PUB_MORE = [
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("25" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("26" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -754,8 +754,8 @@ module.exports = function (D) {
   const optFull = (o, inf) => cmsClean(String((o && o.description) || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n").replace(/<[^>]*>/g, " ").replace(/[ \t]+/g, " ").trim() || (inf && inf.d) || "").split("\n").filter(l => !/^\s*(erfahre|mehr erfahren|lies mehr|datenblatt|siehe)\b/i.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();   // „Erfahre mehr über …“ ohne Link weglassen
   // Sätze zur Druckdaten-Vorbereitung aus dem ganzen Options-Text (Print.com-CMS): erscheinen automatisch in den Druckdaten-Anforderungen,
   // für JEDES Produkt und jede gewählte bzw. fest vorgegebene Option (Simon 05.11.2026: „alles für alle Produkte“, nicht je Produkt nachbessern)
-  const FILE_RX = /\b(datei\w*|druckdat\w*|anlegen|angelegt|anlieferung|liefer\w+ (?:sie|du)|kontur\w*|sonderfarbe\w*|vollton\w*|spiegel\w*|beschnitt\w*|vektor\w*|ebene\w*|pfad\w*|stanzkontur|schnittlinie|schneidelinie|cutcontour|thrucut|kisscut|white|weißdruck|weiße? schicht|sicherheitsabstand|auflösung|dpi|pantone|vorlage)\b/i;
-  const FILE_NO = /wissensbasis|knowledge ?base|website|hier klicken|kundenservice|support|e-?mail/i;
+  const FILE_RX = /\b(datei\w*|druckdat\w*|anlegen|angelegt|anlieferung|liefer\w+ (?:sie|du)|kontur\w*|sonderfarbe\w*|vollton\w*|spiegel\w*|beschnitt\w*|vektor\w*|ebene\w*|pfad\w*|stanzkontur|schnittlinie|schneidelinie|cutcontour|thrucut|kisscut|white|weißdruck|weiße? schicht|sicherheitsabstand|auflösung|dpi|vorlage)\b/i;
+  const FILE_NO = /wissens\w*|knowledge ?base|website|hier klicken|kundenservice|support|e-?mail|weitere informationen|siehe (?:die )?datei|dateispezifikation|anforderungen an die druckdaten|druckdatenanforderungen|sonderfarbenbibliothek|erfährst du|mehr dazu|produktseite/i;   // Verweise auf fremde Seiten/Bibliotheken – wir haben eigene (Hilfe, .ase)
   const fileHints = t => { const out = []; String(t || "").replace(/\*\*|__|^#+\s*/gm, "").split(/\n+|(?<=[.!?])\s+(?=[A-ZÄÖÜ])/).map(x => x.replace(/^[-*•]\s*/, "").trim()).forEach(x => {
       if (x.length < 15 || x.length > 400 || !FILE_RX.test(x) || FILE_NO.test(x) || out.indexOf(x) > -1) return; out.push(x); }); return out.slice(0, 4).join(" "); };
   const optShort = t => { const p = String(t || "").split(/\n+/).map(x => x.replace(/\*\*|__|^#+\s*/g, "").trim()).filter(x => x && !/^[-*•]/.test(x))[0] || ""; return p.length > 280 ? p.slice(0, 260).replace(/\s+\S*$/, "") + " …" : p; };
