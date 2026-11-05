@@ -2216,3 +2216,22 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-remrow .ps-remb+.ps-remb{border-left:1px solid var(--border-2,rgba(0,0,0,.15))}
 .ps-remrow .ps-remb:hover{background:rgba(47,107,255,.08);color:var(--accent)}
 .ps-remrow .ps-remb:focus-visible{outline:3px solid #ffd23f;outline-offset:-3px}
+/* Themen (Startseite: 4 täglich wechselnd + „Alle Themen“) */
+.ps-thg{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.ps-thg.all{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));margin-top:16px}
+.ps-tht{display:flex;flex-direction:column;gap:7px;color:var(--text);text-decoration:none}
+.ps-tht .im{position:relative;display:block;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#e9edf3}
+.ps-tht .im img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+.ps-tht:hover .im img{transform:scale(1.05)}
+.ps-tht b{font-size:14.5px;font-weight:600}.ps-tht small{color:var(--text-dim);font-weight:400}
+.ps-tht.more .im::after{content:"";position:absolute;inset:0;background:rgba(10,18,40,.55);transition:background .3s}
+.ps-tht.more:hover .im::after{background:rgba(10,18,40,.4)}
+.ps-tht.more .im i{position:absolute;z-index:1;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:#fff;color:#0f172a;font:300 40px/56px sans-serif;text-align:center;font-style:normal;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:transform .3s cubic-bezier(.3,1.6,.5,1)}
+.ps-tht.more:hover .im i{transform:scale(1.12) rotate(90deg)}
+.ps-tht:focus-visible{outline:3px solid #ffd23f;outline-offset:3px;border-radius:12px}
+.ps-th-head{position:relative;margin:6px 0 20px;border-radius:16px;overflow:hidden;aspect-ratio:4/1;max-height:300px;width:100%;background:#e9edf3}
+.ps-th-head img{width:100%;height:100%;object-fit:cover;display:block}
+.ps-th-head>div{position:absolute;left:0;bottom:0;right:0;padding:24px 26px;background:linear-gradient(0deg,rgba(8,14,32,.75),rgba(8,14,32,0))}
+.ps-th-head h2{color:#fff;margin:0;font-size:clamp(24px,3vw,36px)}.ps-th-head .sub{color:rgba(255,255,255,.85);margin:4px 0 0}
+@media (max-width:1000px){.ps-thg{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.ps-thg{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ps-th-head{aspect-ratio:16/9}}
