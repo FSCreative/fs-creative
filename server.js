@@ -5438,7 +5438,7 @@ FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
 if (require.main === module) setInterval(() => PRINT.pollActive().catch(e => console.error("Druck-Status:", e.message)), 30 * 60 * 1000).unref();   // laufende Druckaufträge: Status/Tracking alle 30 min
 // ── Vertraulichkeitsvereinbarungen (nda.js): Links aus dem Cockpit „Rechtliches“, online unterschreiben, PDF an beide Seiten ──
-const UPLOADS = require("./uploads.js")({ DATA_DIR, ORIGIN, send, sendGz, adminAuthed, push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+const UPLOADS = require("./uploads.js")({ DATA_DIR, ORIGIN, send, sendGz, adminAuthed, mailSend: m => mailApiSend(m), push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m), mailReady: () => !!(MAIL.url && MAIL.token) });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);

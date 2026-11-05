@@ -44,9 +44,11 @@ module.exports = function (D) {
   function summary(l) {
     const files = (l.files || []).filter(f => !f.deleted);
     return { id: l.id, token: l.token, url: D.ORIGIN + "/upload/" + l.token, title: l.title, customer: l.customer, email: l.email, note: l.note, createdAt: l.createdAt, expires: l.expires || "", active: l.active !== false, open: open(l),
-      dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), lastAt: l.lastAt || "", msgs: (l.msgs || []).slice(-20), seenAt: l.seenAt || "", count: files.filter(f => f.done).length, bytes: files.filter(f => f.done).reduce((a, f) => a + f.size, 0),
+      dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), lastAt: l.lastAt || "", msgs: (l.msgs || []).slice(-50).map(m => ({ at: m.at, text: m.text, by: m.by === "fs" ? "fs" : "kunde", mailed: !!m.mailed })), seenAt: l.seenAt || "", count: files.filter(f => f.done).length, bytes: files.filter(f => f.done).reduce((a, f) => a + f.size, 0),
       files: files.map(f => ({ id: f.id, name: f.name, dir: f.dir || "", fs: f.by === "fs", size: f.size, got: f.got, done: !!f.done, at: f.at, doneAt: f.doneAt || "" })).reverse() };
   }
+  // Chat zum Upload (Wunsch Simon 05.11.2026): Nachrichten vom Kunden und Antworten aus dem Cockpit (by: "fs") – auf der Upload-Seite als Verlauf
+  const pubMsgs = l => (l.msgs || []).slice(-50).map(m => ({ at: m.at, text: m.text, by: m.by === "fs" ? "fs" : "kunde" }));
   function create(b) {
     const title = clip(b.title, 120).trim(); if (!title) throw Object.assign(new Error("Bitte einen Titel angeben (z. B. Kunde oder Projekt)"), { status: 400 });
     const days = Math.max(0, Math.min(365, parseInt(b.days, 10) || 0));
@@ -183,7 +185,7 @@ module.exports = function (D) {
     try {
       if (req.method === "GET") {
         if (limited("upget", ip, 3000, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
-        if (m[2] === "/list") return J(res, 200, { ok: true, dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), files: pubFiles(l) });
+        if (m[2] === "/list") return J(res, 200, { ok: true, dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), files: pubFiles(l), msgs: pubMsgs(l) });
         if (m[2] === "/file") { const f = liveFiles(l).find(x => x.id === String(u.searchParams.get("f") || "")); if (!f) return J(res, 404, { ok: false, error: "Datei nicht gefunden" }); return void sendFile(res, l, f); }
         if (m[2] === "/zip") return void await sendZip(res, l, u.searchParams.get("dir"));
         return J(res, 405, { ok: false, error: "method_not_allowed" });
@@ -215,7 +217,7 @@ module.exports = function (D) {
         const b = await readJson(req, 8000), t = clip(b.text, 2000).trim(); if (!t) return J(res, 400, { ok: false, error: "Leer" });
         l.msgs = (l.msgs || []).concat([{ at: nowIso(), text: t, name: clip(b.name, 100).trim() }]).slice(-50); l.lastAt = nowIso(); save();
         if (D.push) D.push("lead", { title: "Upload-Nachricht: " + l.title, body: t.slice(0, 200), url: "/admin#uploads", tag: "upmsg-" + l.id }).catch(() => {});
-        return J(res, 200, { ok: true });
+        return J(res, 200, { ok: true, msgs: pubMsgs(l) });
       }
     } catch (e) { if (res.headersSent) return void res.destroy(); return J(res, e.status || 500, { ok: false, error: e.status ? e.message : "Fehler beim Hochladen" }); }
     return J(res, 404, { ok: false, error: "not_found" });
@@ -245,6 +247,16 @@ module.exports = function (D) {
         if (b.op === "update") { if (b.title != null && clip(b.title, 120).trim()) l.title = clip(b.title, 120).trim(); if (b.note != null) l.note = clip(b.note, 600).trim(); if (b.active != null) l.active = !!b.active;
           if (b.days != null) { const d = parseInt(b.days, 10) || 0; l.expires = d > 0 ? new Date(Date.now() + Math.min(365, d) * 864e5).toISOString() : ""; } save(); return J(res, 200, { ok: true, link: summary(l) }); }
         if (b.op === "seen") { l.seenAt = nowIso(); save(true); return J(res, 200, { ok: true }); }
+        if (b.op === "reply") {   // Antwort im Chat; auf Wunsch kurze Mail an den Kunden mit dem Link (nur wenn eine Adresse hinterlegt ist)
+          const t = clip(b.text, 4000).trim(); if (!t) return J(res, 400, { ok: false, error: "Bitte eine Nachricht schreiben" });
+          const msg = { at: nowIso(), text: t, by: "fs" }; l.msgs = (l.msgs || []).concat([msg]).slice(-50); l.seenAt = nowIso(); save();
+          let mailed = false, mailErr = "";
+          if (b.mail === true && l.email && D.mailSend) {
+            try { await D.mailSend({ to: l.email, subject: "Neue Nachricht zu „" + l.title + "“ · FS Creative", text: "Hallo,\n\ndu hast eine neue Nachricht von FS Creative zu „" + l.title + "“:\n\n" + t + "\n\nAntworten und Dateien hochladen kannst du direkt hier:\n" + D.ORIGIN + "/upload/" + l.token + "\n\nLiebe Grüße\nSimon Felder\nFS Creative" }); mailed = true; msg.mailed = true; save(true); }
+            catch (e) { mailErr = String(e.message || e).slice(0, 160); log("Upload-Chat: Mail fehlgeschlagen:", mailErr); }
+          }
+          return J(res, 200, { ok: true, mailed, mailError: mailErr, link: summary(l) });
+        }
         // Ordner: anlegen, umbenennen/verschieben (inkl. Unterordner und Dateien), Dateien verschieben
         if (b.op === "mkdir") { const d = addDir(l, (safeDir(b.parent) ? safeDir(b.parent) + "/" : "") + safeDir(b.name)); if (!d) return J(res, 400, { ok: false, error: "Bitte einen Namen eingeben" }); save(); return J(res, 200, { ok: true, dir: d, link: summary(l) }); }
         if (b.op === "renameDir") { const from = safeDir(b.from), to = safeDir(b.to); if (!from || !to) return J(res, 400, { ok: false, error: "Bitte einen Namen eingeben" });
@@ -286,7 +298,7 @@ module.exports = function (D) {
     '.btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:11px 20px;font:600 15px/1 inherit;font-family:inherit;cursor:pointer;background:var(--y);color:#111}.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}' +
     '.list{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:8px}.it{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:10px 14px;background:#101017;border:1px solid var(--line);border-radius:12px;font-size:14px}' +
     '.it b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.it .st{color:var(--dim);white-space:nowrap}.it.ok .st{color:var(--ok)}.it.bad .st{color:var(--bad)}.bar{grid-column:1/-1;height:6px;border-radius:3px;background:#262631;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--y);transition:width .2s}.it.ok .bar i{background:var(--ok)}' +
-    '.sum{margin-top:14px;color:var(--dim);font-size:14px}.msg{margin-top:22px;display:grid;gap:8px}.msg textarea{width:100%;min-height:90px;border-radius:12px;border:1px solid var(--line);background:#101017;color:var(--ink);padding:10px 12px;font:inherit}' +
+    '.sum{margin-top:14px;color:var(--dim);font-size:14px}.msg{margin-top:22px;display:grid;gap:8px}.chat{display:grid;gap:8px;max-height:300px;overflow:auto;padding:2px}.cb{max-width:88%;justify-self:start;background:#1d1d27;border-radius:14px 14px 14px 4px;padding:8px 11px;font-size:14px;white-space:pre-line;overflow-wrap:anywhere}.cb.me{justify-self:end;background:#2b2a12;border-radius:14px 14px 4px 14px}.cb small{display:block;margin-top:3px;font-size:12px;color:var(--dim)}.cn{margin:0;color:var(--dim);font-size:14px}.msg textarea{width:100%;min-height:90px;border-radius:12px;border:1px solid var(--line);background:#101017;color:var(--ink);padding:10px 12px;font:inherit}' +
     '.fb{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 10px}.fbb{display:flex;gap:8px;flex-wrap:wrap}.btn.sm{padding:8px 14px;font-size:14px}.crumb{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:14px;color:var(--dim)}' +
     '.crumb button{background:none;border:0;color:var(--ink);font:inherit;cursor:pointer;padding:4px 6px;border-radius:6px}.crumb button:hover{background:#1c1c25}.crumb b{padding:4px 6px}.dirs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:0 0 12px}.dirs:empty{display:none}' +
     '.dir{display:flex;gap:8px;align-items:center;background:#101017;border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--ink);font:inherit;font-size:14px;cursor:pointer;text-align:left;overflow:hidden}.dir:hover{border-color:var(--y)}.dir span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.it small{color:var(--dim);font-weight:400}' +
@@ -319,7 +331,10 @@ module.exports = function (D) {
     function short(d) { return d ? d.split("/").pop() : "Alle Dateien"; }
     function api(u, o) { return fetch(u, Object.assign({ credentials: "omit", headers: { "X-Upload": "1" } }, o)).then(function (r) { return r.json().catch(function () { return { ok: false, error: "HTTP " + r.status }; }).then(function (j) { j.status = r.status; return j; }); }); }
     function post(u, b) { return api(u, { method: "POST", headers: { "X-Upload": "1", "Content-Type": "application/json" }, body: JSON.stringify(b) }); }
-    var lt = null; function reload(soon) { clearTimeout(lt); lt = setTimeout(function () { api(B + "/list").then(function (j) { if (!j.ok) return; files = j.files || []; dirs = j.dirs || dirs; draw(); }); }, soon ? 600 : 0); }
+    var lt = null; function reload(soon) { clearTimeout(lt); lt = setTimeout(function () { api(B + "/list").then(function (j) { if (!j.ok) return; files = j.files || []; dirs = j.dirs || dirs; draw(); if (j.msgs) chat(j.msgs); }); }, soon ? 600 : 0); }
+    var chatN = -1; function chat(ms) { var c = document.getElementById("chat"); if (!c || ms.length === chatN) return; chatN = ms.length;
+      c.innerHTML = ms.length ? ms.map(function (m) { var me = m.by !== "fs"; return '<div class="cb' + (me ? " me" : "") + '"><div>' + esc(m.text) + '</div><small>' + (me ? "Du" : "FS Creative") + " · " + new Date(m.at).toLocaleString("de-AT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + "</small></div>"; }).join("") : '<p class="cn">Noch keine Nachrichten – schreib uns gern, was die Dateien sind oder was damit passieren soll.</p>';
+      c.scrollTop = c.scrollHeight; }
     // links: Ordnerbaum
     function tree(d, lvl) { return kids(d).map(function (x) { var n = files.filter(function (f) { return inDir(f.dir, x); }).length;
       return '<button type="button" class="tr' + (x === cur ? " on" : "") + '" data-d="' + esc(x) + '" data-drop="' + esc(x) + '" style="padding-left:' + (10 + 16 * lvl) + 'px">' + FOLD + "<span>" + esc(short(x)) + "</span>" + (n ? "<small>" + n + "</small>" : "") + "</button>" + (inDir(cur, x) ? tree(x, lvl + 1) : ""); }).join(""); }
@@ -410,8 +425,8 @@ module.exports = function (D) {
     });
     window.addEventListener("beforeunload", function (e) { if (Q.length) { e.preventDefault(); e.returnValue = ""; } });
     $("ms").addEventListener("click", function () { var t = $("mt").value.trim(), o = $("mo"); if (!t) { o.textContent = "Bitte zuerst eine Nachricht schreiben."; return; }
-      post(B + "/note", { text: t }).then(function (j) { o.textContent = j.ok ? "Danke – Nachricht ist angekommen ✓" : (j.error || "Fehler"); if (j.ok) $("mt").value = ""; }); });
-    draw(); reload(); setInterval(function () { if (!Q.length && document.visibilityState === "visible") reload(); }, 60000);
+      post(B + "/note", { text: t }).then(function (j) { o.textContent = j.ok ? "Gesendet ✓" : (j.error || "Fehler"); if (j.ok) { $("mt").value = ""; if (j.msgs) chat(j.msgs); } }); });
+    draw(); reload(); setInterval(function () { if (!Q.length && document.visibilityState === "visible") reload(); }, 20000);   // 20 s: Antworten von FS Creative erscheinen bald
   }
   function uploadPage(l) {
     const UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 19.5h15"/></svg>';
@@ -426,7 +441,7 @@ module.exports = function (D) {
       '<label class="drop od-drop" id="drop"><input type="file" id="fi" multiple>' + UP + '<b>Dateien hierher ziehen</b><small>oder klicken zum Auswählen</small></label>' +
       '<div class="ubtn"><label class="btn">Dateien auswählen<input type="file" id="fi2" multiple hidden></label><label class="btn ghost">Ordner auswählen<input type="file" id="fd" webkitdirectory multiple hidden></label></div>' +
       '<ul class="list" id="list"></ul><p class="sum" id="sum"></p><p class="tip">Lass das Fenster offen, bis alles „Fertig“ zeigt. Bricht die Verbindung ab, wähle die Datei erneut – es geht dort weiter, wo es aufgehört hat.</p>' +
-      '<div class="msg"><label for="mt"><b>Nachricht an FS Creative</b> <span style="color:var(--dim)">(optional)</span></label><textarea id="mt" maxlength="2000" placeholder="z. B. was die Dateien sind oder was damit passieren soll"></textarea><div><button class="btn ghost sm" type="button" id="ms">Nachricht senden</button> <span id="mo" style="color:var(--dim);font-size:14px"></span></div></div></aside>' +
+      '<div class="msg"><label for="mt"><b>Nachrichten mit FS Creative</b></label><div class="chat" id="chat" aria-live="polite"></div><textarea id="mt" maxlength="2000" placeholder="z. B. was die Dateien sind oder was damit passieren soll"></textarea><div><button class="btn ghost sm" type="button" id="ms">Nachricht senden</button> <span id="mo" style="color:var(--dim);font-size:14px"></span></div></div></aside>' +
       '</div></div>';
     const js = "(" + upClient.toString() + ")(" + JSON.stringify({ t: l.token, dirs: l.dirs || [] }).replace(/</g, "\\u003c") + ");document.getElementById('fi2').addEventListener('change',function(){var a=document.getElementById('fi'),b=this;try{a.files=b.files;a.dispatchEvent(new Event('change'));}catch(e){}b.value='';});";
     return page("Dateien – " + l.title, body, js);

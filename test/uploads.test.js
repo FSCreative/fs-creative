@@ -77,7 +77,12 @@ srv.listen(0, "127.0.0.1", async () => {
     const kd = await J(B + "/delete", { method: "POST", headers: H, body: JSON.stringify({ dirs: ["Von FS"], confirm: true }) });
     ok(kd.ok && kd.deleted === 1 && !(await J(B + "/list")).dirs.includes("Von FS"), "Kunde: Ordner samt Datei gelöscht");
     // Nachricht
-    ok((await J(B + "/note", { method: "POST", headers: H, body: JSON.stringify({ text: "Hallo" }) })).ok, "Nachricht");
+    const nt = await J(B + "/note", { method: "POST", headers: H, body: JSON.stringify({ text: "Hallo" }) }); ok(nt.ok && nt.msgs.length === 1 && nt.msgs[0].by === "kunde", "Nachricht");
+    // Chat: Antwort aus dem Cockpit (ohne Mail-Adresse → keine Mail), Kunde sieht den Verlauf
+    const rp = await J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "reply", id: lk.id, text: "Danke, passt!", mail: true }) });
+    ok(rp.ok && !rp.mailed && rp.link.msgs.slice(-1)[0].by === "fs", "Antwort im Chat gespeichert, ohne Adresse keine Mail");
+    ok((await J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "reply", id: lk.id, text: "  " }) })).status === 400, "leere Antwort abgewiesen");
+    const cl = await J(B + "/list"); ok(cl.msgs.map(m => m.by + ":" + m.text).join("|") === "kunde:Hallo|fs:Danke, passt!", "Kunde sieht den Chat-Verlauf");
     // ohne Anmeldung kein Cockpit
     authed = false; ok((await J("/admin/api/uploads")).status === 401, "Cockpit ohne Login → 401"); authed = true;
     // schließen → Seite 410, Upload abgewiesen

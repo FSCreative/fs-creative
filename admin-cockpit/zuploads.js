@@ -36,6 +36,7 @@ F.css('.up-tabs{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px
   '.up-drop{display:grid;justify-items:center;gap:6px;text-align:center;padding:22px 12px;border:2px dashed var(--line-2,var(--line));border-radius:12px;cursor:pointer;color:var(--ink-2)}.up-drop:hover{border-color:var(--glow);background:var(--sunk)}'+
   '.up-drop svg{width:26px;height:26px;color:var(--glow)}.up-drop b{color:var(--ink)}.up-drop small{font-size:12.5px;color:var(--ink-3)}.up-ub{display:grid;gap:6px;margin-top:10px}.up-ub .btn{justify-content:center}'+
   '.up-tgt{font-size:13px;color:var(--ink-3);margin:-4px 0 10px}.up-prog{font-size:13px;background:var(--sunk);border-radius:8px;padding:8px 10px;margin-top:10px}'+
+  '.up-cv{display:grid;gap:8px;max-height:340px;overflow:auto;padding:2px 2px 10px}.up-b{max-width:88%;justify-self:start;background:var(--sunk);border-radius:14px 14px 14px 4px;padding:8px 11px;font-size:13.5px;white-space:pre-line;overflow-wrap:anywhere}.up-b.me{justify-self:end;background:color-mix(in srgb,var(--glow) 18%,var(--panel));border-radius:14px 14px 4px 14px}.up-b small{display:block;margin-top:3px;font-size:11.5px;color:var(--ink-3)}.up-cf{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}.up-cf textarea{resize:vertical;min-height:64px}'+
   '@container (max-width:620px){.up-hd{display:none}.up-f,.up-d{grid-template-columns:minmax(0,1fr) auto}.up-f .muted,.up-d .muted{display:none}}');
 var SEL="";
 function hasNew(l){ return isNew(l); }
@@ -50,7 +51,7 @@ function headHtml(l){ var part=(l.files||[]).filter(function(f){ return !f.done;
     '<div class="up-meta">'+l.count+' Datei'+(l.count===1?'':'en')+(l.count?' · '+hb(l.bytes):'')+(part.length?' · '+part.length+' unvollständig':'')+(l.lastAt?' · zuletzt '+dt(l.lastAt):'')+' · angelegt '+de(String(l.createdAt).slice(0,10))+(l.expires?' · offen bis '+de(String(l.expires).slice(0,10)):'')+'</div>'+
     (l.note?'<div class="up-meta">Hinweis für den Kunden: '+esc(l.note)+'</div>':'')+
     '<div class="up-url"><code>'+esc(l.url)+'</code></div>'+
-    (l.msgs||[]).map(function(m){ return '<div class="up-msg"><b>Nachricht vom Kunden, '+dt(m.at)+':</b> '+esc(m.text)+'</div>'; }).join("")+'</div>'+
+    '</div>'+
     '<div class="up-acts"><button type="button" class="btn sm" data-act="upcopy:'+esc(l.id)+'">'+F.svg("link")+' Link kopieren</button><button type="button" class="btn sm" data-act="upmail:'+esc(l.id)+'">'+F.svg("send")+' Per Mail</button>'+
     '<a class="btn sm" href="'+esc(l.url)+'" target="_blank" rel="noopener">'+F.svg("external")+' Kundenansicht</a>'+
     '<button type="button" class="btn sm" data-act="uptoggle:'+esc(l.id)+'">'+F.svg("lock")+' '+(l.active?"Schließen":"Wieder öffnen")+'</button>'+
@@ -77,11 +78,25 @@ function mainHtml(l){
   return '<section class="panel up-card" data-upos="'+esc(l.id)+'">'+cr+'<div class="up-tbl">'+((ds||fl)?'<div class="up-hd"><span>Name</span><span>Geändert</span><span>Größe</span><span></span></div>'+ds+fl:'<div class="up-empty">'+(d?'Dieser Ordner ist leer.':'Noch keine Dateien.')+'<br>Dateien einfach hierher ziehen.</div>')+'</div></section>'; }
 function sideHtml(l){ var d=CUR[l.id]||"", q=UPS[l.id];
   var UP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 19.5h15"/></svg>';
-  return '<aside class="panel up-card up-side" data-upos="'+esc(l.id)+'"><div class="up-th"><b>Hochladen</b></div><p class="up-tgt">nach: <b>'+esc(d?d.split("/").pop():"Alle Dateien")+'</b> · beim Kunden „von FS Creative“</p>'+
+  return '<aside class="panel up-card" data-upos="'+esc(l.id)+'"><div class="up-th"><b>Hochladen</b></div><p class="up-tgt">nach: <b>'+esc(d?d.split("/").pop():"Alle Dateien")+'</b> · beim Kunden „von FS Creative“</p>'+
     '<label class="up-drop">'+UP+'<b>Dateien hierher ziehen</b><small>oder klicken zum Auswählen</small><input type="file" multiple hidden data-upin="'+esc(l.id)+'"></label>'+
     '<div class="up-ub"><label class="btn sm">Ordner auswählen<input type="file" multiple webkitdirectory hidden data-upin="'+esc(l.id)+'"></label></div>'+
     (q&&q.n?'<div class="up-prog" id="upprog-'+esc(l.id)+'">'+progTxt(q)+'</div>':'')+'</aside>'; }
-function linkView(l){ return '<div class="up-wrap">'+headHtml(l)+'<div class="up-grid">'+treeHtml(l)+mainHtml(l)+sideHtml(l)+'</div></div>'; }
+/* Chat mit dem Kunden (Wunsch Simon 05.11.2026): Verlauf wie im Messenger, Antwort erscheint auf der Upload-Seite; auf Wunsch kurze Mail an den Kunden */
+var DRAFT={};
+function chatHtml(l){ var ms=l.msgs||[];
+  return '<section class="panel up-card up-chat"><div class="up-th"><b>Nachrichten</b><span class="muted" style="font-size:12.5px">'+(ms.length?ms.length+' im Verlauf':'')+'</span></div>'+
+    '<div class="up-cv" id="upcv-'+esc(l.id)+'">'+(ms.length?ms.map(function(m){ var me=m.by==="fs"; return '<div class="up-b'+(me?' me':'')+'"><div>'+esc(m.text)+'</div><small>'+(me?'Du':'Kunde')+' · '+dt(m.at)+(me&&m.mailed?' · per Mail benachrichtigt':'')+'</small></div>'; }).join(""):'<div class="up-empty" style="padding:14px 6px">Noch keine Nachrichten. Schreib dem Kunden – er sieht es auf seiner Upload-Seite.</div>')+'</div>'+
+    '<form data-form="upreply" class="up-cf"><input type="hidden" name="id" value="'+esc(l.id)+'"><textarea class="f" name="text" rows="3" maxlength="4000" placeholder="Nachricht an '+esc(l.title)+' …" data-updraft="'+esc(l.id)+'">'+esc(DRAFT[l.id]||"")+'</textarea>'+
+    '<div class="row-between wrap" style="gap:8px">'+(l.email?'<label class="row small" style="gap:6px"><input type="checkbox" name="mail" checked style="width:16px;height:16px"> Per Mail an '+esc(l.email)+' benachrichtigen</label>':'<span class="muted small">Keine Mail-Adresse hinterlegt – der Kunde sieht es auf der Upload-Seite</span>')+
+    '<button class="btn sm primary" type="submit">'+F.svg("send")+' Senden</button></div></form></section>'; }
+function linkView(l){ return '<div class="up-wrap">'+headHtml(l)+'<div class="up-grid">'+treeHtml(l)+mainHtml(l)+'<div class="up-side" style="display:grid;gap:12px">'+sideHtml(l)+chatHtml(l)+'</div></div></div>'; }
+document.addEventListener("input",function(e){ var t=e.target; if(t&&t.getAttribute&&t.getAttribute("data-updraft")) DRAFT[t.getAttribute("data-updraft")]=t.value; });
+document.addEventListener("keydown",function(e){ var t=e.target; if(t&&t.getAttribute&&t.getAttribute("data-updraft")&&e.key==="Enter"&&(e.metaKey||e.ctrlKey)){ e.preventDefault(); var f=t.closest("form"); if(f) f.requestSubmit(); } });
+F.forms.upreply=function(form){ var id=form.id.value, t=form.text.value.trim(); if(!t) return; var btn=form.querySelector("button[type=submit]"); if(btn) btn.disabled=true;
+  F.api("/admin/api/uploads",{body:{op:"reply",id:id,text:t,mail:!!(form.mail&&form.mail.checked)}}).then(function(j){ if(btn) btn.disabled=false;
+    if(!j||!j.ok){ F.toast((j&&j.error)||"Senden fehlgeschlagen",true); return; } DRAFT[id]="";
+    F.toast(j.mailed?"Gesendet – Kunde per Mail benachrichtigt":j.mailError?"Gesendet – Mail fehlgeschlagen: "+j.mailError:"Gesendet",!!j.mailError); load(); }).catch(function(){ if(btn) btn.disabled=false; F.toast("Keine Verbindung",true); }); };
 var FOLDER='<svg width="18" height="18" viewBox="0 0 24 24" fill="var(--warn)" aria-hidden="true" style="flex:none"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>';
 function inDir(fd,d){ fd=fd||""; return !d||fd===d||fd.indexOf(d+"/")===0; }
 function kids(l,d){ var pre=d?d+"/":"", n=d?d.split("/").length+1:1; return (l.dirs||[]).filter(function(x){ return x.indexOf(pre)===0&&x.split("/").length===n; }); }
@@ -194,6 +209,8 @@ F.action("updelf",function(v){ var p=String(v).split("|"), l=link(p[0]), f=l&&(l
   ask("Datei löschen?","„"+f.name+"“ wird endgültig vom Server gelöscht.","Endgültig löschen",function(){ post({op:"deleteFile",id:p[0],file:p[1],confirm:true},"Datei gelöscht"); }); });
 F.action("updell",function(id){ var l=link(id); if(!l) return;
   ask("Upload-Link löschen?","Der Link „"+l.title+"“ funktioniert danach nicht mehr und alle "+l.count+" Datei(en) werden endgültig vom Server gelöscht.","Link und Dateien löschen",function(){ post({op:"deleteLink",id:id,confirm:true},"Link gelöscht"); }); });
-F.view({id:"uploads",label:"Uploads",short:"Uploads",icon:"upload",order:37,count:function(){ return ST&&ST.ok?(ST.links||[]).filter(isNew).length:0; },render:render,after:function(){ if(!ST) load(); else if(ST.ok) markSeen(cur()); }});
-setTimeout(load,4000); setInterval(function(){ if(document.visibilityState==="visible") load(); },120000);
+F.view({id:"uploads",label:"Uploads",short:"Uploads",icon:"upload",order:37,count:function(){ return ST&&ST.ok?(ST.links||[]).filter(isNew).length:0; },render:render,after:function(){ if(!ST) load(); else if(ST.ok) markSeen(cur()); var c=document.querySelector(".up-cv"); if(c) c.scrollTop=c.scrollHeight; }});
+setTimeout(load,4000);
+/* offen auf „Uploads“: alle 30 s (neue Nachrichten im Chat), sonst alle 2 Min.; nie während du tippst (Eingabe bliebe zwar erhalten, aber der Fokus ginge verloren) */
+var tick=0; setInterval(function(){ tick++; var a=document.activeElement; if(document.visibilityState!=="visible"||(a&&a.getAttribute&&a.getAttribute("data-updraft"))) return; if(F.current==="uploads"||tick%4===0) load(); },30000);
 })();
