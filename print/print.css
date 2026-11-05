@@ -2249,3 +2249,4 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-kt-form h2{margin:0 0 14px;font-size:22px}.ps-kt-form textarea{width:100%;resize:vertical}
 .ps-kt-ok{padding:18px;border-radius:12px;background:rgba(22,163,74,.1);color:var(--text)}.ps-kt-ok b{font-size:17px}
 @media (max-width:860px){.ps-kt-grid{grid-template-columns:1fr}}
+.ps-kt-form textarea{font:inherit;font-size:15px;padding:10px 12px;border-radius:12px;border:1px solid var(--ps-line2,rgba(0,0,0,.15));background:var(--ps-field,#fff);color:var(--text)}
