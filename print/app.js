@@ -1750,6 +1750,14 @@
   // ── Schnellauswahl: drei fertige Pakete (Beliebt / Günstig / Hochwertig) – ein Klick, darunter weiterhin die volle Auswahl ──
   var PRE = {};
   function presetsOf(p) {
+    if (kind() === "banner" && S.presetBase && p.custom) {   // Banner (Wunsch Simon 05.11.2026): klassisch (PVC) und winddurchlässig (Mesh), je 2 × 1 m
+      var bm = p.props.filter(function (x) { return x.slug === "material"; })[0]; if (!bm) return [];
+      var pvc = bm.options.filter(function (o) { return /frontlit/i.test(o.name + o.slug) && /510/.test(o.name + o.slug); })[0] || bm.options.filter(function (o) { return /frontlit|pvc/i.test(o.name + o.slug) && !/blockout|mesh/i.test(o.name + o.slug); })[0],
+        mesh = bm.options.filter(function (o) { return /mesh/i.test(o.name + o.slug); })[0];
+      if (!pvc || !mesh) return [];
+      var f = p.custom.unit === "cm" ? 10 : 1, mkb = function (sl) { return Object.assign({}, S.presetBase, { material: sl }); }, mw = Math.max(p.custom.minW, Math.min(p.custom.maxW, 2000)), mh = Math.max(p.custom.minH, Math.min(p.custom.maxH, 1000));   // Grenzen in mm, Eingabe in der Produkteinheit
+      return { base: mkb(pvc.slug), cheap: [], prem: excluded(mkb(mesh.slug)) ? null : mkb(mesh.slug), fin: null, names: ["Klassisch", "Winddurchlässig"], icons: ["▭", "≋"], custom: { w: mw / f, h: mh / f }, sizeTxt: fmtSize(mw, mh) };
+    }
     if (kind() !== "flat" || !S.presetBase) return [];
     var prop = function (sl) { return p.props.filter(function (x) { return x.slug === sl; })[0]; }, mat = prop("material"), fin = prop("finish"), base = S.presetBase;
     if (!mat) return [];
@@ -1767,21 +1775,23 @@
   }
   function presetHtml(p) {
     var P = presetsOf(p); if (!P || !P.base) return "";
-    var co = S.ctype === "company", key = function (sel) { return JSON.stringify([sel, S.copies, S.urgency, S.ctype, S.pm || "auto"]); }, price = function (sel) { return PRE[key(sel)]; };
-    var desc = function (sel) { return [optName("material", sel.material)].concat(sel.finish && P.fin ? [optName("finish", sel.finish)] : []).filter(function (t) { return t && !NONE_RX.test(t); }).join(" · "); };
-    var isOn = function (sel) { return Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
+    var co = S.ctype === "company", key = function (sel) { return JSON.stringify([sel, S.copies, S.urgency, S.ctype, S.pm || "auto", P.custom || null]); }, price = function (sel) { return PRE[key(sel)]; };
+    var desc = function (sel) { return (P.sizeTxt ? [P.sizeTxt] : []).concat([optName("material", sel.material)]).concat(sel.finish && P.fin ? [optName("finish", sel.finish)] : []).filter(function (t) { return t && !NONE_RX.test(t); }).join(" · "); };
+    var isOnC = function () { return !P.custom || (S.custom && +S.custom.w === P.custom.w && +S.custom.h === P.custom.h); };
+    var isOn = function (sel) { return isOnC() && Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
     var bp = price(P.base), cheapSel = null;
     if (bp) P.cheap.forEach(function (c) { var cp = price(c); if (cp && cp.gross < bp.gross - 0.5 && (!cheapSel || cp.gross < price(cheapSel).gross)) cheapSel = c; });
-    var lite = false, l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(P.prem && !lite ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
+    var NM = P.names || ["Beliebt", "Hochwertig"], IC = P.icons || ["★", "◆"];
+    var lite = false, l = [{ id: "beliebt", name: NM[0], icon: IC[0], sel: P.base, custom: P.custom }].concat(P.prem && !lite ? [{ id: "premium", name: NM[1], icon: IC[1], sel: P.prem, custom: P.custom }] : []);
     window.__presets = l;
     var todo = [P.base].concat(P.cheap, P.prem ? [P.prem] : []).filter(function (sel) { return !(key(sel) in PRE); });
     if (todo.length) setTimeout(function () { var left = todo.length; todo.forEach(function (sel) { var k = key(sel); PRE[k] = null;
-      api("/print/api/price", Object.assign(cfgOf(), { sel: sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { PRE[k] = j.ok ? j.price : false; }).catch(function () { PRE[k] = false; }).then(function () {
+      api("/print/api/price", Object.assign(cfgOf(), P.custom ? { custom: P.custom } : {}, { sel: sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { PRE[k] = j.ok ? j.price : false; }).catch(function () { PRE[k] = false; }).then(function () {
         if (--left) return; var box = document.getElementById("psPre"); if (box && S.step === 2) box.outerHTML = presetHtml(S.prod); }); }); }, 0);
     if (l.length < 2 && !lite && !todo.length) return "";
     return '<section class="ps-sec ps-pre" id="psPre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + l.map(function (x) { var pr = price(x.sel), on = isOn(x.sel);
       return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + (lite ? '<div class="ps-preb ps-prepc"><span class="pi" aria-hidden="true">🖥️</span><b>Weitere Optionen</b><small>Alle Papiere, Formate und Veredelungen findest du am PC.</small><button type="button" class="ps-link" data-act="moball">Hier alle zeigen</button></div>' : "") + "</div>" +
-      '<p class="ps-pre-more">' + (lite ? "Unten siehst du die beliebtesten Optionen – Format, Papier, Veredelung und Auflage." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.") + "</p>" +
+      '<p class="ps-pre-more">' + (lite ? "Unten siehst du die beliebtesten Optionen – Format, Papier, Veredelung und Auflage." : (kind() === "banner" ? "Oder unten alles selbst einstellen – Größe, Material, Konfektion und Stückzahl." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.")) + "</p>" +
       '<p class="ps-newbie"><span aria-hidden="true">👋</span> <span><b>Neu beim Drucken?</b> Die Vorauswahl passt für die meisten – einfach auf „Weiter zur Gestaltung“. Dort lädst du deine Datei hoch, gestaltest online oder lässt uns gestalten. Unsicher? <a class="ps-link" href="#" data-chat-open>Frag uns im Chat</a>.</span></p></section>';
   }
   function vOptions() {
@@ -2366,7 +2376,7 @@
       if (mn.hasAttribute("data-moti")) { motLoad(+mn.getAttribute("data-moti")); render(); return; }
     }
     var pb = e.target.closest("[data-preset]");
-    if (pb) { var P0 = (window.__presets || []).filter(function (x) { return x.id === pb.getAttribute("data-preset"); })[0]; if (P0) { var had = !!S.file; S.sel = Object.assign({}, S.sel, P0.sel); fixSel(); if (had) { S.file = null; S.previews = null; motReset(true); } toast("Paket „" + P0.name + "“ übernommen"); render(); loadPrice(); } return; }
+    if (pb) { var P0 = (window.__presets || []).filter(function (x) { return x.id === pb.getAttribute("data-preset"); })[0]; if (P0) { var had = !!S.file; S.sel = Object.assign({}, S.sel, P0.sel); if (P0.custom) S.custom = { w: P0.custom.w, h: P0.custom.h }; fixSel(); if (had) { S.file = null; S.previews = null; motReset(true); } toast("Paket „" + P0.name + "“ übernommen"); render(); loadPrice(); } return; }
     var alt = e.target.closest("[data-alt]");
     var wb = e.target.closest("[data-wish],[data-wishx]");
     if (wb) { if (wb.hasAttribute("data-wish") && S.wish && S.wish.items[+wb.getAttribute("data-wish")]) { S.sel = Object.assign({}, S.wish.items[+wb.getAttribute("data-wish")].sel); fixSel(); toast("Übernommen"); } S.wish = null; wishSeq++; render(); loadPrice(); return; }
