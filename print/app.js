@@ -965,6 +965,8 @@
       if (!desk || !cw || !ch) { L.hidden = true; return; } L.hidden = false;
       var py = (L.hasAttribute("data-py") ? parseFloat(L.getAttribute("data-py")) : 50) / 100;
       var sc = Math.max(cw / r, ch) , dw = sc * r, dh = sc, ox = (cw - dw) * px, oy = (ch - dh) * py;
+      var im0 = box.querySelector(".im img"), ib = im0 && im0.getBoundingClientRect(), bb = box.getBoundingClientRect();   // Slider breit: Bild in voller Höhe rechts, nicht beschnitten
+      if (ib && ib.width && ib.width < cw - 1) { dh = ib.height; dw = ib.width; ox = ib.left - bb.left; oy = ib.top - bb.top; }
       var tb = box.querySelector(".xm-hero-t, .xm-band-t, .ps-xteaser .tx"), br = box.getBoundingClientRect(), tr = tb ? tb.getBoundingClientRect() : null;
       [].forEach.call(L.querySelectorAll(".xm-hs"), function (a) {
         var x = ox + dw * (+a.getAttribute("data-x")) / 100, y = oy + dh * (+a.getAttribute("data-y")) / 100;
@@ -1271,7 +1273,7 @@
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
     var im = function (img, w) { return /^\//.test(img) ? img : "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=" + (w > 1600 ? 70 : 78); };   // eigene Bilder (/print/hero/…) direkt
     var slide = function (z, i, href, eb, title, text, btn) {
-      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img' + (z.py != null ? ' style="object-position:74% ' + (+z.py) + '%"' : "") + ' src="' + esc(im(z.img, 1600)) + '"' + (/^\//.test(z.img) ? (z.srcset ? ' srcset="' + esc(z.srcset) + '" sizes="100vw"' : "") : ' srcset="' + [800, 1200, 1600, 2000, 2400, 3200].map(function (w) { return esc(im(z.img, w)) + " " + w + "w"; }).join(", ") + '" sizes="' + (V2 ? "100vw" : "(max-width: 1760px) 96vw, 1680px") + '"') + ' width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
+      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im" style="--bg:url(&quot;' + esc(im(z.img, 600)) + '&quot;)"><img' + (z.py != null ? ' style="object-position:74% ' + (+z.py) + '%"' : "") + ' src="' + esc(im(z.img, 1600)) + '"' + (/^\//.test(z.img) ? (z.srcset ? ' srcset="' + esc(z.srcset) + '" sizes="100vw"' : "") : ' srcset="' + [800, 1200, 1600, 2000, 2400, 3200].map(function (w) { return esc(im(z.img, w)) + " " + w + "w"; }).join(", ") + '" sizes="' + (V2 ? "100vw" : "(max-width: 1760px) 96vw, 1680px") + '"') + ' width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
         '<span class="tx"><span class="xm-eb">' + esc(eb) + "</span><b>" + esc(title) + "</b><span>" + esc(text) + '</span><span class="ps-btn primary">' + esc(btn) + ' <span aria-hidden="true">→</span></span></span></a>'; };
     var list = [slide(x, 0, "/print/weihnachten", "Weihnachten " + x.year, "Weihnachten mit deinem Design", "Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : "."), "Zur Weihnachtsabteilung")]
       .concat((x.slides || []).map(function (z, i) { return slide(z, i + 1, "/print/weihnachten#" + z.slug, "Neues Jahr " + (+x.year + 1), z.title, z.text, z.n + " Ideen ansehen"); }))

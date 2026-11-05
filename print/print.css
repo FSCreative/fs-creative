@@ -2190,3 +2190,9 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-cg-crumb{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px;font-size:14.5px;color:var(--text-dim)}.ps-cg-crumb b{color:var(--text)}
 @media (max-width:1100px){.ps-cg-row,.ps-cg-row.br{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:640px){.ps-cg-row,.ps-cg-row.br,.ps-cg-row.big{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ps-cg-t b{font-size:13.5px}}
+/* Slider auf breiten Bildschirmen: Bild nie vergrößern/beschneiden – volle Höhe rechts, links derselbe Hintergrund weich verlängert (Wunsch Simon 05.11.2026) */
+@media (min-width:761px){
+  .ps-v2hero .ps-xteaser .im{overflow:hidden;display:flex;justify-content:flex-end}
+  .ps-v2hero .ps-xteaser .im::before{content:"";position:absolute;inset:-80px;background:var(--bg) left center/cover no-repeat;filter:blur(48px) saturate(1.05);transform:scale(1.15)}
+  .ps-v2hero .ps-xteaser .im img{position:relative;width:auto;height:100%;max-width:none;flex:none;object-fit:contain;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16%);mask-image:linear-gradient(90deg,transparent 0,#000 16%)}
+}
