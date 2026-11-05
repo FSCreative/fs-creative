@@ -1403,11 +1403,7 @@
     var sec = function (key, id) { var g = CLOTH[key], its = g.items.map(function (x) { return { x: x, n: clothKeys(x).length }; }).filter(function (y) { return y.n; }); if (!its.length) return "";
       return '<section class="ps-cg" id="' + id + '"><h3 class="ps-grp-h">' + esc(g.name) + " <span>(" + its.length + ")</span></h3><div class=\"ps-cg-row" + (key === "brand" ? " br" : "") + '">' + its.map(function (y) {
         return '<button type="button" class="ps-cg-t" data-cg="' + key + ":" + esc(y.x.s) + '"><span class="im"><img src="' + esc(clothImg(y.x.img, 800)) + '" alt="" loading="lazy"></span><b>' + esc(y.x.n) + " <small>(" + y.n + ")</small></b></button>"; }).join("") + "</div></section>"; };
-    var tot = function (key) { var s = {}; CLOTH[key].items.forEach(function (x) { clothKeys(x).forEach(function (k) { s[k] = 1; }); }); return Object.keys(s).length; };
-    return '<section class="ps-cg"><h3 class="ps-grp-h">Bekleidung <span>(2)</span></h3><div class="ps-cg-row big">' +
-      '<a class="ps-cg-t" href="#psCgType" data-cgjump="psCgType"><span class="im"><img src="' + esc(clothImg(CLOTH.type.img, 1000)) + '" alt="" loading="lazy"></span><b>Kleidung nach Typ <small>(' + tot("type") + ")</small></b></a>" +
-      '<a class="ps-cg-t" href="#psCgBrand" data-cgjump="psCgBrand"><span class="im"><img src="' + esc(clothImg(CLOTH.brand.img, 1000)) + '" alt="" loading="lazy"></span><b>Kleidung nach Marke <small>(' + tot("brand") + ")</small></b></a></div></section>" +
-      sec("type", "psCgType") + sec("brand", "psCgBrand");
+    return sec("type", "psCgType") + sec("brand", "psCgBrand");
   }
   function vProducts() {
     var g = S.group && grpOf(S.group), sub = g && S.sub && subsOf(g).filter(function (x) { return x.slug === S.sub; })[0];
