@@ -2736,13 +2736,16 @@ module.exports = function (D) {
       ((h && h.focus) || []).concat((h && h.fresh) || []).forEach(k => { seen[k] = nowIso(); });
       Object.keys(seen).sort((x, y) => String(seen[y]).localeCompare(String(seen[x]))).forEach((k, i) => { if (i >= 40 || now0 - Date.parse(seen[k]) > 14 * 864e5) delete seen[k]; });   // höchstens 40 (Print.com-Anfragen)
       const keys = CURATED.map(c => c.key).concat(PUB_MORE.map(c => c.key), Object.keys(seen)).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
-      const items = [];
+      const items = [], oldBy = {}; let kept = 0;
+      ((old && old.items) || []).forEach(x => { if (x && x.key && now0 - Date.parse(x.at || old.at || 0) < 3 * 864e5) oldBy[x.key] = x; });
+      const tempErr = e => !!(e && (e.status === 429 || e.busy || e.shipping || +e.status >= 500 || !e.status));
       for (const key of keys) {
-        const p = await findProduct(key, s).catch(() => null), base = p && stdInput(p); if (!base) continue;
+        let tf = false; const p = await findProduct(key, s).catch(e => { tf = tempErr(e); return null; }), base = p && stdInput(p);
+        if (!base) { if (tf && oldBy[key]) { items.push(oldBy[key]); kept++; } continue; }   // nur bei Störung – ausgeblendete Produkte fallen sofort weg
         const okQ = n => p.kind === "textile" ? n >= (((p.methods || [])[0] || {}).min || 1) : p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
         const big = p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "") || /roll|bauzaun|banner/i.test(p.key);
         let qs = (big ? PUB_Q.banner : PUB_Q[p.kind] || PUB_Q.flat).filter(okQ).slice(0, 4); if (!qs.length) qs = [base.copies];
-        const rows = []; let label = "", attrs = null, startN = null;
+        const rows = []; let label = "", attrs = null, startN = null, temp = false;   // temp: Print.com gedrosselt/gestört – dann gilt der letzte Stand dieses Produkts
         // Startauflage des Konfigurators und je Menge, ob der Link (/print?produkt=…[&menge=…]) genau diese Ausführung zeigt – für den Google-Shopping-Feed (Preis UND Menge
         // auf der Zielseite gleich). print/app.js übernimmt die Startausführung nur, wenn ihre Auflage eine der Stufen ist (Textil: immer), ?menge= nur für Stufen (nie Textil).
         try { startN = normalizeSel(p, JSON.parse(JSON.stringify(base))).copies; } catch (e) {}
@@ -2750,8 +2753,11 @@ module.exports = function (D) {
         for (const q of qs) {
           const inp = JSON.parse(JSON.stringify(base)); inp.copies = q; if (inp.textile) { const sz = Object.keys(inp.textile.sizes)[0]; inp.textile.sizes = { [sz]: q }; }
           try { const n = normalizeSel(p, inp); n.low = true; const qt = await qRetry(p, n); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net, link: startOk && (n.copies === startN || (p.kind !== "textile" && (p.tiers || []).indexOf(n.copies) > -1)) });
-            if (!label) { label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); attrs = attrsOf(p, n); } } catch (e) {}
+            if (!label) { label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); attrs = attrsOf(p, n); } } catch (e) { if (tempErr(e)) temp = true; }
         }
+        // Drosselung (429) oder Störung bei Print.com: nie die ganze Übersicht schrumpfen lassen (05.11.2026: nachts 96 statt 163 Produkte) –
+        // fehlt dadurch eine Menge, bleibt der letzte vollständige Stand des Produkts (höchstens 3 Tage alt) in Übersicht, Feed und llms.txt
+        const prevIt = temp && oldBy[key]; if (prevIt && (!rows.length || rows.length < (prevIt.rows || []).length)) { items.push(prevIt); kept++; continue; }
         // Menge, die eine größere Menge gleich teuer oder billiger schlägt (z. B. 250 Flyer im Digitaldruck teurer als 500 im Offset): nicht in Übersicht,
         // Google-Feed und llms.txt – dort zählt der beste Preis je Menge; bestellbar bleibt sie im Konfigurator (Simon 02.11.2026)
         for (let i = rows.length - 2; i >= 0; i--) if (rows.slice(i + 1).some(x => x.gross <= rows[i].gross + 0.004)) rows.splice(i, 1);
@@ -2768,10 +2774,10 @@ module.exports = function (D) {
           for (let i = fr.length - 2; i >= 0; i--) if (fr.slice(i + 1).some(x => x.gross <= fr[i].gross + 0.004)) fr.splice(i, 1);   // wie oben: größere Menge nicht teurer
           if (fr.length) formats.push({ v, label: clip(opt.title || opt.name || v, 60), from: sLabel, rows: fr });
         }
-        const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows, formats: formats.length ? formats : undefined });
+        const x = byKey[key]; items.push({ key, at: nowIso(), title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows, formats: formats.length ? formats : undefined });
       }
       if (items.length) { PUB = { at: nowIso(), items, seen }; await store.setMeta("print_pub", PUB).catch(() => {}); }
-      log("Druckshop: Preisübersicht aktualisiert (" + items.length + " Produkte)");
+      log("Druckshop: Preisübersicht aktualisiert (" + items.length + " Produkte" + (kept ? ", davon " + kept + " vom letzten Stand wegen Print.com-Drosselung" : "") + ")");
     } finally { pubRun = false; }
   }
   async function pubState() { if (!PUB) PUB = await store.getMeta("print_pub").catch(() => null); return PUB; }
