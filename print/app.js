@@ -1119,11 +1119,12 @@
   }
   // Startseite: wenig Treffer → nach kurzer Pause KI fragen (gleiche Merkliste wie die Produktsuche), dann die Vorschläge neu zeichnen
   var heroT = null, heroBusy = "";
-  function heroAi(v) {
+  function heroAi(v, inp0, paint0) {   // inp0/paint0: anderes Suchfeld (Kopfzeile) – sonst die Startseiten-Suche
     var q = String(v || "").trim().toLowerCase(); clearTimeout(heroT); if (q.length < 3 || AIS[q]) return;
     var l = S.cat.products.filter(function (p) { return prodMatch(p, q); }); if (l.length >= 3) return;
-    heroT = setTimeout(function () { var inp = document.getElementById("psHomeQ"); if (!inp || inp.value.trim().toLowerCase() !== q) return; heroBusy = q; heroPaint();
-      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[q] = j && j.ok ? j : { keys: [] }; }, function () { AIS[q] = { keys: [] }; }).then(function () { heroBusy = ""; heroPaint(); }); }, 550);
+    var paint = paint0 || heroPaint;
+    heroT = setTimeout(function () { var inp = inp0 || document.getElementById("psHomeQ"); if (!inp || inp.value.trim().toLowerCase() !== q) return; heroBusy = q; paint();
+      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[q] = j && j.ok ? j : { keys: [] }; }, function () { AIS[q] = { keys: [] }; }).then(function () { heroBusy = ""; paint(); }); }, 550);
   }
   function heroPaint() { var inp = document.getElementById("psHomeQ"), sg = document.getElementById("psSug"); if (!inp || !sg || document.activeElement !== inp && !inp.value) return; var hv = sugHtml(inp.value); sg.innerHTML = hv; sg.hidden = !hv; inp.parentNode.setAttribute("aria-expanded", String(!!hv)); }
   var SHORT = { "tshirt-basic": "T-Shirts", "tshirt-bio": "Bio-Shirts", "hoodie-bio": "Hoodies", "pvc-banner": "Banner", "mesh-banner": "Mesh-Banner", rollups: "Roll-ups" };
@@ -1192,7 +1193,7 @@
     var inp = q.querySelector("input"), box = document.createElement("div"); box.className = "ps-sug ps-v2sug"; box.setAttribute("role", "listbox"); box.hidden = true; q.appendChild(box);
     var paint = function () { if (!S || !S.cat) return; var h = sugHtml(inp.value); box.innerHTML = h; box.hidden = !h; };
     var hide = function () { box.hidden = true; };
-    inp.addEventListener("input", paint); inp.addEventListener("focus", function () { if (inp.value.trim()) paint(); });
+    inp.addEventListener("input", function () { paint(); heroAi(inp.value, inp, paint); }); inp.addEventListener("focus", function () { if (inp.value.trim()) paint(); });
     inp.addEventListener("keydown", function (e) { var its = [].slice.call(box.querySelectorAll(".ps-sug-it")), cur = its.findIndex(function (b) { return b.getAttribute("aria-selected") === "true"; });
       if (e.key === "Escape") { hide(); return; }
       if ((e.key === "ArrowDown" || e.key === "ArrowUp") && its.length && !box.hidden) { e.preventDefault(); var n = e.key === "ArrowDown" ? Math.min(its.length - 1, cur + 1) : Math.max(0, cur - 1); its.forEach(function (b, i) { b.setAttribute("aria-selected", String(i === n)); }); its[n].scrollIntoView({ block: "nearest" }); return; }
