@@ -2171,3 +2171,22 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-step{grid-template-columns:28px minmax(38px,1fr) 28px;gap:3px}
 .ps-size .ps-step input{padding:4px 2px;min-width:0;width:100%}
 .ps-cfg-ur{margin-top:18px}
+/* Hotspots auf den Titelbildern: etwas kräftiger pulsieren (Wunsch Simon 05.11.2026) */
+.xm-hs::before{background:rgba(255,255,255,.75);animation:xmPulse 1.8s ease-out infinite}
+.xm-hs::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid rgba(255,255,255,.8);animation:xmPulse 1.8s ease-out .9s infinite;pointer-events:none}
+@keyframes xmPulse{0%{transform:scale(.6);opacity:1}80%,100%{transform:scale(2.4);opacity:0}}
+@media (prefers-reduced-motion:reduce){.xm-hs::after{animation:none;opacity:0}}
+/* Bekleidung: nach Typ / nach Marke */
+.ps-cg{margin:0 0 26px}.ps-cg .ps-grp-h span{color:var(--text-dim);font-weight:500}
+.ps-cg-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.ps-cg-row.br{grid-template-columns:repeat(4,minmax(0,1fr))}
+.ps-cg-row.big{grid-template-columns:repeat(2,minmax(0,1fr));max-width:900px}
+.ps-cg-t{display:flex;flex-direction:column;gap:6px;padding:0;border:0;background:none;text-align:left;cursor:pointer;color:var(--text);text-decoration:none;font:inherit}
+.ps-cg-t .im{display:block;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#f1eeee}
+.ps-cg-t .im img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s}
+.ps-cg-t:hover .im img{transform:scale(1.04)}
+.ps-cg-t b{font-size:14.5px;font-weight:600}.ps-cg-t small{color:var(--text-dim);font-weight:400}
+.ps-cg-t:focus-visible{outline:3px solid #ffd23f;outline-offset:3px;border-radius:12px}
+.ps-cg-crumb{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px;font-size:14.5px;color:var(--text-dim)}.ps-cg-crumb b{color:var(--text)}
+@media (max-width:1100px){.ps-cg-row,.ps-cg-row.br{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.ps-cg-row,.ps-cg-row.br,.ps-cg-row.big{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ps-cg-t b{font-size:13.5px}}
