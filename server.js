@@ -4792,9 +4792,12 @@ async function handleAdmin(req, res, u, p) {
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
   if (p.indexOf("/admin/neu/") === 0 && p.length > 11) {
-    const buf = cockpitModule(p.slice(11));
+    const f = p.slice(11), buf = cockpitModule(f);
     if (!buf) return send(res, 404, "not found");
-    return sendGz(req, res, 200, buf, TYPES[".js"], { "Cache-Control": "private, max-age=31536000, immutable", "X-Robots-Tag": "noindex" });
+    // Nur die passende Version lange cachen: Während eines Deploys fragt der Browser die NEUE Versionsnummer evtl. beim noch laufenden ALTEN Server an –
+    // der lieferte sonst den alten Inhalt unter neuer Nummer „für immer“ aus (Simon sah 05.11.2026 die alte Upload-Seite). Fremde Nummer → nicht speichern.
+    const v = u.searchParams.get("v"), mine = cockpitVer().per[f];
+    return sendGz(req, res, 200, buf, TYPES[".js"], { "Cache-Control": v && mine && v === mine ? "private, max-age=31536000, immutable" : "no-store", "X-Robots-Tag": "noindex" });
   }
   // Alte Adresse des Cockpits -> /admin
   if (p === "/admin/neu" || p === "/admin/neu/") {
