@@ -15,7 +15,7 @@ const CACHE_MS = 24 * 3600 * 1000;
 const TIMEOUT_MS = 15000;
 const PATH_RX = /^[a-z0-9]{4,32}\/[A-Za-z0-9_-]{1,64}\/[a-f0-9]{32}\/[\w\-.%]{1,200}$/;
 const TYPE_RX = /^image\/(jpeg|png|webp|avif|gif|svg\+xml)$/;
-const WIDTHS = [80, 120, 160, 200, 300, 400, 600, 800, 900, 1000, 1200, 1600, 1800, 2000];
+const WIDTHS = [80, 120, 160, 200, 300, 400, 600, 800, 900, 1000, 1200, 1600, 1800, 2000, 2400, 2800, 3200];   // bis 3200: Titelbilder über die ganze Breite auf großen/Retina-Bildschirmen
 const FORMATS = { webp: 1, jpg: 1, png: 1, avif: 1 };
 const FITS = { pad: 1, fill: 1, scale: 1, crop: 1, thumb: 1 };
 

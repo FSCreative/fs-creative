@@ -2166,3 +2166,8 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 /* Tastatur: sichtbarer Fokus für die neuen Kopf-Elemente */
 .ps-v2cat a:focus-visible,.ps-v2all .all:focus-visible,.ps-v2ic a:focus-visible,.ps-v2top a:focus-visible,.ps-v2dd a:focus-visible,.ps-v2t:focus-visible,.ps-v2acct .side button:focus-visible,.ps-v2stats button:focus-visible{outline:3px solid #ffd23f;outline-offset:2px}
 .ps-v2brand:focus-visible{outline:3px solid #ffd23f;outline-offset:4px;border-radius:8px}
+/* Shirt-Größen: Platz für zweistellige Mengen */
+.ps-sizes{grid-template-columns:repeat(auto-fill,minmax(124px,1fr))}
+.ps-step{grid-template-columns:28px minmax(38px,1fr) 28px;gap:3px}
+.ps-size .ps-step input{padding:4px 2px;min-width:0;width:100%}
+.ps-cfg-ur{margin-top:18px}

@@ -1266,9 +1266,9 @@
   // Startseiten-Slider in der Saison: „Weihnachten“ + Themen mit eigenem Banner (Server: catalog.xmas.slides, z. B. „Planen fürs neue Jahr“) – wechselt alle 4,5 s (Wunsch Simon 04.11.2026), pausiert bei Maus darüber
   function xmasTeaser() {
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
-    var im = function (img, w) { return "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=75"; };
+    var im = function (img, w) { return /^\//.test(img) ? img : "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=" + (w > 1600 ? 70 : 78); };   // eigene Bilder (/print/hero/…) direkt
     var slide = function (z, i, href, eb, title, text, btn) {
-      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img src="' + esc(im(z.img, 1200)) + '" srcset="' + esc(im(z.img, 800)) + " 800w, " + esc(im(z.img, 1200)) + " 1200w, " + esc(im(z.img, 1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
+      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img src="' + esc(im(z.img, 1600)) + '"' + (/^\//.test(z.img) ? (z.srcset ? ' srcset="' + esc(z.srcset) + '" sizes="100vw"' : "") : ' srcset="' + [800, 1200, 1600, 2000, 2400, 3200].map(function (w) { return esc(im(z.img, w)) + " " + w + "w"; }).join(", ") + '" sizes="' + (V2 ? "100vw" : "(max-width: 1760px) 96vw, 1680px") + '"') + ' width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
         '<span class="tx"><span class="xm-eb">' + esc(eb) + "</span><b>" + esc(title) + "</b><span>" + esc(text) + '</span><span class="ps-btn primary">' + esc(btn) + ' <span aria-hidden="true">→</span></span></span></a>'; };
     var list = [slide(x, 0, "/print/weihnachten", "Weihnachten " + x.year, "Weihnachten mit deinem Design", "Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : "."), "Zur Weihnachtsabteilung")]
       .concat((x.slides || []).map(function (z, i) { return slide(z, i + 1, "/print/weihnachten#" + z.slug, "Neues Jahr " + (+x.year + 1), z.title, z.text, z.n + " Ideen ansehen"); }))
@@ -1526,7 +1526,7 @@
     return { D: D, hid: hid, all: all };
   }
   function urTile(p) {
-    if (kind() === "textile" || p.urgency.length < 2) return "";
+    if (p.urgency.length < 2) return "";   // auch Textilien: Kalender mit Liefertagen (Wunsch Simon 05.11.2026)
     var st = urState(), co = S.ctype === "company", b = dlBase(), cur = S.price ? (co ? S.price.net : S.price.gross) : null;
     var vis = p.urgency.filter(function (u) { return st.hid.indexOf(u.slug) < 0; }).sort(function (a, b2) { return UR_ORD.indexOf(a.slug) - UR_ORD.indexOf(b2.slug); });
     var LBL = { standard: ["Standard", "günstigste Lieferung", "g"], quick: ["Schnell", "", "p"], urgent: ["Express", "am schnellsten", "y"] };
@@ -1766,7 +1766,7 @@
     var props = presetHtml(p) + sectionsHtml(p), cust = "";
     var amount = k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" : amountHtml(p);
     var area = k === "flat" && p.dimsArea && sizeOf() ? '<p class="ps-help ps-info">' + (prodSize(p) ? "Produktgröße " + esc(prodSize(p)) + " · " : "") + "Druckfläche max. " + fmtSize(sizeOf().w, sizeOf().h) + " · deine Datei wird automatisch eingepasst.</p>" : k === "promo" ? (function () { var a = logoPositions()[0].area; var ps = prodSize(p); return '<p class="ps-help ps-info">' + (ps ? "Produktgröße " + esc(ps) + " · " : "") + "Druckfläche max. " + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · jede Datei wird automatisch geprüft.</p>"; })() : "";
-    var ur = k === "textile" && p.urgency.length > 1 ? '<fieldset class="ps-opt"><legend>Produktion</legend>' + chips("urgency", p.urgency, S.urgency) + "</fieldset>" : "";
+    var ur = k === "textile" && p.urgency.length > 1 ? '<div class="ps-cfg ps-cfg-ur">' + urTile(p) + "</div>" : "";
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-who"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
