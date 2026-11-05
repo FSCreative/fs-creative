@@ -61,7 +61,9 @@ function cmsTrim(j, keepSkus) {
     products[p.sku] = { n: String(NAME_FIX[p.sku] || p.productName || "").trim().slice(0, 120), da: String(p.dateAdded || "").slice(0, 10), i: A(p.image || p.icon), g: (p.images || []).map(A).filter(Boolean).slice(0, 6), d: String(p.description || "").trim().slice(0, 600), s: String(p.subtitle || p.summary || "").trim().slice(0, 200), pp: +p.popularity || 0 }; });   // pp = Beliebtheit laut Print.com (für „Bestseller“)
   const options = {};
   Object.values(j.option || {}).forEach(o => { if (!o || !o.slug || !o.property || o.property === "summary_image") return; const u = A(o.icon); if (u) options[o.property + "|" + o.slug] = u; });
-  const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), pr: String(x.property || ""), d: String(x.description || "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 2500), i: A(x.image),
+  // Bilder stecken bei Print.com oft im Infotext („![Ballonbaum](//images.ctfassets.net/…)“) statt im Bildfeld (Wunsch Simon 05.11.2026: Ballonbaum, Pumpen, Bänder …) → herausziehen
+  const mdImgs = t => Array.from(String(t || "").matchAll(/!\[[^\]]*\]\((?:https?:)?\/\/images\.ctfassets\.net\/([\w\-./%]+)\)/gi)).map(m => m[1]).filter(x => !/\.svg$/i.test(x));
+  const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), pr: String(x.property || ""), d: String(x.description || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 2500), i: A(x.image) || mdImgs(x.description)[0] || "", g: [A(x.image)].concat(mdImgs(x.description)).filter(Boolean).filter((v, k, a) => a.indexOf(v) === k).slice(0, 8),
     c: (x.characteristics || []).map(r => { const c = r && (j.characteristics || {})[r.id]; return c && c.name ? String(c.name).replace(/!?\s*Materialbewertung\s*$/i, "").trim().slice(0, 40) : ""; }).filter(Boolean).slice(0, 6) })).filter(x => x.d || x.i);   // ganzer Text mit Absätzen (Info-Fenster), Eigenschaften wie „Nachhaltige Wahl“
   return { mains, names, products, options, info };
 }
@@ -579,7 +581,7 @@ module.exports = function (D) {
     const custom = c.custom ? { minW: c.custom[0], minH: c.custom[0], maxW: c.custom[1], maxH: c.custom[2], unit: "cm" }
       : cs && +cs.maxWidth > 0 && +cs.maxHeight > 0 ? { minW: +cs.minWidth || 10, minH: +cs.minHeight || 10, maxW: +cs.maxWidth, maxH: +cs.maxHeight, unit: kind === "banner" ? "cm" : "mm" } : kind === "banner" ? { minW: 300, minH: 300, maxW: 5000, maxH: 3000, unit: "cm" } : null;
     const optExtra = (slug, o) => { const x = {}; const inf = cmsInfo(sku, String(o.slug), slug); const full = optFull(o, inf), d = optShort(full); if (d) x.desc = d; if (full.length > d.length + 20 || (inf && (inf.c || []).length)) x.more = 1; if (o.description && full.length > d.length + 20) x.dl = full.slice(0, 2500);   // Kurztext für Kachel/Tooltip, ganzer Text über /print/api/optinfo
-      const ic = cmsOptImg(slug, String(o.slug)) || (inf && inf.i) || ""; if (ic) x.img = IMG(ic, 160);
+      const ic = cmsOptImg(slug, String(o.slug)) || (inf && inf.i) || cmsPropImg(sku, slug, String(o.slug)) || ""; if (ic) x.img = IMG(ic, 160);
       const hex = JSON.stringify(o.enrichments || "").match(/#[0-9a-f]{6}\b/i); if (hex) x.color = hex[0];
       if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
       return x; };
@@ -726,12 +728,12 @@ module.exports = function (D) {
     if (!de || !/^[\w.-]{1,120}\.json$/.test(String(de.fileName || ""))) throw new Error("CMS: keine deutsche Datei");
     const t = cmsTrim(await get(cmsBase() + "/" + de.fileName, 90000));
     if (!t.mains.length && !Object.keys(t.products).length) throw new Error("CMS: leer");
-    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 5 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
+    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 6 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
     return CMS;
   }
   async function cms(force) {
     if (!CMS) CMS = await store.getMeta("print_cms").catch(() => null);
-    if (force || !CMS || !CMS.at || CMS.v !== 5 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit, v3: mit Aufnahmedatum (Neuheiten), v4: Eigenschaft je Options-Info (Fotos), v5: ganze Infotexte + Eigenschaften
+    if (force || !CMS || !CMS.at || CMS.v !== 6 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit, v3: mit Aufnahmedatum (Neuheiten), v4: Eigenschaft je Options-Info (Fotos), v5: ganze Infotexte + Eigenschaften, v6: Bilder aus den Infotexten (Markdown)
       if (!cmsLoading) cmsLoading = cmsRefresh().catch(e => { log("CMS:", e.message); return CMS; }).finally(() => { cmsLoading = null; });
       if (force || !CMS) return cmsLoading;
     }
@@ -742,7 +744,9 @@ module.exports = function (D) {
   // Info/Bild zu einer Option: 1. ausdrücklich diesem Produkt zugeordnet, 2. allgemein für genau diese Eigenschaft (z. B. Druckart 4/0 → Symbol),
   // 3. allgemein ohne Eigenschaft nur bei eindeutigen langen Kennungen (z. B. „custom_shape_kiss_cut“). Kurze Slugs wie „a3“, „40“, „none“ gibt es in vielen Produkten mit anderer Bedeutung.
   const cmsInfo = (sku, slug, prop) => { const l = (CMS && CMS.info) || [], has = x => x.s.indexOf(slug) > -1;
-    return l.find(x => has(x) && x.p.length && x.p.indexOf(sku) > -1) || (prop && l.find(x => has(x) && !x.p.length && x.pr === prop)) || (slug.length >= 12 && /_/.test(slug) && l.find(x => has(x) && !x.p.length && !x.pr)) || null; };
+    return l.find(x => has(x) && x.p.length && x.p.indexOf(sku) > -1) || (prop && l.find(x => has(x) && !x.p.length && x.pr === prop)) || (slug.length >= 12 && /_/.test(slug) && (l.find(x => has(x) && !x.p.length && !x.pr) || l.find(x => has(x) && !x.p.length))) || null; };   // lange, eindeutige Slugs (z. B. „ribon_balloon“) auch, wenn Print.com die Eigenschaft anders benennt
+  // Bild je Eigenschaft (z. B. Handpumpen „1“ hat Fotos, „2“–„5“ nicht; „2 Ballonbäume“): gleiches Produkt + gleiche Eigenschaft – nie für „Ohne“
+  const cmsPropImg = (sku, prop, slug) => { if (/^(none|no|geen|nee|ohne|without.*|no_.*|0)$/i.test(String(slug))) return ""; const x = ((CMS && CMS.info) || []).find(y => y.pr === prop && y.p.indexOf(sku) > -1 && y.i); return x ? x.i : ""; };
   // Options-Info: ganzer Text (Print.com-Produkt bzw. CMS, ohne Links/Download-Hinweise) und Kurzfassung (erster Absatz, max. ~260 Zeichen an Wortgrenze)
   const optFull = (o, inf) => cmsClean(String((o && o.description) || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n").replace(/<[^>]*>/g, " ").replace(/[ \t]+/g, " ").trim() || (inf && inf.d) || "").split("\n").filter(l => !/^\s*(erfahre|mehr erfahren|lies mehr|datenblatt|siehe)\b/i.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();   // „Erfahre mehr über …“ ohne Link weglassen
   const optShort = t => { const p = String(t || "").split(/\n+/).map(x => x.replace(/\*\*|__|^#+\s*/g, "").trim()).filter(x => x && !/^[-*•]/.test(x))[0] || ""; return p.length > 280 ? p.slice(0, 260).replace(/\s+\S*$/, "") + " …" : p; };
@@ -4153,7 +4157,7 @@ module.exports = function (D) {
         const prop = String(u.searchParams.get("prop") || "").slice(0, 80), val = String(u.searchParams.get("val") || "").slice(0, 120), pr = (prod.props || []).find(x => x.slug === prop), o = pr && pr.options.find(x => String(x.slug) === val);
         if (!o) return J(res, 404, { ok: false, error: "Option nicht gefunden" });
         await cms(); const inf = cmsInfo(String(prod.sku), val, prop), raw = o.dl ? { description: o.dl } : null;
-        const imgs = [cmsOptImg(prop, val), inf && inf.i].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).map(x => IMG(x, 1000));
+        const imgs = [cmsOptImg(prop, val)].concat((inf && inf.g) || [inf && inf.i], inf ? [] : [cmsPropImg(String(prod.sku), prop, val)]).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 8).map(x => IMG(x, 1000));
         return J(res, 200, { ok: true, text: optFull(raw, inf) || o.desc || "", imgs, chars: (inf && inf.c) || [] });
       }
       // Offizielle Druckvorlagen des Produktionspartners (Wunsch Simon 04.11.2026: importieren statt selbst erfinden) – Liste je Ausführung
