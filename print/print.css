@@ -2210,3 +2210,9 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-xsd button:focus-visible{outline:2px solid #ffd23f;outline-offset:1px}
 @media (prefers-reduced-motion:reduce){.ps-xsd button[aria-current]::after{animation:none;transform:translateY(-50%) scaleX(1)}}
 .xm-hs>i{transition:transform .25s cubic-bezier(.3,1.6,.5,1)}.xm-hs:hover>i,.xm-hs:focus-visible>i{transform:scale(1.35)}
+/* Preis-Box: „Per Mail senden“ und „Link kopieren“ als zwei Knöpfe nebeneinander, wie Privat/Firma (Wunsch Simon 05.11.2026) */
+.ps-remrow{display:grid!important;grid-template-columns:1fr 1fr;gap:0;margin:14px 0 4px;border:1px solid var(--border-2,rgba(0,0,0,.15));border-radius:12px;overflow:hidden;background:var(--ps-field,transparent)}
+.ps-remrow .ps-remb{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;margin:0;padding:8px 10px;border:0;border-radius:0;background:transparent;color:var(--text);font:600 14px/1.2 inherit;text-decoration:none;cursor:pointer;white-space:nowrap;transition:background .2s,color .2s}
+.ps-remrow .ps-remb+.ps-remb{border-left:1px solid var(--border-2,rgba(0,0,0,.15))}
+.ps-remrow .ps-remb:hover{background:rgba(47,107,255,.08);color:var(--accent)}
+.ps-remrow .ps-remb:focus-visible{outline:3px solid #ffd23f;outline-offset:-3px}

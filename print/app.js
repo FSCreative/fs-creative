@@ -917,7 +917,7 @@
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
     return a || b ? '<p class="ps-social">' + [a, b].filter(Boolean).join(" · ") + "</p>" : ""; }
   function trustHtml() { return '<ul class="ps-trust"><li>Versand in ganz Österreich gratis – kein Aufpreis an der Kasse</li><li>Datencheck inklusive</li><li>Persönlich erreichbar – aus dem Montafon</li></ul>' +
-    '<div class="ps-remrow"><button type="button" class="ps-link ps-remb" data-act="remember">📩 Angebot per Mail schicken</button><button type="button" class="ps-link ps-remb" data-act="cfglink">🔗 Link kopieren</button></div>'; }
+    '<div class="ps-remrow"><button type="button" class="ps-remb" data-act="remember" title="Angebot mit Preis und Link per Mail schicken"><span aria-hidden="true">📩</span> Per Mail senden</button><button type="button" class="ps-remb" data-act="cfglink" title="Link zu dieser Konfiguration kopieren"><span aria-hidden="true">🔗</span> Link kopieren</button></div>'; }
   function rememberPop() { var exit = false;
     var p = S.prod, pr = S.price; if (!p) return; var co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "", link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
     var labels = (pr && pr.labels ? pr.labels : []).map(function (l) { return l[0] + ": " + l[1]; }), me = S.me || {}, cu = S.customer || {}, back = document.activeElement;
