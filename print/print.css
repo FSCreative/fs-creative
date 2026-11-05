@@ -2196,3 +2196,17 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
   .ps-v2hero .ps-xteaser .im::before{content:"";position:absolute;inset:-80px;background:var(--bg) left center/cover no-repeat;filter:blur(48px) saturate(1.05);transform:scale(1.15)}
   .ps-v2hero .ps-xteaser .im img{position:relative;width:auto;height:100%;max-width:none;flex:none;object-fit:contain;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16%);mask-image:linear-gradient(90deg,transparent 0,#000 16%)}
 }
+/* Slider-Punkte: große Klickfläche, wachsen beim Darüberfahren, aktiver Punkt als Fortschrittsbalken (Wunsch Simon 05.11.2026) */
+.ps-xsd{gap:2px;bottom:12px;padding:4px 8px;border-radius:999px;background:rgba(10,20,45,.25);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.ps-xsd button{position:relative;width:26px;height:26px;padding:0;border:0;border-radius:50%;background:none!important;cursor:pointer;transition:width .35s cubic-bezier(.2,.8,.2,1)}
+.ps-xsd button::before{content:"";position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:6px;transform:translate(-50%,-50%);background:rgba(255,255,255,.55);transition:width .35s cubic-bezier(.2,.8,.2,1),transform .25s cubic-bezier(.3,1.6,.5,1),background .25s}
+.ps-xsd button:hover::before,.ps-xsd button:focus-visible::before{transform:translate(-50%,-50%) scale(1.5);background:#fff}
+.ps-xsd button[aria-current]{width:46px}
+.ps-xsd button[aria-current]::before{width:34px;background:rgba(255,255,255,.35);overflow:hidden}
+.ps-xsd button[aria-current]:hover::before{transform:translate(-50%,-50%) scale(1.15)}
+.ps-xsd button[aria-current]::after{content:"";position:absolute;left:6px;top:50%;height:10px;width:34px;border-radius:6px;transform:translateY(-50%) scaleX(0);transform-origin:left center;background:#fff;animation:psXsP 4.5s linear forwards}
+.ps-xsl:hover .ps-xsd button[aria-current]::after,.ps-xsl:focus-within .ps-xsd button[aria-current]::after{animation-play-state:paused}
+@keyframes psXsP{to{transform:translateY(-50%) scaleX(1)}}
+.ps-xsd button:focus-visible{outline:2px solid #ffd23f;outline-offset:1px}
+@media (prefers-reduced-motion:reduce){.ps-xsd button[aria-current]::after{animation:none;transform:translateY(-50%) scaleX(1)}}
+.xm-hs>i{transition:transform .25s cubic-bezier(.3,1.6,.5,1)}.xm-hs:hover>i,.xm-hs:focus-visible>i{transform:scale(1.35)}
