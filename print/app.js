@@ -901,9 +901,11 @@
     if (document.hidden) { var p = S.price, co = S.ctype === "company", cart = (S.cart || []).length;
       if (!(S.prod && S.step >= 2 && S.step <= 3) && !cart) return;
       TT.base = document.title; TT.on = true;
-      document.title = (S.step >= 2 && S.step <= 3 && S.prod ? "👋 " + S.prod.title + " wartet" + (p ? " – " + eur(co ? p.net : p.gross) : "") : "🛒 Dein Warenkorb wartet (" + cart + ")") + " · Versand gratis";
+      var msg = (S.step >= 2 && S.step <= 3 && S.prod ? S.prod.title + " wartet" + (p ? " – " + eur(co ? p.net : p.gross) : "") : "Dein Warenkorb wartet (" + cart + ")") + " · Versand gratis", k = 0;
+      // grüner und gelber Punkt wechseln sich ab – Bewegung im Tab (Wunsch Simon 05.11.2026, statt der winkenden Hand)
+      var tick = function () { document.title = (k++ % 2 ? "🟡 " : "🟢 ") + msg; }; tick(); clearInterval(TT.t); TT.t = setInterval(tick, 1000);
       favDot(true);
-    } else if (TT.on) { TT.on = false; if (TT.base) document.title = TT.base; favDot(false); }
+    } else if (TT.on) { TT.on = false; clearInterval(TT.t); if (TT.base) document.title = TT.base; favDot(false); }
   });
   function vienna() { var f = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date()), g = function (t) { return (f.filter(function (x) { return x.type === t; })[0] || {}).value; }; return { wd: g("weekday"), h: +g("hour"), m: +g("minute") }; }
   function dueHtml() { var p = S.price; if (!p || !p.deliveryDate) return ""; var d = new Date(p.deliveryDate + "T12:00:00"); if (isNaN(d)) return "";
