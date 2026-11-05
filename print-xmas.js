@@ -34,7 +34,8 @@ const THEMES = [
       ["desk-pads", "Schreibtischunterlagen", "2NJnxQpHAOUYXVL9zEJfSp/70badc949a06a0c163d2986091b97f74/502dc011-4d42-4f0d-94f9-ab2a3c0a9fcc.jpg"],
       ["hexagon-pen-holder", "Pop-up-Stiftehalter", "40Pl939M0Zm4GQp41LUdgB/115a30b581283591f8bac1e865cd506f/2026-EOY-NewYearDeskKit-penholder-calendar.jpg"],
       ["textmarker", "Textmarker mit Logo", "1JRCHuUh79I1ZqEQQeLrJe/e89f4d35278c0a1e7efd0a3375796423/textmarker-family-2.jpg"],
-      ["whiteboards-premium", "Whiteboard mit eigenem Druck", "6Ek7cCElBdiJsvrtFWlQfQ/e49f3848e2065cc1d0c7f95a13212e2d/whiteboard-premium-silver-crystal.jpg"]
+      ["whiteboards-premium", "Whiteboard mit eigenem Druck", "6Ek7cCElBdiJsvrtFWlQfQ/e49f3848e2065cc1d0c7f95a13212e2d/whiteboard-premium-silver-crystal.jpg"],
+      ["budget-pen-contour", "Kugelschreiber mit Logo", "46rDa5Rqhleu557n4dS74a/d53c6abe2ada7e382643c8e2009e24a1/Pens_budget_contour_red.jpg"]
     ] },
   { slug: "karten", nav: "Karten", title: "Weihnachtskarten & Kuverts",
     text: "Klassische Karten, Kartensets, Karten aus Birkenholz oder Saatpapier und die passenden Kuverts – für Kundschaft, Team, Familie und Freunde.",
@@ -89,7 +90,8 @@ const THEMES = [
       ["round-tier-shelf", "Etagere-Display", "7jmddFotbetlqGncAp2DXP/b70ebfaf964993c0c8b7d6e326692c6d/EOY_2026_Round_tier_display_square_total.jpg"],
       ["cardboard-photo-frame", "Bilderrahmen aus Karton", "5NQEQY8GzJnJvHanXJrke7/45115687c02250c6af25375e4db8e368/EOY_2025_Products_cardboard_photo_frames_A.jpg"],
       ["wallpaper", "Tapete mit eigenem Motiv", "1K6EnRz0W7wXMw24BN17Tu/b8856dffa8caa2249fbfe45ddd48de60/EOY-2025-show-wallpaper.jpg", 1],
-      ["hockers", "Sitzhocker", "7uUaM7SK0V68xJN5hBrf5r/e8c725812c47504eab1e4ae7e8fa23fe/Hocker_Catalogi_vierkant_40_cm.jpg"]
+      ["hockers", "Sitzhocker", "7uUaM7SK0V68xJN5hBrf5r/e8c725812c47504eab1e4ae7e8fa23fe/Hocker_Catalogi_vierkant_40_cm.jpg"],
+      ["acrylic-photo-prints", "Fotos auf Acrylglas", "4lkEhAvRHJDODHB4SZpqoV/eb4c5063349700ec78d4c06f07ce7be4/Wall_deco_arcylic_B_close_def.jpg"]
     ] },
   { slug: "verschenken", nav: "Verschenken", title: "Kleine Geschenke",
     text: "Adventskalender, Thermoflaschen, Duftkerzen, Spielkarten und Genuss-Sets mit Logo oder Namen – für dein Team, deine Kundschaft und Geschäftspartner.",
@@ -227,8 +229,10 @@ function cardHtml(it, x, sea, i) {
 // Produktpunkte auf den Aktionsbildern (nur Computer): [Produkt-Key, x, y] in Prozent des Originalbilds – nur eindeutig erkennbare
 // Produkte aus dem Sortiment (Deko wie Radio, Kassette, Fondue, Zuckerstange, Stiefel, Feuer usw. bewusst ohne Punkt). Geprüft 03.11.2026.
 const HOTSPOTS = {
-  hero: [["wire-o-desk-calendars", 70.8, 25], ["christmas-baubles", 73.8, 58.4], ["luxurious-labels", 86, 63], ["wine-hang-tags", 90.8, 53.6], ["labels-on-roll", 61.3, 79.5], ["ribbon", 58.3, 64], ["beer-mats", 79.8, 86.2]],
-  planen: [["hexagon-pen-holder", 58.1, 36.4], ["wire-o-desk-calendars", 75.4, 38.3], ["sticky-notes", 64, 64.2], ["ribbon", 73.3, 86.2]],
+  hero: [["wire-o-desk-calendars", 70.8, 25], ["christmas-baubles", 73.8, 58.4], ["luxurious-labels", 86, 63], ["wine-hang-tags", 90.8, 53.6], ["labels-on-roll", 61.3, 79.5], ["ribbon", 58.3, 64], ["beer-mats", 79.8, 86.2],
+    ["tubes-giftset", 66.2, 57.6], ["budget-pen-contour", 69.4, 72.2], ["pillow-packs", 78.6, 73.4], ["acrylic-photo-prints", 79.4, 36.6]],
+  planen: [["hexagon-pen-holder", 58.1, 36.4], ["wire-o-desk-calendars", 75.4, 38.3], ["sticky-notes", 64, 64.2], ["ribbon", 73.3, 86.2],
+    ["budget-pen-contour", 58.8, 9.5], ["diaries", 55.5, 84.5], ["desk-pads", 72.5, 68.5], ["sticky-notes", 93.5, 41]],
   karten: [["luxurious-postcards", 63.5, 51]],
   verpacken: [["letterbox-box-with-lid", 72.5, 38.3], ["labels-on-roll", 80.4, 52.7], ["gift-wrapping", 91.7, 57.5], ["ribbon", 78.3, 78.5]],
   dekorieren: [["re-board-christmas", 47, 61.3]],
