@@ -31,7 +31,7 @@ const imgResp = (buf, type, extra) => ({ ok: true, status: 200, headers: new Map
   await t("URL: gültiger Pfad, Parameter gefiltert, Breite gerundet", () => {
     assert.strictEqual(upstreamUrl(OK_PATH, "?fm=webp&w=400"), UP + "?fm=webp&w=400");
     assert.strictEqual(upstreamUrl(OK_PATH, "?fm=webp&w=401&evil=1&q=85&fit=fill&h=99"), UP + "?fm=webp&w=600&h=120&q=85&fit=fill");
-    assert.strictEqual(upstreamUrl(OK_PATH, "?w=99999"), UP + "?w=2000");
+    assert.strictEqual(upstreamUrl(OK_PATH, "?w=99999"), UP + "?w=3200");
     assert.strictEqual(upstreamUrl(OK_PATH, "?fm=exe&q=0&fit=x"), UP);
     assert.strictEqual(snap("1080"), 1200); assert.strictEqual(snap("abc"), 0);
   });
