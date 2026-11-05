@@ -388,7 +388,7 @@ module.exports = function (D) {
             await gbpPatch(loc, "categories", { categories: { primaryCategory: { name: cats.primaryCategory.name }, additionalCategories: add.slice(0, 9) } }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
           if (op === "website") { const w = String(pl.website || "").trim(); if (!/^https:\/\/[^\s"'<>]{4,200}$/.test(w)) throw fail(400, "Ungültige Adresse");
             await gbpPatch(loc, "websiteUri", { websiteUri: w }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
-          if (op === "description") { const d = clip(pl.description, 750); if (d.length < 50) throw fail(400, "Beschreibung zu kurz");
+          if (op === "description") { const d = String(pl.description || "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 750); if (d.length < 50) throw fail(400, "Beschreibung zu kurz"); if (/https?:\/\/|www\./i.test(d)) throw fail(400, "Google erlaubt keine Links in der Beschreibung");   // Absätze bleiben erhalten
             await gbpPatch(loc, "profile.description", { profile: { description: d } }); return J(res, 200, { ok: true, profile: await gbpProfile(loc) }), true; }
           throw fail(400, "Unbekannte Aktion");
         } catch (e) { return J(res, 200, { ok: false, status: e.status || 500, error: String(e.message || e).slice(0, 300) }), true; }

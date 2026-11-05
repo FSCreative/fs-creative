@@ -3147,11 +3147,14 @@ module.exports = function (D) {
     if (!it && !fmt) { const E = await entryState(), e = E.by[key]; if (e) it = { key, title: x.title, label: e.label || "Standard-Ausführung", desc: x.desc || "", img: x.img || "", group: (x.cat && x.cat.mainName) || "", rows: [e.min, { copies: e.copies, gross: e.gross }].filter(Boolean), at: E.end, entry: true }; }
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
-    const desc = scrubText(noHtml(OWN_DESC[key] || x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, OWN_DESC[key] ? 600 : 400).replace(/(^|[.!?])\s*[^.!?]*:\s*$/, "$1").trim();   // kein „Vorteile …:“ ohne Liste   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
+    let desc = scrubText(noHtml(OWN_DESC[key] || x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, OWN_DESC[key] ? 600 : 400).replace(/(^|[.!?])\s*[^.!?]*:\s*$/, "$1").trim();   // kein „Vorteile …:“ ohne Liste   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
     // Textil/Werbeartikel: gesucht wird „… bedrucken“ / „mit Logo“, verglichen wird der Stückpreis (10 Shirts „ab 124 €“ wirken teuer, „ab 12,46 € pro Stück“ nicht)
     const logoK = !!(full && (full.kind === "textile" || full.kind === "promo")) || (x.cat && x.cat.main === "clothing-textile");
     const loP = it && logoK ? it.rows.filter(r => r.copies > 0 && r.gross > 0).sort((a, b) => a.gross / a.copies - b.gross / b.copies)[0] : null;
     const lo = it ? it.rows.slice().sort((a, b) => a.gross - b.gross)[0] : null, fvT = fv ? " " + fmtNice(fv.label) : "", faq = productFaq(x, full, it, lo, fvT);
+    // Dünne Lieferanten-Texte („Individuell bedruckt – Druckdaten hochladen.“, nur ein Druckername wie „HP Latex 3600“, „Ab 100 Stück“) ergänzen –
+    // aus echten Produktdaten (Ausführungen, Standard-Ausführung, Einstiegspreis), für Kunden, Google, Bing und KI-Assistenten (Wunsch Simon 05.11.2026, gilt für alle Produkte)
+    if (!OWN_DESC[key]) desc = enrichDesc(desc, x, full, it, lo, logoK);
     const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title + (fv ? " " + fmtNice(fv.label) : "")) + (logoK ? " mit Logo bedrucken" : " online drucken") + "</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
       (it ? "<h2>" + (it.entry ? "Einstiegspreise" : "Preise") + " (Stand " + escH(dateDe(it.at || P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
       (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(scrubText(z[0])) + ":</b> " + escH(scrubText(z[1])) + "</li>").join("") + "</ul>" : "") +
@@ -3160,7 +3163,7 @@ module.exports = function (D) {
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
     const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
     if (!ld.image && x.img) ld.image = x.img;
-    if (desc && it) ld.description = cutWords(desc, 300) + (it.label ? " Standard-Ausführung: " + scrubText(it.label) + "." : "");   // KI und Suchmaschinen: Text + Ausführung statt nur Optionsliste
+    if (desc && it) ld.description = cutWords(desc, 300) + (it.label && desc.indexOf("Standard-Ausführung:") < 0 ? " Standard-Ausführung: " + scrubText(it.label) + "." : "");   // KI und Suchmaschinen: Text + Ausführung statt nur Optionsliste
     if (typeof ld.image === "string" && /[?&]w=\d+/.test(ld.image)) ld.image = [ld.image.replace(/([?&])w=\d+/, "$1w=1200"), ld.image];   // Google/KI: großes Bild bevorzugt
     ld.sku = key; if (x.cat && x.cat.mainName) ld.category = x.cat.mainName + (x.cat.subName ? " > " + x.cat.subName : "");
     // Titel/Beschreibung: Produkt (+ Format), günstigster Preis der Preisübersicht, Versand inkl. – Beschreibung an der Wortgrenze gekürzt
@@ -3175,6 +3178,18 @@ module.exports = function (D) {
       .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(x.cat, x.title, url)))
       .replace("</head>", () => (SLUGS.byKey[key] && !fv ? '<link rel="alternate" type="text/markdown" href="' + escH(url + ".md") + '" title="Produktinfos als Markdown (für KI-Assistenten)">\n' : "") + ldTag(ld) + (faq.length ? "\n" + ldTag({ "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }) : "") + "\n</head>");
+  }
+  const THIN_DESC = /^(individuell bedruckt[^.]*\.?|ab \d[\d.]* stück|(hp|canon|durst|efi|mimaki|roland|epson|agfa|swissq|vutek|konica|ricoh|xerox|indigo)\b[\w ®™-]*)$/i;
+  function enrichDesc(desc, x, full, it, lo, logoK) {
+    const d = THIN_DESC.test(String(desc || "").trim()) ? "" : String(desc || "").trim();
+    if (d.length >= 160) return d;
+    const props = ((full && full.props) || []).filter(pr => pr && pr.options && pr.options.length > 1 && !/^(menge|anzahl|stückzahl|copies|lieferzeit)$/i.test(pr.title)).slice(0, 4)
+      .map(pr => scrubText(pr.title) + " (" + pr.options.slice(0, 4).map(o => scrubText(o.name)).join(", ") + (pr.options.length > 4 ? " u. a." : "") + ")");
+    const parts = [x.title + (logoK ? " mit deinem Logo oder Motiv bedrucken lassen" : " individuell nach deinen Druckdaten drucken lassen") + (props.length ? " – wählbar sind " + props.join(", ").replace(/, ([^,]*)$/, " und $1") : "") + "."];
+    if (it && it.label) parts.push("Standard-Ausführung: " + scrubText(it.label) + ".");
+    if (lo) parts.push("Ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück, inklusive 20 % USt und Versand in ganz Österreich; jede andere Ausführung und Menge rechnet der Konfigurator sofort.");
+    parts.push("Druckdaten hochladen" + (full && full.designer === false ? "" : " oder online gestalten") + ", automatischer Datencheck vor dem Druck – vom Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg).");
+    return (d ? d.replace(/[.!]?$/, ".") + " " : "") + parts.join(" ");
   }
   // Produkt als Markdown (/print/<slug>.md) für KI-Assistenten (ChatGPT, Gemini, Copilot, Perplexity …): gleicher Inhalt wie das Crawler-HTML der Produktseite, ohne Layout
   const mdEnt = t => String(t).replace(/&nbsp;/g, " ").replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
