@@ -3185,7 +3185,7 @@ module.exports = function (D) {
     if (d.length >= 160) return d;
     const props = ((full && full.props) || []).filter(pr => pr && pr.options && pr.options.length > 1 && !/^(menge|anzahl|stückzahl|copies|lieferzeit)$/i.test(pr.title)).slice(0, 4)
       .map(pr => scrubText(pr.title) + ": " + pr.options.slice(0, 4).map(o => scrubText(o.name)).join(" · ") + (pr.options.length > 4 ? " u. a." : ""));   // „·“ statt Komma – Optionsnamen enthalten selbst Kommas
-    const parts = [x.title + (logoK ? " mit deinem Logo oder Motiv bedrucken lassen" : " individuell nach deinen Druckdaten drucken lassen") + (props.length ? ". Wählbar: " + props.join("; ") : "") + "."];
+    const parts = [x.title + (logoK ? " mit deinem Logo oder Motiv bedrucken lassen" : " individuell nach deinen Druckdaten drucken lassen") + (props.length ? ". Wählbar: " + props.join("; ") : "") + "."].map(v => v.replace(/\.\.$/, "."));
     if (it && it.label && !/^standard-ausführung$/i.test(String(it.label).trim())) parts.push("Standard-Ausführung: " + scrubText(it.label) + ".");
     if (lo) parts.push("Ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück, inklusive 20 % USt und Versand in ganz Österreich; jede andere Ausführung und Menge rechnet der Konfigurator sofort.");
     parts.push("Druckdaten hochladen" + (full && full.designer === false ? "" : " oder online gestalten") + ", automatischer Datencheck vor dem Druck – vom Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg).");
