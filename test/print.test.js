@@ -245,6 +245,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "92.40", "Druck 38,40 + Grafik 54,00 – ohne Zutun des Kunden");
     const after = (await admin("/admin/api/print/briefs")).briefs.find(x => x.id === br.id); assert.strictEqual(after.offer.order.nr, r.j.nr); assert.strictEqual(after.status, "erledigt");
     assert.strictEqual((await fetch(B + "/print/api/brief/offer?e=" + encodeURIComponent(e))).status, 409, "bereits bestellt");
+    // Zahlung abgebrochen → Anfrage wieder offen
+    M.payments[pid].status = "canceled"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    const back = (await admin("/admin/api/print/briefs")).briefs.find(x => x.id === br.id); assert.notStrictEqual(back.status, "erledigt", "nach Abbruch offen"); assert.ok(!back.offer.order, "Bestellung gelöst");
   });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));

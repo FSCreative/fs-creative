@@ -2343,8 +2343,8 @@ module.exports = function (D) {
       if (Array.isArray(x.clientWarn) && x.clientWarn.length) { o.clientChecks = x.clientWarn.slice(0, 10).map(t => clip(t, 300)); }
       hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "graphic" ? "Datencheck mit Grafikaufbereitung gewünscht – Grafik druckfertig machen und dem Kunden zur Freigabe senden" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
-      x.fm.orderId = o.id; await store.putFile(x.fm); await store.putOrder(o);
-      if (o.briefId) { const all = await briefsGet().catch(() => null), br = all && all.find(z => z.id === o.briefId); if (br && br.offer) { br.offer.order = { id: o.id, nr: o.nr, at: nowIso() }; br.status = "erledigt"; br.updated = nowIso(); await briefsSet(all).catch(() => {}); } }
+      x.fm.orderId = o.id; await store.putFile(x.fm);
+      await briefDone(o); await store.putOrder(o);
       for (const lid of (x.fm.logos || []).concat(x.fm.motifFiles || [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
     }
     const orders = prepared.map(x => x.o);
@@ -2601,8 +2601,8 @@ module.exports = function (D) {
           if (!(Math.abs(amt - sum) < 0.005) || (pay.amount && pay.amount.currency !== "EUR")) { x.payment.status = "mismatch"; hist(x, "Zahlung " + paymentId + " mit falschem Betrag " + (pay.amount && pay.amount.value)); await store.putOrder(x); continue; }
           x.payment.status = "paid"; x.payment.mollieId = paymentId; x.payment.paidAt = String(pay.paidAt || nowIso()); x.payment.methodDetail = clip(pay.method, 40);
           if (x.status === "pending_payment" || x.status === "payment_failed") x.status = "paid";
-          hist(x, "Zahlung eingegangen (Mollie " + paymentId + ", Warenkorb " + md.groupId + ")"); await store.putOrder(x); await submitted(x);
-        } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { x.payment.status = st; if (x.status === "pending_payment") x.status = "payment_failed"; hist(x, "Zahlung " + st); await store.putOrder(x); }
+          hist(x, "Zahlung eingegangen (Mollie " + paymentId + ", Warenkorb " + md.groupId + ")"); await briefDone(x); await store.putOrder(x); await submitted(x);
+        } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { x.payment.status = st; if (x.status === "pending_payment") x.status = "payment_failed"; hist(x, "Zahlung " + st); await briefUndo(x); await store.putOrder(x); }
       }
       return;
     }
@@ -2614,11 +2614,29 @@ module.exports = function (D) {
       if (!(Math.abs(amt - o.price.gross) < 0.005) || (pay.amount && pay.amount.currency !== "EUR")) { o.payment.status = "mismatch"; hist(o, "Zahlung " + paymentId + " mit falschem Betrag " + (pay.amount && pay.amount.value)); await store.putOrder(o); return; }
       o.payment.status = "paid"; o.payment.mollieId = paymentId; o.payment.paidAt = String(pay.paidAt || nowIso()); o.payment.methodDetail = clip(pay.method, 40);
       if (o.status === "pending_payment" || o.status === "payment_failed") o.status = "paid";
-      hist(o, "Zahlung eingegangen (Mollie " + paymentId + ")"); await store.putOrder(o);
+      hist(o, "Zahlung eingegangen (Mollie " + paymentId + ")"); await briefDone(o); await store.putOrder(o);
       await submitted(o);
     } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && o.payment.status !== "paid" && paymentId === o.payment.mollieId) {
-      o.payment.status = st; if (o.status === "pending_payment") o.status = "payment_failed"; hist(o, "Zahlung " + st); await store.putOrder(o);
+      o.payment.status = st; if (o.status === "pending_payment") o.status = "payment_failed"; hist(o, "Zahlung " + st); await briefUndo(o); await store.putOrder(o);
     } else if (pay.amountRefunded && parseFloat(pay.amountRefunded.value) > 0 && o.payment.refund && o.payment.refund.status !== "refunded") { o.payment.refund.status = "refunded"; await store.putOrder(o); }
+  }
+  // Gestaltungsanfrage zur Bestellung erledigen (Wunsch Simon 05.11.2026): über den Angebotslink (briefId) oder – Kunde bestellt ohne Link (eigene Datei,
+  // andere Ausführung) – gleiche E-Mail + gleiches Produkt bei offener Anfrage mit Angebot (höchstens 60 Tage alt); Online-Zahlung abgebrochen → wieder offen
+  async function briefDone(o) {
+    const all = await briefsGet().catch(() => null); if (!all) return;
+    const em = String((o.customer && o.customer.email) || "").trim().toLowerCase(), pk = o.product && o.product.key;
+    let br = o.briefId ? all.find(z => z.id === o.briefId) : null, how = "Bestellung über den Angebotslink";
+    if (!br && em) { br = all.find(z => z.status !== "erledigt" && z.offer && !z.offer.order && String(z.email || "").trim().toLowerCase() === em && z.offer.input && z.offer.input.product === pk && Date.now() - Date.parse(z.offer.at || z.created || 0) < 60 * 864e5) || null;
+      how = "gleiche E-Mail und gleiches Produkt, ohne Angebotslink bestellt"; if (br) o.briefId = br.id; }
+    if (!br || !br.offer || (br.offer.order && br.offer.order.id === o.id && br.status === "erledigt")) return;
+    br.offer.order = { id: o.id, nr: o.nr, at: nowIso() }; if (br.status !== "erledigt") br.statusBefore = br.status; br.status = "erledigt"; br.updated = nowIso();
+    await briefsSet(all).catch(() => {}); hist(o, "Gestaltungsanfrage automatisch auf erledigt gesetzt (" + how + ")");
+  }
+  async function briefUndo(o) {
+    if (!o.briefId) return; const all = await briefsGet().catch(() => null), br = all && all.find(z => z.id === o.briefId);
+    if (!br || !br.offer || !br.offer.order || br.offer.order.id !== o.id) return;
+    delete br.offer.order; br.status = br.statusBefore && br.statusBefore !== "erledigt" ? br.statusBefore : "arbeit"; br.updated = nowIso();
+    await briefsSet(all).catch(() => {}); hist(o, "Zahlung nicht abgeschlossen – Gestaltungsanfrage wieder offen");
   }
   const carrierOf = url => { const h = (String(url).match(/^https?:\/\/([^/]+)/) || [])[1] || ""; return /dhl/i.test(h) ? "DHL" : /dpd/i.test(h) ? "DPD" : /ups/i.test(h) ? "UPS" : /gls/i.test(h) ? "GLS" : /fedex|tnt/i.test(h) ? "FedEx/TNT" : /post\.at|austrianpost/i.test(h) ? "Österreichische Post" : /postnl/i.test(h) ? "PostNL" : ""; };
   // Status/Tracking bei Print.com abrufen (alle 2 h für offene Sendungen, auf Klick / Webhook von Print.com)
