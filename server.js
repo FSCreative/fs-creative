@@ -3408,7 +3408,8 @@ let COCKPIT_VER = null;
 function cockpitVer() {
   if (COCKPIT_VER) return COCKPIT_VER; const all = crypto.createHash("sha1"), per = {};
   try { all.update(fs.readFileSync(path.join(ROOT, "admin-cockpit.html"))); } catch (e) {}
-  cockpitModules().forEach(f => { per[f] = crypto.createHash("sha1").update(cockpitModule(f) || "").digest("hex").slice(0, 10); all.update(f + per[f]); });
+  cockpitModules().forEach(f => { per[f] = crypto.createHash("sha1").update("v2|").update(cockpitModule(f) || "").digest("hex").slice(0, 10);   // „v2|“: einmalig neue Nummern (05.11.2026), damit falsch gecachte Stände verschwinden
+    all.update(f + per[f]); });
   COCKPIT_VER = { all: all.digest("hex").slice(0, 12), per }; return COCKPIT_VER;
 }
 function cockpitHtml() {
