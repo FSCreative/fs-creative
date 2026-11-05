@@ -1626,7 +1626,24 @@ module.exports = function (D) {
     return { pdf: Buffer.concat(chunks), sheets };
   }
 
-  async function svgPagesToPdf(pages, size, bleed) {
+  // Sonderfarben im PDF (pdfkit kennt keine): Separation-Farbraum je Seite, Ersatzfarbe nur für die Bildschirmanzeige; Überdrucken per ExtGState
+  const SPOT_ALT = { White: [0.6, 0, 0.25, 0], Thrucut: [0, 1, 0, 0], Kisscut: [0, 0.45, 1, 0], Creasing: [1, 0, 1, 0], Perforation: [1, 0.2, 0, 0], Drilling: [0, 1, 1, 0] };
+  function spotCs(doc, name) {
+    const k = "Fsc" + name; if (!doc.page.colorSpaces[k]) { const fn = doc.ref({ FunctionType: 2, Domain: [0, 1], C0: [0, 0, 0, 0], C1: SPOT_ALT[name], N: 1 }); fn.end(); doc.page.colorSpaces[k] = ["Separation", name, "DeviceCMYK", fn]; }
+    if (!doc.page.ext_gstates.FscOP) { const g = doc.ref({ Type: "ExtGState", OP: true, op: true, OPM: 1 }); g.end(); doc.page.ext_gstates.FscOP = g; }
+    return k;
+  }
+  // Weiß-Ebene aus der Designer-Maske (PNG, Deckung = Alphakanal) als Bild in der Sonderfarbe „White“, überdruckend über die ganze Seite
+  function whiteLayer(doc, dataUrl, W, H) {
+    const { PNG } = require("pngjs"); const png = PNG.sync.read(Buffer.from(String(dataUrl).split(",")[1] || "", "base64"));
+    const a = Buffer.alloc(png.width * png.height); let any = false; for (let i = 0; i < a.length; i++) { a[i] = png.data[i * 4 + 3]; if (a[i]) any = true; }
+    if (!any) return false;
+    const cs = spotCs(doc, "White"), img = doc.ref({ Type: "XObject", Subtype: "Image", Width: png.width, Height: png.height, ColorSpace: doc.page.colorSpaces[cs], BitsPerComponent: 8 }); img.end(a);
+    doc.page.xobjects.FscWhite = img;
+    doc.save(); doc.transform(W, 0, 0, -H, 0, H); doc.addContent("/FscOP gs /FscWhite Do"); doc.restore();
+    return true;
+  }
+  async function svgPagesToPdf(pages, size, bleed, extra) {
     const PDFDocument = require("pdfkit"), SVGtoPDF = require("svg-to-pdfkit");
     const W = (size.w + 2 * bleed) * MM_PT, H = (size.h + 2 * bleed) * MM_PT, B = bleed * MM_PT;
     const doc = new PDFDocument({ size: [W, H], margin: 0, autoFirstPage: false, info: { Title: "Druckdaten", Producer: "FS Creative Druckshop" } });
@@ -1649,7 +1666,7 @@ module.exports = function (D) {
       if (iw && ih && !opt) images.push({ page: doc._pageCount || 0, px: [iw, ih], mm: [r2(iw * sx / MM_PT), r2(ih * sy / MM_PT)], dpi: Math.round(72 / Math.max(sx, sy)) });
       return origImage(img, x, y, opt);
     };
-    let pageNo = 0;
+    let pageNo = 0; const used = {};
     for (const svg of pages) {
       doc.addPage({ size: [W, H], margin: 0 }); doc._pageCount = ++pageNo;
       // Endformat und Beschnitt im PDF kennzeichnen (Druckereien lesen TrimBox/BleedBox)
@@ -1659,9 +1676,20 @@ module.exports = function (D) {
         colorCallback: c => c && Array.isArray(c[0]) && c[0].length === 3 ? [cmyk(c[0]), c[1]] : c,
         imageCallback: link => { link = String(link || "").replace(/\s+/g, ""); return /^data:image\/(png|jpe?g);base64,/i.test(link) ? link : ""; },
         documentCallback: () => null, warningCallback: w => { if (warns.length < 20) warns.push(String(w).slice(0, 200)); } });
+      const ex = (extra && extra[pageNo - 1]) || {};
+      if (ex.white && whiteLayer(doc, ex.white, W, H)) used.White = (used.White || 0) + 1;
+      // Linien (Thrucut, Kisscut, Creasing, Perforation, Drilling): Konturen in genau dieser Sonderfarbe, 100 %, überdruckend
+      for (const sp of ex.spots || []) {
+        const cs = spotCs(doc, sp.name), fc = doc.fillColor, sc = doc.strokeColor;
+        doc.fillColor = function () { this.addContent("/" + cs + " cs 1 scn"); return this; }; doc.strokeColor = function () { this.addContent("/" + cs + " CS 1 SCN"); return this; };
+        doc.addContent("q /FscOP gs");
+        try { SVGtoPDF(doc, sp.svg, 0, 0, { width: W, height: H, preserveAspectRatio: "none", documentCallback: () => null, warningCallback: () => {} }); }
+        finally { doc.addContent("Q"); doc.fillColor = fc; doc.strokeColor = sc; }
+        used[sp.name] = (used[sp.name] || 0) + 1;
+      }
     }
     doc.end(); await done;
-    return { buf: Buffer.concat(chunks), warns, images };
+    return { buf: Buffer.concat(chunks), warns, images, spots: used };
   }
   async function preflightStart(meta, buf) {
     const c = cfg(); if (!c.preflight || !c.pcKey || !meta.size) return null;
@@ -1996,7 +2024,11 @@ module.exports = function (D) {
     const pages = Array.isArray(input.pages) ? input.pages : [];
     if (pages.length !== target.sides) throw Object.assign(new Error("Anzahl der Seiten passt nicht (" + target.sides + " benötigt)"), { status: 400 });
     const clean = pages.map(svgSafe);
-    let r; try { r = await svgPagesToPdf(clean, target.size, target.bleed); } catch (e) { log("Designer-PDF:", e.message); throw Object.assign(new Error("PDF konnte nicht erstellt werden"), { status: 400 }); }
+    // Weiß-Ebene (PNG-Maske) und Sonderfarben-Linien je Seite aus dem Designer
+    const SPOT_OK = /^(Thrucut|Kisscut|Creasing|Perforation|Drilling)$/;
+    const extra = clean.map((_, i) => { const w = Array.isArray(input.white) ? String(input.white[i] || "") : "", sp = Array.isArray(input.spots) && Array.isArray(input.spots[i]) ? input.spots[i] : [];
+      return { white: /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(w) && w.length < 30 * 1024 * 1024 ? w : "", spots: sp.filter(x => x && SPOT_OK.test(String(x.name))).slice(0, 5).map(x => ({ name: String(x.name), svg: svgSafe(x.svg).replace(/(?:stroke-|fill-)?opacity\s*[:=]\s*["']?[\d.]+["']?;?/gi, "") })) }; });   // Linien immer 100 % (sonst Gruppe/XObject ohne Farbraum)
+    let r; try { r = await svgPagesToPdf(clean, target.size, target.bleed, extra); } catch (e) { log("Designer-PDF:", e.message); throw Object.assign(new Error("PDF konnte nicht erstellt werden"), { status: 400 }); }
     const W = r2(target.size.w + 2 * target.bleed), H = r2(target.size.h + 2 * target.bleed);
     // Endkontrolle: Seitengröße des erzeugten PDFs = Endformat + 2 × Beschnitt
     const info = pdfInfo(r.buf);
@@ -2006,6 +2038,8 @@ module.exports = function (D) {
     const low = r.images.filter(x => x.dpi < lo);
     low.forEach(x => checks.push({ level: x.dpi < min ? "error" : "warn", text: "Bild auf Seite " + x.page + " hat bei " + x.mm[0] + " × " + x.mm[1] + " mm nur " + x.dpi + " dpi (empfohlen ≥ " + (prod.dpi || 300) + ", mindestens " + lo + ")." + (x.dpi < min ? " Bitte größeres Bild verwenden oder kleiner platzieren." : " Der Druck kann unscharf wirken.") }));
     if (r.images.length && !low.length) checks.push({ level: "ok", text: r.images.length + " Bild(er) mit ausreichender Auflösung (≥ " + lo + " dpi)." });
+    const SPN = { White: "Weißdruck (Sonderfarbe „White“, überdruckend)", Thrucut: "Konturschnitt (Thrucut)", Kisscut: "Kiss-Cut (Kisscut)", Creasing: "Rilllinie (Creasing)", Perforation: "Perforation", Drilling: "Bohrung (Drilling)" };
+    Object.keys(r.spots || {}).forEach(k => checks.push({ level: "ok", text: SPN[k] + " auf " + r.spots[k] + " Seite(n) angelegt." }));
     (Array.isArray(input.warnings) ? input.warnings : []).slice(0, 10).forEach(w => checks.push({ level: "warn", text: clip(w, 200) }));
     target.pages = clean.length;
     return newFile("design", "gestaltung.pdf", r.buf, target, checks, { svgWarns: r.warns.length, images: r.images.slice(0, 30) });

@@ -16,7 +16,10 @@
     qr: { src: "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js", sri: "sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" },
   };
   var U = 4, PT = 0.3528, MAXPX = 16e6, MAXSIDE = 6000;
-  var PROPS = ["role", "__bg", "locked", "qr", "label", "nat", "dark", "name", "selectable", "evented", "hasControls", "lockMovementX", "lockMovementY", "lockScalingX", "lockScalingY", "lockRotation", "hoverCursor", "strokeUniform", "boxBg", "curve", "grad", "mask", "fx", "osrc", "ico", "poly", "shp", "ratio"];
+  var PROPS = ["role", "__bg", "locked", "qr", "label", "nat", "dark", "name", "selectable", "evented", "hasControls", "lockMovementX", "lockMovementY", "lockScalingX", "lockScalingY", "lockRotation", "hoverCursor", "strokeUniform", "boxBg", "curve", "grad", "mask", "fx", "osrc", "ico", "poly", "shp", "ratio", "wh", "spot"];
+  // Sonderfarben für die Weiterverarbeitung: Name = Sonderfarbe im PDF (überdruckend, wird nicht gedruckt), Anzeigefarbe im Designer (Wunsch Simon 05.11.2026)
+  var SPOTS = [["Thrucut", "Konturschnitt (durchschneiden)", "#ff00ff"], ["Kisscut", "Anschnitt auf Trägermaterial (Kiss-Cut)", "#ff8a00"], ["Creasing", "Rilllinie / Falz", "#00a651"], ["Perforation", "Perforation", "#00a3e0"], ["Drilling", "Bohrung", "#e60000"]];
+  var spotOf = function (n) { return SPOTS.filter(function (x) { return x[0] === n; })[0]; };
   var SW = ["#000000", "#1d1d1f", "#6e6e73", "#d1d1d6", "#ffffff", "#0a84ff", "#003a75", "#5ac8fa", "#30d158", "#5c7f4f", "#ffe600", "#ffb703", "#ff6b35", "#ff375f", "#9d4eff", "#b08d57", "#f7f3ec", "#0a0a0f"];
   // druckfreundliche Prozessfarben (liegen im CMYK-Farbraum, keine Warnung)
   var CMYKS = ["#1a171b", "#575756", "#9d9d9c", "#e30613", "#e6007e", "#951b81", "#312783", "#009fe3", "#008d36", "#95c11f", "#ffed00", "#f39200", "#a2662f", "#f7f3ec"];
@@ -83,7 +86,7 @@
   var ICON = {
     prod: '<path d="M8 3l-5 3 2 5 2-1v11h10V10l2 1 2-5-5-3c-.5 1.7-2.1 3-4 3S8.5 4.7 8 3z"/>',
     tpl: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
-    text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/>',
+    text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', spot: '<circle cx="6" cy="7" r="2.6"/><circle cx="6" cy="17" r="2.6"/><path d="M8.3 8.4 20 18M8.3 15.6 20 6" stroke-dasharray="2.5 2"/>', img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/>',
     shape: '<rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/>', qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
     bg: '<path d="M4 20 20 4M4 13 13 4M11 20l9-9"/><rect x="3" y="3" width="18" height="18" rx="2"/>', layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
     brand: '<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="15" cy="7" r="1.2"/>',
@@ -130,7 +133,7 @@
     ["truck", "Lieferung", "M2 6h12v11H2zM14 10h4l4 4v3h-8" + C(6, 18, 2) + C(18, 18, 2)], ["tag", "Preis", "M3 3h8l10 10-8 8L3 11z" + C(7.5, 7.5, 1.2)], ["cut", "Schere", C(6, 7, 3) + C(6, 17, 3) + "M8.5 8.5 20 19M8.5 15.5 20 5"]];
   var svgI = function (k) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON[k] || "") + "</svg>"; };
   var svgP = function (inner, solid) { return '<svg viewBox="0 0 24 24" fill="' + (solid ? "currentColor" : "none") + '" stroke="' + (solid ? "none" : "currentColor") + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + "</svg>"; };
-  var TOOLS = [["prod", "Produkt"], ["tpl", "Vorlagen"], ["text", "Text"], ["img", "Bilder"], ["shape", "Formen"], ["qr", "QR-Code"], ["bg", "Hinter&shy;grund"], ["layers", "Ebenen"], ["brand", "Marke"], ["check", "Prüfen"]];
+  var TOOLS = [["prod", "Produkt"], ["tpl", "Vorlagen"], ["text", "Text"], ["img", "Bilder"], ["shape", "Formen"], ["spot", "Schnitt &amp; Falz"], ["qr", "QR-Code"], ["bg", "Hinter&shy;grund"], ["layers", "Ebenen"], ["brand", "Marke"], ["check", "Prüfen"]];
 
   // Text-Box (Hintergrund mit Innenabstand/Radius) direkt im Textbox-Objekt: bleibt editierbar; im SVG ein einfaches <rect rx> vor dem Text
   function rrect(x, l, t, w, h, r) { x.moveTo(l + r, t); x.arcTo(l + w, t, l + w, t + h, r); x.arcTo(l + w, t + h, l, t + h, r); x.arcTo(l, t + h, l, t, r); x.arcTo(l, t, l + w, t, r); x.closePath(); }
@@ -156,6 +159,63 @@
   }
   function foldYs() { return D.fold ? D.fold.y.map(function (y) { return D.trim.y + y * U; }) : []; }
   // ── Öffnen ──
+  // Ausführung: Weißdruck (Slug oder Name, z. B. „50_200“ = 5/0 mit Weiß), transparentes Material, nötige Sonderfarben-Linien
+  function inkOf(o) {
+    var p = o.product || {}, sel = o.sel || {}, low = function (k) { return String(sel[k] == null ? "" : sel[k]).toLowerCase(); };
+    var nm = function (sl) { var pr = (p.props || []).filter(function (x) { return x.slug === sl; })[0], op = pr && pr.options.filter(function (x) { return String(x.slug) === String(sel[sl]); })[0]; return op ? String(op.name || "") : ""; };
+    var vals = Object.keys(sel).map(low).join(" "), blk = /^(yes|ja|true)$/.test(low("block-out-foil")), none = /^(|none|no|nee|geen|ohne|without|clean_cut|no_.*|__none|0)$/, need = [];
+    Object.keys(sel).forEach(function (k) { var x = low(k); if (none.test(x)) return;
+      if (/kiss_?cut/.test(x)) need.push("Kisscut"); else if (/die_?cut|thru_?cut/.test(x) || (/^custom_shape/.test(k) && /shape|complex|simple|contour/.test(x)) || k === "die_cut") need.push("Thrucut");
+      if (/^(variable_creasing_line|creasing_lines?)$/.test(k)) need.push("Creasing"); if (/^perforation/.test(k)) need.push("Perforation"); if (/drill/.test(k) && !/corner/.test(x)) need.push("Drilling"); });
+    return { white: !o.textile && (/white/.test(low("printtype")) || /wei(ß|ss)|white/i.test(nm("printtype"))), clear: /transparent|clear|klar/.test(vals) && !/opal/.test(vals) && !blk,
+      need: need.filter(function (x, i, a) { return a.indexOf(x) === i; }) };
+  }
+  function spotCount(n) { return D.c.getObjects().filter(function (o) { return o.spot === n && o.visible; }).length; }
+  function addSpot(n) {
+    var sp = spotOf(n); if (!sp) return; var T = D.trim, o, base = { fill: "", stroke: sp[2], strokeWidth: 2, strokeUniform: true, spot: n };   // Anzeige 0,5 mm, im PDF Haarlinie (spotSVGs)
+    if (n === "Creasing" || n === "Perforation") o = new fabric.Line([0, T.y + T.h / 2, D.W, T.y + T.h / 2], Object.assign({ strokeDashArray: n === "Perforation" ? [6, 4] : null }, base));   // von Rand zu Rand inkl. Beschnitt
+    else if (n === "Drilling") o = new fabric.Circle(Object.assign({ radius: 2.5 * U, left: T.x + 10 * U, top: T.y + 10 * U }, base));   // Ø 5 mm, in Originalgröße
+    else o = new fabric.Rect(Object.assign({ left: T.x + 2 * U, top: T.y + 2 * U, width: T.w - 4 * U, height: T.h - 4 * U, rx: 3 * U, ry: 3 * U }, base));
+    addObj(o, true); changed(); renderPanel();
+  }
+  function spotPanel() {
+    var ink = D.ink, h = "", sw = function (c) { return '<i style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px;background:' + c + '"></i>'; };
+    if (ink.need.length) h += '<div class="pd-sec"><h4>Für deine Ausführung nötig</h4><p class="pd-muted">' + ink.need.map(function (n) { var x = spotOf(n); return sw(x[2]) + "<b>" + esc(x[1]) + "</b> (" + n + ")" + (spotCount(n) ? " ✓ angelegt" : " – fehlt noch"); }).join("<br>") + "</p></div>";
+    h += '<div class="pd-sec"><h4>Linie anlegen</h4><div class="pd-btns" style="flex-direction:column;align-items:stretch">' + SPOTS.map(function (x) { return '<button type="button" class="ps-btn small" style="justify-content:flex-start" data-a="spot:' + x[0] + '">' + sw(x[2]) + esc(x[1]) + "</button>"; }).join("") + "</div>" +
+      '<p class="pd-muted">Linien kommen als Sonderfarbe (z. B. „Thrucut“) überdruckend ins PDF und werden <b>nicht gedruckt</b> – sie steuern Schnitt, Rillung, Perforation oder Bohrung. Form, Größe und Lage frei ändern. Eigene Formen (Kreis, Stern, Herz …) machst du unter <b>Bearbeiten → Verwendung</b> zur Schnittlinie.</p></div>';
+    if (ink.white) h += '<div class="pd-sec"><h4>Weißdruck</h4><p class="pd-muted">Deine Ausführung druckt <b>Weiß</b> (Sonderfarbe „White“). Unter allen Elementen wird automatisch deckendes Weiß gedruckt – je Element änderbar unter <b>Bearbeiten → Weißdruck</b>: darunter, ohne oder nur Weiß.</p></div>';
+    else if (ink.clear) h += '<div class="pd-sec"><h4>Transparentes Material</h4><p class="pd-muted">Ohne Weißdruck wird <b>Weiß nicht gedruckt</b> – weiße Flächen und Texte bleiben durchsichtig, Farben wirken lasierend. Für deckende Farben die Ausführung „+ Weiß“ wählen.</p></div>';
+    return h;
+  }
+  // Verwendung (Druck oder Sonderfarben-Linie) und Weißdruck je Element
+  function inkSec(o, multi) {
+    if (D.tex) return ""; var list = multi ? o.getObjects() : [o], sp = list[0].spot || "", h = "";
+    if (list.every(function (x) { return x.type !== "image" && x.type !== "textbox" && x.type !== "group" && !x.role; }))
+      h += '<div class="pd-sec"><h4>Verwendung</h4><div class="pd-btns" style="flex-wrap:wrap">' + [["", "Druck (Farbe)"]].concat(SPOTS.map(function (x) { return [x[0], x[1].replace(/ \(.*\)$/, "")]; })).map(function (x) { return '<button type="button" class="ps-btn small" data-a="spotset:' + x[0] + '" aria-pressed="' + (sp === x[0]) + '">' + esc(x[1]) + "</button>"; }).join("") + "</div></div>";
+    if (D.ink.white && !sp) { var w = list[0].wh || "auto";
+      h += '<div class="pd-sec"><h4>Weißdruck</h4><div class="pd-btns" style="flex-wrap:wrap">' + [["auto", "Weiß darunter"], ["off", "Ohne Weiß"], ["only", "Nur Weiß"]].map(function (x) { return '<button type="button" class="ps-btn small" data-a="wh:' + x[0] + '" aria-pressed="' + (w === x[0]) + '">' + x[1] + "</button>"; }).join("") +
+        '</div><p class="pd-muted">' + (w === "only" ? "Wird <b>nur in Weiß</b> gedruckt (Sonderfarbe „White“) – die Farbe am Bildschirm dient nur der Anzeige." : w === "off" ? "Ohne Weiß darunter: Farben wirken lasierend, Licht scheint durch." : "Deckendes Weiß unter diesem Element – Farben wirken kräftig wie auf Papier.") + "</p></div>"; }
+    return h;
+  }
+  // Weiß-Ebene einer Seite als Maske (PNG, Deckung im Alphakanal, ca. 300 dpi): alle Elemente außer „Ohne Weiß“ und Linien, farbiger Hintergrund mit
+  function whiteMask() {
+    if (!D.ink.white) return "";
+    var c = D.c, v = c.viewportTransform.slice(), bg = bgRect(), all = c.getObjects(), vis = all.map(function (o) { return o.visible; }), any = false, bgc = c.backgroundColor, url = "";
+    c.discardActiveObject(); D.exporting = true; c.backgroundColor = null;
+    all.forEach(function (o) { var inc = !o.excludeFromExport && o.visible && o.role !== "ph" && !o.spot && o.wh !== "off";
+      if (inc && o === bg) inc = !!o.grad || (typeof o.fill === "string" && hexOf(o.fill) !== "#ffffff" && !/rgba\(\d+,\s*\d+,\s*\d+,\s*0\)|transparent/.test(o.fill));
+      o.visible = !!inc; if (inc) any = true; });
+    try { if (any) { c.setViewportTransform([1, 0, 0, 1, 0, 0]); var m = Math.min(300 / 25.4 / U, Math.sqrt(24e6 / (D.W * D.H))), el = c.toCanvasElement(m, { left: 0, top: 0, width: D.W, height: D.H }), x = el.getContext("2d"), id = x.getImageData(0, 0, el.width, el.height), d = id.data;
+        for (var i = 0; i < d.length; i += 4) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; } x.putImageData(id, 0, 0); url = el.toDataURL("image/png"); } }
+    finally { all.forEach(function (o, i) { o.visible = vis[i]; }); c.backgroundColor = bgc; c.setViewportTransform(v); D.exporting = false; c.requestRenderAll(); }
+    return url;
+  }
+  function spotSVGs() {   // Linien im PDF als Haarlinie 0,25 pt (am Bildschirm dicker angezeigt)
+    var sp = D.c.getObjects().filter(function (o) { return o.spot; }), w0 = sp.map(function (o) { return o.strokeWidth; });
+    sp.forEach(function (o) { o.strokeWidth = 0.25 * PT * U; });
+    try { return SPOTS.map(function (x) { return x[0]; }).filter(function (n) { return spotCount(n); }).map(function (n) { return { name: n, svg: exportSVG(function (o) { return o.visible && o.spot === n; }) }; }); }
+    finally { sp.forEach(function (o, i) { o.strokeWidth = w0[i]; }); }
+  }
   function open(opts) {
     if (D) close(true);
     return libs().then(function () {
@@ -168,6 +228,7 @@
       var shape = ((opts.labels || []).filter(function (l) { return l[0] === "shape"; })[0] || [])[1] || "";
       D = { o: opts, W: (sz.w + 2 * b) * U, H: (sz.h + 2 * b) * U, mm: sz, b: b, safe: opts.safe || 3, sides: opts.sides, panels: panels, fold: opts.folds || null, round: /rund|round|kreis|circle/i.test(shape + " " + (opts.sel.shape || "")),
         pages: [], cur: 0, hist: [], fut: [], panel: tex ? "text" : "tpl", tex: tex, guides: [], showGuides: true, showBleed: true, snap: true, grid: false, crop: null, imgs: {}, clip: null, dirty: false, keyH: null, loading: false };
+      D.ink = inkOf(opts);
       D.trim = { x: b * U, y: b * U, w: sz.w * U, h: sz.h * U };
       D.saferect = { x: (b + D.safe) * U, y: (b + D.safe) * U, w: (sz.w - 2 * D.safe) * U, h: (sz.h - 2 * D.safe) * U };
       if (tex) D.safe = 0;
@@ -220,7 +281,7 @@
   function build() {
     var o = D.o, sideNames = D.tex ? D.tex.pages.map(function (x) { return x.title; }) : D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"];
     var root = document.createElement("div"); root.className = "pd"; root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", "Designer " + o.product.title);
-    var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg")) && (t[0] !== "tpl" || hasTpl()) && (t[0] !== "prod" || !!(D.tex && D.o.texSide)); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
+    var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg" && t[0] !== "spot")) && (t[0] !== "tpl" || hasTpl()) && (t[0] !== "prod" || !!(D.tex && D.o.texSide)); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
     root.innerHTML = '<div class="pd-top"><button type="button" class="pd-ib" data-a="close" aria-label="Designer schließen" title="Schließen">' + svgI("close") + '</button>' +
       '<div class="ttl">' + esc(o.product.title) + "<small>" + (D.tex ? "Textil-Designer · " + esc(D.tex.colorName || "") + " · " + esc(D.tex.methodName || "") : D.mm.w + " × " + D.mm.h + " mm · Beschnitt " + D.b + " mm") + "</small></div>" +
       (o.motif ? '<span class="pd-mot" title="Du gestaltest Motiv ' + o.motif + (o.motifs ? " von " + o.motifs : "") + (o.motifCopies ? " (" + o.motifCopies + " Stk.)" : "") + '">Motiv ' + o.motif + (o.motifs ? "<small>/" + o.motifs + "</small>" : "") + (o.motifCopies ? "<i>" + o.motifCopies + " Stk.</i>" : "") + "</span>" : "") +
@@ -648,7 +709,7 @@
       (b.colors.length ? '<span class="pd-muted" style="width:100%">Markenfarben</span>' + sw(b.colors, "Markenfarbe") : "") + "</div>" +
       (cur && vivid(cur) ? '<div class="pd-warn">Sehr leuchtende Bildschirmfarbe – im Druck (CMYK) wirkt sie etwas matter.</div>' : "") + "</div>";
   }
-  var TITLES = { prod: "Produkt, Farbe & Größen", tpl: "Vorlagen", text: "Text", img: "Bilder & Logo", shape: "Formen & Linien", qr: "QR-Code", bg: "Hintergrund", layers: "Ebenen", brand: "Marke", check: "Druckdaten-Check", obj: "Bearbeiten" };
+  var TITLES = { prod: "Produkt, Farbe & Größen", tpl: "Vorlagen", text: "Text", img: "Bilder & Logo", shape: "Formen & Linien", spot: "Schnitt, Falz & Sonderfarben", qr: "QR-Code", bg: "Hintergrund", layers: "Ebenen", brand: "Marke", check: "Druckdaten-Check", obj: "Bearbeiten" };
   function renderPanel() {
     if (!D || !D.panel) return; if ((D.tex && (D.panel === "tpl" || D.panel === "bg")) || (D.panel === "tpl" && !hasTpl()) || (D.panel === "prod" && !(D.tex && D.o.texSide))) D.panel = "text"; var p = D.panel, h = "";   // Textil: keine Papier-Vorlagen/Hintergründe
     D.root.querySelector("#pdPT").textContent = TITLES[p] || "";
@@ -667,6 +728,7 @@
     else if (p === "img") { var ph = act() && act().role === "ph"; h = '<div class="pd-sec"><h4>Bild oder Logo</h4><button type="button" class="ps-btn primary" data-a="img:add">' + (ph ? "Bild in Platzhalter einsetzen" : "Bild hochladen") + '</button><button type="button" class="ps-btn small" data-a="img:bg">Als Hintergrundbild (randlos)</button><p class="pd-muted">JPG oder PNG (Logos gern als PNG mit transparentem Hintergrund). Für scharfen Druck mindestens 250–300 dpi in Druckgröße – wir zeigen dir die Auflösung an.</p>' + (brand().logo ? '<button type="button" class="ps-btn small" data-a="brand:logoins">Gespeichertes Logo einfügen</button>' : "") + "</div>"; }
     else if (p === "shape") h = '<div class="pd-sec"><h4>Formen &amp; Linien</h4><div class="pd-btns pd-icons">' + SHAPES.map(function (s) { return '<button type="button" class="pd-ib" data-a="sh:' + s[0] + '" title="' + s[1] + '" aria-label="' + s[1] + '">' + svgP(s[2]) + "</button>"; }).join("") + "</div></div>" +
       '<div class="pd-sec"><h4>Icons</h4><div class="pd-btns pd-icons">' + ICONS.map(function (d, i) { return '<button type="button" class="pd-ib" data-a="ico:' + i + '" title="' + d[1] + '" aria-label="Icon ' + d[1] + '">' + svgP('<path d="' + d[2] + '"/>', d[3]).replace('viewBox="0 0 24 24"', d[0] === "rate" ? 'viewBox="-1 -26 64 64"' : 'viewBox="0 0 24 24"') + "</button>"; }).join("") + '</div><p class="pd-muted">Icons sind Vektoren – Farbe und Größe frei änderbar, gestochen scharf im Druck.</p></div>';
+    else if (p === "spot") h = spotPanel();
     else if (p === "qr") { var q = (act() && act().role === "qr" && act().qr) || D.qrDraft || { mode: "url", url: "https://", color: "#000000" };
       h = '<div class="pd-sec"><h4>QR-Code</h4><div class="ps-seg" role="group"><button type="button" data-qrm="url" aria-pressed="' + (q.mode === "url") + '">Link</button><button type="button" data-qrm="vcard" aria-pressed="' + (q.mode === "vcard") + '">Visitenkarte</button><button type="button" data-qrm="text" aria-pressed="' + (q.mode === "text") + '">Text</button></div>' +
         (q.mode === "url" ? '<label class="pd-lbl">Adresse<input class="pd-in" data-qr="url" value="' + esc(q.url || "https://") + '" inputmode="url"></label>' :
@@ -746,6 +808,7 @@
         '<div class="ps-seg pd-seg" role="group" aria-label="Linienart">' + [["solid", "Durchgezogen"], ["dash", "Gestrichelt"], ["dot", "Gepunktet"]].map(function (x) { return '<button type="button" data-a="dash:' + x[0] + '" aria-pressed="' + (ds === x[0]) + '">' + x[1] + "</button>"; }).join("") + "</div>" +
         ((o.strokeWidth || 0) > 0 && o.strokeWidth / U < 0.1 ? '<div class="pd-warn">Linien unter 0,1 mm können im Druck verschwinden.</div>' : "");
     }
+    h += inkSec(o, multi);
     h += '<div class="pd-sec"><h4>Position &amp; Größe (mm, ab Schnittkante)</h4><div class="pd-row">' + num("x", r1((br.left - D.trim.x) / U), "X") + num("y", r1((br.top - D.trim.y) / U), "Y") + num("w", r1(br.width / U), "Breite") + num("h", r1(br.height / U), "Höhe") + (multi ? "" : num("angle", Math.round(o.angle || 0), "Drehung°", 1)) + "</div>" +
       '<div class="pd-btns"><button type="button" class="pd-ib" data-a="rot:-90" title="90° nach links drehen" aria-label="90 Grad nach links drehen">' + svgI("rl") + '</button><button type="button" class="pd-ib" data-a="rot:90" title="90° nach rechts drehen" aria-label="90 Grad nach rechts drehen">' + svgI("rr") + '</button><button type="button" class="pd-ib" data-a="flipx" aria-pressed="' + !!o.flipX + '" title="Horizontal spiegeln" aria-label="Horizontal spiegeln">' + svgI("fx") + '</button><button type="button" class="pd-ib" data-a="flipy" aria-pressed="' + !!o.flipY + '" title="Vertikal spiegeln" aria-label="Vertikal spiegeln">' + svgI("fy") + "</button>" +
       (multi || o.type === "textbox" || o.type === "image" || o.role ? "" : '<button type="button" class="pd-ib" data-a="ratio" aria-pressed="' + !!o.ratio + '" title="Seitenverhältnis sperren" aria-label="Seitenverhältnis sperren">' + svgI("link") + "</button>") + "</div>" +
@@ -861,6 +924,7 @@
     objs.forEach(function (o) {
       var b = o.getBoundingRect(true, true), nm = nameOf(o), r = b.left + b.width, bo = b.top + b.height;
       if (o.role === "ph") { add("info", nm + " ist noch leer – Platzhalter werden nicht gedruckt.", o); return; }
+      if (o.spot) return;   // Sonderfarben-Linien: eigene Prüfung unten
       var isText = o.type === "textbox" || o.role === "curve" || (o.type === "group" && o.getObjects().some(function (x) { return x.type === "textbox" || x.type === "text"; }));
       // ganz außerhalb des Endformats → wird nicht gedruckt
       if (b.left >= T.x + T.w - tol || r <= T.x + tol || b.top >= T.y + T.h - tol || bo <= T.y + tol) { add("warn", nm + " liegt außerhalb des Endformats und wird nicht gedruckt.", o, "safe"); return; }
@@ -889,6 +953,11 @@
       if ((o.strokeWidth || 0) > 0 && o.stroke && o.type !== "group" && o.strokeWidth * (o.strokeUniform ? 1 : Math.min(o.scaleX, o.scaleY)) / U < 0.1) add("warn", nm + ": Linie dünner als 0,1 mm – wird evtl. nicht sichtbar gedruckt.", o);
     });
     if (Object.keys(viv).length) add("info", "Sehr leuchtende Bildschirmfarbe" + (Object.keys(viv).length > 1 ? "n " : " ") + Object.keys(viv).join(", ") + " – im Druck (CMYK) wirk" + (Object.keys(viv).length > 1 ? "en sie" : "t sie") + " etwas matter.");
+    if (!D.tex) { var spo = objs.filter(function (o) { return o.spot; });
+      if (pageIdx === 0) D.ink.need.forEach(function (n) { if (!D.c.getObjects().some(function (o) { return o.spot === n; })) add("warn", "Deine Ausführung braucht eine Linie „" + spotOf(n)[1] + "“ (Sonderfarbe " + n + ") – unter „Schnitt & Falz“ anlegen."); });
+      spo.forEach(function (o) { if (D.ink.need.indexOf(o.spot) < 0) add("warn", "Linie „" + spotOf(o.spot)[1] + "“ ist angelegt, deine Ausführung sieht diese Verarbeitung aber nicht vor – bitte im Shop die passende Option wählen oder die Linie löschen.", o); });
+      if (D.ink.clear && !D.ink.white) objs.forEach(function (o) { if (!o.spot && o.role !== "ph" && typeof o.fill === "string" && o.fill && hexOf(o.fill) === "#ffffff") add("warn", nameOf(o) + " ist weiß – ohne Weißdruck bleibt Weiß auf transparentem Material durchsichtig. Für Weiß die Ausführung „+ Weiß“ wählen.", o); });
+      if (D.ink.white) add("info", "Weißdruck: unter allen Elementen wird deckendes Weiß gedruckt (Sonderfarbe „White“) – je Element änderbar unter „Bearbeiten → Weißdruck“."); }
     var seen = {}; return out.filter(function (x) { if (seen[x.text]) return false; seen[x.text] = 1; return true; });
   }
   // Ein-Klick-Korrekturen: in den Sicherheitsabstand schieben bzw. randlos bis zum Beschnittrand ziehen
@@ -961,9 +1030,9 @@
     hidden.forEach(function (o) { o.visible = true; }); c.setViewportTransform(v); D.exporting = false; if (act0 && c.getObjects().indexOf(act0) > -1) c.setActiveObject(act0); c.requestRenderAll();
     return url;
   }
-  function exportSVG() {
+  function exportSVG(only) {   // only: nur diese Elemente (Sonderfarben-Linien); sonst Druckfarben ohne Linien und „nur Weiß“
     var c = D.c, v = c.viewportTransform.slice(); c.discardActiveObject(); D.exporting = true;
-    var tmp = c.getObjects().filter(function (o) { return (!o.visible || o.role === "ph") && !o.excludeFromExport; }); tmp.forEach(function (o) { o.excludeFromExport = true; });   // Platzhalter/ausgeblendet nie drucken
+    var tmp = c.getObjects().filter(function (o) { return !o.excludeFromExport && (only ? !only(o) : (!o.visible || o.role === "ph" || o.spot || (D.ink && D.ink.white && o.wh === "only"))); }); tmp.forEach(function (o) { o.excludeFromExport = true; });   // Platzhalter/ausgeblendet nie drucken
     c.setViewportTransform([1, 0, 0, 1, 0, 0]);
     // „strokeUniform“ (Kontur bleibt beim Skalieren gleich dick) kennt svg-to-pdfkit nicht (vector-effect) → für den Export Kontur/Strichmuster durch die Skalierung teilen
     var adj = []; (function walk(list) { list.forEach(function (o) { if (o.type === "group") walk(o.getObjects()); if (o.strokeUniform && o.stroke && o.strokeWidth) { var sc = o.getObjectScaling(), k = Math.sqrt(Math.abs(sc.scaleX * sc.scaleY)) || 1; if (Math.abs(k - 1) > 1e-3) { var cp = o.getCenterPoint(); adj.push([o, o.strokeWidth, o.strokeDashArray, o.left, o.top]); o.strokeWidth /= k; if (o.strokeDashArray) o.strokeDashArray = o.strokeDashArray.map(function (d) { return d / k; }); o.setPositionByOrigin(cp, "center", "center"); } } }); })(c.getObjects());
@@ -1008,7 +1077,7 @@
   function finish() {
     busy("Druckdaten werden geprüft …");
     var all = [];
-    eachPage(function (i) { all = all.concat(issues(i)); return { svg: exportSVG(), pv: renderPreview(1400) }; }).then(function (res) {
+    eachPage(function (i) { all = all.concat(issues(i)); return { svg: exportSVG(), pv: renderPreview(1400), white: D.tex ? "" : whiteMask(), spots: D.tex ? [] : spotSVGs() }; }).then(function (res) {
       busy(false);
       var errs = all.filter(function (x) { return x.level === "error"; }), warns = all.filter(function (x) { return x.level !== "error"; });
       modal('<h3>Druckdaten-Check</h3>' + mock(res.map(function (r) { return r.pv; })) +
@@ -1017,7 +1086,7 @@
         '<div class="foot"><button class="ps-btn" data-a="m:back">Weiter bearbeiten</button><button class="ps-btn primary" data-a="m:pdf">' + (errs.length ? "Trotzdem Druck-PDF erstellen" : "Druck-PDF erstellen") + "</button></div>", function (a) {
           if (a !== "pdf") return;
           busy("Druck-PDF wird erstellt …");
-          var o = D.o, body = { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, textile: o.textileSel || undefined, pages: res.map(function (r) { return r.svg; }), warnings: warns.filter(function (x) { return x.level === "warn" && !/dpi/.test(x.text); }).map(function (x) { return x.text; }).slice(0, 10) };
+          var o = D.o, body = { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, textile: o.textileSel || undefined, pages: res.map(function (r) { return r.svg; }), white: D.ink && D.ink.white ? res.map(function (r) { return r.white || ""; }) : undefined, spots: res.some(function (r) { return r.spots && r.spots.length; }) ? res.map(function (r) { return r.spots || []; }) : undefined, warnings: warns.filter(function (x) { return x.level === "warn" && !/dpi/.test(x.text); }).map(function (x) { return x.text; }).slice(0, 10) };
           fetch("/print/api/design", { method: "POST", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" }, body: JSON.stringify(body) }).then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status }; }); }).then(function (j) {
             busy(false);
             if (!j.ok) { toast(j.error || "PDF konnte nicht erstellt werden", true); return; }
@@ -1094,6 +1163,11 @@
       case "cut": D.showBleed = !D.showBleed; t.setAttribute("aria-pressed", String(!D.showBleed)); c.requestRenderAll(); break;
       case "zoomin": zoomTo(c.getZoom() * 1.25); break; case "zoomout": zoomTo(c.getZoom() / 1.25); break; case "fit": fit(); break;
       case "t": addText(v); break; case "sh": addShape(v); break;
+      case "spot": addSpot(v); break;
+      case "wh": if (o) { (o.type === "activeSelection" ? o.getObjects() : [o]).forEach(function (x) { x.wh = v === "auto" ? undefined : v; }); changed(); renderPanel(); } break;
+      case "spotset": if (o) { (o.type === "activeSelection" ? o.getObjects() : [o]).forEach(function (x) { var sp = spotOf(v);
+          if (sp) { if (!x.spot) x.__fill0 = x.fill; x.spot = v; x.set({ fill: "", stroke: sp[2], strokeWidth: 2, strokeUniform: true }); }
+          else if (x.spot) { x.spot = undefined; x.set({ fill: x.__fill0 || "#0a84ff", stroke: null }); } x.dirty = true; }); c.requestRenderAll(); changed(); renderPanel(); } break;
       case "ai": aiRun(); break;
       case "isel": var so = D.c.getObjects()[+v]; if (so) { D.c.setActiveObject(so); D.c.requestRenderAll(); } break;
       case "ifix": var fp = v.split(","); fixIssue(+fp[0], fp[1]); break;

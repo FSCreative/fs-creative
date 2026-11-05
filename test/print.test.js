@@ -343,6 +343,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/\/Type\s*\/Page(?![s\w])/.test(s) && (s.match(/\/Type\s*\/Page(?![s\w])/g) || []).length === 2, "2 Seiten");
     assert.ok(r.j.checks.some(c => c.level === "ok" && /ausreichender Auflösung/.test(c.text)), JSON.stringify(r.j.checks));
   });
+  await t("Designer-PDF: Weiß-Ebene (Sonderfarbe White) und Konturlinie (Thrucut) überdruckend", async () => {
+    const { PNG } = require("pngjs"), m = new PNG({ width: 40, height: 30 }); for (let i = 0; i < 40 * 30; i++) m.data[i * 4 + 3] = i % 40 < 20 ? 255 : 0;
+    const mask = "data:image/png;base64," + PNG.sync.write(m).toString("base64"), line = '<svg xmlns="http://www.w3.org/2000/svg" width="356" height="236" viewBox="0 0 356 236"><g transform="translate(178 118)"><rect x="-170" y="-110" width="340" height="220" rx="12" style="fill:none;stroke:rgb(255,0,255);stroke-width:0.5;opacity:0.5"/></g></svg>';
+    const r = await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage(), svgPage()], white: [mask, ""], spots: [[{ name: "Thrucut", svg: line }, { name: "Böse", svg: line }], []] }));
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const s = Buffer.from(await (await fetch(B + "/print/api/file/" + r.j.fileId + "?t=" + r.j.token + "&pdf=1")).arrayBuffer()).toString("latin1");
+    assert.ok(/\/Separation\s*\/White/.test(s), "Sonderfarbe White"); assert.ok(/\/Separation\s*\/Thrucut/.test(s), "Sonderfarbe Thrucut"); assert.ok(!/Böse/.test(s), "nur bekannte Sonderfarben");
+    assert.ok(/\/OP\s+true/.test(s) && /\/op\s+true/.test(s), "überdruckend");
+    assert.ok(r.j.checks.some(c => /Weißdruck .* auf 1 Seite/.test(c.text)) && r.j.checks.some(c => /Konturschnitt \(Thrucut\) auf 1 Seite/.test(c.text)), JSON.stringify(r.j.checks));
+  });
   await t("Designer-PDF: zu kleines Bild groß platziert → dpi-Warnung bzw. Fehler", async () => {
     const img = "data:image/png;base64," + png(60, 60, [0, 128, 0]).toString("base64");
     const r = await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<image x="0" y="0" width="356" height="236" preserveAspectRatio="none" xlink:href="' + img + '"/>'), svgPage()] }));
