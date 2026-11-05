@@ -3086,6 +3086,7 @@ module.exports = function (D) {
     const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
     if (!ld.image && x.img) ld.image = x.img;
     if (desc && it) ld.description = cutWords(desc, 300) + (it.label ? " Standard-Ausführung: " + scrubText(it.label) + "." : "");   // KI und Suchmaschinen: Text + Ausführung statt nur Optionsliste
+    if (typeof ld.image === "string" && /[?&]w=\d+/.test(ld.image)) ld.image = [ld.image.replace(/([?&])w=\d+/, "$1w=1200"), ld.image];   // Google/KI: großes Bild bevorzugt
     ld.sku = key; if (x.cat && x.cat.mainName) ld.category = x.cat.mainName + (x.cat.subName ? " > " + x.cat.subName : "");
     // Titel/Beschreibung: Produkt (+ Format), günstigster Preis der Preisübersicht, Versand inkl. – Beschreibung an der Wortgrenze gekürzt
     const t = escH(logoK ? x.title + " bedrucken mit Logo" + (loP ? " – ab " + (loP.copies > 1 ? pieceDe(loP.gross, loP.copies) : eurDe(loP.gross)) + " pro Stück" : "") + " | FS Creative"
