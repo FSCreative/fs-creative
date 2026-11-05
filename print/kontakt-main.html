@@ -1,0 +1,39 @@
+<main id="main">
+  <div class="wrap ps-kontakt">
+    <nav class="ps-crumbs" aria-label="Pfad"><a class="ps-link" href="/print">Druckshop</a> › <span>Kontakt</span></nav>
+    <h1>Kontakt zum Druckshop</h1>
+    <p class="sub">Fragen zu Produkten, Druckdaten oder deiner Bestellung? Schreib uns – am schnellsten im Chat, sonst per Formular, Mail oder Telefon. Persönlich aus Gaschurn im Montafon.</p>
+    <div class="ps-kt-grid">
+      <section class="ps-kt-ways">
+        <button type="button" class="ps-kt-way chat" data-chat-open><span class="ic" aria-hidden="true">💬</span><span><b>Chat starten</b><small>Sofort eine Antwort – auf Wunsch übernimmt Simon persönlich</small></span></button>
+        <a class="ps-kt-way" href="tel:+436641430620"><span class="ic" aria-hidden="true">📞</span><span><b>+43 664 1430620</b><small>Mo–Fr, persönlich erreichbar</small></span></a>
+        <a class="ps-kt-way" href="mailto:simon@fs-creative.at?subject=Druckshop"><span class="ic" aria-hidden="true">✉️</span><span><b>simon@fs-creative.at</b><small>Antwort meist am selben Werktag</small></span></a>
+        <div class="ps-kt-way info"><span class="ic" aria-hidden="true">📍</span><span><b>FS Creative · Simon Felder</b><small>Dorfstraße 3/1, 6793 Gaschurn, Österreich</small></span></div>
+        <p class="ps-kt-hint">Schon bestellt? Den Status siehst du jederzeit in deinem <a class="ps-link" href="/print?konto">Kundenkonto</a> bzw. über den Link in deiner Bestellbestätigung. Häufige Fragen: <a class="ps-link" href="/print/hilfe">So geht’s &amp; FAQ</a>.</p>
+      </section>
+      <section class="ps-panel ps-kt-form">
+        <h2>Nachricht senden</h2>
+        <form id="ktForm" novalidate>
+          <div class="ps-row2"><div class="ps-field"><label for="ktName">Name *</label><input id="ktName" name="name" autocomplete="name" required></div>
+            <div class="ps-field"><label for="ktMail">E-Mail *</label><input id="ktMail" name="email" type="email" autocomplete="email" required></div></div>
+          <div class="ps-row2"><div class="ps-field"><label for="ktTel">Telefon</label><input id="ktTel" name="phone" type="tel" autocomplete="tel"></div>
+            <div class="ps-field"><label for="ktFirma">Firma</label><input id="ktFirma" name="company" autocomplete="organization"></div></div>
+          <div class="ps-field"><label for="ktMsg">Deine Nachricht *</label><textarea id="ktMsg" name="message" rows="6" required placeholder="z. B. Produkt, Menge, Wunschtermin oder deine Frage"></textarea></div>
+          <input type="text" name="website" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+          <label class="ps-cb"><input type="checkbox" name="consent" required><span>Ich bin einverstanden, dass meine Angaben zur Beantwortung meiner Anfrage verwendet werden (<a class="ps-link" href="/datenschutz" target="_blank">Datenschutz</a>). *</span></label>
+          <p class="ps-err" id="ktErr" role="alert" hidden></p>
+          <button type="submit" class="ps-btn primary">Nachricht senden</button>
+        </form>
+        <div class="ps-kt-ok" id="ktOk" hidden><b>Danke für deine Nachricht!</b><p>Wir melden uns so schnell wie möglich – meist noch am selben Werktag.</p></div>
+      </section>
+    </div>
+  </div>
+</main>
+<script>(function(){var f=document.getElementById("ktForm"),t0=Date.now(),er=document.getElementById("ktErr");if(!f)return;
+f.addEventListener("submit",function(e){e.preventDefault();var d={};[].forEach.call(f.elements,function(x){if(x.name)d[x.name]=x.type==="checkbox"?x.checked:x.value.trim();});
+var bad=!d.name?"Bitte deinen Namen angeben.":!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)?"Bitte eine gültige E-Mail-Adresse angeben.":!d.message?"Bitte eine Nachricht schreiben.":!d.consent?"Bitte der Verarbeitung deiner Angaben zustimmen.":"";
+if(bad){er.textContent=bad;er.hidden=false;return;}er.hidden=true;var b=f.querySelector("button[type=submit]");b.disabled=true;b.textContent="Wird gesendet …";
+d.topic="Druck";d.source="Druckshop-Kontaktseite";d.t=t0;
+fetch("/api/anfrage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(x){
+if(!x.ok||!x.j.ok){throw new Error(x.j&&x.j.error==="too_many"?"Zu viele Anfragen – bitte später nochmal oder ruf uns an.":"Das hat nicht geklappt – bitte nochmal versuchen oder schreib an simon@fs-creative.at.");}
+f.hidden=true;document.getElementById("ktOk").hidden=false;}).catch(function(err){er.textContent=err.message;er.hidden=false;b.disabled=false;b.textContent="Nachricht senden";});});})();</script>

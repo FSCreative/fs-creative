@@ -3296,7 +3296,7 @@ module.exports = function (D) {
   const catUrl = (main, sub, abs) => (abs ? SITE : "") + "/print?produkte" + (main ? "&kategorie=" + encodeURIComponent(main) : "") + (sub ? "&unter=" + encodeURIComponent(sub) : "");
   // Sprechende Produktadressen /print/<slug>: kuratierte Produkte behalten ihren (deutschen) Schlüssel, allgemeine bekommen einen Slug aus dem Titel
   // („Broschüren geheftet“ → /print/broschueren-geheftet). Alte Links /print?produkt=… leiten dauerhaft (301) dorthin weiter, Abfrageteile bleiben.
-  const SLUG_RES = /^(preise|hilfe|agb|weihnachten|ratgeber|api|bild|newsletter|merchant|app|designer|templates|fonts|print|produkte|konto|warenkorb|bestellung|mollie-webhook|printcom-webhook|sonderfarben)$/;
+  const SLUG_RES = /^(preise|hilfe|kontakt|agb|weihnachten|ratgeber|api|bild|newsletter|merchant|app|designer|templates|fonts|print|produkte|konto|warenkorb|bestellung|mollie-webhook|printcom-webhook|sonderfarben)$/;
   const slugOf = t => String(t || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/&/g, " und ").replace(/[®™©]/g, "")
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70).replace(/-+$/, "");
   let SLUGS = { byKey: {}, bySlug: {} };
@@ -3852,6 +3852,15 @@ module.exports = function (D) {
         let js = ""; try { js = fs.readFileSync(path.join(__dirname, "print", p.slice(7))); } catch (e) { return D.send(res, 404, "Not found"); }
         const vq = u && u.searchParams ? u.searchParams.get("v") : "";
         return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": !vq || vq === ASSET_V || vq === "2" ? "no-cache" : "no-store" });
+      }
+      // Eigene Kontaktseite des Druckshops (Wunsch Simon 05.11.2026): Chat, Telefon, Mail und Formular (Anfrage landet wie gewohnt unter Leads, Thema „Druck“)
+      if ((p === "/print/kontakt" || p === "/print/kontakt/") && (req.method === "GET" || req.method === "HEAD")) {
+        let html = "", main = ""; try { html = printHtmlRaw(); main = fs.readFileSync(path.join(__dirname, "print", "kontakt-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+        html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>Kontakt – Druckshop | FS Creative</title>")
+          .replace(/(<meta name="description" content=")[^"]*/, "$1Kontakt zum FS Creative Druckshop: Chat, Telefon +43 664 1430620, E-Mail oder Formular – persönlich aus Gaschurn im Montafon.")
+          .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/kontakt"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, "")
+          .replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "").replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
+        return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
       }
       if ((p === "/print/hilfe" || p === "/print/hilfe/") && (req.method === "GET" || req.method === "HEAD")) {
         let html = "", main = ""; try { html = printHtmlRaw(); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }

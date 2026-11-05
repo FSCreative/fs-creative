@@ -2235,3 +2235,17 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-th-head h2{color:#fff;margin:0;font-size:clamp(24px,3vw,36px)}.ps-th-head .sub{color:rgba(255,255,255,.85);margin:4px 0 0}
 @media (max-width:1000px){.ps-thg{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:640px){.ps-thg{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ps-th-head{aspect-ratio:16/9}}
+/* Kontaktseite des Druckshops */
+.ps-kontakt{padding:28px var(--v2pad,24px) 50px}.ps-kontakt h1{margin:10px 0 6px;font-size:clamp(28px,3.4vw,40px);letter-spacing:-.02em}.ps-kontakt>.sub{color:var(--text-dim);max-width:720px;margin:0 0 26px;font-size:16px}
+.ps-kt-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:28px;align-items:start}
+.ps-kt-ways{display:grid;gap:12px}
+.ps-kt-way{display:flex;align-items:center;gap:14px;padding:16px 18px;border:1px solid var(--border-2,rgba(0,0,0,.12));border-radius:14px;background:var(--surface,#fff);color:var(--text);text-decoration:none;font:inherit;text-align:left;cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s}
+.ps-kt-way:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.08);border-color:var(--accent)}
+.ps-kt-way.info{cursor:default}.ps-kt-way.info:hover{transform:none;box-shadow:none;border-color:var(--border-2,rgba(0,0,0,.12))}
+.ps-kt-way .ic{width:46px;height:46px;flex:none;display:grid;place-items:center;border-radius:12px;background:rgba(47,107,255,.1);font-size:22px}
+.ps-kt-way b{display:block;font-size:16px}.ps-kt-way small{color:var(--text-dim);font-size:13.5px}
+.ps-kt-way.chat{background:linear-gradient(135deg,#121829,#1d2a52);color:#fff;border-color:transparent}.ps-kt-way.chat small{color:rgba(255,255,255,.75)}.ps-kt-way.chat .ic{background:rgba(255,210,63,.18)}
+.ps-kt-hint{font-size:13.5px;color:var(--text-dim);margin:4px 2px 0}
+.ps-kt-form h2{margin:0 0 14px;font-size:22px}.ps-kt-form textarea{width:100%;resize:vertical}
+.ps-kt-ok{padding:18px;border-radius:12px;background:rgba(22,163,74,.1);color:var(--text)}.ps-kt-ok b{font-size:17px}
+@media (max-width:860px){.ps-kt-grid{grid-template-columns:1fr}}
