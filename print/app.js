@@ -961,7 +961,8 @@
     [].forEach.call(document.querySelectorAll(".xm-hsl"), function (L) {
       var box = L.parentNode, cw = box.clientWidth, ch = box.clientHeight, r = parseFloat(L.getAttribute("data-ratio")) || 2, px = (parseFloat(L.getAttribute("data-px")) || 50) / 100;
       if (!desk || !cw || !ch) { L.hidden = true; return; } L.hidden = false;
-      var sc = Math.max(cw / r, ch) , dw = sc * r, dh = sc, ox = (cw - dw) * px, oy = (ch - dh) / 2;
+      var py = (L.hasAttribute("data-py") ? parseFloat(L.getAttribute("data-py")) : 50) / 100;
+      var sc = Math.max(cw / r, ch) , dw = sc * r, dh = sc, ox = (cw - dw) * px, oy = (ch - dh) * py;
       var tb = box.querySelector(".xm-hero-t, .xm-band-t, .ps-xteaser .tx"), br = box.getBoundingClientRect(), tr = tb ? tb.getBoundingClientRect() : null;
       [].forEach.call(L.querySelectorAll(".xm-hs"), function (a) {
         var x = ox + dw * (+a.getAttribute("data-x")) / 100, y = oy + dh * (+a.getAttribute("data-y")) / 100;
@@ -1260,7 +1261,7 @@
   // Produktpunkte auch auf der Kachel der Startseite (nur Computer); die Kachel ist selbst ein Link → Punkte als <span>, Klick öffnet das Produkt
   function xmTeaserSpots(x) {
     var hs = x.hs || []; if (!hs.length) return ""; setTimeout(xmHotspots, 0);
-    return '<span class="xm-hsl" data-ratio="' + (+x.ratio || 2.3) + '" data-px="74">' + hs.map(function (h) {
+    return '<span class="xm-hsl" data-ratio="' + (+x.ratio || 2.3) + '" data-px="74"' + (x.py != null ? ' data-py="' + (+x.py) + '"' : "") + ">" + hs.map(function (h) {
       return '<span class="xm-hs" role="link" tabindex="0" data-prod="' + esc(h.k) + '" data-x="' + (+h.x) + '" data-y="' + (+h.y) + '" aria-label="' + esc(h.name) + '"><i aria-hidden="true"></i><span class="xm-hsc"><img src="' + esc(h.photo) + '" width="160" height="120" alt="" loading="lazy"><b>' + esc(h.name) + "</b>" + (h.price ? "<small>" + esc(h.price) + "</small>" : "") + "</span></span>"; }).join("") + "</span>";
   }
   // Startseiten-Slider in der Saison: „Weihnachten“ + Themen mit eigenem Banner (Server: catalog.xmas.slides, z. B. „Planen fürs neue Jahr“) – wechselt alle 4,5 s (Wunsch Simon 04.11.2026), pausiert bei Maus darüber
@@ -1268,12 +1269,13 @@
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
     var im = function (img, w) { return /^\//.test(img) ? img : "/print/bild/ez9mp376cw6o/" + img + "?fm=webp&w=" + w + "&q=" + (w > 1600 ? 70 : 78); };   // eigene Bilder (/print/hero/…) direkt
     var slide = function (z, i, href, eb, title, text, btn) {
-      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img src="' + esc(im(z.img, 1600)) + '"' + (/^\//.test(z.img) ? (z.srcset ? ' srcset="' + esc(z.srcset) + '" sizes="100vw"' : "") : ' srcset="' + [800, 1200, 1600, 2000, 2400, 3200].map(function (w) { return esc(im(z.img, w)) + " " + w + "w"; }).join(", ") + '" sizes="' + (V2 ? "100vw" : "(max-width: 1760px) 96vw, 1680px") + '"') + ' width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
+      return '<a class="ps-xteaser' + (i ? "" : " on") + '" href="' + esc(href) + '" data-xs="' + i + '"' + (i ? ' aria-hidden="true" tabindex="-1"' : "") + '><span class="im"><img' + (z.py != null ? ' style="object-position:74% ' + (+z.py) + '%"' : "") + ' src="' + esc(im(z.img, 1600)) + '"' + (/^\//.test(z.img) ? (z.srcset ? ' srcset="' + esc(z.srcset) + '" sizes="100vw"' : "") : ' srcset="' + [800, 1200, 1600, 2000, 2400, 3200].map(function (w) { return esc(im(z.img, w)) + " " + w + "w"; }).join(", ") + '" sizes="' + (V2 ? "100vw" : "(max-width: 1760px) 96vw, 1680px") + '"') + ' width="1200" height="522" alt=""' + (i || !V2 ? ' loading="lazy" decoding="async"' : ' fetchpriority="high" decoding="async"') + '></span>' + xmTeaserSpots(z) +
         '<span class="tx"><span class="xm-eb">' + esc(eb) + "</span><b>" + esc(title) + "</b><span>" + esc(text) + '</span><span class="ps-btn primary">' + esc(btn) + ' <span aria-hidden="true">→</span></span></span></a>'; };
     var list = [slide(x, 0, "/print/weihnachten", "Weihnachten " + x.year, "Weihnachten mit deinem Design", "Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : "."), "Zur Weihnachtsabteilung")]
       .concat((x.slides || []).map(function (z, i) { return slide(z, i + 1, "/print/weihnachten#" + z.slug, "Neues Jahr " + (+x.year + 1), z.title, z.text, z.n + " Ideen ansehen"); }))
       .concat([slide({ img: "5gtrirrtYxz3poE12yu8Fu/cf0dc3962b139223be059fe9b8dd3efe/HERO_Header_3400x1480px.jpg" }, (x.slides || []).length + 1, "/print?produkte&kategorie=paper-print", "Drucksachen", "Flyer, Broschüren & Visitenkarten", "Auf hochwertigem Papier gedruckt – Preis sofort inkl. Versand, Datencheck gratis, Lieferung in ganz Österreich.", "Drucksachen ansehen")])   // Kampagnenbild für die Standard-Drucksachen (Wunsch Simon 05.11.2026)
-      .concat(prodByKey("tshirt-basic") ? [slide({ img: "3Dsxrcu2giYvLw0n6ntT4T/8c2168b588cd78201aaf17e1748825ea/Header_app_3400x1480.jpg" }, (x.slides || []).length + 2, "/print?produkte&kategorie=clothing-textile&unter=clothing", "Bekleidung mit Logo", "T-Shirts, Hoodies & Polos bedrucken", "Stanley/Stella, B&C, Fruit of the Loom und mehr – mit deinem Logo, Text oder Bild. Online gestalten, Druck schon ab 1 Stück.", "Bekleidung ansehen")] : []);   // Direkteinstieg Shirt-Designer (Wunsch Simon 04.11.2026)
+      .concat(prodByKey("tshirt-basic") ? [slide({ img: "3Dsxrcu2giYvLw0n6ntT4T/8c2168b588cd78201aaf17e1748825ea/Header_app_3400x1480.jpg", ratio: 3400 / 1480, py: 18,
+        hs: [["hoodie-bio", 55.8, 53.5], ["energy-drink-250ml", 54.6, 71], ["tshirt-bio", 73.3, 74.5]].map(function (h) { var p = prodByKey(h[0]); return p ? { k: p.key, x: h[1], y: h[2], name: p.title, photo: imgOk(p.img) ? p.img : "", price: "" } : null; }).filter(Boolean) }, (x.slides || []).length + 2, "/print?produkte&kategorie=clothing-textile&unter=clothing", "Bekleidung mit Logo", "T-Shirts, Hoodies & Polos bedrucken", "Stanley/Stella, B&C, Fruit of the Loom und mehr – mit deinem Logo, Text oder Bild. Online gestalten, Druck schon ab 1 Stück.", "Bekleidung ansehen")] : []);   // Direkteinstieg Shirt-Designer (Wunsch Simon 04.11.2026)
     if (list.length < 2) return '<div class="ps-xsl">' + list[0] + "</div>";
     setTimeout(xsStart, 0);
     return '<div class="ps-xsl" id="psXsl" aria-roledescription="Slider">' + list.join("") + '<div class="ps-xsd" role="group" aria-label="Folie wählen">' + list.map(function (_, i) { return '<button type="button" data-xsgo="' + i + '" aria-label="Folie ' + (i + 1) + '"' + (i ? "" : ' aria-current="true"') + "></button>"; }).join("") + "</div></div>";
