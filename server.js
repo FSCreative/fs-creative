@@ -502,7 +502,7 @@ function kantineurV2(d) {
 let MAIL_SNAP = { at: 0, etag: "", data: null, p: null, err: "", errAt: 0, okAt: 0 };
 async function mailSnapshot() {
   if (!MAIL.url || !MAIL.token) return null;
-  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 5000) return MAIL_SNAP.data;   // kurz puffern; Nachfragen sind dank ETag/304 billig
+  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 2000) return MAIL_SNAP.data;   // kurz puffern (2 s – neue Mails sollen so schnell wie in Outlook erscheinen); Nachfragen sind dank ETag/304 billig
   if (MAIL_SNAP.p) return MAIL_SNAP.p;
   const bad = msg => { if (!MAIL_SNAP.err) MAIL_SNAP.errAt = Date.now(); MAIL_SNAP.err = msg; return MAIL_SNAP.data; };
   const good = () => { MAIL_SNAP.err = ""; MAIL_SNAP.errAt = 0; MAIL_SNAP.okAt = Date.now(); };

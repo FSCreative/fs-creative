@@ -192,7 +192,7 @@ M.loadFull=function(){
   }).catch(function(){ S.loading=false; M._lf=null; S.err="Keine Verbindung zum Server."; M.refresh(); });
   return M._lf;
 };
-/* Alle 10 s nur den ETag prüfen (billig); bei Änderung den neuen Stand übernehmen */
+/* Alle 4 s nur den ETag prüfen (billig, Antwort ohne Mails); bei Änderung den neuen Stand übernehmen – vorher 10 s (Wunsch Simon 05.11.2026: so schnell wie Outlook) */
 var POLL_BUSY=false;
 setInterval(function(){
   if(POLL_BUSY||document.hidden||!S.full||M._lf||UNDO.timer) return;
@@ -201,7 +201,7 @@ setInterval(function(){
     POLL_BUSY=false;
     if(md&&!md.same&&Array.isArray(md.messages)){ S.etag=md.etag||""; srvFlags(md); ingest(md,true); M.refresh(); }
   }).catch(function(){ POLL_BUSY=false; });
-},10000);
+},4000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden&&S.full&&Date.now()-S.fullAt>10000) M.loadFull(); });
 var relT=null;
 M.scheduleReload=function(ms){ clearTimeout(relT); relT=setTimeout(function(){ M.loadFull(); },ms||4000); };
