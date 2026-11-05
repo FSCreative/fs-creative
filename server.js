@@ -500,6 +500,7 @@ function kantineurV2(d) {
 // Mail-Snapshot mit ETag: unverändert -> 304 (fast kein Traffic). Max. alle 20 s ein Abruf.
 // err/errAt/okAt: Fehler des letzten Abrufs (sonst lieferte ein toter Mail-Dienst unbemerkt den alten Stand) → mailFlags() fürs Cockpit
 let MAIL_SNAP = { at: 0, etag: "", data: null, p: null, err: "", errAt: 0, okAt: 0 };
+let ON_NEW_MAIL = null;   // Mail-Regeln sofort bei neuen Mails (gesetzt unten)
 async function mailSnapshot() {
   if (!MAIL.url || !MAIL.token) return null;
   if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 2000) return MAIL_SNAP.data;   // kurz puffern (2 s – neue Mails sollen so schnell wie in Outlook erscheinen); Nachfragen sind dank ETag/304 billig
@@ -515,6 +516,7 @@ async function mailSnapshot() {
       if (!r.ok) return bad(r.status === 401 || r.status === 403 ? "Der Mail-Dienst lehnt den Zugang ab (HTTP " + r.status + ")" : "Der Mail-Dienst meldet einen Fehler (HTTP " + r.status + ")");
       const d = await r.json(); if (!d || d.error || d.warming) return bad(d && d.warming ? "Der Mail-Dienst startet gerade" : "Der Mail-Dienst meldet: " + String((d && (typeof d.error === "string" ? d.error : d.error && d.error.message)) || "keine Daten").slice(0, 120));
       MAIL_SNAP.data = d; MAIL_SNAP.etag = r.headers.get("etag") || d.etag || ""; MAIL_SNAP.at = Date.now(); good();
+      if (ON_NEW_MAIL) ON_NEW_MAIL(d);   // synchron anstoßen: Regeln markieren Treffer, bevor wartende Abrufe den neuen Stand ausliefern
       return d;
     } catch (e) { return bad(e && e.name === "AbortError" ? "Der Mail-Dienst antwortet nicht (Zeitüberschreitung)" : "Der Mail-Dienst ist nicht erreichbar"); } finally { clearTimeout(t); MAIL_SNAP.p = null; }
   })();
@@ -528,7 +530,7 @@ function mailFlags() {
   if (Date.now() - MAIL_SNAP.errAt < 90e3) return { stale: false, error: "" };
   return { stale: true, error: MAIL_SNAP.err + (MAIL_SNAP.okAt ? " – angezeigt wird der Stand von " + hm(MAIL_SNAP.okAt) + " Uhr" : "") };
 }
-// Mail-Regeln (Outlook-artig): laufen alle 2 Minuten für neue Mails im Posteingang
+// Mail-Regeln (Outlook-artig): laufen sofort, wenn der Mailserver einen neuen Stand liefert, und zur Sicherheit alle 2 Minuten
 const MAIL_RULES = require("./mail-rules.js")({
   getMeta: k => process.env.DATABASE_URL ? FIN.init().then(() => FIN.getMeta(k)) : Promise.resolve(null),
   setMeta: (k, v) => process.env.DATABASE_URL ? FIN.init().then(() => FIN.setMeta(k, v)) : Promise.resolve(),
@@ -541,6 +543,9 @@ const MAIL_RULES = require("./mail-rules.js")({
   },
 });
 setInterval(() => { if (MAIL.url && MAIL.token) MAIL_RULES.tick(); }, 2 * 60 * 1000);
+ON_NEW_MAIL = d => MAIL_RULES.tick(d).catch(() => {});
+// Stand ohne Mails, die eine Regel gerade wegräumt (Postfach im Cockpit, Push) – sonst blitzen sie kurz im Posteingang auf
+const mailVisible = m => { if (!m || !Array.isArray(m.messages) || !m.messages.some(x => MAIL_RULES.hidden(x.id))) return m; return Object.assign({}, m, { messages: m.messages.filter(x => !MAIL_RULES.hidden(x.id)) }); };
 // Morgens (ab 7:30 Wiener Zeit, einmal pro Tag) Push an alle Geräte: was heute fällig bzw. überfällig ist (Aufträge + To-Dos)
 const DIGEST_FILE = path.join(DATA_DIR, "digest.json");
 function dailyDigest() {
@@ -560,7 +565,7 @@ function dailyDigest() {
 setInterval(dailyDigest, 5 * 60 * 1000);
 // Push-Benachrichtigungen (Handy): neue Mails jede Minute prüfen
 const PUSH = require("./push.js")({ getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
-setInterval(() => { if (MAIL.url && MAIL.token && process.env.DATABASE_URL) PUSH.mailTick(() => mailSnapshot()).catch(e => console.error("Push-Mail:", e.message)); }, 60 * 1000);
+setInterval(() => { if (MAIL.url && MAIL.token && process.env.DATABASE_URL) PUSH.mailTick(() => mailSnapshot().then(mailVisible)).catch(e => console.error("Push-Mail:", e.message)); }, 60 * 1000);
 // Druckshop: Print.com-Auftragsnummer aus Bestellbestätigungen nachtragen (falls die API-Antwort keine lieferte) – alle 10 min
 setInterval(() => { if (MAIL.url && MAIL.token && PRINT && PRINT.linkFromMails) mailSnapshot().then(s => PRINT.linkFromMails((s && s.messages) || [])).catch(e => console.error("Druck-Mails:", e.message)); }, 10 * 60 * 1000);
 // Privates Railway-Netz nutzen (kostenlos, schneller) statt über das öffentliche Internet.
@@ -4085,10 +4090,10 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/mail" && req.method === "GET") {
     if (u.searchParams.get("fresh") === "1") MAIL_SNAP.at = 0;
-    const m = await mailSnapshot(), fl = mailFlags();   // stale/error: alter Stand bzw. Grund (z. B. Mail-Dienst antwortet nicht)
+    const raw = await mailSnapshot(), m = mailVisible(raw), fl = mailFlags();   // stale/error: alter Stand bzw. Grund (z. B. Mail-Dienst antwortet nicht)
     if (!m) return send(res, 503, JSON.stringify({ error: "mail_not_available", detail: fl.error || MAIL_SNAP.err || "" }), TYPES[".json"], { "Cache-Control": "no-store" });
     const known = u.searchParams.get("etag") || "";
-    if (known && m.etag && known === m.etag) return send(res, 200, JSON.stringify(Object.assign({ same: true, etag: m.etag }, fl)), TYPES[".json"], { "Cache-Control": "no-store" });
+    if (known && m.etag && known === m.etag && m === raw) return send(res, 200, JSON.stringify(Object.assign({ same: true, etag: m.etag }, fl)), TYPES[".json"], { "Cache-Control": "no-store" });
     return sendGz(req, res, 200, JSON.stringify(fl.stale || fl.error ? Object.assign({}, m, fl) : m), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   // Skikaiser-Steuerung (Namen, App-Einstellungen, Rangliste, Fehler): leitet an POST <App-Backend>/v1/stats/<was> weiter, Token bleibt am Server

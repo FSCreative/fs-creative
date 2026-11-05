@@ -4,7 +4,10 @@
 // Eine Regel greift automatisch nur für Mails, die nach dem Anlegen/Aktivieren ankommen; bestehende nur per „Jetzt anwenden“.
 module.exports = function (D) {
   const { getMeta, setMeta, snapshot, action } = D;
-  let RULES = null, SEEN = null, busy = false, last = { at: null, applied: 0, error: "" };
+  let RULES = null, SEEN = null, busy = false, again = null, last = { at: null, applied: 0, error: "" };
+  // Mails, die eine Regel gerade wegräumt (verschieben/löschen/Spam): bis der Mailserver fertig ist, nicht im Posteingang zeigen und nicht melden
+  const HIDE = new Map();
+  function hidden(id) { const t = HIDE.get(id); if (!t) return false; if (Date.now() - t > 5 * 60e3) { HIDE.delete(id); return false; } return true; }
   const low = s => String(s || "").toLowerCase();
   async function load() {
     if (RULES) return RULES;
@@ -47,12 +50,13 @@ module.exports = function (D) {
   }
   function inbox(snap) { return ((snap && snap.messages) || []).filter(m => (m.folder || "INBOX") === "INBOX" && m.uid != null); }
   // neue Mails: jede Mail nur einmal, pro Mail die passenden Regeln in Reihenfolge („danach keine weiteren Regeln“ stoppt)
-  async function tick() {
-    if (busy) return; busy = true;
+  // snap: frischer Stand direkt beim Eintreffen neuer Mails (sofort statt erst im 2-Minuten-Takt); läuft schon ein Durchgang, danach gleich noch einmal
+  async function tick(snap0) {
+    if (busy) { again = snap0 || again || true; return; } busy = true;
     try {
       await load(); const act = RULES.filter(r => r.active);
       if (!act.length) return;
-      const snap = await snapshot(); if (!snap) return;
+      const snap = snap0 || await snapshot(); if (!snap) return;
       const fresh = inbox(snap).filter(m => !SEEN.has(m.id));
       if (!fresh.length) return;
       const ops = {}; let hits = 0;
@@ -63,6 +67,7 @@ module.exports = function (D) {
           if (!matches(r, m)) continue;
           const p = plan(r, [m]); Object.keys(p).forEach(op => { if (op === "move") { const k = "move:" + p.move.target; ops[k] = ops[k] || { items: [], target: p.move.target }; ops[k].items.push(...p.move.items); } else (ops[op] = ops[op] || []).push(...p[op]); });
           r.hits = (r.hits || 0) + 1; r.lastHit = new Date().toISOString(); hits++;
+          if (p.move || p.trash || p.spam) HIDE.set(m.id, Date.now());
           if (r.stop || (r.act && (r.act.trash || r.act.spam || r.act.move))) break;
         }
       }
@@ -70,7 +75,7 @@ module.exports = function (D) {
       await saveSeen(); if (hits) await saveRules();
       last = { at: new Date().toISOString(), applied: hits, error: "" };
     } catch (e) { last = { at: new Date().toISOString(), applied: 0, error: String(e.message || e).slice(0, 200) }; console.error("Mail-Regeln:", e.message); }
-    finally { busy = false; }
+    finally { busy = false; if (again) { const a = again; again = null; setImmediate(() => tick(a === true ? undefined : a)); } }
   }
   function clean(r) {
     const c = r.cond || {}, a = r.act || {};
@@ -101,5 +106,5 @@ module.exports = function (D) {
     throw new Error("unbekannte Aktion");
   }
   async function list() { await load(); return { rules: RULES, last }; }
-  return { tick, handle, list };
+  return { tick, handle, list, hidden };
 };

@@ -162,7 +162,7 @@ const PUB_MORE = [
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("24" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("25" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -580,7 +580,7 @@ module.exports = function (D) {
     const cuOpt = by.size && (by.size.options || []).find(o => o && String(o.slug) === "custom"), cs = cuOpt && cuOpt.customSizes;
     const custom = c.custom ? { minW: c.custom[0], minH: c.custom[0], maxW: c.custom[1], maxH: c.custom[2], unit: "cm" }
       : cs && +cs.maxWidth > 0 && +cs.maxHeight > 0 ? { minW: +cs.minWidth || 10, minH: +cs.minHeight || 10, maxW: +cs.maxWidth, maxH: +cs.maxHeight, unit: kind === "banner" ? "cm" : "mm" } : kind === "banner" ? { minW: 300, minH: 300, maxW: 5000, maxH: 3000, unit: "cm" } : null;
-    const optExtra = (slug, o) => { const x = {}; const inf = cmsInfo(sku, String(o.slug), slug); const full = optFull(o, inf), d = optShort(full); if (d) x.desc = d; if (full.length > d.length + 20 || (inf && (inf.c || []).length)) x.more = 1; if (o.description && full.length > d.length + 20) x.dl = full.slice(0, 2500);   // Kurztext für Kachel/Tooltip, ganzer Text über /print/api/optinfo
+    const optExtra = (slug, o) => { const x = {}; const inf = cmsInfo(sku, String(o.slug), slug); const full = optFull(o, inf), d = optShort(full); if (d) x.desc = d; if (full.length > d.length + 20 || (inf && (inf.c || []).length)) x.more = 1; if (o.description && full.length > d.length + 20) x.dl = full.slice(0, 2500); const fh = fileHints(full); if (fh) x.file = clip(fh, 900);   // Kurztext für Kachel/Tooltip, ganzer Text über /print/api/optinfo
       const ic = cmsOptImg(slug, String(o.slug)) || (inf && inf.i) || cmsPropImg(sku, slug, String(o.slug)) || ""; if (ic) x.img = IMG(ic, 160);
       const hex = JSON.stringify(o.enrichments || "").match(/#[0-9a-f]{6}\b/i); if (hex) x.color = hex[0];
       if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
@@ -652,7 +652,8 @@ module.exports = function (D) {
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || SPEC_SKIP.test(p.slug) || inExp(p.slug) || fixed[p.slug] == null || auto[p.slug]) return;
       const v = String(fixed[p.slug]), o = (p.options || []).find(x => x && String(x.slug) === v); if (!o || NONE_SLUG.test(v) || v === "-" || !String(o.name || "").trim()) return;   // Platzhalter nie als technische Angabe zeigen
       const nm = p.slug === "printingmethod" ? SPEC_PM[v] || (String(o.name || "") !== v ? String(o.name) : "") : (L[p.slug] && L[p.slug][v]) || (/^printtype/.test(p.slug) && ptName(o.name, v)) || (o.name != null && String(o.name) !== v ? String(o.name) : "");
-      if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) specs.push([clip(T[p.slug] || (p.slug === "printingmethod" ? "Druckverfahren" : p.title) || p.slug, 60), clip(nm, 140), p.slug]);
+      if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) { const fh = fileHints(optFull(o, cmsInfo(sku, v, p.slug)));   // 4. Feld: Hinweis zur Druckdatei (fest vorgegeben, z. B. Druck auf der Rückseite)
+        specs.push([clip(T[p.slug] || (p.slug === "printingmethod" ? "Druckverfahren" : p.title) || p.slug, 60), clip(nm, 140), p.slug].concat(fh ? [clip(fh, 900)] : [])); }
     });
     // Konfektion je Seite (finish_top/bottom/left/right) mit gleichem Wert zu einer Zeile zusammenfassen
     const SIDE = { finish_top: "oben", finish_bottom: "unten", finish_left: "links", finish_right: "rechts" }, fins = specs.filter(x => SIDE[x[2]]);
@@ -751,6 +752,12 @@ module.exports = function (D) {
   const cmsPropImg = (sku, prop, slug) => { if (/^(none|no|geen|nee|ohne|without.*|no_.*|0)$/i.test(String(slug))) return ""; const x = ((CMS && CMS.info) || []).find(y => y.pr === prop && y.p.indexOf(sku) > -1 && y.i); return x ? x.i : ""; };
   // Options-Info: ganzer Text (Print.com-Produkt bzw. CMS, ohne Links/Download-Hinweise) und Kurzfassung (erster Absatz, max. ~260 Zeichen an Wortgrenze)
   const optFull = (o, inf) => cmsClean(String((o && o.description) || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n").replace(/<[^>]*>/g, " ").replace(/[ \t]+/g, " ").trim() || (inf && inf.d) || "").split("\n").filter(l => !/^\s*(erfahre|mehr erfahren|lies mehr|datenblatt|siehe)\b/i.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();   // „Erfahre mehr über …“ ohne Link weglassen
+  // Sätze zur Druckdaten-Vorbereitung aus dem ganzen Options-Text (Print.com-CMS): erscheinen automatisch in den Druckdaten-Anforderungen,
+  // für JEDES Produkt und jede gewählte bzw. fest vorgegebene Option (Simon 05.11.2026: „alles für alle Produkte“, nicht je Produkt nachbessern)
+  const FILE_RX = /\b(datei\w*|druckdat\w*|anlegen|angelegt|anlieferung|liefer\w+ (?:sie|du)|kontur\w*|sonderfarbe\w*|vollton\w*|spiegel\w*|beschnitt\w*|vektor\w*|ebene\w*|pfad\w*|stanzkontur|schnittlinie|schneidelinie|cutcontour|thrucut|kisscut|white|weißdruck|weiße? schicht|sicherheitsabstand|auflösung|dpi|pantone|vorlage)\b/i;
+  const FILE_NO = /wissensbasis|knowledge ?base|website|hier klicken|kundenservice|support|e-?mail/i;
+  const fileHints = t => { const out = []; String(t || "").replace(/\*\*|__|^#+\s*/gm, "").split(/\n+|(?<=[.!?])\s+(?=[A-ZÄÖÜ])/).map(x => x.replace(/^[-*•]\s*/, "").trim()).forEach(x => {
+      if (x.length < 15 || x.length > 400 || !FILE_RX.test(x) || FILE_NO.test(x) || out.indexOf(x) > -1) return; out.push(x); }); return out.slice(0, 4).join(" "); };
   const optShort = t => { const p = String(t || "").split(/\n+/).map(x => x.replace(/\*\*|__|^#+\s*/g, "").trim()).filter(x => x && !/^[-*•]/.test(x))[0] || ""; return p.length > 280 ? p.slice(0, 260).replace(/\s+\S*$/, "") + " …" : p; };
   const groupName = slug => { const n = String((CMS && CMS.names && CMS.names[slug]) || MAIN_DE[slug] || slug); return n.charAt(0).toUpperCase() + n.slice(1); };   // „stickers“ → „Stickers“
   function mainsList() {

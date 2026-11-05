@@ -810,6 +810,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pd = await (await fetch(B + "/print/api/product?key=notepads")).json(); assert.strictEqual(pd.ok, true, JSON.stringify(pd));
     assert.strictEqual(pd.product.kind, "flat"); assert.deepStrictEqual(pd.product.props.map(p => p.slug), ["sheets", "size"], "propertyGroups-Reihenfolge, versteckte/Bild-Eigenschaften nicht");
     assert.strictEqual(pd.product.props[0].options.find(o => o.slug === "50").desc, "50 Blatt je Block");
+    // Druckdaten-Hinweise aus dem Options-Text für alle Produkte (ohne Verweis auf fremde Wissensbasis); ohne Dateibezug kein Hinweis
+    assert.strictEqual(pd.product.props[0].options.find(o => o.slug === "25").file, "Die Druckdatei bitte mit 3 mm Beschnitt anlegen.");
+    assert.strictEqual(pd.product.props[0].options.find(o => o.slug === "50").file, undefined);
     assert.deepStrictEqual(pd.product.props[1].options.map(o => o.slug), ["a6", "a5", "custom"]); assert.deepStrictEqual(pd.product.tiers, [25, 50, 100, 250, 500]);
     assert.deepStrictEqual(pd.product.custom, { minW: 50, minH: 50, maxW: 210, maxH: 297, unit: "mm" });
     const r = await post("/print/api/price", { product: "notepads", copies: 50 }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));

@@ -1876,11 +1876,13 @@
   var SPOTS = {"White":["#00ffff","Weißdruck"],"Kisscut":["#ff0000","Anschnitt (Kiss-Cut)"],"Thrucut":["#ff00ff","Konturschnitt (durch)"],"Insidecut":["#800080","Innenschnitt"],"Vcut":["#00ff00","V-Schnitt"],"Perforation":["#ffff00","Perforation"],"Creasing":["#ff8000","Rillung"],"Score":["#80ff00","Ritzlinie"],"Drilling":["#0000ff","Bohrlöcher"],"Numbering":["#000000","Nummerierung"],"Scodix Spot":["#00ffff","Partieller Glanzlack"],"Scodix Sense 40":["#0080ff","3D-Lack 40 µm"],"Scodix Sense 80":["#008080","3D-Lack 80 µm"],"Scodix Foil Gold":["#ffff00","Folie Gold"],"Scodix Foil Silver":["#cccccc","Folie Silber"],"Scodix Foil Copper":["#e36678","Folie Kupfer"],"Scodix Foil Rose":["#ffb200","Folie Roségold"],"Scodix Foil Glitter":["#ff0000","Folie Glitzer"],"Scodix Foil Rainbow":["#00ff00","Folie Regenbogen"],"Cold Foil":["#00ff80","Kaltfolie"]};
   function spotChip(n) { var x = SPOTS[n]; return '<span class="ps-spot"><i style="background:' + (x ? x[0] : "#888") + '"></i>' + esc(n) + "</span>"; }
   // Welche Sonderfarben braucht die Druckdatei für genau diese Ausführung? → [[Name, Erklärung], …]
+  // Weißdruck an Slug ODER Namen erkennen – Print.com nennt 5/0 mit Weiß z. B. nur „50_200“ (Name „Einseitig farbig + Weiß (5/0)“)
+  function isWhite(slug) { var v = String((S.sel || {})[slug] || "").toLowerCase(); if (/white/.test(v)) return true; var pr = (S.prod.props || []).filter(function (x) { return x.slug === slug; })[0], o = pr && pr.options.filter(function (x) { return String(x.slug) === String(S.sel[slug]); })[0]; return !!o && /wei(ß|ss)|white/i.test(o.name || ""); }
   function spotNeeds() {
     var p = S.prod, v = Object.assign({}, p.fixed || {}, S.sel), out = [], none = /^(none|no|nee|geen|ohne|without|clean_cut|no_.*)$/;
     var add = function (n, t) { if (!out.some(function (x) { return x[0] === n; })) out.push([n, t]); };
     Object.keys(v).forEach(function (k) { var x = String(v[k] == null ? "" : v[k]).toLowerCase(); if (!x || none.test(x)) return;
-      if (/^printtype/.test(k) && /white/.test(x)) add("White", "deckende weiße Schicht hinter den Farben – Druckfarben sind lasierend (durchscheinend), auf transparentem oder farbigem Material wirken sie erst mit Weiß darunter kräftig und blickdicht wie auf Papier. Weiß wird nur dort gedruckt, wo du Flächen in „White“ anlegst (meist genau unter dem Motiv); wo kein White liegt, bleibt das Material durchsichtig bzw. in seiner Farbe");
+      if (/^printtype/.test(k) && (/white/.test(x) || isWhite(k))) add("White", "deckende weiße Schicht hinter den Farben – Druckfarben sind lasierend (durchscheinend), auf transparentem oder farbigem Material wirken sie erst mit Weiß darunter kräftig und blickdicht wie auf Papier. Weiß wird nur dort gedruckt, wo du Flächen in „White“ anlegst (meist genau unter dem Motiv); wo kein White liegt, bleibt das Material durchsichtig bzw. in seiner Farbe");
       if (/kiss_?cut/.test(x)) add("Kisscut", "Schnittkontur als geschlossene Linie um jedes Motiv – nur die Folie wird geschnitten");
       else if (/die_?cut|thru_?cut/.test(x)) add("Thrucut", "Schnittkontur als geschlossene Linie – hier wird komplett durchgeschnitten");
       else if (/^custom_shape/.test(k) && /shape|complex|simple|contour/.test(x)) add("Thrucut", "Umriss als eine durchgehende, geschlossene Vektorlinie zeichnen, Sonderfarbe „Thrucut“, auf Überdrucken gestellt – entlang dieser Linie wird ausgeschnitten (ohne enge Ecken und schmale Stege). Das Design rundum 10 mm über die Linie hinaus anlegen (Beschnitt)");
@@ -1888,7 +1890,7 @@
       if (/^(variable_creasing_line|creasing_lines?)$/.test(k)) add("Creasing", "Lage der Rilllinie(n) als gerade Linie einzeichnen");
       if (/^spot_finish/.test(k) && !/foil|sense|3d/.test(x)) add("Scodix Spot", "Flächen, die veredelt (glänzend lackiert) werden");
       if (/^perforation/.test(k)) add("Perforation", "Lage der Perforationslinie(n) als gerade Linie einzeichnen");
-      if (/drill/.test(k)) add("Drilling", "Bohrlöcher als Kreis in Originalgröße an die gewünschte Stelle setzen");
+      if (/drill/.test(k) && !/corner/.test(x)) add("Drilling", "Bohrlöcher als Kreis in Originalgröße an die gewünschte Stelle setzen");
       if (/numbering/.test(k)) add("Numbering", "Feld für die fortlaufende Nummer als Rechteck markieren");
       if (/cold_?foil/.test(x)) add("Cold Foil", "Flächen für die Kaltfolie anlegen");
       else if (/foil/.test(x) && /spot|scodix|gold|silver|copper|rose|rainbow|glitter/.test(x)) { var fo = /silver/.test(x) ? "Silver" : /copper/.test(x) ? "Copper" : /rose/.test(x) ? "Rose" : /rainbow/.test(x) ? "Rainbow" : /glitter/.test(x) ? "Glitter" : "Gold"; add("Scodix Foil " + fo, "Flächen für die Folienveredelung anlegen"); }
@@ -1941,10 +1943,29 @@
     // Transparentes Material (Plexiglas, Fensterfolie, transparente Aufkleber …): was bleibt durchsichtig, wozu Weiß? (Wunsch Simon 05.11.2026 nach Kundenfrage)
     var selV = Object.keys(S.sel || {}).map(function (k) { return String(S.sel[k] || "").toLowerCase(); }).join(" ");
     if (!p.imprint && /transparent|clear|klar/.test(selV) && !/opal/.test(selV)) {
-      var wh = /white/.test(String((S.sel || {}).printtype || "").toLowerCase());
-      items.splice(5, 0, ["🔍", "Transparentes Material", "Wo deine Datei <b>keinen Inhalt</b> hat, bleibt das Material <b>klar durchsichtig</b> – also PNG mit transparentem Hintergrund oder PDF ohne weiße Hintergrundfläche anlegen. " +
+      var wh = isWhite("printtype");
+      var blk0 = /^(yes|ja|true)$/i.test(String((S.sel || {})["block-out-foil"] || ""));   // Blockout-Folie: leere Stellen wirken weiß statt durchsichtig
+      items.splice(5, 0, ["🔍", "Transparentes Material", (blk0 ? "Mit der gewählten <b>Blockout-Folie</b> ist nichts durchsichtig: Wo deine Datei keinen Inhalt hat, sieht man den <b>weißen Kleber</b> der Folie. "
+          : "Wo deine Datei <b>keinen Inhalt</b> hat, bleibt das Material <b>klar durchsichtig</b> – also PNG mit transparentem Hintergrund oder PDF ohne weiße Hintergrundfläche anlegen. ") +
         (wh ? "Für deckende, kräftige Farben legst du in der Sonderfarbe <b>„White“</b> eine Fläche genau unter dein Motiv – nur dort wird Weiß gedruckt. Auch weiße Stellen im Motiv brauchen „White“, sonst bleiben sie durchsichtig."
+          : blk0 ? "<b>Ohne Weißdruck</b> sind die Farben lasierend – der weiße Kleber dahinter lässt sie trotzdem hell wirken, weiße Stellen im Motiv erscheinen über den Kleber weiß. Für satte, deckende Farben „+ Weiß“ wählen."
           : "<b>Ohne Weißdruck</b> sind die Farben lasierend: Licht scheint durch, das Motiv wirkt wie Glasmalerei und auf dunklem Untergrund dunkler. <b>Weiß wird nicht gedruckt</b> – weiße Stellen im Motiv bleiben durchsichtig. Für deckende, kräftige Farben die Ausführung mit „+ Weiß“ wählen."), "wide"]); }
+    // Druck hinter Plexiglas (Rückseitendruck) und Fotos hinter Acrylglas: nicht spiegeln, Blockout-Folie, Bohrungen (Wunsch Simon 05.11.2026)
+    var spec = function (k) { var x = (p.specs || []).filter(function (y) { return y[2] === k; })[0]; return x ? String(x[1]) : ""; }, sv = S.sel || {};
+    var photoAc = /lambda|c-typ/i.test(spec("printingmethod") + " " + (p.summary || "") + " " + (p.about || "")) && /acryl|plexi/i.test(p.title + " " + spec("material"));
+    if (!p.imprint && (/rückseite/i.test(spec("printing_side")) || photoAc)) {
+      var blk = /^(yes|ja|true)$/i.test(String(sv["block-out-foil"] || ""));
+      items.splice(5, 0, ["🪞", "Druck hinter Plexiglas", photoAc
+        ? "Dein Foto wird als <b>echter Fotoabzug</b> (C-Print) hinter 3 mm Plexiglas auf eine Dibond-Platte kaschiert – nichts ist durchsichtig, Weiß im Motiv bleibt weiß. Datei <b>ganz normal, seitenrichtig</b> anlegen – <b>nicht spiegeln</b>. Fotos dürfen hier in <b>RGB</b> (sRGB / Adobe RGB) bleiben, die Fotobelichtung gibt sie besonders brillant wieder."
+        : "Gedruckt wird auf die <b>Rückseite</b> der Platte, du siehst dein Motiv durch das Plexiglas – mit Tiefe und Glanz. Datei <b>ganz normal, seitenrichtig</b> anlegen – <b>nicht spiegeln</b>, das übernimmt die Druckerei. " +
+          (/transparent|clear|klar/.test(selV) && !/opal/.test(selV) ? "" : isWhite("printtype") ? "Mit <b>Weißdruck</b> (5/0) liegt hinter den Farben eine deckende weiße Schicht – nur dort, wo du die Sonderfarbe „White“ anlegst. " : "Ohne Weißdruck (4/0) sind die Farben lasierend und Licht scheint durch – für kräftige, deckende Farben „+ Weiß (5/0)“ wählen. ") +
+          (blk ? "Die <b>Blockout-Folie</b> macht die Platte komplett lichtdicht: Ihr Kleber ist weiß, die Rückseite schwarz – <b>unbedruckte Stellen wirken dann weiß</b>, nicht durchsichtig." : ""), "wide"]);
+    }
+    var dh = String(sv.drillholes || ""); if (!p.imprint && /corner/.test(dh)) items.splice(5, 0, ["🔩", "Bohrungen in den Ecken", "In jede Ecke kommt ein Loch (" + esc(labelOf("drillholes").replace(/^An jeder Ecke\s*/i, "").replace(/[()]/g, "")) + ") – die Bohrungen setzt die Druckerei, du musst nichts einzeichnen. Lass in den Ecken rund <b>3 cm</b> frei von Text und wichtigen Motivteilen."]);
+    // Hinweise zur Druckdatei aus den Infos jeder gewählten bzw. fest vorgegebenen Option – automatisch für alle Produkte (print-shop.js fileHints)
+    var fh = []; (p.props || []).forEach(function (pr) { var o = pr.options.filter(function (x) { return String(x.slug) === String((S.sel || {})[pr.slug]); })[0]; if (o && o.file) fh.push([pr.title || pr.slug, o.name, o.file]); });
+    (p.specs || []).forEach(function (x) { if (x[3]) fh.push([x[0], x[1], x[3]]); });
+    if (fh.length) items.push(["📋", "Zu deiner Ausführung", fh.map(function (x) { return "<b>" + esc(x[0]) + ": " + esc(x[1]) + "</b> – " + esc(x[2]); }).join("<br>"), "wide"]);
     var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);

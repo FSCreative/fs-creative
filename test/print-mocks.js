@@ -86,7 +86,7 @@ const PRODUCTS = {
   notepads: product("notepads", [
     { slug: "size", title: "Format", locked: false, required: true, options: [opt("a5", "A5"), opt("a6", "A6"), opt("custom", "Eigene Größe", { customSizes: { minWidth: 50, minHeight: 50, maxWidth: 210, maxHeight: 297 } })] },
     { slug: "material", title: "Papier", locked: false, required: true, options: [opt("90gr_offset", "90 g Offset")] },
-    { slug: "sheets", title: "Blätter", locked: false, required: true, options: [opt("50", "50 Blatt", { description: "<p>50 Blatt je Block</p>" }), opt("25", "25 Blatt")] },
+    { slug: "sheets", title: "Blätter", locked: false, required: true, options: [opt("50", "50 Blatt", { description: "<p>50 Blatt je Block</p>" }), opt("25", "25 Blatt", { description: "<p>25 Blatt je Block.</p><p>Die Druckdatei bitte mit 3 mm Beschnitt anlegen. Mehr dazu in unserer Wissensbasis.</p>" })] },
     { slug: "glue", title: "Leimung", locked: false, required: true, viewMode: { reseller: "hidden" }, options: [opt("top", "oben"), opt("left", "links")] },
     { slug: "backing", title: "Rückkarton", locked: false, required: false, options: [opt("none", "ohne"), opt("grey", "grau")] },
     { slug: "summary_image", title: "Bild", locked: false, required: false, options: [opt("x", "x"), opt("y", "y")] },
