@@ -5309,6 +5309,39 @@ FIN_PROP.register("voucher-match", {
   },
   exec: async it => { VM_CACHE.at = 0; return SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "voucher", voucherId: it.voucherId }); },
   reject: async it => { const s = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {}; s[it.voucherId + ":" + it.txId] = new Date().toISOString(); await FIN.setMeta("vmatchSkip", s); } });
+// Echter Beleg nachgereicht (Wunsch Simon 05.11.2026, Leikermoser 20.08.): ein neu erfasster, offener Beleg mit gleichem Betrag (± 1 Cent) und Datum (± 3 Tage) wie ein
+// bezahlter Eigenbeleg („Beleg verloren“) → Vorschlag: Bankzahlung vom Eigenbeleg lösen, dem echten Beleg zuordnen (mit Vorsteuer laut Beleg) und den Eigenbeleg löschen.
+// Nur Vorschlag (Buchhaltung per Klick) – nie in schon gemeldete UVA-Zeiträume.
+FIN_PROP.register("eigenbeleg-replace", {
+  label: "Echter Beleg ersetzt Eigenbeleg",
+  list: async () => {
+    if (!FIN_STATE.local) return [];
+    await FIN_LOCAL.load(); const out = [], rep = steuerReportedPeriods(), inRep = d => rep.some(r => d >= r.from && d <= r.to);
+    const ebs = FIN_LOCAL.all("Voucher").filter(v => String(v.status) === "1000" && /Eigenbeleg/i.test(String(v.description || "")) && !v.enshrined);
+    if (!ebs.length) return [];
+    const logs = FIN_LOCAL.all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === "Voucher");
+    const skip = (await FIN.getMeta("ebrSkip").catch(() => null)) || {};
+    for (const v of FIN_LOCAL.all("Voucher").filter(v => String(v.status) === "100" && String(v.creditDebit || "C") === "C" && v.document && v.document.id && !/Eigenbeleg/i.test(String(v.description || "")))) {
+      const d = String(v.voucherDate || "").slice(0, 10), g = Math.abs(+v.sumGross || 0); if (!d || !(g > 0)) continue;
+      const eb = ebs.find(e => Math.abs(Math.abs(+e.sumGross || 0) - g) < 0.011 && Math.abs(Date.parse(String(e.voucherDate).slice(0, 10)) - Date.parse(d)) <= 3 * 864e5);
+      if (!eb || inRep(String(eb.voucherDate).slice(0, 10)) || skip[eb.id + ":" + v.id]) continue;
+      const lg = logs.filter(l => String(l.object.id) === String(eb.id)); if (lg.length !== 1 || !lg[0].checkAccountTransaction) continue;
+      out.push({ id: "ebr:" + eb.id + ":" + v.id, key: "ebr:" + eb.id + ":" + v.id, ebId: String(eb.id), voucherId: String(v.id), txId: String(lg[0].checkAccountTransaction.id), amount: g, date: d,
+        title: "Echter Beleg „" + (v.supplierName || "") + "“ ersetzt " + String(eb.description || "Eigenbeleg").split(" · ")[0] + " · " + g.toFixed(2).replace(".", ",") + " €",
+        detail: String(v.description || "").slice(0, 100) + " · Zahlung vom Eigenbeleg übernehmen, Eigenbeleg löschen" + (+v.sumTax > 0 ? " · Vorsteuer " + (+v.sumTax).toFixed(2).replace(".", ",") + " €" : ""), source: "Belege" });
+    }
+    return out;
+  },
+  reject: async it => { const sk = (await FIN.getMeta("ebrSkip").catch(() => null)) || {}; sk[it.ebId + ":" + it.voucherId] = new Date().toISOString(); await FIN.setMeta("ebrSkip", sk); },
+  valid: it => { const eb = FIN_LOCAL.get("Voucher", it.ebId), v = FIN_LOCAL.get("Voucher", it.voucherId); return !!(eb && v && String(eb.status) === "1000" && String(v.status) === "100"); },
+  exec: async it => {
+    await SEV_OPS.voucherOp({ confirm: true, op: "reopen", id: it.ebId });
+    try { await SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "voucher", voucherId: it.voucherId }); }
+    catch (e) { await SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "voucher", voucherId: it.ebId }).catch(() => {}); throw e; }   // zurück wie vorher
+    await SEV_OPS.voucherOp({ confirm: true, op: "draft", id: it.ebId }); await SEV_OPS.voucherOp({ confirm: true, op: "delete", id: it.ebId });
+    VM_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+    return { ok: true };
+  } });
 const VM_CACHE = { at: 0, items: null, p: null };
 // jede Buchungsänderung (Beleg, Zahlung, Import) → Beleg-Abgleich neu rechnen
 if (SEV_OPS && SEV_OPS.resetCaches && !SEV_OPS._vmHook) { const rc = SEV_OPS.resetCaches; SEV_OPS.resetCaches = function () { VM_CACHE.at = 0; return rc.apply(this, arguments); }; SEV_OPS._vmHook = true; }
