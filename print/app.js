@@ -1947,7 +1947,7 @@
       var blk0 = /^(yes|ja|true)$/i.test(String((S.sel || {})["block-out-foil"] || ""));   // Blockout-Folie: leere Stellen wirken weiß statt durchsichtig
       items.splice(5, 0, ["🔍", "Transparentes Material", (blk0 ? "Mit der gewählten <b>Blockout-Folie</b> ist nichts durchsichtig: Wo deine Datei keinen Inhalt hat, sieht man den <b>weißen Kleber</b> der Folie. "
           : "Wo deine Datei <b>keinen Inhalt</b> hat, bleibt das Material <b>klar durchsichtig</b> – also PNG mit transparentem Hintergrund oder PDF ohne weiße Hintergrundfläche anlegen. ") +
-        (wh ? "Für deckende, kräftige Farben legst du in der Sonderfarbe <b>„White“</b> eine Fläche genau unter dein Motiv – nur dort wird Weiß gedruckt. Auch weiße Stellen im Motiv brauchen „White“, sonst bleiben sie durchsichtig."
+        (wh ? "Für deckende, kräftige Farben legst du in der Sonderfarbe <b>„White“</b> eine Fläche genau unter dein Motiv – nur dort wird Weiß gedruckt." + (blk0 ? "" : " Auch weiße Stellen im Motiv brauchen „White“, sonst bleiben sie durchsichtig.")
           : blk0 ? "<b>Ohne Weißdruck</b> sind die Farben lasierend – der weiße Kleber dahinter lässt sie trotzdem hell wirken, weiße Stellen im Motiv erscheinen über den Kleber weiß. Für satte, deckende Farben „+ Weiß“ wählen."
           : "<b>Ohne Weißdruck</b> sind die Farben lasierend: Licht scheint durch, das Motiv wirkt wie Glasmalerei und auf dunklem Untergrund dunkler. <b>Weiß wird nicht gedruckt</b> – weiße Stellen im Motiv bleiben durchsichtig. Für deckende, kräftige Farben die Ausführung mit „+ Weiß“ wählen."), "wide"]); }
     // Druck hinter Plexiglas (Rückseitendruck) und Fotos hinter Acrylglas: nicht spiegeln, Blockout-Folie, Bohrungen (Wunsch Simon 05.11.2026)
