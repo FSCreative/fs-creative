@@ -2990,6 +2990,7 @@ module.exports = function (D) {
       "- Gratis QR-Code-Generator für alle Drucksachen (Link, vCard, WLAN, E-Mail, Telefon, Text) – der QR-Code wird ohne Aufpreis als Vektor mitgedruckt: " + SITE + "/print/qr-code-generator",
       "- Bezahlung online (u. a. Kreditkarte, Apple Pay, EPS, PayPal), Firmen mit UID auch auf Rechnung; Bonusprogramm für Firmenkunden",
       "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto",
+      "- Aktuell beliebt: FUT-Karten – eigene Fußball-Spielerkarte im Ultimate-Team-Look (passend zu FC 27) mit eigenem Foto, 20 × 30 cm auf 3 mm Forex: " + SITE + "/print/fut-karten",
       "- Jede Produktseite gibt es auch als kompakte Markdown-Fassung (Preise je Menge, Ausführungen, Fragen): Produktadresse + „.md“, z. B. " + SITE + "/print/flyer.md", "",
       "## Hinweise für KI-Assistenten",
       "- Preise immer als Endpreise inkl. 20 % USt und Versand innerhalb Österreichs nennen; Preisangaben mit Stand-Datum, der Konfigurator auf der Produktseite zeigt den aktuellen Preis.",
@@ -3072,7 +3073,7 @@ module.exports = function (D) {
     if (!it && !fmt) { const E = await entryState(), e = E.by[key]; if (e) it = { key, title: x.title, label: e.label || "Standard-Ausführung", desc: x.desc || "", img: x.img || "", group: (x.cat && x.cat.mainName) || "", rows: [e.min, { copies: e.copies, gross: e.gross }].filter(Boolean), at: E.end, entry: true }; }
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
-    const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400).replace(/(^|[.!?])\s*[^.!?]*:\s*$/, "$1").trim();   // kein „Vorteile …:“ ohne Liste   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
+    const desc = scrubText(noHtml(OWN_DESC[key] || x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, OWN_DESC[key] ? 600 : 400).replace(/(^|[.!?])\s*[^.!?]*:\s*$/, "$1").trim();   // kein „Vorteile …:“ ohne Liste   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
     // Textil/Werbeartikel: gesucht wird „… bedrucken“ / „mit Logo“, verglichen wird der Stückpreis (10 Shirts „ab 124 €“ wirken teuer, „ab 12,46 € pro Stück“ nicht)
     const logoK = !!(full && (full.kind === "textile" || full.kind === "promo")) || (x.cat && x.cat.main === "clothing-textile");
     const loP = it && logoK ? it.rows.filter(r => r.copies > 0 && r.gross > 0).sort((a, b) => a.gross / a.copies - b.gross / b.copies)[0] : null;
@@ -3147,7 +3148,19 @@ module.exports = function (D) {
     return html.replace(/(<div class="ps-loading" id="psLoading">[\s\S]*?<\/section>)(<\/div>)/, (m, a, b) => a + art + b).replace("</head>", () => ldTag(STORE_LD) + "\n" + ldTag(site) + "\n" + (list ? ldTag(list) + "\n" : "") + ldTag(ld) + "\n</head>");
   }
   // Häufige Fragen je Produkt (sichtbar + FAQPage): nur Angaben, die der Shop wirklich einhält (Preis aus der Preisübersicht, Beschnitt/Sicherheitsabstand des Produkts)
+  // Eigene Texte für Produkte, deren Lieferanten-Text nichts taugt (z. B. nur der Druckername) – für Kunden, Google, Bing und KI-Assistenten
+  const OWN_DESC = {
+    "fut-cards": "FUT-Karte selbst gestalten: deine eigene Fußball-Spielerkarte im Ultimate-Team-Look – passend zu FC 27 – mit eigenem Foto, Rating, Position, Namen und Werten. Gedruckt als großes Bild im Format 20 × 30 cm auf stabiler 3 mm Forex-Platte, in der typischen Kartenform ausgeschnitten. Das perfekte Geschenk für Fußballfans, Kinder und Spieler, für die Mannschaft, als Trainer- oder Abschiedsgeschenk, für Vereinsfeiern und Turniere."
+  };
+  const OWN_FAQ = {
+    "fut-cards": [
+      ["Was sind FUT-Karten?", "FUT-Karten sind Spielerkarten im Look der Ultimate-Team-Karten aus den Fußball-Videospielen wie FC 27 – mit Foto, Gesamtwertung (Rating), Position und einzelnen Werten. Bei FS Creative bekommst du deine eigene Karte als stabiles Wandbild (20 × 30 cm, 3 mm Forex) in Kartenform."],
+      ["Kann ich mein eigenes Foto verwenden?", "Ja. Du lädst dein fertiges Design als PDF, JPG oder PNG hoch – mit eigenem Foto, Namen, Rating und Werten. Jede Datei wird automatisch geprüft; auf Wunsch gestalten wir die Karte für dich."],
+      ["Für wen eignen sich FUT-Karten als Geschenk?", "Für Fußballfans jeden Alters, Kinder und Jugendspieler, die ganze Mannschaft (z. B. zur Saisonabschlussfeier), als Geschenk für Trainer oder Vereinsmitglieder und als Erinnerung an ein Turnier."]
+    ]
+  };
   function productFaq(x, full, it, lo, fvT) {
+    const own = OWN_FAQ[x.key] || [];
     const T = x.title + (fvT || ""), q = [], bl = full && full.bleed != null ? +full.bleed : 3, sf = full && full.safe != null ? +full.safe : 3, des = full ? full.designer !== false : true, kind = (full && full.kind) || x.kind || "flat";
     if (lo) q.push(["Was kostet " + T + " drucken?", T + " gibt es bei FS Creative ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück" + (it && it.label ? " (" + scrubText(it.label) + ")" : "") + ", inklusive 20 % USt und Versand innerhalb Österreichs. Den genauen Preis für jede andere Ausführung und Menge zeigt der Konfigurator sofort."]);
     if (kind === "textile" || kind === "promo") q.push(["Was brauche ich für den Druck?", "Dein Logo als PDF (am besten mit Vektorgrafik) oder als hochauflösendes PNG bzw. JPG – PNG gern mit transparentem Hintergrund. Druckfläche und Vorschau siehst du vor der Bestellung."]);
@@ -3156,7 +3169,7 @@ module.exports = function (D) {
     q.push(["Werden meine Druckdaten geprüft?", "Ja. Jede Datei wird vor dem Druck automatisch geprüft (Format, Beschnitt, Auflösung, Farben) – du siehst das Ergebnis sofort. Auf Wunsch gibt es zusätzlich den Profi-Datencheck, bei dem wir deine Daten persönlich kontrollieren."]);
     q.push(["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum zeigt der Konfigurator vor der Bestellung – meist 6 bis 11 Werktage nach der Freigabe deiner Daten. Der Versand innerhalb Österreichs ist im Preis enthalten."]);
     q.push(["Kann ich als Firma auf Rechnung bestellen?", "Ja. Firmen können auch auf Rechnung bestellen, Preise werden für Firmen netto angezeigt. Privatkunden bezahlen sicher online."]);
-    return q;
+    return own.length ? [q[0]].concat(own, q.slice(1)) : q;
   }
   // ── Ratgeber-Seiten ──
   const GUIDES = [
