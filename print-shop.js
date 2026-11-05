@@ -213,7 +213,7 @@ function scrubPub(v, key) {
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
 const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 2000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
 // Datencheck: „self“ = Kunde gibt frei (automatische Hinweise), bezahlte Aufträge gehen sofort an Print.com; „pro“ = Profi-Check gegen Aufpreis (je Warenkorb), landet in der Warteschlange
-const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 50;   // Sortenmix: bis 50 Motive (Print.com „designs“, ohne Aufpreis)
+const PRO_CHECK_GROSS = 5, GRAPHIC_CHECK_GROSS = 20, MAX_MOTIFS = 50;   // Datencheck mit Grafikaufbereitung (Wunsch Simon 05.11.2026): 20 €, Simon macht die Grafik druckfertig, Kunde gibt vor dem Druck frei   // Sortenmix: bis 50 Motive (Print.com „designs“, ohne Aufpreis)
 // Zahlungsgebühr (Mollie) für die Kalkulation: Standard Kreditkarte EU 1,8 % + 0,25 € (anpassbar per Railway)
 const payFee = () => ({ pct: isFinite(parseFloat(process.env.PRINT_PAY_FEE_PCT)) ? parseFloat(process.env.PRINT_PAY_FEE_PCT) : 1.8, fix: isFinite(parseFloat(process.env.PRINT_PAY_FEE_FIX)) ? parseFloat(process.env.PRINT_PAY_FEE_FIX) : 0.25 });
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
@@ -2278,16 +2278,16 @@ module.exports = function (D) {
     if (input.__customerId) account = { id: input.__customerId };
     else if (input.createAccount === true && input.accountPassword) { const c = await accountMod().createFromCheckout(cust, String(input.accountPassword)); if (c) account = { id: c.id, created: !c.verified }; }
     const groupId = prepared.length > 1 ? "G" + Date.now().toString(36).toUpperCase() + rnd(4) : null;
-    const check = input.check === "pro" ? "pro" : input.check === "self" ? "self" : "review";   // ohne Angabe (alte Clients): wie bisher prüfen, ohne Aufpreis
-    if (check === "pro") {   // Aufpreis einmal je Warenkorb – auf der ersten Position (eigene Rechnungszeile)
-      const o0 = prepared[0].o, rate = o0.price.rate || 0, net = r2(PRO_CHECK_GROSS / (1 + rate / 100)), vat = r2(PRO_CHECK_GROSS - net);
-      o0.price.checkFee = { gross: PRO_CHECK_GROSS, net, vat }; o0.price.gross = r2(o0.price.gross + PRO_CHECK_GROSS); o0.price.net = r2(o0.price.net + net); o0.price.vat = r2(o0.price.vat + vat); o0.price.margin = r2(o0.price.margin + net);
+    const check = input.check === "pro" ? "pro" : input.check === "graphic" ? "graphic" : input.check === "self" ? "self" : "review";   // ohne Angabe (alte Clients): wie bisher prüfen, ohne Aufpreis
+    if (check === "pro" || check === "graphic") {   // Aufpreis einmal je Warenkorb – auf der ersten Position (eigene Rechnungszeile)
+      const fee = check === "graphic" ? GRAPHIC_CHECK_GROSS : PRO_CHECK_GROSS, o0 = prepared[0].o, rate = o0.price.rate || 0, net = r2(fee / (1 + rate / 100)), vat = r2(fee - net);
+      o0.price.checkFee = { gross: fee, net, vat, kind: check }; o0.price.gross = r2(o0.price.gross + fee); o0.price.net = r2(o0.price.net + net); o0.price.vat = r2(o0.price.vat + vat); o0.price.margin = r2(o0.price.margin + net);
     }
     for (const x of prepared) {
       const o = x.o; o.check = check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
       if (input.__origin) o.origin = Object.assign({}, input.__origin);
       if (Array.isArray(x.clientWarn) && x.clientWarn.length) { o.clientChecks = x.clientWarn.slice(0, 10).map(t => clip(t, 300)); }
-      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
+      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "graphic" ? "Datencheck mit Grafikaufbereitung gewünscht – Grafik druckfertig machen und dem Kunden zur Freigabe senden" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
       x.fm.orderId = o.id; await store.putFile(x.fm); await store.putOrder(o);
       if (o.briefId) { const all = await briefsGet().catch(() => null), br = all && all.find(z => z.id === o.briefId); if (br && br.offer) { br.offer.order = { id: o.id, nr: o.nr, at: nowIso() }; br.status = "erledigt"; br.updated = nowIso(); await briefsSet(all).catch(() => {}); } }
@@ -2385,29 +2385,29 @@ module.exports = function (D) {
           headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung " + o.nr + ")." + (o.payment.method === "mollie" && o.payment.mollieId ? " Bezahlt online – Mollie " + o.payment.mollieId + "." : ""),
           footText: (o.price.taxNote ? o.price.taxNote + "\n" : "") + (o.payment.method === "mollie" ? "Der Betrag wurde bereits online bezahlt." : "Zahlbar innerhalb von 14 Tagen ohne Abzug."),
           timeToPay: o.payment.method === "mollie" ? 0 : 14, taxRule: o.price.taxCase === "igl" ? cfg().taxRuleIgl : "",
-          items: [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: "Profi-Datencheck", text: "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []) });
+          items: [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []) });
         o.invoice = { id: r.id, nr: r.nr || "", draft: true, at: nowIso() }; hist(o, "Rechnungsentwurf angelegt" + (r.nr ? " " + r.nr : ""));
       } catch (e) { o.invoice = { error: clip(e.message, 300) }; hist(o, "Rechnungsentwurf fehlgeschlagen: " + e.message); log("Rechnungsentwurf", o.nr, e.message); }
     }
   }
   async function submittedRest(o) {
-    if (D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
+    if (D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
       detail: o.product.title + " · " + o.copies + " Stk. · " + (o.payment.method === "invoice" ? "Rechnung (Freigabe nötig)" : "bezahlt") + " · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
-    if (D.push) D.push("lead", { title: "Druckauftrag: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: o.nr + " · " + o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck – bitte persönlich prüfen" : "") + "\n" + (o.payment.method === "invoice" ? "Auf Rechnung – Freigabe nötig" : "Bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
+    if (D.push) D.push("lead", { title: "Druckauftrag: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: o.nr + " · " + o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck – bitte persönlich prüfen" : o.check === "graphic" ? " · Grafikaufbereitung – Grafik druckfertig machen und zur Freigabe senden" : "") + "\n" + (o.payment.method === "invoice" ? "Auf Rechnung – Freigabe nötig" : "Bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
     if (!o.mails.confirm) {
       o.mails.confirm = await mail(o.customer.email, "Bestellbestätigung " + o.nr + " · FS Creative Druck", "Danke für deine Bestellung!",
-        ["Hallo " + o.customer.firstName + ",", "wir haben deine Bestellung erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung bekommst du, sobald der Auftrag in Produktion geht.") + (o.check === "review" ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : o.check === "self" ? " Du hast deine Druckdaten direkt freigegeben – wir geben den Auftrag " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion." : " Du hast den Profi-Datencheck gewählt: Wir prüfen deine Druckdaten persönlich und melden uns bei Fragen, bevor gedruckt wird.")],
+        ["Hallo " + o.customer.firstName + ",", "wir haben deine Bestellung erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung bekommst du, sobald der Auftrag in Produktion geht.") + (o.check === "review" ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : o.check === "graphic" ? " Wir machen deine Grafik jetzt druckfertig und schicken sie dir vor dem Druck zur Freigabe – gedruckt wird erst, wenn du sie freigegeben hast." : o.check === "self" ? " Du hast deine Druckdaten direkt freigegeben – wir geben den Auftrag " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion." : " Du hast den Profi-Datencheck gewählt: Wir prüfen deine Druckdaten persönlich und melden uns bei Fragen, bevor gedruckt wird.")],
         orderRows(o), ["Den Versand bestätigen wir dir mit Sendungsverfolgung per E-Mail.",
           "Es gelten unsere AGB für den Druckshop (Stand " + deDate(AGB_VERSION) + "), die du bei der Bestellung akzeptiert hast: " + cfg().publicUrl + "/print/agb",
           "Hinweis: Da die Drucksachen nach deinen Vorgaben angefertigt werden, besteht kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG).",
           "Bei Fragen antworte einfach auf diese Mail."], D.notifyTo, 0) ? nowIso() : null;
-      if (D.notifyTo) await mail(D.notifyTo, "Druckshop: neue Bestellung " + o.nr + " – " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck" : ""), "Neue Bestellung im Druckshop", [(o.check === "pro" ? "PROFI-DATENCHECK gebucht: Druckdaten bitte persönlich prüfen (Format, Beschnitt, Auflösung, Texte am Rand), erst dann bestellen. " : "") + "Bitte im Cockpit unter „Druckaufträge“ prüfen und bei Print.com bestellen. Einkauf " + eur(o.price.purchase.total) + ", Marge " + eur(o.price.margin) + "."], orderRows(o).concat([["E-Mail", o.customer.email], ["Telefon", o.customer.phone]].concat(o.customer.uid ? [["UID", o.customer.uid + (o.customer.uidValid ? " (gültig)" : " (nicht bestätigt)")]] : [])), [], o.customer.email);
+      if (D.notifyTo) await mail(D.notifyTo, "Druckshop: neue Bestellung " + o.nr + " – " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck" : o.check === "graphic" ? " · Grafikaufbereitung" : ""), "Neue Bestellung im Druckshop", [(o.check === "pro" ? "PROFI-DATENCHECK gebucht: Druckdaten bitte persönlich prüfen (Format, Beschnitt, Auflösung, Texte am Rand), erst dann bestellen. " : o.check === "graphic" ? "DATENCHECK MIT GRAFIKAUFBEREITUNG gebucht: Grafik druckfertig machen, im Cockpit „Druckdaten austauschen“ und „Zur Freigabe senden“ – bestellt wird erst nach der Freigabe des Kunden. " : "") + "Bitte im Cockpit unter „Druckaufträge“ prüfen und bei Print.com bestellen. Einkauf " + eur(o.price.purchase.total) + ", Marge " + eur(o.price.margin) + "."], orderRows(o).concat([["E-Mail", o.customer.email], ["Telefon", o.customer.phone]].concat(o.customer.uid ? [["UID", o.customer.uid + (o.customer.uidValid ? " (gültig)" : " (nicht bestätigt)")]] : [])), [], o.customer.email);
       await store.putOrder(o);
     }
     const s = await settings();
     const direct = o.check === "self" && !(o.fileChecks || []).some(c => c.level === "error") && !(o.clientChecks || []).some(t => /wird sichtbar unscharf/.test(t));
     // Profi-Datencheck bezahlt → nie automatisch senden, Simon prüft persönlich (Bestellung D-261104-33V2 ging trotz „pro“ direkt raus)
-    if (((s.autoSend && o.check !== "pro") || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
+    if (((s.autoSend && o.check !== "pro" && o.check !== "graphic") || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
   // Status der Rechnung in der Buchhaltung ("100" Entwurf, "200" offen, "750" teilbezahlt, "1000" bezahlt); "" = unbekannt (alter Server/keine Antwort)
@@ -3859,9 +3859,13 @@ module.exports = function (D) {
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
   const J0 = J;
   const feedId = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8);   // wie im Merchant-Feed
+  // Freigabe vor dem Druck (Datencheck mit Grafikaufbereitung bzw. nach Datenaustausch durch Simon): aufbereitete Datei + Stand der Freigabe
+  const fileLink = id => "/print/api/file/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(sig("file", id)) + "&pdf=1";
+  const proofPublic = o => o.proof && o.proof.fileId ? { status: o.proof.status, sentAt: o.proof.sentAt, note: o.proof.note || "", answeredAt: o.proof.answeredAt || "", reply: o.proof.reply || "",
+    files: (o.proof.files || [o.proof.fileId]).map((id, i, a) => ({ url: fileLink(id), label: a.length > 1 ? "Motiv " + (i + 1) : "Druck-PDF" })) } : null;
   const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
-    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(),
+    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o),
     canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
     trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!foundOf(o) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
@@ -4196,6 +4200,24 @@ module.exports = function (D) {
         if (!buf) return J(res, 404, { ok: false, error: "Entwurf nicht gefunden (Entwürfe werden nach 60 Tagen gelöscht)" });
         let d = null; try { d = JSON.parse(Buffer.from(buf).toString("utf8")); } catch (e) {}
         return J(res, 200, { ok: true, draft: d });
+      }
+      // Druckfreigabe durch den Kunden (nur mit gültigem Bestell-Link): „Freigeben“ oder „Änderung wünschen“ mit Text – Simon bekommt Push und Mail, bestellt wird von ihm
+      const pfm = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/proof$/);
+      if (pfm && req.method === "POST") {
+        if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (!sigOk("order", pfm[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
+        if (limited("proof", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const o = await store.getOrder(pfm[1]); if (!o || !o.proof || !o.proof.fileId) return J(res, 404, { ok: false, error: "Keine Freigabe offen" });
+        if (o.proof.status !== "pending") return J(res, 409, { ok: false, error: o.proof.status === "approved" ? "Schon freigegeben – danke!" : "Deine Rückmeldung ist schon bei uns" });
+        const b = await readJson(req, 8000), op = b.op === "approve" ? "approve" : b.op === "change" ? "change" : "", text = clip(String(b.text || "").trim(), 2000);
+        if (!op) return J(res, 400, { ok: false, error: "op" }); if (op === "change" && text.length < 3) return J(res, 400, { ok: false, error: "Bitte kurz beschreiben, was geändert werden soll" });
+        o.proof.status = op === "approve" ? "approved" : "changes"; o.proof.answeredAt = nowIso(); if (text) o.proof.reply = text;
+        hist(o, op === "approve" ? "Druckfreigabe durch den Kunden" + (text ? ": " + text : "") : "Kunde wünscht Änderungen: " + text); stamp(o); await store.putOrder(o);
+        const who = o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ");
+        if (D.push) D.push("lead", { title: (op === "approve" ? "Druckfreigabe: " : "Änderungswunsch: ") + (who || o.nr), body: o.nr + " · " + o.product.title + (text ? "\n" + text.slice(0, 200) : "") + (op === "approve" ? "\nJetzt bei Print.com bestellen" : ""), url: "/admin#print", tag: "proof-" + o.id }).catch(() => {});
+        if (D.notifyTo) await mail(D.notifyTo, "Druckshop: " + (op === "approve" ? "Freigabe " : "Änderungswunsch ") + o.nr, op === "approve" ? "Kunde hat die Druckdaten freigegeben" : "Kunde wünscht Änderungen",
+          [(op === "approve" ? "Die aufbereiteten Druckdaten sind freigegeben – bitte im Cockpit unter „Druck“ bei Print.com bestellen." : "Bitte die Druckdaten anpassen, austauschen und erneut zur Freigabe senden.") + (text ? " Nachricht: " + text : "")], orderRows(o), [], o.customer.email).catch(() => {});
+        return J(res, 200, { ok: true, proof: proofPublic(o) });
       }
       // Feedback zur Bestellung (Bestellvorgang direkt danach, Drucksachen nach dem Versand): nur mit gültigem Bestell-Link
       const fbm = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/feedback$/);
@@ -4734,6 +4756,25 @@ module.exports = function (D) {
         return J(res, 200, Object.assign({ ok: true, product: prod.title }, fileView(meta)));
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
+      // Druckdaten austauschen (Profi-Datencheck / Grafikaufbereitung): Body = PDF, ?id=Bestellung[&motif=Index] – geprüft wie beim Kunden, alte Datei bleibt im Verlauf
+      if (p === "/admin/api/print/replace" && req.method === "POST") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) { req.resume(); return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" }); }
+        if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) { req.resume(); return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Austausch nicht mehr möglich" }); }
+        const mi = u.searchParams.get("motif"), motif = mi != null && mi !== "" && Array.isArray(o.motifs) && o.motifs.length > 1 ? parseInt(mi, 10) : -1;
+        if (motif !== -1 && !(motif >= 0 && motif < o.motifs.length)) { req.resume(); return J(res, 400, { ok: false, error: "Motiv unbekannt" }); }
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druckdaten.pdf")), 120).replace(/[\\/:*?"<>|]/g, "_");
+        const buf = await readBody(req, MAX_UPLOAD); if (sniff(buf) !== "pdf") return J(res, 415, { ok: false, error: "Bitte eine druckfertige PDF hochladen" });
+        const oldId = motif > -1 ? o.motifs[motif].fileId : o.fileId, old = await store.fileMeta(oldId) || {};
+        const target = { product: old.product || o.product.key, sel: old.sel, size: old.size, bleed: old.bleed, sides: old.sides, multi: false };
+        const info = await pdfInfoX(buf); if (info.encrypted) return J(res, 400, { ok: false, error: "Die PDF ist verschlüsselt/geschützt" }); target.pages = info.pages;
+        const checks = target.size ? checkPdf(info, target.size, target.bleed, target.sides, false) : [{ level: "warn", text: "Format ohne automatische Prüfung" }];
+        const fm = await newFile("replace", name, buf, target, checks, { orderId: o.id });
+        if (motif > -1) o.motifs[motif].fileId = fm.id; else { o.fileId = fm.id; o.fileChecks = checks; }
+        o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: oldId, new: fm.id, motif: motif > -1 ? motif : null, name: fm.name }]).slice(-30);
+        if (o.proof && o.proof.status !== "approved") o.proof.stale = true;   // neue Datei → Freigabe erneut senden
+        hist(o, "Druckdaten ausgetauscht (Cockpit)" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + fm.name); stamp(o); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o, file: { id: fm.id, name: fm.name, checks } });
+      }
       const b = await readJson(req, 100000);
       if (p === "/admin/api/print/brief") {   // Status („neu“ / „in Arbeit“ / „erledigt“) und Notiz einer Gestaltungsanfrage
         const all = await briefsGet(), x = all.find(z => z.id === String(b.id || "")); if (!x) return J(res, 404, { ok: false, error: "Anfrage nicht gefunden" });
@@ -4796,7 +4837,21 @@ module.exports = function (D) {
       if (p === "/admin/api/print/op") {
         if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bestätigung fehlt" });
         const id = String(b.id || ""); const op = String(b.op || "");
-        if (op === "place") { const o = await placeOrder(id, "Cockpit"); return J(res, 200, { ok: true, order: o }); }
+        if (op === "place") { const o0 = await store.getOrder(id);
+          if (o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" });
+          const o = await placeOrder(id, "Cockpit" + (b.force === true && o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
+        if (op === "proof") {   // aktuelle Druckdaten dem Kunden zur Freigabe senden (Mail mit Link zur Bestellseite: ansehen, freigeben oder Änderung wünschen)
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          if (!REVIEW[o.status] && !(o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) throw new Error("Schon bei Print.com bestellt");
+          const files = Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => m.fileId) : [o.fileId];
+          o.proof = { fileId: files[0], files, status: "pending", sentAt: nowIso(), note: clip(String(b.note || "").trim(), 2000), round: ((o.proof && o.proof.round) || 0) + 1 };
+          const link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#freigabe";
+          const sent = await mail(o.customer.email, "Bitte freigeben: deine Druckdaten · " + o.nr, "Deine Druckdaten sind bereit zur Freigabe",
+            [(o.customer.firstName ? "Hallo " + o.customer.firstName + "," : "Hallo,"), "wir haben deine Druckdaten für " + o.product.title + " (" + o.copies + " Stk.) " + (o.check === "graphic" ? "druckfertig aufbereitet" : "geprüft und angepasst") + ". Bitte sieh sie dir an und gib sie frei – erst dann geht der Auftrag in den Druck."].concat(o.proof.note ? ["Hinweis von uns: " + o.proof.note] : []),
+            [["Druckdaten ansehen & freigeben", link, "button"]], ["Passt etwas nicht? Dann wähle auf der Seite „Änderung wünschen“ und schreib kurz dazu, was wir ändern sollen."], D.notifyTo);
+          hist(o, "Druckdaten zur Freigabe gesendet" + (o.proof.round > 1 ? " (Runde " + o.proof.round + ")" : "") + (sent ? "" : " – Mail fehlgeschlagen")); stamp(o); await store.putOrder(o);
+          return J(res, 200, { ok: !!sent, order: o, error: sent ? undefined : "Mail an den Kunden fehlgeschlagen" });
+        }
         if (op === "payremind") { const n = await payReminderDue(id); return J(res, 200, { ok: n > 0, sent: n, error: n ? undefined : "Nicht gesendet (bezahlt, schon erinnert oder keine E-Mail)" }); }
         if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false); return J(res, 200, { ok: true, order: o }); }
         if (op === "complete") {   // manuell abschließen (z. B. aus den Aufträgen: „Erledigt“) – erst nach der Bestellung bei Print.com

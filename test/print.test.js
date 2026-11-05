@@ -839,6 +839,36 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "ordered", "direkt freigegeben → sofort bei Print.com"); assert.strictEqual(M.orders.length, nPc + 1);
   });
+  await t("Datencheck mit Grafikaufbereitung (+20 €): Druckdaten austauschen, zur Freigabe senden, Kunde gibt frei bzw. wünscht Änderung, erst dann bestellen", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "grafik@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
+    const u1 = await upload(await pdfOf(89, 59, 2), "g1.pdf", BC);
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "graphic" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "58.40", "+20 € Grafikaufbereitung");
+    const nPc = M.orders.length; M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.ok(/Grafikaufbereitung/.test(JSON.stringify(inv.invoicePosSave[1])), "eigene Rechnungszeile");
+    let st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "paid"); assert.strictEqual(st.order.proof, null); assert.strictEqual(M.orders.length, nPc, "nie automatisch");
+    // Austausch: nur PDF, ohne Login nicht
+    const put = (q, body, h) => fetch(B + "/admin/api/print/replace" + q, { method: "POST", headers: Object.assign({ cookie: COOKIE, "content-type": "application/pdf", "x-file-name": "neu.pdf" }, h || {}), body }).then(x => x.json());
+    assert.strictEqual((await put("?id=" + r.j.orderId, Buffer.from("kein pdf ".repeat(20)))).ok, false, "nur PDF");
+    const old = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order.fileId;
+    const rp = await put("?id=" + r.j.orderId, await pdfOf(89, 59, 2)); assert.strictEqual(rp.ok, true, JSON.stringify(rp)); assert.notStrictEqual(rp.order.fileId, old); assert.strictEqual(rp.order.fileHistory[0].old, old);
+    // Ohne Freigabe: Bestellen nur mit „trotzdem“
+    let pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, false); assert.strictEqual(pl.needForce, true);
+    // Zur Freigabe senden → Kunde sieht die Datei, wünscht Änderung
+    const pr = await admin("/admin/api/print/op", { op: "proof", id: r.j.orderId, note: "Beschnitt ergänzt", confirm: true }); assert.strictEqual(pr.ok, true, JSON.stringify(pr));
+    st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.proof.status, "pending"); assert.strictEqual(st.order.proof.note, "Beschnitt ergänzt");
+    const pdf = await fetch(B + st.order.proof.files[0].url); assert.strictEqual(pdf.status, 200); assert.ok((await pdf.text()).startsWith("%PDF"), "aufbereitete Datei abrufbar");
+    const pf = (body, tok) => post("/print/api/order/" + r.j.orderId + "/proof?t=" + (tok || r.j.token), body);
+    assert.strictEqual((await pf({ op: "approve" }, "falsch")).status, 404, "nur mit Bestell-Link");
+    assert.strictEqual((await pf({ op: "change", text: "" })).status, 400, "Änderung braucht Text");
+    let a1 = await pf({ op: "change", text: "Logo bitte größer" }); assert.strictEqual(a1.status, 200, JSON.stringify(a1.j)); assert.strictEqual(a1.j.proof.status, "changes");
+    assert.strictEqual((await pf({ op: "approve" })).status, 409, "nach Änderungswunsch erst neue Freigabe");
+    // Runde 2: senden, Kunde gibt frei → Bestellen ohne Rückfrage
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "proof", id: r.j.orderId, confirm: true })).order.proof.round, 2);
+    a1 = await pf({ op: "approve" }); assert.strictEqual(a1.j.proof.status, "approved");
+    pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl)); assert.strictEqual(M.orders.length, nPc + 1);
+    assert.strictEqual((await put("?id=" + r.j.orderId, await pdfOf(89, 59, 2))).ok, false, "nach der Bestellung kein Austausch mehr");
+  });
   await t("Mehrere Motive: Stückzahlen je Motiv, PDFs zusammengeführt, variants + Seitenzuordnung", async () => {
     const base = { customer: Object.assign({}, cust, { email: "motive@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
     const m1 = await upload(await pdfOf(89, 59, 2), "m1.pdf", BC), m2 = await upload(await pdfOf(89, 59, 2), "m2.pdf", BC);

@@ -176,9 +176,10 @@
     S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {}; motReset();
     toast("„" + it.title + "“ liegt im Warenkorb");
   }
-  var PRO_CHECK = 5;
+  var PRO_CHECK = 5, GRAPHIC_CHECK = 20;   // Datencheck: Profi (5 €) bzw. mit Grafikaufbereitung (20 €, Wunsch Simon 05.11.2026)
+  var checkFee = function () { return S.check === "graphic" ? GRAPHIC_CHECK : S.check === "pro" ? PRO_CHECK : 0; };
   function cartTotals(noFee) { var t = { net: 0, vat: 0, gross: 0, rate: null, missing: false }; S.cart.forEach(function (x) { if (!x.price) { t.missing = true; return; } t.net += +x.price.net || 0; t.vat += +x.price.vat || 0; t.gross += +x.price.gross || 0; if (x.designFee) { t.net += +x.designFee.net || 0; t.vat += +x.designFee.vat || 0; t.gross += +x.designFee.gross || 0; } if (t.rate == null) t.rate = x.price.rate; });
-    if (!noFee && S.check === "pro" && S.cart.length) { var fn = PRO_CHECK / (1 + (t.rate || 0) / 100); t.gross += PRO_CHECK; t.net += fn; t.vat += PRO_CHECK - fn; t.fee = PRO_CHECK; }
+    var cf = checkFee(); if (!noFee && cf && S.cart.length) { var fn = cf / (1 + (t.rate || 0) / 100); t.gross += cf; t.net += fn; t.vat += cf - fn; t.fee = cf; }
     ["net", "vat", "gross"].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; }); return t; }
   var rqSeq = 0;
   function requoteCart() {
@@ -2354,13 +2355,14 @@
     var saved = S.cart.reduce(function (a, x) { return a + (x.price && x.price.bonus ? +x.price.bonus.saved || 0 : 0); }, 0), dlab = (S.cart.filter(function (x) { return x.price && x.price.bonus; })[0] || { price: {} }).price.bonus;
     var warnN = S.cart.filter(function (x) { return x.warn; }).length;
     var chk = '<fieldset class="ps-pay ps-check" style="border:0;padding:0"><legend class="ps-lbl">Datencheck</legend>' +
-      '<label class="ps-radio"><input type="radio" name="check" value="self"' + (S.check !== "pro" ? " checked" : "") + '><span><b>Direkt freigeben · gratis</b><small>Schnellste Lieferung – die automatische Prüfung ' +
+      '<label class="ps-radio"><input type="radio" name="check" value="self"' + (S.check !== "pro" && S.check !== "graphic" ? " checked" : "") + '><span><b>Direkt freigeben · gratis</b><small>Schnellste Lieferung – die automatische Prüfung ' +
         (warnN ? "hat bei " + warnN + (warnN === 1 ? " Position Hinweise." : " Positionen Hinweise.") : "hat nichts gefunden.") + "</small></span></label>" +
       '<label class="ps-radio"><input type="radio" name="check" value="pro"' + (S.check === "pro" ? " checked" : "") + '><span><b>Profi-Datencheck · ' + eur(PRO_CHECK) + '</b><small>Wir sehen uns deine Daten persönlich an und melden uns vor dem Druck – ca. 1 Werktag länger.</small></span></label>' +
-      (warnN && S.check !== "pro" ? '<p class="ps-check-warn">⚠ Bei ' + warnN + (warnN === 1 ? " Datei gibt" : " Dateien gibt") + " es Hinweise. Wir empfehlen den Profi-Datencheck – oder prüfe die Datei selbst noch einmal.</p>" : "") + "</fieldset>";
+      '<label class="ps-radio"><input type="radio" name="check" value="graphic"' + (S.check === "graphic" ? " checked" : "") + '><span><b>Datencheck mit Grafikaufbereitung · ' + eur(GRAPHIC_CHECK) + '</b><small>Deine Datei passt noch nicht ganz? Wir machen sie druckfertig (Format, Beschnitt, Auflösung, Farben, Schriften) und schicken sie dir vor dem Druck zur Freigabe – ca. 1–2 Werktage länger.</small></span></label>' +
+      (warnN && S.check !== "pro" && S.check !== "graphic" ? '<p class="ps-check-warn">⚠ Bei ' + warnN + (warnN === 1 ? " Datei gibt" : " Dateien gibt") + " es Hinweise. Wir empfehlen den Profi-Datencheck – oder, wenn du schon weißt, dass die Datei nicht passt, den Datencheck mit Grafikaufbereitung.</p>" : "") + "</fieldset>";
     var vch = '<details class="ps-voucher"' + (S.voucher || S.voucherErr ? " open" : "") + '><summary class="ps-lbl">Gutscheincode einlösen</summary><div class="ps-uidrow"><input id="psVoucher" value="' + esc(S.voucher || "") + '" placeholder="z. B. WILLKOMMEN10" autocapitalize="characters" autocomplete="off"><button type="button" class="ps-btn small" data-act="voucher">' + (S.voucher ? "Ändern" : "Einlösen") + "</button>" + (S.voucher ? '<button type="button" class="ps-link" data-act="voucher:clear">entfernen</button>' : "") + "</div>" +
       (S.voucherErr ? '<span class="hint bad">' + esc(S.voucherErr) + "</span>" : S.voucherOk ? '<span class="hint ok">✓ ' + esc(S.voucherOk) + "</span>" : "") + "</details>";
-    if (t.fee && !S.quoting) money = '<div><span>Profi-Datencheck</span><b>' + eur(co ? t.fee / (1 + (t.rate || 0) / 100) : t.fee) + "</b></div>" + money;
+    if (t.fee && !S.quoting) money = '<div><span>' + (S.check === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + '</span><b>' + eur(co ? t.fee / (1 + (t.rate || 0) / 100) : t.fee) + "</b></div>" + money;
     var capN = S.cart.filter(function (x) { return x.price && x.price.bonus && x.price.bonus.capped; }).length;
     if (saved > 0 && !S.quoting) money = '<div class="ps-save"><span>' + esc(dlab ? dlab.tier : "Rabatt") + '</span><b>− ' + eur(co ? saved : saved * (1 + (t.rate || 0) / 100)) + "</b></div>" + money;
     if (capN && !S.quoting) money = '<p class="ps-bonus-tag best">★ ' + (capN === S.cart.length ? "Bester Preis – derzeit kein " + (saved > 0 ? "höherer " : "") + "Rabatt möglich" : capN + " Position" + (capN > 1 ? "en" : "") + " schon zum besten Preis – dort derzeit kein höherer Rabatt möglich") + "</p>" + money;
@@ -2540,7 +2542,7 @@
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
     if (t.id === "psPfvT") { S.pfvOff = !t.checked; pfvRender(); return; }
-    if (t.name === "check") { S.check = t.value === "pro" ? "pro" : "self"; render(); return; }
+    if (t.name === "check") { S.check = t.value === "pro" ? "pro" : t.value === "graphic" ? "graphic" : "self"; render(); return; }
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
@@ -2782,7 +2784,7 @@
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
-      check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, origin: ORIGIN, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
+      check: S.check === "pro" || S.check === "graphic" ? S.check : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, origin: ORIGIN, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {
       S.busy = false;
       if (j.status === 409 && j.price) { var x = S.cart[j.index || 0]; if (x) { x.price = Object.assign({}, x.price, { gross: j.price.gross, net: j.price.net, vat: j.price.vat, rate: j.price.rate }); cartSave(true); }
@@ -2822,7 +2824,7 @@
     else if (st === "problem") { r.key = "problem"; r.icon = "⏳"; r.title = "Wir klären gerade etwas zu deiner Bestellung";
       r.html = p("Bei deiner Bestellung ist eine Rückfrage aufgetaucht. Wir kümmern uns darum und melden uns spätestens am nächsten Werktag bei dir\u00a0– du musst vorerst nichts tun.") + p("Dadurch kann sich die Lieferung etwas verschieben. " + contact); }
     else if (fresh) { r.key = "fresh"; r.icon = "🎉"; r.title = "Danke für deine Bestellung!";
-      r.html = p((pay.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die " + nw("Rechnung kommt per E-Mail") + "." : "Die Zahlung ist eingegangen. " + (st === "paid" && (o.check === "pro" || o.check === "review") ? "Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion." : "Deine Druckdaten gehen jetzt " + (st === "paid" ? "direkt " : "") + "in Produktion.")) +
+      r.html = p((pay.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die " + nw("Rechnung kommt per E-Mail") + "." : "Die Zahlung ist eingegangen. " + (st === "paid" && o.check === "graphic" ? "Wir machen deine Grafik jetzt druckfertig und schicken sie dir zur Freigabe – gedruckt wird erst danach." : st === "paid" && (o.check === "pro" || o.check === "review") ? "Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion." : "Deine Druckdaten gehen jetzt " + (st === "paid" ? "direkt " : "") + "in Produktion.")) +
         " Eine Bestätigung ist unterwegs an\u00a0" + nw(F.esc(o.email)) + ".") + (exp ? p("Lieferung voraussichtlich " + exp + later) : ""); }
     else if (st === "ordered" || st === "in_production") { r.key = "production"; r.icon = "🖨️"; r.title = "Deine Drucksachen sind in Produktion";
       r.html = p(exp ? "Lieferung voraussichtlich " + exp + later : "Sobald dein Paket unterwegs ist, bekommst du eine " + nw("E-Mail") + " mit der Sendungsverfolgung."); }
@@ -2866,9 +2868,9 @@
     var hd = statusHead(o, SF, Date.now()), k = hd.key;
     if (k === "fresh" && o.nr) { GT_PEND = o; gtFlush(); }
     LIVE.o = o; LIVE.id = id; LIVE.t = t;
-    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t);
+    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t), pf = k === "pay" || k === "rejected" ? "" : proofHtml(o, id, t);
     var body = k === "pay" ? '<div class="btn-row" style="justify-content:center"><button type="button" class="ps-btn primary" data-act="retrypay:' + esc(id) + "|" + esc(t) + '">Erneut bezahlen</button></div>'
-      : k === "rejected" ? "" : k === "shipped" ? tc + tr + fb : k === "delivered" ? fb + tr + tc : tr + tc + fb;
+      : k === "rejected" ? "" : k === "shipped" ? tc + tr + fb : k === "delivered" ? fb + tr + tc : pf + tr + tc + fb;
     var h = '<div class="big" aria-hidden="true">' + hd.icon + "</div><h2>" + hd.title + "</h2>" + (k === "pay" ? "" : hd.sub) + hd.html + body +
       (o.groupSize > 1 && k !== "pay" && k !== "rejected" ? '<p class="pd-muted ps-grp">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
       (k === "pay" ? "" : '<div class="btn-row ps-sbtns"><a class="ps-btn" href="/print">' + (k === "rejected" || k === "problem" ? "Zum Shop" : "Weitere Drucksachen bestellen") + "</a>" + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>");
@@ -2878,7 +2880,30 @@
     if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
     root.innerHTML = '<div class="ps-panel ps-status st-' + k + '" data-oid="' + esc(id) + '" data-t="' + esc(t) + '" data-st="' + esc(o.status) + '" data-sig="' + esc(liveSig(o)) + '">' + h + "</div>";
     headUpdate();   // Bestellseite: in der Handy-Leiste nicht „Start“ markieren
+    if (location.hash === "#freigabe" && !S.pfScrolled) { var pfx = document.getElementById("freigabe"); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); }, 150); } }
   }
+  // Druckfreigabe (Wunsch Simon 05.11.2026): aufbereitete bzw. ausgetauschte Druckdaten ansehen und freigeben – oder Änderung wünschen
+  function proofHtml(o, id, t) {
+    var pf = o.proof; if (!pf) return "";
+    var files = (pf.files || []).map(function (f) { return '<a class="ps-btn small" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ");
+    if (pf.status === "approved") return '<div class="ps-proof ok" id="freigabe"><h3>✓ Druckdaten freigegeben</h3><p>Danke! Wir geben deinen Auftrag jetzt in den Druck.</p><p>' + files + "</p></div>";
+    if (pf.status === "changes") return '<div class="ps-proof" id="freigabe"><h3>Änderungswunsch ist angekommen</h3><p>Wir passen die Druckdaten an und schicken sie dir erneut zur Freigabe.' + (pf.reply ? "<br><i>„" + esc(pf.reply) + "“</i>" : "") + "</p></div>";
+    return '<div class="ps-proof warn" id="freigabe" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte deine Druckdaten freigeben</h3><p>Wir haben deine Druckdaten ' + (o.check === "graphic" ? "druckfertig aufbereitet" : "geprüft und angepasst") + '. Sieh sie dir bitte an – gedruckt wird erst nach deiner Freigabe.</p>' +
+      (pf.note ? '<p class="ps-proof-n"><b>Hinweis von uns:</b> ' + esc(pf.note) + "</p>" : "") + "<p>" + files + "</p>" +
+      '<div class="btn-row"><button type="button" class="ps-btn primary" data-pfok>Druckdaten freigeben</button><button type="button" class="ps-btn" data-pfchg>Änderung wünschen</button></div>' +
+      '<div class="ps-proof-c" hidden><textarea rows="3" maxlength="2000" placeholder="Was sollen wir ändern?" aria-label="Was sollen wir ändern?"></textarea><button type="button" class="ps-btn small" data-pfsend>Änderungswunsch senden</button></div><p class="ps-err" role="alert" hidden></p></div>';
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-pfok],[data-pfchg],[data-pfsend]"); if (!b) return;
+    var bx = b.closest(".ps-proof"), err = bx.querySelector(".ps-err"), c = bx.querySelector(".ps-proof-c");
+    if (b.hasAttribute("data-pfchg")) { c.hidden = !c.hidden; if (!c.hidden) c.querySelector("textarea").focus(); return; }
+    var body = b.hasAttribute("data-pfok") ? { op: "approve" } : { op: "change", text: c.querySelector("textarea").value };
+    b.disabled = true; err.hidden = true;
+    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/proof?t=" + encodeURIComponent(bx.getAttribute("data-t")), body).then(function (j) {
+      if (j.ok) { if (LIVE.o) { LIVE.o.proof = j.proof; bx.outerHTML = proofHtml(LIVE.o, LIVE.id, LIVE.t); } return; }
+      err.textContent = j.error || "Hat nicht geklappt – bitte später erneut versuchen."; err.hidden = false; b.disabled = false;
+    }).catch(function () { err.textContent = "Hat nicht geklappt – bitte später erneut versuchen."; err.hidden = false; b.disabled = false; });
+  });
   // Feedback (Wunsch Simon 19.10.2026): direkt nach der Bestellung zum Bestellvorgang, nach dem Versand zu den Drucksachen.
   // Danach – für alle, unabhängig von den Sternen (Google verbietet Bewertungs-Filter) – „Auch auf Google bewerten“, wenn ein Link hinterlegt ist.
   var FOUND = ["Google-Suche", "Google Maps", "Empfehlung", "Instagram", "Facebook", "Flyer/Werbung", "Schon Kunde", "Sonstiges"];
@@ -2981,7 +3006,7 @@
   }
   // Status leise aktualisieren: alle ~2 min, nur bei sichtbarem Tab und offenen Bestellungen; wer gerade tippt oder bewertet, wird nicht gestört
   var LIVE = { at: 0 }, LIVE_OPEN = ["paid", "invoice_requested", "ordered", "in_production", "shipped", "problem"];
-  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0].join("|"); }
+  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0, o.proof ? o.proof.status + o.proof.sentAt : ""].join("|"); }
   function liveBusy() {
     var a = document.activeElement; if (a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
     if (root.querySelector('.ps-fb[data-r], .ps-fb [aria-pressed="true"]')) return true;
