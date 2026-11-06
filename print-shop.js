@@ -1274,6 +1274,8 @@ module.exports = function (D) {
     PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 20000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 4000); old.forEach(k => PRICE_CACHE.delete(k)); }
     return v;
   }
+  // Mitbewerber in der Quellenangabe eines Preisankers – ab zwei Quellen ist der Anker der günstigste Marktpreis
+  const ANC_SRC = [/druck\.at/i, /flyeralarm/i, /saxoprint/i, /onlineprinters/i, /bannerstop/i];
   const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
   async function quote(prod, n, country, postcode, cust) {
     if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
@@ -1286,9 +1288,10 @@ module.exports = function (D) {
     // Mindestmarge immer NACH Zahlungsgebühr (Mollie, konservativ: Kreditkarte) – netto ≥ (Einkauf × (1 + min %) + Fixgebühr) / (1 − (1 + USt) × Gebühr %)
     const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (gmUp != null ? gmUp : s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
-    let ancX = false;
+    let ancX = false, ancMulti = false;
     const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
+      ancMulti = ANC_SRC.filter(rx => rx.test(String(a.src || ""))).length >= 2;
       // Zusatzoptionen (Stanzung, Veredelung, Bohrloch, Bündelung …), die der Vergleich nicht kennt: Vergleichspreis gilt nicht (sonst drückt der Standardpreis z. B. die Stanzung auf die Mindestmarge)
       if (Object.keys(n.sel).some(k => (OPT_EXTRA.test(k) || EXTRA_PROPS.test(k)) && !(k in a.sig) && n.sel[k] != null && String(n.sel[k]) !== NONE_OPT && !NONE_SLUG.test(String(n.sel[k])))) return 0;
       // Über der größten verglichenen Auflage: mit deren Stückpreis weiterrechnen – sonst fällt der Anker weg und 750 Stk. kosten mehr als 3 × 250 (Simon 03.11.2026).
@@ -1315,7 +1318,9 @@ module.exports = function (D) {
     const gapW = s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, ancNetW = ancGross && !ancSmall && gapW > gap0 ? (ancGross - gapW) / (1 + 20 / 100) : 0;
     // Mit Mitbewerberpreis darf die Marge bis auf anchorMinPct (Standard 5 % vom Nettopreis nach Gebühr, Freigabe Simon 19.10.2026) sinken, damit wir knapp darunter bleiben
     const ancMin = s.anchorMinPct != null && isFinite(+s.anchorMinPct) ? +s.anchorMinPct : 5, ancUp = ancMin / (100 - ancMin) * 100 / (1 - 1.2 * fee.pct / 100);
-    const floorA = b => gmUp == null && ancNet ? ((b.product + b.shipping) * (1 + Math.min(ancUp, s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100) : floorOf(b);
+    // Erreichen wir den Mitbewerber selbst mit anchorMinPct nicht, bringt der Nachlass nichts: dann normale Mindestmarge (Wunsch Simon 06.11.2026, z. B. 10 000 Flyer)
+    const floorA = b => gmUp == null && ancNet && !(ancOf(b) < floor5(b)) ? floor5(b) : floorOf(b);
+    const floor5 = b => ((b.product + b.shipping) * (1 + Math.min(ancUp, s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Große Aufträge ohne Mitbewerberpreis: Aufschlag sinkt ab bulkFrom € Einkauf linear bis auf bulkFactor × Aufschlag bei bulkTo € (Standard 150 € → 1 500 €: 30 % → 12 %)
     const bulkF = b => { if (gmUp != null || ov.markupPct != null) return 1; const t = b.product + b.shipping, a = s.bulkFrom != null ? +s.bulkFrom : 150, z = s.bulkTo != null ? +s.bulkTo : 1500, f = s.bulkFactor != null ? +s.bulkFactor : 0.4;
       return t <= a ? 1 : t >= z ? f : 1 - (1 - f) * (t - a) / (z - a); };
@@ -1324,7 +1329,8 @@ module.exports = function (D) {
     const ancOf = b => ancNetW && ancNetW >= floorOf(b) ? ancNetW : ancNet;
     // Ein Mitbewerberpreis hebt unseren Preis höchstens anchorRaiseMaxPct (Standard 25 %) über den normalen Aufschlag – eine teure Einzelquelle soll uns nicht teuer machen
     const mkp = b => Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping, raiseMax = s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25;
-    const ancCap = b => { const a = ancOf(b); return a ? Math.min(a, mkp(b) * (1 + (ancX ? 0 : raiseMax) / 100)) : 0; };
+    // Vergleichspreis aus mehreren Anbietern = schon der günstigste Markt­preis: keine 25-%-Grenze, knapp darunter (Wunsch Simon 06.11.2026, z. B. A1-Plakate)
+    const ancCap = b => { const a = ancOf(b); return a ? (ancMulti && !ancX ? a : Math.min(a, mkp(b) * (1 + (ancX ? 0 : raiseMax) / 100))) : 0; };
     // Viel günstiger als der Mitbewerber (Wunsch Simon 04.11.2026, alle Artikel): liegt unser normaler Bruttopreis mehr als cheapBelowPct (45 %) unter dem Anker,
     // rechnen wir mit cheapMarginPct (35 %) Marge vom Nettopreis – nie über dem Anker abzüglich Abstand, die 25-%-Grenze gilt hier nicht
     const cheapB = s.cheapBelowPct != null && isFinite(+s.cheapBelowPct) ? +s.cheapBelowPct : 45, cheapM = s.cheapMarginPct != null && isFinite(+s.cheapMarginPct) ? +s.cheapMarginPct : 35;
