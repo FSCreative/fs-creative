@@ -8,7 +8,7 @@
   // Live-Besucher fürs Cockpit (auf allen /print-Seiten, auch Preise/Ratgeber/Hilfe): anonymes Lebenszeichen alle 25 s, im Hintergrund-Tab jede Minute (Zufalls-ID nur für diesen Tab in sessionStorage, kein Cookie, nichts Persönliches)
   (function () { var sid = ""; try { sid = sessionStorage.getItem("psSid") || ""; if (!sid) { sid = Math.random().toString(36).slice(2, 12) + Date.now().toString(36); sessionStorage.setItem("psSid", sid); } } catch (e) { sid = Math.random().toString(36).slice(2, 14) + "t"; }
     var lastBg = 0, beat = function (bye) { var bg = document.hidden && !bye; if (bg) { if (Date.now() - lastBg < 55000) return; lastBg = Date.now(); } try { fetch("/print/api/hb", { method: "POST", keepalive: true, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" },
-      body: JSON.stringify({ sid: sid, path: location.pathname, step: S ? S.step || 0 : 0, prod: S && S.prod ? S.prod.title : "", view: S ? S.view || "" : "", cart: S ? (S.cart || []).length : 0, items: S ? (S.cart || []).slice(0, 8).map(function (x) { return { t: String(x.title || "").slice(0, 60), n: +x.n || 0, u: x.unit || "", g: x.price ? +x.price.gross || 0 : 0 }; }) : [], bg: bg, bye: !!bye }) }).then(function (r) { return r.json(); }).then(function (j) { if (!j || !S || bye) return; var ch = S.liveSame !== j.same || S.liveWeek !== j.week; S.liveSame = +j.same || 0; S.liveWeek = +j.week || 0; if (ch && !document.hidden) renderPrice(); }).catch(function () {}); } catch (e) {} };
+      body: JSON.stringify({ sid: sid, path: location.pathname, step: S ? S.step || 0 : 0, prod: S && S.prod ? S.prod.title : "", view: S ? S.view || "" : "", cart: S ? (S.cart || []).length : 0, ord: !!(S && S.ordered), pay: S ? S.payment || "" : "", items: S ? (S.cart || []).slice(0, 8).map(function (x) { return { t: String(x.title || "").slice(0, 60), n: +x.n || 0, u: x.unit || "", g: x.price ? +x.price.gross || 0 : 0 }; }) : [], bg: bg, bye: !!bye }) }).then(function (r) { return r.json(); }).then(function (j) { if (!j || !S || bye) return; var ch = S.liveSame !== j.same || S.liveWeek !== j.week; S.liveSame = +j.same || 0; S.liveWeek = +j.week || 0; if (ch && !document.hidden) renderPrice(); }).catch(function () {}); } catch (e) {} };
     setTimeout(beat, 1500); setInterval(beat, 25000); document.addEventListener("visibilitychange", function () { if (!document.hidden) beat(); }); window.addEventListener("pagehide", function () { beat(true); });
   })();
   var root = document.getElementById("shop");
@@ -78,6 +78,7 @@
     S.cat = c; window.PrintShop.ai = !!c.ai; gtInit(); fixLabels(c.products); if (XM_HTML) S.view = "xmas";
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
+    if (q.get("wk") && q.get("t")) return cartRestore(q.get("wk"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.has("themen") || q.get("thema") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.theme = q.has("themen") ? "*" : q.get("thema") || ""; if (S.theme) S.page = "produkte"; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; S.cg = (function (v) { var m = String(v || "").match(/^(type|brand)-(.+)$/); return m ? m[1] + ":" + m[2] : ""; })(q.get("auswahl")); }
     var pm = location.pathname.match(/^\/print\/([a-z0-9-]+)\/?$/), pk = q.get("produkt") || (pm && (c.products.filter(function (p) { return p.slug === pm[1]; })[0] || {}).key);   // sprechende Adresse /print/<slug>
     if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { if (!q.get("angebot")) toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); if (q.get("angebot")) offerLoad(q.get("angebot"));
@@ -191,6 +192,23 @@
     var cf = checkFee(); if (!noFee && cf && S.cart.length) { var fn = cf / (1 + (t.rate || 0) / 100); t.gross += cf; t.net += fn; t.vat += cf - fn; t.fee = cf; }
     ["net", "vat", "gross"].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; }); return t; }
   var rqSeq = 0;
+  /* Warenkorb-Erinnerung (Wunsch Simon 06.11.2026, nur mit Häkchen): Warenkorb ohne Vorschaubilder auf dem Server merken – kommt keine Bestellung,
+     schickt der Server nach 3 Stunden EINE Mail mit Link (/print?wk=…&t=…), der den Warenkorb wiederherstellt */
+  function cartRemind() {
+    if (!S.cart.length || !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(S.customer.email || "")) return;
+    var items = S.cart.map(function (x) { var y = JSON.parse(JSON.stringify(x)); delete y.preview; if (y.motifs) y.motifs.forEach(function (m) { delete m.preview; }); return y; });
+    api("/print/api/cartremind", { email: S.customer.email, firstName: S.customer.firstName || "", on: !!S.crOpt, items: items }).catch(function () {});
+  }
+  function cartRestore(id, t) {
+    api("/print/api/cartremind?id=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(t), null, "GET").then(function (j) {
+      try { history.replaceState(null, "", "/print?warenkorb"); } catch (e) {}
+      if (!j.ok || !Array.isArray(j.items)) { toast(j.error || "Warenkorb nicht mehr verfügbar", true); go(4, true); return; }
+      var have = {}; S.cart.forEach(function (x) { have[x.fileId + "|" + x.product + "|" + x.copies] = 1; });
+      var add = viaUs(j.items).filter(function (x) { return x && x.product && x.fileId && !have[x.fileId + "|" + x.product + "|" + x.copies] && prodByKey(x.product); });
+      S.cart = S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
+      toast(add.length ? "Dein Warenkorb ist wieder da – Preise werden aktualisiert" : "Dein Warenkorb ist schon da"); go(4, true); requoteCart();
+    }).catch(function () { go(4, true); });
+  }
   function requoteCart() {
     var seq = ++rqSeq; S.quoting = S.cart.length; S.cartErr = {};
     S.cart.forEach(function (x) {
@@ -893,7 +911,9 @@
     if (!next.length && !part.length) return;
     api("/print/api/deltas", Object.assign(cfgOf(), { country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", alts: next.concat(part).map(function (t) { return { k: "q" + t, sel: S.sel, copies: t }; }) })).then(function (j) {
       if (my !== tierSeq || !j.ok || !S.price) return; var co = S.ctype === "company", tot = co ? S.price.net : S.price.gross, cur = tot / n, best = null, split = null;
-      next.forEach(function (t) { var d = j.d && j.d["q" + t]; if (!d || d.off || d.busy || !(d.ag > 0)) return; var u = (co ? d.an : d.ag) / t, sv = 1 - u / cur; if (sv >= 0.08 && (!best || sv > best.sv + 0.04)) best = { n: t, unit: u, sv: sv, total: co ? d.an : d.ag }; });
+      next.forEach(function (t) { var d = j.d && j.d["q" + t]; if (!d || d.off || d.busy || !(d.ag > 0)) return; var u = (co ? d.an : d.ag) / t, sv = 1 - u / cur; if (sv >= 0.08 && (!best || sv > best.sv + 0.04)) best = { n: t, unit: u, sv: sv, total: co ? d.an : d.ag };
+        // Staffel-Sprung (Wunsch Simon 06.11.2026): kostet die größere Auflage insgesamt nicht mehr (z. B. 500 Flyer günstiger als 250, andere Druckart) – klar darauf hinweisen
+        var tt = co ? d.an : d.ag; if (tt <= tot + 0.005 && (!best || !best.more || tt < best.total)) best = { n: t, unit: u, sv: sv, total: tt, more: true, save: tot - tt }; });
       part.forEach(function (t) { var d = j.d && j.d["q" + t]; if (!d || d.off || d.busy || !(d.ag > 0)) return; var k = n / t, sum = k * (co ? d.an : d.ag), save = tot - sum; if (save >= Math.max(1, tot * 0.01) && (!split || save > split.save)) split = { t: t, k: k, sum: sum, save: save }; });
       if (best || split) { S.tierHint = best; S.splitHint = split; var b = document.getElementById("psPrice"); if (b) renderPrice(); }
     }).catch(function () {});
@@ -903,6 +923,8 @@
       (S.price.freight ? "Grund: Ab dieser Menge wird per Spedition statt per Paketdienst geliefert, das ist deutlich teurer." : "Grund: Bei dieser Menge ist die Produktion bzw. der Versand pro Stück teurer.") +
       ' <button type="button" class="ps-link" data-act="settier:' + sp.t + '">' + sp.t.toLocaleString("de-AT") + "\u00a0" + U() + " übernehmen</button> und " + sp.k + "× in den Warenkorb legen.</p>" : "";
     if (!h) return spH;
+    if (h.more) return spH + '<p class="ps-tierhint ps-tiermore">🔥 Mehr für weniger: <b>' + h.n.toLocaleString("de-AT") + "\u00a0" + U() + "</b> kosten nur <b>" + eur(h.total) + "</b> " + (co ? "netto" : "inkl. USt") + (h.save >= 0.01 ? " – " + eur(h.save) + " weniger als deine Menge" : " – gleich viel wie deine Menge") + ". Grund: Ab dieser Auflage wird günstiger produziert. " +
+      '<button type="button" class="ps-link" data-act="settier:' + h.n + '">' + h.n.toLocaleString("de-AT") + "\u00a0" + U() + " übernehmen</button></p>";
     return spH + '<p class="ps-tierhint">💡 Ab <b>' + h.n.toLocaleString("de-AT") + "\u00a0" + U() + "</b> nur <b>" + (h.unit < 1 ? "€\u00a0" + h.unit.toLocaleString("de-AT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : eur(h.unit)) + "</b> pro " + (U() === "m" ? "Meter" : "Stück") + " (" + Math.round(h.sv * 100) + " % günstiger, gesamt " + eur(h.total) + " " + (co ? "netto" : "inkl. USt") + ') <button type="button" class="ps-link" data-act="settier:' + h.n + '">übernehmen</button></p>'; }
   /* ── Verkaufshilfen (Wunsch Simon 03.11.2026) – nur ehrliche, echte Angaben ──
      1 Tab-Titel im Hintergrund · 2 Angebot per Mail · 3 Liefertermin mit Annahmeschluss 14:00
@@ -2390,6 +2412,7 @@
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
+      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psCrOpt"' + (S.crOpt ? " checked" : "") + '><span>Falls ich heute nicht fertig bestelle: Erinnert mich einmal per E-Mail an meinen Warenkorb (freiwillig, nur diese eine Mail).</span></label>' +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psFbOpt"' + (S.fbOpt ? " checked" : "") + '><span>Nach der Lieferung darf ich einmal per E-Mail um eine kurze Bewertung gebeten werden (freiwillig).</span></label>' +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
   }
@@ -2839,6 +2862,7 @@
     if (bad.length) { document.getElementById("psAddrErr").textContent = "Bitte prüfen: " + bad.map(function (k) { return names[k]; }).join(", "); var first = f.elements[bad[0]]; if (first) first.focus(); return; }
     if (S.ctype === "company" && S.uid && !S.uidRes) { uidCheck(); }
     var nlo = document.getElementById("psNlOpt"); S.nlOpt = !!(nlo && nlo.checked);
+    var cro = document.getElementById("psCrOpt"); S.crOpt = !!(cro && cro.checked); cartRemind();
     var fbo = document.getElementById("psFbOpt"); S.fbOpt = !!(fbo && fbo.checked);
     if (S.nlOpt && !S.nlSent) { S.nlSent = true; api("/print/api/newsletter", { email: c.email, consent: true, source: "Kasse" }).catch(function () {}); }
     requoteCart(); go(6);
@@ -2861,7 +2885,7 @@
       if (j.status === 409 && j.price) { var x = S.cart[j.index || 0]; if (x) { x.price = Object.assign({}, x.price, { gross: j.price.gross, net: j.price.net, vat: j.price.vat, rate: j.price.rate }); cartSave(true); }
         S.err = "Der Preis für „" + (x ? x.title : "eine Position") + "“ hat sich gerade geändert (neu: " + eur(S.ctype === "company" ? j.price.net : j.price.gross) + "). Bitte prüfen und erneut bestellen."; render(); return; }
       if (!j.ok) { S.err = j.error || "Bestellung fehlgeschlagen"; render(); return; }
-      S.cart = []; cartSave(); S.accept = {}; S.newPw = ""; S.voucher = ""; S.voucherOk = "";
+      S.ordered = true; S.cart = []; cartSave(); S.accept = {}; S.newPw = ""; S.voucher = ""; S.voucherOk = "";
       try { if (j.accountCreated) localStorage.setItem("fsc-print-verify", S.customer.email); } catch (e) {}
       if (j.checkoutUrl) { location.href = j.checkoutUrl; return; }
       try { history.replaceState(null, "", "/print?bestellung=" + encodeURIComponent(j.orderId) + "&t=" + encodeURIComponent(j.token)); } catch (e) {}

@@ -1275,8 +1275,6 @@ module.exports = function (D) {
     return v;
   }
   // Mitbewerber in der Quellenangabe eines Preisankers – ab zwei Quellen ist der Anker der günstigste Marktpreis
-  // Beide Preisregeln vom 06.11. gelten erst ab Montag 09.11.2026 (Simon hat am 06.11. ein Angebot für 10 000 Flyer zum bisherigen Preis verschickt)
-  const RULES_0611 = () => Date.now() >= Date.parse("2026-11-09T06:00:00+01:00");
   const ANC_SRC = [/druck\.at/i, /flyeralarm/i, /saxoprint/i, /onlineprinters/i, /bannerstop/i];
   const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
   async function quote(prod, n, country, postcode, cust) {
@@ -1293,7 +1291,7 @@ module.exports = function (D) {
     let ancX = false, ancMulti = false;
     const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
-      ancMulti = RULES_0611() && ANC_SRC.filter(rx => rx.test(String(a.src || ""))).length >= 2;
+      ancMulti = ANC_SRC.filter(rx => rx.test(String(a.src || ""))).length >= 2;
       // Zusatzoptionen (Stanzung, Veredelung, Bohrloch, Bündelung …), die der Vergleich nicht kennt: Vergleichspreis gilt nicht (sonst drückt der Standardpreis z. B. die Stanzung auf die Mindestmarge)
       if (Object.keys(n.sel).some(k => (OPT_EXTRA.test(k) || EXTRA_PROPS.test(k)) && !(k in a.sig) && n.sel[k] != null && String(n.sel[k]) !== NONE_OPT && !NONE_SLUG.test(String(n.sel[k])))) return 0;
       // Über der größten verglichenen Auflage: mit deren Stückpreis weiterrechnen – sonst fällt der Anker weg und 750 Stk. kosten mehr als 3 × 250 (Simon 03.11.2026).
@@ -1321,7 +1319,7 @@ module.exports = function (D) {
     // Mit Mitbewerberpreis darf die Marge bis auf anchorMinPct (Standard 5 % vom Nettopreis nach Gebühr, Freigabe Simon 19.10.2026) sinken, damit wir knapp darunter bleiben
     const ancMin = s.anchorMinPct != null && isFinite(+s.anchorMinPct) ? +s.anchorMinPct : 5, ancUp = ancMin / (100 - ancMin) * 100 / (1 - 1.2 * fee.pct / 100);
     // Erreichen wir den Mitbewerber selbst mit anchorMinPct nicht, bringt der Nachlass nichts: dann normale Mindestmarge (Wunsch Simon 06.11.2026, z. B. 10 000 Flyer)
-    const floorA = b => gmUp == null && ancNet && (!RULES_0611() || !(ancOf(b) < floor5(b))) ? floor5(b) : floorOf(b);
+    const floorA = b => gmUp == null && ancNet && !(ancOf(b) < floor5(b)) ? floor5(b) : floorOf(b);
     const floor5 = b => ((b.product + b.shipping) * (1 + Math.min(ancUp, s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Große Aufträge ohne Mitbewerberpreis: Aufschlag sinkt ab bulkFrom € Einkauf linear bis auf bulkFactor × Aufschlag bei bulkTo € (Standard 150 € → 1 500 €: 30 % → 12 %)
     const bulkF = b => { if (gmUp != null || ov.markupPct != null) return 1; const t = b.product + b.shipping, a = s.bulkFrom != null ? +s.bulkFrom : 150, z = s.bulkTo != null ? +s.bulkTo : 1500, f = s.bulkFactor != null ? +s.bulkFactor : 0.4;
@@ -3933,6 +3931,7 @@ module.exports = function (D) {
     if (cfg().pcKey && live() && !auditLive) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
       if (wd.replace(",", "") === "Sun" && +hh >= 2 && +hh < 5) store.getMeta("print_audit").then(a => { if (!a || !a.end || Date.now() - Date.parse(a.end) > 6 * 864e5) auditRun().catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
     rememberDue().catch(e => log("Angebots-Erinnerung:", e.message));
+    cartRemindDue().catch(e => log("Warenkorb-Erinnerung:", e.message));
     payReminderDue().catch(e => log("Zahlungs-Erinnerung:", e.message));
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
@@ -3954,7 +3953,27 @@ module.exports = function (D) {
   const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
   // Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): nur im Speicher, aktiv = Lebenszeichen in den letzten 70 s; nichts Persönliches, nichts gespeichert
   const LIVE = new Map(), LIVE_MS = 70e3;
-  const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) LIVE.delete(k); };   // Hintergrund-Tab meldet sich nur jede Minute
+  const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) { funLeave(v); LIVE.delete(k); } };
+  // Kassen-Trichter (Wunsch Simon 06.11.2026: „Abbrüche messen statt raten“) – anonym je Tag: wie viele Tabs Warenkorb/Lieferung/Bezahlen erreicht haben,
+  // wie viele bestellt haben und bei welchem Schritt die anderen gegangen sind (mit Warenkorbwert und gewählter Zahlart); keine Personendaten, 60 Tage
+  const FUN_STEPS = { 4: "Warenkorb", 5: "Lieferung", 6: "Bezahlen" };
+  let FUN = null, funDirty = false;
+  store.getMeta("print_funnel").then(m => { const d = (m && m.days) || {}; FUN = { days: Object.assign(d, (FUN && FUN.days) || {}) }; }).catch(() => { FUN = FUN || { days: {} }; });
+  function funDay() { if (!FUN) FUN = { days: {} }; const d = today(); return FUN.days[d] = FUN.days[d] || { reach: {}, left: {}, leftSum: {}, pay: {}, ordered: 0 }; }
+  function funLeave(v) { if (!v || v.ord || !(v.max >= 4)) return; const st = FUN_STEPS[v.step >= 4 ? v.step : v.max] || "Warenkorb", d = funDay(), sum = (v.items || []).reduce((a, x) => a + (+x.g || 0), 0);
+    d.left[st] = (d.left[st] || 0) + 1; d.leftSum[st] = Math.round(((d.leftSum[st] || 0) + sum) * 100) / 100; if (st === "Bezahlen" && v.pay) d.pay[v.pay] = (d.pay[v.pay] || 0) + 1; funDirty = true; }
+  function funSeen(prev, cur) { const r = Object.assign({}, (prev && prev.r) || {}), d = funDay();
+    if (FUN_STEPS[cur.step] && !r[cur.step]) { r[cur.step] = 1; d.reach[FUN_STEPS[cur.step]] = (d.reach[FUN_STEPS[cur.step]] || 0) + 1; funDirty = true; }
+    if (cur.ord && !(prev && prev.ord)) { d.ordered++; funDirty = true; }
+    cur.r = r; cur.max = Math.max((prev && prev.max) || 0, cur.step); cur.ord = !!(cur.ord || (prev && prev.ord)); return cur; }
+  function funSummary(days) { const out = { days, reach: {}, left: {}, leftSum: {}, pay: {}, ordered: 0 }; if (!FUN) return out;
+    const from = new Date(Date.now() - (days - 1) * 864e5).toISOString().slice(0, 10);
+    for (const k of Object.keys(FUN.days)) { const d = FUN.days[k]; if (k < from || !d) continue;
+      ["reach", "left", "leftSum", "pay"].forEach(k => Object.keys(d[k] || {}).forEach(x => { out[k][x] = Math.round(((out[k][x] || 0) + d[k][x]) * 100) / 100; })); out.ordered += d.ordered || 0; }
+    return out; }
+  const funTimer = setInterval(() => { if (!FUN || !funDirty) return; funDirty = false; const keep = {}; Object.keys(FUN.days).sort().slice(-60).forEach(k => { keep[k] = FUN.days[k]; }); FUN.days = keep;
+    store.setMeta("print_funnel", { days: keep }).catch(() => { funDirty = true; }); }, 60e3);
+  if (funTimer.unref) funTimer.unref();   // Hintergrund-Tab meldet sich nur jede Minute
   const STEP_DE = ["Übersicht", "Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   // Besucher heute (Wunsch Simon 03.11.2026): ohne Cookie/Browser-Speicher – anonyme Tageskennung = Hash aus geheimem Salz, Datum, IP und Browser
   // (wechselt täglich, IP wird nicht gespeichert); Zähler übersteht Neustarts (print_visits), dazu der Vortag zum Vergleich
@@ -4016,6 +4035,26 @@ module.exports = function (D) {
     }
     return sent;
   }
+  // Warenkorb-Erinnerung (Wunsch Simon 06.11.2026) – nur wer an der Kasse das Häkchen setzt: kommt binnen 3 h keine Bestellung mit dieser E-Mail,
+  // EINE Mail mit Link, der den Warenkorb wiederherstellt (ohne Rabatt). Gespeichert ohne Vorschaubilder, nach 14 Tagen gelöscht (Datenschutz).
+  const CR_EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
+  async function crGet() { const a = await store.getMeta("print_cartrem").catch(() => null); return Array.isArray(a) ? a : []; }
+  async function crSet(all) { await store.setMeta("print_cartrem", all.filter(r => Date.now() - Date.parse(r.at) < 14 * 864e5).slice(-2000)); }
+  async function crDone(email) { const em = String(email || "").toLowerCase(), all = await crGet(); let ch = false; all.forEach(r => { if (r.email === em && !r.done) { r.done = nowIso(); ch = true; } }); if (ch) await crSet(all); }
+  async function cartRemindDue() {
+    const all = await crGet(), now = Date.now(); let ch = false;
+    for (const r of all) {
+      if (r.done || r.sent || now - Date.parse(r.at) < 3 * 3600e3) continue;
+      r.sent = nowIso(); ch = true; if (now - Date.parse(r.at) > 48 * 3600e3) continue;   // zu alt (z. B. nach Pause): nicht mehr nachfassen
+      const ordered = (await store.listOrders().catch(() => [])).some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at) - 600e3);
+      if (ordered) { r.done = r.sent; continue; }
+      const link = cfg().publicUrl + "/print?wk=" + encodeURIComponent(r.id) + "&t=" + encodeURIComponent(sig("cartrem", r.id)), sum = r.items.reduce((a, x) => a + (+(x.price && x.price.gross) || 0), 0);
+      await mail(r.email, "Dein Warenkorb bei FS Creative wartet noch", "Dein Warenkorb ist gespeichert", ["Hallo " + (r.firstName || "") + ",", "du hast deine Bestellung vorhin nicht abgeschlossen – kein Problem, dein Warenkorb ist gespeichert. Mit einem Klick ist er wieder da, inklusive deiner Druckdaten."],
+        r.items.slice(0, 8).map(x => [clip(x.title || "Drucksache", 80), (+x.copies || +x.n || 0).toLocaleString("de-AT") + " " + (x.unit === "m" ? "m" : "Stk.") + (x.price && x.price.gross ? " · " + eurDe(+x.price.gross) : "")]).concat(sum ? [["Summe inkl. USt & Versand", eurDe(sum) + " (Preis wird beim Öffnen aktualisiert)"]] : [], [["Warenkorb öffnen", link, "button"]]),
+        ["Das ist die einzige Erinnerung – du hast sie an der Kasse gewünscht. Fragen? Antworte einfach auf diese Mail."]);
+    }
+    if (ch) await crSet(all);
+  }
   async function rememberDue() {
     const all = await rememberGet(); let ch = false; const now = Date.now();
     for (const r of all) {
@@ -4034,7 +4073,7 @@ module.exports = function (D) {
   const LIVE_SUBS = new Set(); let liveSig = "", livePushT = null;
   function livePush() {
     if (!LIVE_SUBS.size || livePushT) return;
-    livePushT = setTimeout(() => { livePushT = null; liveGc(); const st = liveState(), k = JSON.stringify([st.total, st.bg, st.cart, st.pages, st.steps, st.prods, st.today]); if (k === liveSig) return; liveSig = k;
+    livePushT = setTimeout(() => { livePushT = null; liveGc(); const st = liveState(), k = JSON.stringify([st.total, st.bg, st.cart, st.pages, st.steps, st.prods, st.today, st.funnel]); if (k === liveSig) return; liveSig = k;
       const msg = "data: " + JSON.stringify(Object.assign({ ok: true }, st)) + "\n\n"; for (const r of LIVE_SUBS) { try { r.write(msg); } catch (e) { LIVE_SUBS.delete(r); } } }, 300);
   }
   let livePing = 0;
@@ -4044,7 +4083,7 @@ module.exports = function (D) {
     const pages = {}, steps = {}, prods = {}, carts = []; let cart = 0, bg = 0;
     for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) { cart++; carts.push({ step: st, items: v.items || [], n: v.cart }); } }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
-    return { at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+    return { funnel: funSummary(7), at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };
@@ -4264,6 +4303,21 @@ module.exports = function (D) {
         await store.putFile(meta, buf);
         return J(res, 200, { ok: true, id: meta.id, token: sig("brief", meta.id), name, bytes: buf.length });
       }
+      if (p === "/print/api/cartremind") {   // Warenkorb-Erinnerung: POST = merken/abbestellen (Häkchen an der Kasse), GET ?id&t = Warenkorb aus dem Mail-Link
+        if (req.method === "GET") { const id = String(u.searchParams.get("id") || ""), t = String(u.searchParams.get("t") || "");
+          if (!id || t !== sig("cartrem", id)) return J(res, 403, { ok: false, error: "Link ungültig" });
+          const r = (await crGet()).find(x => x.id === id); if (!r) return J(res, 404, { ok: false, error: "Dieser Warenkorb ist nicht mehr gespeichert" });
+          return J(res, 200, { ok: true, items: r.items, email: r.email }); }
+        if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
+        if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (limited("cartremind", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen" });
+        const b = await readJson(req, 200000).catch(() => ({})), email = clip(b.email, 160).trim().toLowerCase();
+        if (!CR_EMAIL.test(email)) return J(res, 400, { ok: false, error: "E-Mail ungültig" });
+        const all = (await crGet()).filter(x => !(x.email === email && !x.sent && !x.done));   // offener Eintrag dieser Adresse wird ersetzt bzw. gelöscht
+        if (b.on === true) { const items = (Array.isArray(b.items) ? b.items : []).slice(0, 20).filter(x => x && typeof x.product === "string" && typeof x.fileId === "string" && typeof x.fileToken === "string");
+          if (items.length) all.push({ id: "c" + crypto.randomBytes(9).toString("hex"), at: nowIso(), email, firstName: clip(b.firstName, 60), items }); }
+        await crSet(all); return J(res, 200, { ok: true });
+      }
       if (p === "/print/api/remember" && req.method === "POST") {   // „Angebot per Mail schicken“
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
         if (limited("remember", ip, 6, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
@@ -4284,7 +4338,10 @@ module.exports = function (D) {
         const b = await readJson(req, 4000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
         // Warenkorb-Inhalt nur anonym fürs Cockpit (Produkt, Menge, Preis – keine Namen/Adressen), höchstens 8 Positionen
         const items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(x => ({ t: clip(String((x && x.t) || ""), 60), n: Math.max(0, Math.min(1e6, +(x && x.n) || 0)), u: (x && x.u) === "m" ? "m" : "", g: Math.max(0, Math.min(1e6, Math.round((+(x && x.g) || 0) * 100) / 100)) })).filter(x => x.t);
-        if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), items, bg: b.bg === true }); }
+        if (sid.length >= 8) { const prev = LIVE.get(sid);
+          const cur = funSeen(prev, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), items, bg: b.bg === true, ord: b.ord === true, pay: clip(String(b.pay || ""), 20) });
+          if (cur.cart === 0 && prev && prev.items && prev.items.length && !cur.items.length) cur.items = prev.items;   // Warenkorbwert für die Auswertung behalten
+          if (b.bye) { funLeave(cur); LIVE.delete(sid); } else LIVE.set(sid, cur); }
         if (LIVE.size > 5000) liveGc();
         if (sid.length >= 8 && !b.bye) visitCount(ip, req.headers["user-agent"]);
         livePush();
@@ -4639,6 +4696,7 @@ module.exports = function (D) {
         const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email);
         if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc;
         const r = await createCheckout(b);
+        if (!r.priceChanged && b.customer && b.customer.email) crDone(b.customer.email).catch(() => {});
         if (!r.priceChanged && dd.voucher) await useVoucher(dd.voucher.code, b.customer && b.customer.email);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte den Warenkorb prüfen", price: r.price, index: r.index });
         const o = r.orders[0];
@@ -4678,6 +4736,36 @@ module.exports = function (D) {
   }
   // ── Marge-Übersicht (Cockpit): Beispielrechnungen der kuratierten Produkte (Bestseller-Ausführung, Privatkunde, Lieferung AT) + echte Bestellungen ──
   let MG = null;
+  // ── Staffel-Prüfung Massenprodukte (Wunsch Simon 06.11.2026: „bei Massenprodukten immer die Staffel bis 10 000 anschauen“) ──
+  // Standard-Ausführung je Produkt über 100 … 10 000 Stk.: Preis, Einkauf, Marge, günstigster Mitbewerber; Befunde: größere Menge kostet insgesamt weniger,
+  // teurer als der günstigste Mitbewerber, Einkauf schon über dem Mitbewerberpreis. Läuft langsam nacheinander (Print.com-Limit), Stand in print_staffel.
+  const STAFFEL_KEYS = ["flyer", "visitenkarten", "plakate", "folder", "postcards", "aufkleber", "labels-on-roll", "beer-mats", "printed-letterheads", "printed-envelopes", "blocknotes", "tickets"];
+  const STAFFEL_Q = [100, 250, 500, 1000, 2500, 5000, 10000];
+  let ST = null;
+  async function staffelRun() {
+    if (ST && ST.running) return; const s = await settings(), cat = await catalog(false);
+    const prods = STAFFEL_KEYS.map(k => productOf(cat, k, s)).filter(Boolean), cases = [];
+    prods.forEach(p => { const base = stdInput(p); if (base) STAFFEL_Q.filter(q => !(p.tiers || []).length || (p.tiers || []).indexOf(q) > -1).forEach(q => cases.push([p, Object.assign(JSON.parse(JSON.stringify(base)), { copies: q })])); });
+    ST = { running: true, at: nowIso(), done: 0, total: cases.length, rows: [] };
+    try {
+      for (const [p, inp] of cases) {
+        try { const n = normalizeSel(p, inp); n.low = true; const q = await quote(p, n, "AT", "", { company: false });
+          const lab = (n.labels || []).filter(l => /format|größe|material|papier|farbig|druck$/i.test(l[0])).map(l => l[1]).slice(0, 3).join(" · ");
+          ST.rows.push({ key: p.key, title: p.title, label: clip(lab, 140), copies: n.copies, pm: q.pm || "", gross: q.gross, net: q.net, purchase: q.purchase.total, margin: q.margin, anchor: q.anchor, rule: q.rule }); }
+        catch (e) { ST.rows.push({ key: p.key, title: p.title, copies: inp.copies, error: clip(e.message, 120) }); }
+        ST.done++; await new Promise(r => setTimeout(r, 1500));
+      }
+    } finally {
+      // Befunde je Produkt
+      const by = {}; ST.rows.filter(r => !r.error).forEach(r => { (by[r.key] = by[r.key] || []).push(r); }); ST.issues = [];
+      Object.keys(by).forEach(k => { const l = by[k].sort((a, b) => a.copies - b.copies);
+        l.forEach((r, i) => { const big = l.slice(i + 1).find(x => x.gross <= r.gross + 0.005);
+          if (big) ST.issues.push({ key: k, title: r.title, copies: r.copies, kind: "staffel", text: big.copies.toLocaleString("de-AT") + " Stk. kosten " + eurDe(big.gross) + " – " + r.copies.toLocaleString("de-AT") + " Stk. " + eurDe(r.gross) });
+          if (r.anchor && r.gross > r.anchor + 0.005) ST.issues.push({ key: k, title: r.title, copies: r.copies, kind: r.purchase * 1.2 >= r.anchor ? "einkauf" : "teurer", text: (r.purchase * 1.2 >= r.anchor ? "Einkauf " + eurDe(r.purchase) + " netto liegt schon über" : "Unser Preis " + eurDe(r.gross) + " liegt über") + " dem günstigsten Mitbewerber (" + eurDe(r.anchor) + ")" }); }); });
+      ST.running = false; ST.end = nowIso(); store.setMeta("print_staffel", ST).catch(() => {});
+    }
+  }
+  async function staffelState() { if (!ST) ST = await store.getMeta("print_staffel").catch(() => null); return ST || { rows: [], issues: [] }; }
   const MG_Q = { flat: [250, 1000, 5000], banner: [1, 5], promo: [100, 500, 1000], textile: [10, 50] };
   function mgCases(p) {
     const ok = n => p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
@@ -4899,6 +4987,11 @@ module.exports = function (D) {
         req.on("close", () => LIVE_SUBS.delete(res)); return;
       }
       if (p === "/admin/api/print/live" && req.method === "GET") { await visitsLoad().catch(() => null); liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
+      if (p === "/admin/api/print/staffel") {   // Staffel-Prüfung: GET = Stand, POST {op:"run"} = neu prüfen (Hintergrund, ca. 2 s je Menge)
+        const sb = req.method === "POST" ? await readJson(req, 1000) : {};
+        if (sb.op === "run" && cfg().pcKey) staffelRun().catch(e => { if (ST) ST.running = false; log("Staffel-Prüfung:", e.message); });
+        return J(res, 200, Object.assign({ ok: true }, await staffelState()));
+      }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};
         if (mb.op === "pub" && cfg().pcKey) { await pubBuild(); return J(res, 200, Object.assign(await marginsState(), { pub: (await pubState()) ? { at: PUB.at, n: PUB.items.length } : null })); }   // Preisübersicht jetzt neu erstellen

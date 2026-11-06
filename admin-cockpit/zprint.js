@@ -447,7 +447,17 @@ function liveHtml(L){
     '<div><div class="muted small">heute im Shop</div><div style="font-size:30px;font-weight:700">'+(L.today||0)+'</div>'+(L.todaySince?'<div class="muted small">gezählt seit '+new Date(L.todaySince).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})+'</div>':'')+(L.yesterday!=null?'<div class="muted small">gestern '+L.yesterday+'</div>':'')+'</div></div>'+
     (L.total?'<div style="margin-top:10px"><div class="muted small">Schritt</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.steps.map(pill).join("")+'</div></div>'+
     (L.prods.length?'<div style="margin-top:10px"><div class="muted small">Produkte</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.prods.map(pill).join("")+'</div></div>':'')+
-    '<div style="margin-top:10px"><div class="muted small">Seiten</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.pages.map(pill).join("")+'</div></div>':'<div class="muted" style="margin-top:8px">Gerade niemand im Shop.</div>');
+    '<div style="margin-top:10px"><div class="muted small">Seiten</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.pages.map(pill).join("")+'</div></div>':'<div class="muted" style="margin-top:8px">Gerade niemand im Shop.</div>')+funnelHtml(L.funnel);
+}
+/* Kassen-Trichter der letzten 7 Tage (Wunsch Simon 06.11.2026): wie viele bis zur Kasse kamen, bestellt haben und wo die anderen gegangen sind */
+function funnelHtml(f){
+  if(!f) return ""; var R=f.reach||{}, Lf=f.left||{}, S=f.leftSum||{}, P=f.pay||{}, st=["Warenkorb","Lieferung","Bezahlen"];
+  if(!st.some(function(k){ return R[k]||Lf[k]; })&&!f.ordered) return '<div class="muted small" style="margin-top:12px">Kasse (7 Tage): noch keine Daten – gezählt wird ab jetzt.</div>';
+  var pm={mollie:"Online-Zahlung",invoice:"Rechnung"}, pays=Object.keys(P).map(function(k){ return (pm[k]||k)+" "+P[k]; }).join(", ");
+  return '<div style="margin-top:14px"><div class="muted small">Kasse – letzte 7 Tage (anonym)</div><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">'+
+    st.map(function(k){ return '<div class="tag" style="display:block;padding:6px 10px"><div class="muted small">'+k+'</div><b>'+(R[k]||0)+'</b> erreicht · <b style="color:var(--bad,#c33)">'+(Lf[k]||0)+'</b> gegangen'+(S[k]?'<div class="muted small">offene Warenkörbe '+eur(S[k])+'</div>':'')+'</div>'; }).join("")+
+    '<div class="tag" style="display:block;padding:6px 10px"><div class="muted small">Bestellt</div><b style="color:var(--ok,#2a2)">'+(f.ordered||0)+'</b></div></div>'+
+    (pays?'<div class="muted small" style="margin-top:6px">Beim Bezahlen gegangen mit gewählter Zahlart: '+esc(pays)+'</div>':'')+'</div>';
 }
 function livePaint(L){ if(!L||!L.ok) return; PRLIVE=L; var b2=document.getElementById("prLiveB"); if(b2) b2.innerHTML=liveHtml(L); }
 function liveTick(){
