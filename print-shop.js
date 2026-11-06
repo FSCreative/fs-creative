@@ -1114,7 +1114,9 @@ module.exports = function (D) {
     } else {
       copies = parseInt(input.copies, 10);
       if (!(copies > 0 && copies <= 1e6)) throw bad("Ungültige Auflage");
-      if (prod.qty && prod.qty.length) { if (!prod.qty.some(r => qtyIn(r, copies))) throw bad("Diese Auflage ist nicht möglich – bitte eine der vorgeschlagenen Mengen bzw. einen passenden Schritt wählen"); }
+      // Probedruck/Muster (Option „sample“, z. B. Kartensets): Print.com liefert ihn nur als 1 Stück – sonst „nicht lieferbar“ (Simon 06.11.2026)
+      if (/^sample_/.test(String(sel.sample || ""))) copies = 1;
+      else if (prod.qty && prod.qty.length) { if (!prod.qty.some(r => qtyIn(r, copies))) throw bad("Diese Auflage ist nicht möglich – bitte eine der vorgeschlagenen Mengen bzw. einen passenden Schritt wählen"); }
       else if (prod.tiers.indexOf(copies) < 0) throw bad("Ungültige Auflage");
     }
     if (prod.custom && (kind === "banner" || sel.size === "custom")) {   // freie Größe: Eingabe in cm (Banner) bzw. mm, an Print.com immer mm
