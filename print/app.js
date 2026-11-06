@@ -1002,6 +1002,12 @@
       (compact ? "" : '<dl><dt>' + (U() === "m" ? "Meterpreis" : "Stückpreis") + '</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "") + "</details>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
+  // Persönlicher Anbieter (Wunsch Simon 06.11.2026): Foto, „Simon aus Gaschurn“, direkter Kontakt – regional statt allgemeiner Qualitätsversprechen
+  function meHtml() {
+    return '<div class="ps-me"><img src="/logos/simon-avatar.jpg" alt="Simon Felder" width="56" height="56" loading="lazy" decoding="async"><div><b>Simon aus Gaschurn</b>' +
+      "<span>Dein Druckshop aus dem Montafon – bei Fragen zu Datei, Papier oder Termin bin ich persönlich für dich da.</span>" +
+      '<span class="ps-me-c"><a href="tel:+436641430620">+43 664 1430620</a> · <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a></span></div></div>';
+  }
   function whoHtml() {
     return '<div class="ps-pwho"><div class="ps-seg" role="group" aria-label="Preise anzeigen für"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       (S.cat.countries.length > 1 ? '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select>" : "") + "</div>";
@@ -1011,7 +1017,7 @@
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "";
     // Reihenfolge (06.11.2026): Preis → Liefertag → Weiter → Privat/Firma; alles Weitere aufklappbar
     var ph = priceHtml(false), hasSlot = ph.indexOf("<!--CTA-->") > -1;
-    if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + (hasSlot ? ph.replace("<!--CTA-->", cta + (S.step === 2 ? whoHtml() : "")) : ph + cta + (S.step === 2 ? whoHtml() : ""));
+    if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + (hasSlot ? ph.replace("<!--CTA-->", cta + (S.step === 2 ? whoHtml() : "")) : ph + cta + (S.step === 2 ? whoHtml() : "")) + meHtml();
     var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "" + (szl ? " · " + szl : "");
       var u0 = p && unitOf(); if (u0 && u0.div > 0) sm = eur((S.ctype === "company" ? p.net : p.gross) / u0.div) + "/" + u0.unit + " · " + sm;
       m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
