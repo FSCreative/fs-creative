@@ -166,13 +166,13 @@ async function startServer(dir, env) {
     await adm("/admin/api/chat/status", { online: false, manual: true }); assert.strictEqual((await pj("/chat/api/status")).online, false, "aus per Schalter");
   });
 
-  await t("Offline: KI antwortet (Sonnet, max_tokens 400, kurzer Verlauf, Simons Antwort als Kontext), als „ki“ markiert", async () => {
+  await t("Offline: KI antwortet (Sonnet, max_tokens 1200, kurzer Verlauf, Simons Antwort als Kontext), als „ki“ markiert", async () => {
     const r = await pj("/chat/api/send", { cid: A, text: "Ich brauche eine neue Website" }); assert.strictEqual(r.ok, true);
     const ki = await waitFor(async () => { const p = await pj("/chat/api/poll?c=" + A + "&after=" + lastId); return p.msgs.find(m => m.from === "ki") && p; });
     assert.ok(ki, "KI-Antwort kommt"); const m = ki.msgs.find(x => x.from === "ki"); assert.ok(/Wie heißt du/.test(m.text)); assert.ok(/<b>kein HTML<\/b>/.test(m.text), "Text unverändert, Darstellung escaped der Client");
     lastId = ki.msgs[ki.msgs.length - 1].id;
     assert.strictEqual(mock.calls.length, 2); const c = mock.calls[1].body;
-    assert.strictEqual(c.model, "claude-sonnet-5-5"); assert.strictEqual(c.max_tokens, 400); assert.ok(c.messages.length <= 12);
+    assert.strictEqual(c.model, "claude-sonnet-5-5"); assert.strictEqual(c.max_tokens, 1200); assert.ok(c.messages.length <= 12);
     assert.ok(/FS Creative/.test(JSON.stringify(c.system)) && /Preise/.test(JSON.stringify(c.system)) && /webdesign-montafon|kontakt/.test(JSON.stringify(c.system)));
     assert.strictEqual(c.messages[c.messages.length - 1].role, "user"); assert.strictEqual(c.messages[0].role, "user");
     assert.ok(c.messages.some(x => x.role === "assistant" && /Simon persönlich/.test(x.content)));
