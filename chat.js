@@ -156,6 +156,11 @@ module.exports = function (D) {
   const aiActive = c => !c.closed && c.ai !== "off" && (c.ai === "on" || !(c.human && isOnline()));   // KI zuerst; nach Übergabe an Simon nur, solange er online ist
   const SCHEMA = { type: "object", additionalProperties: false, required: ["reply", "name", "email", "phone", "request", "topic", "ready", "handoff"],
     properties: { reply: { type: "string" }, name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, request: { type: "string" }, topic: { type: "string", enum: TOPICS.concat([""]) }, ready: { type: "boolean" }, handoff: { type: "boolean" } } };
+  // Wochenende (Wunsch Simon 06.11.2026): Freitag ab 16:00 bis Montag 8:00 (Wien) ist Simon nur sporadisch erreichbar – in allen Hinweisen ehrlich sagen
+  function weekend() { const f = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }).formatToParts(new Date()), g = t => (f.find(x => x.type === t) || {}).value || "";
+    const wd = g("weekday"), h = +g("hour"); return (wd === "Fri" && h >= 16) || wd === "Sat" || wd === "Sun" || (wd === "Mon" && h < 8); }
+  const WE = " Übers Wochenende ist Simon nur sporadisch erreichbar – es kann bis Montag dauern.";
+  const we = t => weekend() ? t.replace(/,? meist innerhalb von 1–2 Werktagen/, "") + WE : t;
   const T_HANDOFF = "Simon ist informiert und antwortet dir gleich hier im Chat.";
   const T_FALLBACK = "Danke für deine Nachricht! Simon ist gerade nicht online. Hinterlass hier gern deinen Namen, deine E-Mail-Adresse oder Telefonnummer und worum es geht – er meldet sich persönlich, meist innerhalb von 1–2 Werktagen.";
   const T_CAP = "Danke! Ab hier übernimmt Simon persönlich – er meldet sich meist innerhalb von 1–2 Werktagen. Falls noch nicht geschehen: hinterlass gern deine E-Mail-Adresse oder Telefonnummer.";
@@ -172,22 +177,22 @@ module.exports = function (D) {
   }
   async function aiTurn(c) {
     const ki = D.ki;
-    if (!ki || !ki.configured || !ki.configured() || !ki.chatReply) return sysOnce(c, "fallback", T_FALLBACK);
+    if (!ki || !ki.configured || !ki.configured() || !ki.chatReply) return sysOnce(c, "fallback", we(T_FALLBACK));
     const C = cfg();
-    if ((c.aiCount || 0) >= C.aiConvMax) return sysOnce(c, "cap", T_CAP);
-    const vip = CONV_IP.get(c.id); if (vip && limited("ai|" + vip, 12, 3600000)) return sysOnce(c, "cap", T_CAP);   // je Besucher-IP max. 12 KI-Antworten pro Stunde (auch über neue Unterhaltungen hinweg)
-    const day = await aiDay(); if (day.n >= C.aiDayMax) return sysOnce(c, "cap", T_CAP);
+    if ((c.aiCount || 0) >= C.aiConvMax) return sysOnce(c, "cap", we(T_CAP));
+    const vip = CONV_IP.get(c.id); if (vip && limited("ai|" + vip, 12, 3600000)) return sysOnce(c, "cap", we(T_CAP));   // je Besucher-IP max. 12 KI-Antworten pro Stunde (auch über neue Unterhaltungen hinweg)
+    const day = await aiDay(); if (day.n >= C.aiDayMax) return sysOnce(c, "cap", we(T_CAP));
     const msgs = await store.msgs(c.id, 0, 40), lastV = msgs.filter(m => m.from === "v").pop();
     if (!lastV || msgs[msgs.length - 1].from !== "v") return;           // nichts Neues zu beantworten
     const conv = history(msgs); if (!conv.length) return;
     // Druckfrage? Passende Produkte mit allen Optionen live mitgeben (letzte zwei Besucher-Nachrichten als Suchbegriff)
     let prodCtx = ""; if (D.printProducts) { const vq = msgs.filter(m => m.from === "v" && !m.file).slice(-2).map(m => m.text).join(" ").slice(-160); prodCtx = await D.printProducts(vq).catch(() => ""); }
-    const state = (isOnline() ? "Simon ist gerade ONLINE und kann bei handoff sofort übernehmen. " : "Simon ist gerade NICHT online. ") + "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
+    const state = (isOnline() ? "Simon ist gerade ONLINE und kann bei handoff sofort übernehmen. " : "Simon ist gerade NICHT online. ") + (weekend() ? "Es ist Wochenende (Freitag ab 16 Uhr bis Montag früh): Simon ist nur sporadisch erreichbar – persönliche Antworten und der Profi-Datencheck können bis Montag dauern; sag das ehrlich, statt „1–2 Werktage“ zu versprechen. " : "") + "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
       (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + (D.printPrices ? D.printPrices() : "") + prodCtx;
     day.n++; c.aiCount = (c.aiCount || 0) + 1; store.setMeta("chat_ai_day", day).catch(() => {});
     let x;
     try { x = await ki.chatReply(SYSTEM, state, conv, SCHEMA); }
-    catch (e) { log("KI-Antwort fehlgeschlagen:", String(e && e.message || e).slice(0, 160)); if (isOnline()) { c.human = nowIso(); await store.putConv(c); bump(); return sysOnce(c, "handoff", T_HANDOFF); } await store.putConv(c); return sysOnce(c, "fallback", T_FALLBACK); }
+    catch (e) { log("KI-Antwort fehlgeschlagen:", String(e && e.message || e).slice(0, 160)); if (isOnline()) { c.human = nowIso(); await store.putConv(c); bump(); return sysOnce(c, "handoff", T_HANDOFF); } await store.putConv(c); return sysOnce(c, "fallback", we(T_FALLBACK)); }
     // Inzwischen gelöscht, von Simon übernommen oder neue Besucher-Nachricht? Dann diese Antwort verwerfen (die nächste Runde antwortet).
     const cur = CONVS.get(c.id); if (!cur) return;
     const after = await store.msgs(c.id, lastV.id, 20); if (after.some(m => m.from === "me" || m.from === "v") || !aiActive(cur)) { await store.putConv(cur); return; }
@@ -205,7 +210,7 @@ module.exports = function (D) {
       try {
         const r = await D.saveLead({ name: cur.name || "Chat-Besucher #" + cur.no, email: cur.email, phone: cur.phone, company: "", topic: cur.topic || "Etwas anderes", entwurf: false,
           message: cur.request + "\n\n— aufgenommen im Website-Chat von der KI (Seite " + (cur.page || "–") + "). Verlauf im Cockpit unter „Chat“.", source: "Website-Chat (KI)" }, { notify: true });
-        if (r && r.id) { cur.leadId = r.id; await sysOnce(cur, "lead", T_LEAD); }
+        if (r && r.id) { cur.leadId = r.id; await sysOnce(cur, "lead", we(T_LEAD)); }
       } catch (e) { log("Lead anlegen:", e.message); }
     }
   }

@@ -1258,8 +1258,10 @@ module.exports = function (D) {
       if (noPrice) { NOPRICE.set(key, { at: Date.now(), e: e2 }); if (NOPRICE.size > 3000) NOPRICE.clear(); } throw e2; } throw e; }
     const P = pr && pr.prices || {};
     if (!(+P.salesPrice > 0 || +P.productPrice > 0 || +P.normalPrice > 0)) priceFail(prod, n, 200, "Preis 0 / leer");
-    const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
-    if (!(productPrice > 0)) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
+    // Probedruck mit Wasserzeichen ist bei Print.com gratis (salesPrice 0, nur Versand) – dann wirklich 0 statt Listenpreis (Simon 06.11.2026)
+    const freeSample = /^sample_/.test(String((n.sel || {}).sample || "")) && P.salesPrice != null && +P.salesPrice === 0;
+    const productPrice = freeSample ? 0 : +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
+    if (!(productPrice > 0) && !freeSample) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
     let sp = await shipP, poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
     if (!poss.length) {   // leere Versandantwort ist bei Print.com manchmal nur eine kurze Störung → einmal neu anfragen
       await new Promise(r => setTimeout(r, 800));
