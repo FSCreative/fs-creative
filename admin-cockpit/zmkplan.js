@@ -39,6 +39,18 @@ F.css(
 '.mp-chips button[aria-pressed="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:color-mix(in srgb,var(--glow) 40%,transparent)}'+
 '.mp-chips i{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--bcv);box-shadow:0 0 0 1px var(--line-2)}'+
 '.mp-chips .count{margin-left:0}'+
+/* Marken als runde Avatare mit Logo (Wunsch Simon 06.11.2026) */
+'.mp-avs{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}'+
+'@media (max-width:700px){.mp-avs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:4px 16px}.mp-avs::-webkit-scrollbar{display:none}}'+
+'.mp-avs button{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:68px;border:0;background:none;padding:0;font:inherit;font-size:12px;font-weight:600;color:var(--ink-2);cursor:pointer;text-align:center;line-height:1.2}'+
+'.mp-avs .ring{position:relative;width:56px;height:56px;border-radius:50%;padding:3px;box-shadow:0 0 0 2px var(--line-2);transition:box-shadow .15s,transform .15s}'+
+'.mp-avs .ring span.lg{display:flex;width:100%;height:100%;border-radius:50%;align-items:center;justify-content:center;overflow:hidden;background:#fff}'+
+'.mp-avs .ring span.lg.dark{background:#0a0a0f}.mp-avs .ring span.lg.all{background:var(--panel-2);color:var(--ink);font-size:13px}'+
+'.mp-avs .ring img{max-width:76%;max-height:76%;object-fit:contain;display:block}'+
+'.mp-avs .ring .count{position:absolute;top:-4px;right:-4px;margin:0}'+
+'.mp-avs button:hover .ring{box-shadow:0 0 0 2px var(--line-2),0 0 0 4px color-mix(in srgb,var(--glow) 25%,transparent)}'+
+'.mp-avs button[aria-pressed="true"]{color:var(--ink)}.mp-avs button[aria-pressed="true"] .ring{box-shadow:0 0 0 2.5px var(--bcv,var(--glow))}'+
+'.mp-avs .nm{max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
 /* Wochenplan: 7 Tage, Posts als Kärtchen in Markenfarbe (Entwurf = gestrichelt), freie gute Zeiten laut Rhythmus */
 '.mp-cal{position:relative}'+
 '.mp-calh{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:14px 16px 12px 18px}'+
@@ -466,8 +478,9 @@ function planHtml(){
   if(!PL){ load(); return '<div class="mp" aria-busy="true"><div class="panel mp-sk" style="min-height:200px"></div><div class="panel mp-sk" style="min-height:74px"></div><div class="panel mp-sk" style="min-height:280px"></div></div>'; }
   if(!PL.ok) return '<div class="notice"><span>'+esc(PL.error)+'</span><button type="button" class="btn sm" data-act="mpreload">Erneut versuchen</button></div>';
   var bs=brands(), cur=UI.mkBrand, b=brandOf(cur), alle=cur==="alle";
-  var chips='<div class="mp-chips" role="group" aria-label="Marke">'+[{key:"alle",name:"Alle",colors:{}}].concat(bs).map(function(x){ var n=(PL.posts||[]).filter(function(p){ return (x.key==="alle"||p.brand===x.key)&&p.status==="entwurf"; }).length;
-    return '<button type="button" data-act="mpbrand:'+esc(x.key)+'" aria-pressed="'+(x.key===cur)+'">'+(x.colors&&x.colors.primary?'<i style="--bc:'+esc(x.colors.primary)+'"></i>':'')+esc(x.name)+(n?' <span class="count" title="'+n+' zur Freigabe">'+n+'</span>':'')+'</button>'; }).join("")+'</div>';
+  var chips='<div class="mp-avs" role="group" aria-label="Marke">'+[{key:"alle",name:"Alle",colors:{}}].concat(bs).map(function(x){ var n=(PL.posts||[]).filter(function(p){ return (x.key==="alle"||p.brand===x.key)&&p.status==="entwurf"; }).length;
+    var lg=x.key==="alle"?'<span class="lg all">'+F.svg("mkt")+'</span>':(x.logo||x.logoUploaded)?'<span class="lg'+(x.logoBg==="dark"?" dark":"")+'"><img src="/admin/api/mkt/logo?key='+encodeURIComponent(x.key)+'&v='+encodeURIComponent(x.logoUploaded?"u":"d")+'" alt="" loading="lazy"></span>':'<span class="lg all">'+esc(String(x.name||"?").slice(0,2))+'</span>';
+    return '<button type="button" data-act="mpbrand:'+esc(x.key)+'" aria-pressed="'+(x.key===cur)+'" title="'+esc(x.name)+(n?" – "+n+" zur Freigabe":"")+'"'+(x.colors&&x.colors.primary?' style="--bcv:'+esc(x.colors.primary)+'"':'')+'><span class="ring">'+lg+(n?'<span class="count">'+n+'</span>':'')+'</span><span class="nm">'+esc(x.name)+'</span></button>'; }).join("")+'</div>';
   var mine=(PL.posts||[]).filter(function(p){ return alle||p.brand===cur; });
   var drafts=mine.filter(function(p){ return p.status==="entwurf"; }).sort(byTime), planned=mine.filter(function(p){ return p.status==="geplant"||p.status==="läuft"; }).sort(byTime);
   var byPosted=function(a,b){ return String(b.postedAt||b.scheduledAt).localeCompare(String(a.postedAt||a.scheduledAt)); };
