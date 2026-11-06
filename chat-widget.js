@@ -5,7 +5,7 @@
 "use strict";
 var W=window, d=document;
 if(W.__fscChat||/^\/admin/.test(location.pathname)||!W.fetch||!W.JSON) return; W.__fscChat=1;
-var tyWho="", tySent=0, K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
+var meSeen=0, tyWho="", tySent=0, K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
 var FMAX=15*1024*1024, FTYPES={"image/jpeg":1,"image/png":1,"image/webp":1,"application/pdf":1};
 try{ st=JSON.parse(localStorage.getItem(K)||"null")||{}; }catch(e){ st={}; }
 function save(){ try{ localStorage.setItem(K,JSON.stringify(st)); }catch(e){} }
@@ -131,16 +131,17 @@ function seen(){ if(last&&last!==st.seen){ st.seen=last; save(); } }
 function schedule(){ clearTimeout(pollT); if(isOpen) pollT=setTimeout(poll,typing?2000:online?3000:4000); }
 function poll(){
   if(!isOpen||d.hidden){ schedule(); return; }
-  api("/chat/api/poll?c="+cid()+"&after="+last).then(function(j){ if(j&&j.ok){ var ch=online!==!!j.online||typing!==!!j.typing||tyWho!==(j.who||""); online=!!j.online; typing=!!j.typing; tyWho=j.who||""; closed=!!j.closed; add(j.msgs||[]); if(ch){ head(); paint(); } } schedule(); }).catch(schedule);
+  api("/chat/api/poll?c="+cid()+"&after="+last).then(function(j){ if(j&&j.ok){ var ch=online!==!!j.online||typing!==!!j.typing||tyWho!==(j.who||"")||meSeen!==(j.seen||0); meSeen=j.seen||0; online=!!j.online; typing=!!j.typing; tyWho=j.who||""; closed=!!j.closed; add(j.msgs||[]); if(ch){ head(); paint(); } } schedule(); }).catch(schedule);
 }
 function add(arr){ var n=0; arr.forEach(function(m){ if(m.id>last){ msgs.push(m); last=m.id; n++; } }); if(n){ seen(); paint(); } }
 function fmt(iso){ var t=new Date(iso); return isNaN(t)?"":t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
 function paint(){
   if(!built) return; var L=el.list, atEnd=L.scrollHeight-L.scrollTop-L.clientHeight<60; L.textContent="";
   if(!msgs.length) L.appendChild(h("div","fscc-hi","Hallo! 👋 Ich bin der KI-Assistent von FS Creative – frag mich einfach (Website, Grafik, Druck …)."+(online?" Möchtest du lieber mit Simon sprechen? Schreib es einfach – er ist gerade online.":" Simon meldet sich bei Bedarf persönlich.")));
+  var lastV=0; msgs.forEach(function(m){ if(m.from==="v") lastV=m.id; });   // „Gelesen“ unter der letzten eigenen Nachricht, sobald Simon die Unterhaltung geöffnet hat
   msgs.forEach(function(m){ var b=h("div","fscc-m "+(m.from==="v"||m.from==="me"||m.from==="ki"||m.from==="sys"?m.from:"sys"));
     if(m.from==="me"||m.from==="ki") b.appendChild(h("span","who",m.from==="me"?"Simon":"KI-Assistent · Angaben unverbindlich"));
-    if(m.file&&m.from!=="sys"){ b.classList.add("file"); b.appendChild(fileEl(m.file)); } else b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at))); L.appendChild(b); });
+    if(m.file&&m.from!=="sys"){ b.classList.add("file"); b.appendChild(fileEl(m.file)); } else b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at)+(m.id===lastV&&meSeen>=m.id?" · ✓✓ Gelesen":""))); L.appendChild(b); });
   if(typing){ var ty=h("div","fscc-ty"); ty.setAttribute("aria-label",(tyWho==="me"?"Simon":"Der Assistent")+" schreibt"); ty.appendChild(h("i")); ty.appendChild(h("i")); ty.appendChild(h("i")); L.appendChild(ty); }
   el.pv.style.display=st.started?"none":""; el.nm.style.display=st.started&&st.name?"none":"";
   if(atEnd||sending) L.scrollTop=L.scrollHeight;

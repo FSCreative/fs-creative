@@ -2,7 +2,7 @@
 // Website-Chat (Overlay auf allen öffentlichen Seiten, Skript /chat/w.js aus chat-widget.js) + Cockpit-Ansicht „Chat“ (admin-cockpit/zchat.js).
 // Ablauf: Besucher schreibt → Nachricht gespeichert, Push „chat“ (neue Unterhaltung immer, sonst nur wenn Simon online ist).
 //   Immer zuerst antwortet die KI (Sonnet über ki.js, Funktion „chat“). Will der Besucher einen Mitarbeiter oder kommt die KI nicht weiter (handoff),
-//   und Simon ist online (Herzschlag aus dem offenen Cockpit, nach 3 Min. ohne Herzschlag automatisch offline) → Übergabe an Simon, die KI schweigt.
+//   und Simon ist online (nur von Hand im Cockpit ein-/ausgeschaltet, keine Automatik – Wunsch Simon 06.11.2026) → Übergabe an Simon, die KI schweigt.
 //   Simon offline → die KI fragt Name + Kontakt + Anliegen ab und legt bei vollständigen Angaben selbst einen Lead an (Quelle „Website-Chat (KI)“).
 //   Schreibt Simon selbst, schweigt die KI ebenfalls, solange er online ist (Modus „auto“; „an“ = immer KI; „aus“ = nie).
 // Öffentlich: POST /chat/api/start, POST /chat/api/send, GET /chat/api/poll, GET /chat/api/status, POST/GET /chat/api/file – nur gleiche Herkunft, Längen-/Format-Prüfung, Honeypot, Rate-Limits.
@@ -133,9 +133,8 @@ module.exports = function (D) {
       for (const c of Array.from(CONVS.values())) if (Date.parse(c.updated || c.created) < lim) { CONVS.delete(c.id); await store.delConv(c.id).catch(() => {}); } }
   }
   async function status() { if (!ST) ST = (await store.getMeta("chat_status").catch(() => null)) || { online: false, beat: 0 }; return ST; }
-  // Ruhezeit (Wiener Zeit, Standard 18:00–06:00): Chat immer offline, die KI antwortet – auch wenn das Cockpit offen ist
-  const quietHours = () => { const h = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hourCycle: "h23" }).format(new Date()), 10), f = intEnv("CHAT_OFF_FROM", 18), t = intEnv("CHAT_OFF_TO", 6); return f > t ? (h >= f || h < t) : (h >= f && h < t); };
-  const isOnline = () => !!(ST && ST.online && !quietHours() && Date.now() - (ST.beat || 0) < cfg().beatTtl);
+  // Online nur von Hand (Schalter im Cockpit): kein automatisches Ein- oder Ausschalten, keine Ruhezeit, kein Herzschlag (Wunsch Simon 06.11.2026)
+  const isOnline = () => !!(ST && ST.online);
   async function online() { await status(); return isOnline(); }
   async function setStatus(on) { await status(); const was = isOnline(); ST.online = !!on; ST.beat = on ? Date.now() : 0; if (!on) ST.since = nowIso(); else if (!was) ST.since = nowIso(); await store.setMeta("chat_status", ST).catch(e => log("Status speichern:", e.message)); bump(); return isOnline(); }
   async function aiDay() { const d = today(); if (!AIDAY || AIDAY.day !== d) { const m = await store.getMeta("chat_ai_day").catch(() => null); AIDAY = m && m.day === d ? m : { day: d, n: 0 }; } return AIDAY; }
@@ -151,7 +150,7 @@ module.exports = function (D) {
   const pubMsg = m => m.file ? { id: m.id, at: m.at, from: m.from, text: m.text, file: { id: m.file.id, name: m.file.name, type: m.file.type, size: m.file.size } } : { id: m.id, at: m.at, from: m.from, text: m.text };
   const fileKind = f => f.type === "application/pdf" ? "PDF" : "Bild";
   const msgText = m => m.file ? "[" + (m.from === "v" ? "Kunde" : "Simon") + " hat Datei " + m.file.name + " (" + fileKind(m.file) + ") gesendet]" : m.text;   // für die KI: nur Hinweis, kein Inhalt
-  const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", human: c.human || "", typing: BUSY.has(c.id) });
+  const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", human: c.human || "", typing: BUSY.has(c.id), vSeen: c.vSeen || 0, vSeenAt: c.vSeenAt || "" });
 
   // ───────────────────────── KI ─────────────────────────
   const aiActive = c => !c.closed && c.ai !== "off" && (c.ai === "on" || !(c.human && isOnline()));   // KI zuerst; nach Übergabe an Simon nur, solange er online ist
@@ -309,7 +308,9 @@ module.exports = function (D) {
         const c = CONVS.get(id), on = await online();
         if (!c) return J(res, 200, { ok: true, online: on, msgs: [], typing: false, closed: false });
         const msgs = c.lastId > a ? (await store.msgs(id, a, 100)).map(pubMsg) : [];
-        return J(res, 200, { ok: true, online: on, msgs, typing: BUSY.has(id) || typingOf(ATYP, id), who: BUSY.has(id) ? "ki" : typingOf(ATYP, id) ? "me" : "", closed: !!c.closed });
+        // Gelesen: das Widget fragt nur bei offenem, sichtbarem Chat ab → alles bis lastId hat der Besucher gesehen
+        if (c.lastId && (c.vSeen || 0) < c.lastId) { c.vSeen = c.lastId; c.vSeenAt = nowIso(); await store.putConv(c); bump(); }
+        return J(res, 200, { ok: true, online: on, seen: c.meSeen || 0, msgs, typing: BUSY.has(id) || typingOf(ATYP, id), who: BUSY.has(id) ? "ki" : typingOf(ATYP, id) ? "me" : "", closed: !!c.closed });
       }
       if (p === "/chat/api/typing" && req.method === "POST") {   // Besucher tippt (gedrosselt im Widget, ~alle 3 s)
         req.resume(); const id = String(u.searchParams.get("c") || "");
@@ -391,7 +392,7 @@ module.exports = function (D) {
       if (p === "/admin/api/chat/conv" && req.method === "GET") {
         const id = String(u.searchParams.get("id") || ""), c = CID_RX.test(id) && CONVS.get(id);
         if (!c) return J(res, 404, { ok: false, error: "not_found" });
-        if (u.searchParams.get("read") === "1" && c.unread) { c.unread = 0; await store.putConv(c); bump(); }
+        if (u.searchParams.get("read") === "1" && (c.unread || (c.meSeen || 0) < c.lastId)) { c.unread = 0; c.meSeen = c.lastId; await store.putConv(c); bump(); }   // Simon hat die Unterhaltung offen → „Gelesen“ beim Besucher
         return J(res, 200, { ok: true, conv: summary(c), pages: c.pages || [], msgs: (await store.msgs(id, 0, 300)).map(pubMsg), typing: typingOf(VTYP, id) });
       }
       if (p === "/admin/api/chat/file") {
@@ -421,7 +422,7 @@ module.exports = function (D) {
         if (c.ai === "on") c.ai = "auto";           // Simon übernimmt: KI hört auf (wieder einschalten mit „KI: An“)
         if (!c.human) c.human = nowIso();
         c.closed = false; c.unread = 0;
-        const m = await addMsg(c, "me", text);
+        const m = await addMsg(c, "me", text); c.meSeen = c.lastId; await store.putConv(c);
         return J(res, 200, { ok: true, msg: pubMsg(m), conv: summary(c) });
       }
       if (p === "/admin/api/chat/op") {

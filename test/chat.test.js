@@ -146,10 +146,21 @@ async function startServer(dir, env) {
     assert.strictEqual(r.conv.ai, "auto");
   });
 
-  await t("Ohne Herzschlag nach Ablauf (Test: 1,5 s) automatisch offline", async () => {
+  await t("Online nur von Hand: bleibt ohne Herzschlag an, aus erst per Schalter; Gelesen in beide Richtungen", async () => {
     await adm("/admin/api/chat/status", { online: true }); assert.strictEqual((await pj("/chat/api/status")).online, true);
     await sleep(1700);
-    assert.strictEqual((await pj("/chat/api/status")).online, false); assert.strictEqual((await adm("/admin/api/chat/state")).online, false);
+    assert.strictEqual((await pj("/chat/api/status")).online, true, "keine automatische Abmeldung");
+    // Simon schreibt → beim Besucher noch nicht gelesen; Besucher öffnet (Poll) → im Cockpit „gelesen“
+    const r = await adm("/admin/api/chat/send", { id: A, text: "Kurze Rückfrage" }); assert.strictEqual(r.ok, true, JSON.stringify(r));
+    assert.ok(((await adm("/admin/api/chat/state")).convs.find(c => c.id === A).vSeen || 0) < r.msg.id, "noch nicht gelesen");
+    await pj("/chat/api/poll?c=" + A + "&after=0");
+    assert.ok((await adm("/admin/api/chat/state")).convs.find(c => c.id === A).vSeen >= r.msg.id, "Besucher hat gelesen");
+    // Besucher schreibt → Simon öffnet die Unterhaltung → Widget meldet „gelesen“
+    const v = await pj("/chat/api/send", { cid: A, text: "Passt" }); const vid = v.msg.id;
+    assert.ok(((await pj("/chat/api/poll?c=" + A + "&after=0")).seen || 0) < vid, "Simon hat noch nicht gelesen");
+    await fetch(B + "/admin/api/chat/conv?id=" + A + "&read=1", { headers: { cookie: COOKIE } });
+    assert.ok((await pj("/chat/api/poll?c=" + A + "&after=0")).seen >= vid, "Simon hat gelesen");
+    await adm("/admin/api/chat/status", { online: false }); assert.strictEqual((await pj("/chat/api/status")).online, false, "aus per Schalter");
   });
 
   await t("Offline: KI antwortet (Sonnet, max_tokens 400, kurzer Verlauf, Simons Antwort als Kontext), als „ki“ markiert", async () => {

@@ -29,7 +29,7 @@ F.css('.ch-top{display:flex;align-items:center;justify-content:space-between;gap
   '.ch-th{display:flex;flex-direction:column;min-width:0;min-height:0}.ch-hd{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}.ch-hd .t{flex:1 1 180px;min-width:0}.ch-hd .t b{display:block;font-size:15.5px}.ch-hd .t span{display:block;font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
   '.ch-hd .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ch-hd .seg{display:inline-flex}.ch-hd .seg button{padding:5px 10px;font-size:12.5px}.ch-back{display:none}'+
   '.ch-typing{display:flex;gap:4px;align-items:center;align-self:flex-start;margin:0 16px 8px;padding:10px 14px;border-radius:16px;background:var(--surface-2,rgba(127,127,127,.14));width:max-content}.ch-typing[hidden]{display:none}.ch-typing i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.35;animation:chTy 1.2s infinite ease-in-out}.ch-typing i:nth-child(2){animation-delay:.18s}.ch-typing i:nth-child(3){animation-delay:.36s}@keyframes chTy{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:.9;transform:translateY(-3px)}}.ch-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:6px;background:var(--sunk)}.ch-m{max-width:76%;padding:8px 12px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px;line-height:1.45;background:var(--panel);border:1px solid var(--line)}'+
-  '.ch-m small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}.ch-m.v{align-self:flex-start;border-bottom-left-radius:5px;font-family:var(--f-body);font-size:14.5px;font-weight:400;letter-spacing:normal;line-height:1.45;color:var(--ink)}.ch-m.me{align-self:flex-end;background:var(--ok-soft);border-color:transparent;border-bottom-right-radius:5px}'+
+  '.ch-m small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}.ch-rd.ok{color:var(--info);font-weight:600}.ch-m.v{align-self:flex-start;border-bottom-left-radius:5px;font-family:var(--f-body);font-size:14.5px;font-weight:400;letter-spacing:normal;line-height:1.45;color:var(--ink)}.ch-m.me{align-self:flex-end;background:var(--ok-soft);border-color:transparent;border-bottom-right-radius:5px}'+
   '.ch-m.ki{align-self:flex-end;background:var(--info-soft);border-color:transparent;border-bottom-right-radius:5px}.ch-m .ki-t{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:0 6px;border-radius:6px;background:var(--info);color:var(--on-glow);margin-bottom:3px}'+
   '.ch-m.sys{align-self:center;background:none;border:0;color:var(--ink-3);font-size:12.5px;text-align:center}.ch-ty{align-self:flex-end;font-size:12.5px;color:var(--ink-3)}.ch-info{font-size:12.5px;color:var(--ink-2);padding:8px 14px;border-bottom:1px solid var(--line);display:flex;gap:12px;flex-wrap:wrap}'+
   '.ch-comp{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line)}.ch-comp textarea{flex:1;resize:none;min-height:42px;max-height:160px;border-radius:14px}.ch-none{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-3);padding:30px;text-align:center}'+
@@ -49,7 +49,6 @@ function load(){
     if(!j||j.ok===false){ if(!ST) ST={ok:false,error:(j&&j.error)||"Fehler",convs:[]}; paint(); return; }
     if(j.same) return;
     var prevOn=ST&&ST.online; ST=j; VER=j.ver; F.renderNav(); beat(j.online); paint();
-    if(!j.online&&!MANOFF&&!document.hidden) autoOn();
     if(SEL&&F.current==="chat"&&MODE==="web") loadThread();
     if(prevOn===true&&j.online===false&&F.current==="chat") F.toast("Chat-Status: offline – die KI antwortet",true);
   }).catch(function(){ busy=false; });
@@ -62,17 +61,10 @@ function loadThread(){
     TH={id:id,conv:j.conv,msgs:j.msgs,pages:j.pages||[]}; if(!same) paintThread(); tyShow(!!j.typing);
   });
 }
-/* Automatisch online, sobald das Cockpit offen und sichtbar ist (Bildschirm entsperrt). Von Hand ausgeschaltet bleibt es aus,
-   bis das Cockpit das nächste Mal verdeckt bzw. der Bildschirm gesperrt war. In der Ruhezeit (abends) meldet der Server ohnehin offline. */
-var MANOFF=false, WASHID=false, AUTOT=0;
-function autoOn(){ if(document.hidden||MANOFF||Date.now()-AUTOT<20000) return; AUTOT=Date.now();
-  api("/admin/api/chat/status",{online:true}).then(function(j){ if(!j||!j.ok) return; if(ST) ST.online=j.online; beat(j.online); VER=""; load(); }); }
-/* Herzschlag: solange du online bist und das Cockpit offen ist */
-function beat(on){ clearInterval(beatT); beatT=null; if(on) beatT=setInterval(function(){ api("/admin/api/chat/status",{online:true}).then(function(j){ if(j&&j.ok&&ST&&ST.online!==j.online){ ST.online=j.online; paint(); } }); },45000); }
+/* Online/Offline nur von Hand über den Schalter – keine Automatik, kein Herzschlag (Wunsch Simon 06.11.2026) */
+function beat(){}
 setInterval(function(){ ticks++; if(F.current==="chat"&&!document.hidden) load(); else if(ticks%5===0) load(); },4000);
-document.addEventListener("visibilitychange",function(){ if(document.hidden){ WASHID=true; return; } if(WASHID){ WASHID=false; MANOFF=false; AUTOT=0; } autoOn(); });
-window.addEventListener("focus",function(){ autoOn(); });
-setTimeout(function(){ load(); autoOn(); },1500);
+setTimeout(load,1500);
 
 var fmtT=function(iso){ var t=new Date(iso); if(isNaN(t)) return ""; var td=new Date(); return t.toDateString()===td.toDateString()?t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):t.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"})+" "+t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); };
 function nameOf(c){ return c.name||("Besucher #"+c.no); }
@@ -94,9 +86,9 @@ function threadHead(c){
     '<div class="ch-info"><span>'+esc(aiTxt(c))+'</span>'+(c.aiCount?'<span>KI-Antworten: '+c.aiCount+'/'+((ST&&ST.aiConvMax)||15)+'</span>':'')+(c.request?'<span>Anliegen: '+esc(c.request)+'</span>':'')+(TH&&TH.pages&&TH.pages.length>1?'<span>Seiten: '+esc(TH.pages.join(", "))+'</span>':'')+'</div>';
 }
 function msgsHtml(){
-  var out=(TH.msgs||[]).map(function(m){ var cls=["v","me","ki","sys"].indexOf(m.from)>-1?m.from:"sys";
+  var vs=(TH.conv&&TH.conv.vSeen)||0, out=(TH.msgs||[]).map(function(m){ var cls=["v","me","ki","sys"].indexOf(m.from)>-1?m.from:"sys";
     var fl=m.file&&cls!=="sys";
-    return '<div class="ch-m '+cls+(fl?" file":"")+'">'+(cls==="ki"?'<span class="ki-t">KI</span><br>':'')+(fl?fileHtml(m.file):esc(m.text))+(cls!=="sys"?'<small>'+esc(fmtT(m.at))+'</small>':'')+'</div>'; }).join("");
+    return '<div class="ch-m '+cls+(fl?" file":"")+'">'+(cls==="ki"?'<span class="ki-t">KI</span><br>':'')+(fl?fileHtml(m.file):esc(m.text))+(cls!=="sys"?'<small>'+esc(fmtT(m.at))+(cls==="me"?' · <span class="ch-rd'+(m.id<=vs?" ok":"")+'">'+(m.id<=vs?"✓✓ Gelesen":"✓ Zugestellt")+'</span>':'')+'</small>':'')+'</div>'; }).join("");
   if(TH.conv&&TH.conv.typing) out+='<div class="ch-ty">KI schreibt …</div>';
   return out||'<div class="ch-m sys">Noch keine Nachrichten.</div>';
 }
@@ -147,7 +139,7 @@ F.action("chmode",function(m){ m=m==="wa"?"wa":"web"; if(m===MODE) return; MODE=
 function setConv(c){ if(!c||!ST) return; ST.convs=(ST.convs||[]).map(function(x){ return x.id===c.id?c:x; }); if(TH&&TH.id===c.id) TH.conv=c; VER=""; paint(); }
 function op(body){ body.id=SEL; return api("/admin/api/chat/op",body).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return null; } if(j.conv) setConv(j.conv); VER=""; load(); loadThread(); return j; }); }
 
-F.action("chstatus",function(){ var on=!(ST&&ST.online); MANOFF=!on; api("/admin/api/chat/status",{online:on}).then(function(j){ if(!j||!j.ok){ F.toast("Status konnte nicht gespeichert werden",true); return; } if(ST) ST.online=j.online; beat(j.online); VER=""; paint(); load(); F.toast(j.online?"Du bist online – Besucher sehen „Simon ist online“":on?"Ruhezeit (18–6 Uhr): Chat bleibt offline, die KI antwortet":"Offline bis zum nächsten Entsperren – die KI nimmt Anfragen an"); }); });
+F.action("chstatus",function(){ var on=!(ST&&ST.online); api("/admin/api/chat/status",{online:on}).then(function(j){ if(!j||!j.ok){ F.toast("Status konnte nicht gespeichert werden",true); return; } if(ST) ST.online=j.online; beat(j.online); VER=""; paint(); load(); F.toast(j.online?"Du bist online, bis du wieder ausschaltest – Besucher sehen „Simon ist online“":"Offline, bis du wieder einschaltest – die KI nimmt Anfragen an"); }); });
 F.action("chopen",function(id){ if(SEL===id&&TH) return; SEL=id; TH=null; compFor=null; paint(); loadThread(); });
 F.action("chback",function(){ SEL=null; TH=null; paint(); });
 F.action("chai",function(m){ op({op:"ai",mode:m}).then(function(j){ if(j) F.toast(m==="on"?"KI übernimmt diese Unterhaltung":m==="off"?"KI aus für diese Unterhaltung":"KI antwortet zuerst und übergibt bei Bedarf an dich"); }); });
