@@ -47,7 +47,7 @@ const slugN = v => String(v || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase(
 // Textil-Namen korrigiert (Prüfung 03.11.2026): Titel und Datenblatt nannten verschiedene Modelle – maßgeblich ist das gelieferte Modell laut Datenblatt bzw. Material
 const SPEC_BRAND_FIX = { "polo-basic-6": "Russell Classic Polycotton Polo 539M", "sweater-budget-8": "Fruit of the Loom Lightweight Raglan Sweat",
   "zipped-hoodie-budget-1": "B&C ID.205 Zipped Hoodie" };   // Print.com: Marke „russell_authentic_zipped“, Artikel aber bc.5wui25 (B&C), Farben ID.205/ID.224 – geprüft 04.11.2026
-const NAME_FIX = { "hoodie-budget-3": "Hoodies B&C ID.333", "sweater-budget-4": "Pullover B&C ID.222", "polo-basic-6": "Poloshirts Russell Classic Polycotton (539M)", "textile-stickers": "Textilaufkleber", "bar-apron-pocket": "Barschürzen mit Tasche", "bar-apron-green-generation": "Barschürzen „Green Generation“", "bar-apron-canvas": "Barschürzen aus Canvas", "apron-canvas": "Schürzen aus Canvas", "houston-cap": "Caps „Houston“", "whiteboards-premium": "Whiteboards Premium (bedruckt)", "tubes-giftset": "Reagenzglas-Geschenksets", "energy-drink-250ml": "Energy Drink mit Logo (250-ml-Dose)", "site-fence-banners": "Zaunbanner" };   // Print.com-CMS nennt es „Bauzaunbanner“ – das ist aber construction-fence-banners (eigenes Produkt „Bauzaun-Banner“)
+const NAME_FIX = { "set-lookbooks": "Papiermuster-Set: alle 5 Lookbooks", "print-lookbook": "Papiermuster Lookbook Print", "mail-lookbook": "Papiermuster Lookbook Mail (Karten & Kuverts)", "sign-lookbook": "Materialmuster Lookbook Sign", "rigid-lookbook": "Materialmuster Lookbook Rigids (Platten)", "inspire-lookbook": "Lookbook Inspire (Produktideen)", "hoodie-budget-3": "Hoodies B&C ID.333", "sweater-budget-4": "Pullover B&C ID.222", "polo-basic-6": "Poloshirts Russell Classic Polycotton (539M)", "textile-stickers": "Textilaufkleber", "bar-apron-pocket": "Barschürzen mit Tasche", "bar-apron-green-generation": "Barschürzen „Green Generation“", "bar-apron-canvas": "Barschürzen aus Canvas", "apron-canvas": "Schürzen aus Canvas", "houston-cap": "Caps „Houston“", "whiteboards-premium": "Whiteboards Premium (bedruckt)", "tubes-giftset": "Reagenzglas-Geschenksets", "energy-drink-250ml": "Energy Drink mit Logo (250-ml-Dose)", "site-fence-banners": "Zaunbanner" };   // Print.com-CMS nennt es „Bauzaunbanner“ – das ist aber construction-fence-banners (eigenes Produkt „Bauzaun-Banner“)
 function cmsTrim(j, keepSkus) {
   j = j || {};
   const A = ref => { const id = ref && (ref.id || ref); const a = id && j.asset && j.asset[id]; const f = a && String(a.file || ""); return f && /^\/\/images\.ctfassets\.net\/[\w\-./%]+$/i.test(f) ? f.slice(23) : ""; };   // Pfad ohne „//images.ctfassets.net/“ (spart Platz)
@@ -742,7 +742,11 @@ module.exports = function (D) {
     }
     return CMS;
   }
-  const cmsProd = sku => (CMS && CMS.products && CMS.products[sku]) || null;
+  // Lookbooks (Papier-/Materialmuster, Wunsch Simon 06.11.2026): nur die neutral schwarzen Ordner zeigen – Fotos der roten Print.com-Ordner (Logo) und der weißen Variante weglassen
+  const LOOKBOOK_SKUS = { "set-lookbooks": 1, "print-lookbook": 1, "mail-lookbook": 1, "sign-lookbook": 1, "rigid-lookbook": 1, "inspire-lookbook": 1 };
+  const cmsProd0 = sku => (CMS && CMS.products && CMS.products[sku]) || null;
+  const cmsProd = sku => { const c = cmsProd0(sku); if (!c || !LOOKBOOK_SKUS[sku]) return c;
+    const l = [c.i].concat(c.g || []).filter(Boolean).filter(x => /black|grey/i.test(x) && !/red|white|custom/i.test(x)); return Object.assign({}, c, { i: l[0] || "", g: l.slice(1) }); };
   const cmsOptImg = (prop, slug) => (CMS && CMS.options && CMS.options[prop + "|" + slug]) || "";
   // Info/Bild zu einer Option: 1. ausdrücklich diesem Produkt zugeordnet, 2. allgemein für genau diese Eigenschaft (z. B. Druckart 4/0 → Symbol),
   // 3. allgemein ohne Eigenschaft nur bei eindeutigen langen Kennungen (z. B. „custom_shape_kiss_cut“). Kurze Slugs wie „a3“, „40“, „none“ gibt es in vielen Produkten mit anderer Bedeutung.
@@ -3041,6 +3045,7 @@ module.exports = function (D) {
       txt: "Visitenkarten (Standard, Deluxe, Multiloft® mit farbigem Kern, PVC und Birkenholz), Klappkarten, Grußkarten, Einladungen, Kartensets und Karten aus Saatpapier sowie bedruckte und farbige Kuverts, Versandtaschen und Kartenhüllen – Papier, Format und Veredelung wählst du selbst, der Endpreis inklusive Versand steht sofort da. Online gestalten oder Druckdaten hochladen; Lieferung in ganz Österreich vom Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg).",
       faq: [["Wo kann ich in Österreich Visitenkarten drucken lassen?", "Online im Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg): Visitenkarten in vielen Papieren und Veredelungen, Preis sofort online, Versand in ganz Österreich inklusive. Bei Fragen erreichst du uns per Chat, Mail oder Telefon (+43 664 1430620)."],
         ["Kann ich meine Visitenkarten online gestalten?", "Ja – im kostenlosen Online-Designer mit Vorlagen, Logo-Upload und QR-Code (z. B. als vCard), ganz ohne Grafikprogramm. Eigene PDF-Druckdaten kannst du ebenso hochladen; jede Datei wird automatisch geprüft."],
+        ["Kann ich Papiermuster bestellen?", "Ja – die Lookbooks sind Ordner mit echten Mustern der Papiere, Kartons, Veredelungen und Kuverts (neutral schwarz, deutsch beschriftet), einzeln oder alle 5 im Set: " + SITE + "/print/papiermuster-lookbooks"],
         ["Gibt es passende Kuverts zu Karten und Einladungen?", "Ja – bedruckte Briefumschläge, farbige Kuverts, Karten mit farbigen Umschlägen sowie Versandtaschen und Luftpolsterumschläge findest du in derselben Kategorie."]] },
     { id: "flyer", slug: "flyer-plakate-drucken", main: "paper-print", sub: "flyers-folders-posters", rx: /flyer|folder|plakat|poster|lesezeichen|türhänger|ticket/i,
       h: "Flyer, Folder & Plakate drucken", h1: "Flyer, Folder & Plakate drucken – Preis sofort, Versand in Österreich inklusive",
@@ -3151,6 +3156,7 @@ module.exports = function (D) {
       "- Preis sofort im Konfigurator – Endpreise inkl. 20 % USt und Versand innerhalb Österreichs (keine Versandkosten extra); Firmen sehen auf Wunsch Nettopreise",
       "- Kleine Auflagen möglich, z. B. Plakate und Banner ab 1 Stück, Flyer und Karten ab 50 bzw. 100 Stück",
       "- Online-Designer mit Vorlagen und gratis KI-Assistent oder Upload der Druckdatei (PDF, JPG, PNG) mit automatischem Datencheck; optional Profi-Datencheck (5 €)",
+      "- Papier- und Materialmuster zum Anfassen: Lookbooks als neutral schwarze Ordner (Print, Mail, Sign, Rigids, Inspire oder alle 5 im Set), deutsch beschriftet: " + prodUrl("set-lookbooks", true),
       "- Gratis QR-Code-Generator für alle Drucksachen (Link, vCard, WLAN, E-Mail, Telefon, Text) – der QR-Code wird ohne Aufpreis als Vektor mitgedruckt: " + SITE + "/print/qr-code-generator",
       "- Bezahlung online (u. a. Kreditkarte, Apple Pay, EPS, PayPal), Firmen mit UID auch auf Rechnung; Bonusprogramm für Firmenkunden",
       "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto",
@@ -3330,6 +3336,12 @@ module.exports = function (D) {
   // Häufige Fragen je Produkt (sichtbar + FAQPage): nur Angaben, die der Shop wirklich einhält (Preis aus der Preisübersicht, Beschnitt/Sicherheitsabstand des Produkts)
   // Eigene Texte für Produkte, deren Lieferanten-Text nichts taugt (z. B. nur der Druckername) – für Kunden, Google, Bing und KI-Assistenten
   const OWN_DESC = {
+    "set-lookbooks": "Papier- und Materialmuster zum Anfassen: alle 5 Lookbooks (Print, Mail, Sign, Rigids und Inspire) als neutral schwarze Ordner mit deutschen Beschriftungen. Darin echte Muster der Papiere, Kartons, Veredelungen, Kuverts, Banner- und Folienmaterialien sowie Platten aus dem Sortiment – ideal für Agenturen, Grafiker:innen und alle, die Papier und Haptik vor dem Druck in der Hand haben wollen.",
+    "print-lookbook": "Lookbook Print: neutral schwarzer Ordner mit echten Mustern der Papiere und Veredelungen für Flyer, Visitenkarten, Karten, Broschüren und Plakate – gestrichen, ungestrichen, Naturpapiere und Effekte. Deutsch beschriftet. So wählst du Grammatur, Oberfläche und Veredelung mit gutem Gefühl.",
+    "mail-lookbook": "Lookbook Mail: neutral schwarzer Ordner mit Mustern von Karten, Kartons und Briefumschlägen – Papiere, Farben und Formate zum Anfassen. Deutsch beschriftet. Ideal vor der Bestellung von Grußkarten, Einladungen und Kuverts.",
+    "sign-lookbook": "Lookbook Sign: neutral schwarzer Ordner mit Materialmustern für Großformat – Banner, Folien, Laminate, Textilien, Papiere und Tapeten. Deutsch beschriftet.",
+    "rigid-lookbook": "Lookbook Rigids: neutral schwarzer Ordner mit Mustern der Plattenmaterialien für Schilder und Displays (Sticker-to-Plate und Direktdruck). Deutsch beschriftet.",
+    "inspire-lookbook": "Lookbook Inspire: neutral schwarzer Ordner mit Produktideen und Mustern aus dem ganzen Sortiment – zum Stöbern, Planen und Zeigen. Deutsch beschriftet.",
     "energy-drink-250ml": "Energy Drink mit eigenem Logo: 250-ml-Dosen mit deinem Design als Werbeartikel, Give-away und Merch – für Messen, Events, Sportvereine, Firmenfeiern, Kundengeschenke und Mitarbeitende. Gestaltet wird auf der vorgegebenen Vorlage: Inhaltsangaben, Nährwerte und Pflichthinweise stehen fest auf der Dose, dein Logo und Motiv kommen in die freien Flächen. Preis sofort online, Versand in ganz Österreich inklusive.",
     "fut-cards": "FUT-Karte selbst gestalten: deine eigene Fußball-Spielerkarte im Ultimate-Team-Look – passend zu FC 27 – mit eigenem Foto, Rating, Position, Namen und Werten. Gedruckt als großes Bild im Format 20 × 30 cm auf stabiler 3 mm Forex-Platte, in der typischen Kartenform ausgeschnitten. Das perfekte Geschenk für Fußballfans, Kinder und Spieler, für die Mannschaft, als Trainer- oder Abschiedsgeschenk, für Vereinsfeiern und Turniere."
   };
@@ -3617,7 +3629,7 @@ module.exports = function (D) {
   const slugOf = t => String(t || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/&/g, " und ").replace(/[®™©]/g, "")
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70).replace(/-+$/, "");
   let SLUGS = { byKey: {}, bySlug: {} };
-  const SLUG_KEEP = { "energy-drink-250ml": "energy-drink-250ml" };
+  const SLUG_KEEP = { "energy-drink-250ml": "energy-drink-250ml", "set-lookbooks": "papiermuster-lookbooks", "print-lookbook": "lookbook-print", "mail-lookbook": "lookbook-mail", "sign-lookbook": "lookbook-sign", "rigid-lookbook": "lookbook-rigids", "inspire-lookbook": "lookbook-inspire" };
   function slugsFor(pub) {
     const byKey = {}, bySlug = {}, cur = new Set(CURATED.map(c => c.key));
     pub.slice().sort((a, b) => (cur.has(b.key) - cur.has(a.key)) || ((+b.pop || 0) - (+a.pop || 0)) || String(a.key).localeCompare(String(b.key))).forEach(x => {
