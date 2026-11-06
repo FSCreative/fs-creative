@@ -338,6 +338,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const t1 = await (await fetch(B + "/print/druckerei-tirol")).text(); assert.ok(/Innsbruck/.test(t1) && /druckerei-wien/.test(t1), "Orte + Querverweise");
     assert.ok(/print\/druckerei-kaernten/.test(await (await fetch(B + "/sitemap.xml")).text()), "Sitemap");
   });
+  await t("Branchenseiten: Gastronomie, Hotels, Vereine, Handwerk mit Produkten, Firmenvorteilen, FAQ, Sitemap und llms.txt", async () => {
+    for (const sl of ["druck-fuer-gastronomie", "druck-fuer-hotels", "druck-fuer-vereine", "druck-fuer-handwerker"]) {
+      const r = await fetch(B + "/print/" + sl); assert.strictEqual(r.status, 200, sl); const h = await r.text();
+      assert.ok(/<h1>[^<]+<\/h1>/.test(h) && /"FAQPage"/.test(h) && /Vorteile für Firmen/.test(h) && /Weitere Branchen/.test(h), sl);
+      assert.ok(h.indexOf('<link rel="canonical" href="https://www.fs-creative.at/print/' + sl + '"') > -1, "canonical " + sl);
+    }
+    assert.ok(/druck-fuer-vereine/.test(await (await fetch(B + "/print/druckerei-tirol")).text()), "Regionsseite verlinkt Branchen");
+    assert.ok(/print\/druck-fuer-handwerker/.test(await (await fetch(B + "/sitemap.xml")).text()), "Sitemap");
+    assert.ok(/druck-fuer-gastronomie/.test(await (await fetch(B + "/llms.txt")).text()), "llms.txt");
+  });
   await t("Designer-PDF: Maße = Endformat + 2 × Beschnitt, TrimBox, Schriften eingebettet, CMYK, ausreichende Bild-dpi ok", async () => {
     const img = "data:image/png;base64," + png(400, 400, [255, 200, 0]).toString("base64");
     const r = await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<image x="250" y="150" width="40" height="40" xlink:href="' + img + '"/>'), svgPage()] }));

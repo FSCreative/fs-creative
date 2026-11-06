@@ -674,6 +674,8 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
   .ps-size .ps-step input{min-height:34px;font-size:16px;padding:2px}
 }
 .print-page .pullchain{display:none}
+.ps-check-tip{margin:8px 0 0;padding:10px 12px;border-radius:12px;background:var(--ps-soft,#7c5cff14);border:1px solid #7c5cff33;font-size:14px}
+.ps-rec{font-style:normal;font-size:11px;font-weight:700;letter-spacing:.02em;margin-left:6px;padding:2px 7px;border-radius:999px;background:#30d15826;color:inherit;vertical-align:1px}
 .ps-check-warn{margin:8px 0 0;padding:10px 12px;border-radius:12px;background:#ffd60a1f;border:1px solid #ffd60a55;font-size:14px}
 /* Dropdown: wärmer, Zebra, Umbruch statt Abschneiden */
 :root{--ps-ddz:#20202a}html.light{--ps-ddz:#f6f7fa}
