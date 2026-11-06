@@ -5057,7 +5057,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/order" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fm = await store.fileMeta(o.fileId);
-        return J(res, 200, { ok: true, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
+        return J(res, 200, { ok: true, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
       }
       // Print.com-Sortiment (nur lesend): alle Produkte bzw. ein Produkt mit Eigenschaften – zum Auswählen fürs Shop-Sortiment
       if (p === "/admin/api/print/pcproducts" && req.method === "GET") {
@@ -5070,9 +5070,16 @@ module.exports = function (D) {
       // Sortiment: alle Print.com-Produkte mit Kategorie und Freischaltung
       if (p === "/admin/api/print/sortiment" && req.method === "GET") return J(res, 200, await sortimentState());
       if (p === "/admin/api/print/file" && req.method === "GET") {
-        const o = await store.getOrder(String(u.searchParams.get("id") || "")); const buf = o && await store.fileData(o.fileId);
-        if (!buf) return D.send(res, 404, "Datei nicht gefunden");
-        return D.send(res, 200, buf, "application/pdf", { "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store" });
+        // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
+        const fm = await store.fileMeta(o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
+        const sm = sid ? await store.fileMeta(sid).catch(() => null) : null, buf = await store.fileData(sid || o.fileId);
+        if (!buf || (wantSrc && !sid)) return D.send(res, 404, "Datei nicht gefunden");
+        const ext = sid ? ({ jpg: "jpg", jpeg: "jpg", png: "png", pdf: "pdf" }[String((sm && sm.original) || "pdf").toLowerCase().replace(/^image\//, "")] || "pdf") : "pdf";
+        const ct = ext === "jpg" ? "image/jpeg" : ext === "png" ? "image/png" : "application/pdf";
+        const base = String((sid ? sm && sm.name : fm && fm.name) || "druck").replace(/\.(pdf|jpe?g|png)$/i, "").replace(/[^\wäöüÄÖÜß ()+.-]+/g, "_").slice(0, 80);
+        const fn = o.nr + " – " + base + (sid ? " (Original)" : "") + "." + ext, dl = u.searchParams.get("dl") === "1" || !!sid;
+        return D.send(res, 200, buf, ct, { "Content-Disposition": (dl ? "attachment" : "inline") + "; filename=\"" + o.nr + "." + ext + "\"; filename*=UTF-8''" + encodeURIComponent(fn), "Cache-Control": "private, no-store" });
       }
       if (p === "/admin/api/print/brief-file" && req.method === "GET") {
         const id = String(u.searchParams.get("id") || ""), m = /^f[a-f0-9]{24}$/.test(id) ? await store.fileMeta(id) : null; if (!m || m.kind !== "brief") return D.send(res, 404, "Nicht gefunden – die Datei wurde nach Ablauf der Aufbewahrung gelöscht");
@@ -5116,7 +5123,7 @@ module.exports = function (D) {
         o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: oldId, new: fm.id, motif: motif > -1 ? motif : null, name: fm.name }]).slice(-30);
         if (o.proof && o.proof.status !== "approved") o.proof.stale = true;   // neue Datei → Freigabe erneut senden
         hist(o, "Druckdaten ausgetauscht (Cockpit)" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + fm.name); stamp(o); await store.putOrder(o);
-        return J(res, 200, { ok: true, order: o, file: { id: fm.id, name: fm.name, checks } });
+        return J(res, 200, { ok: true, order: o, file: { id: fm.id, name: fm.name, checks, kind: fm.kind, pages: fm.pages, src: !!fm.src } });
       }
       const b = await readJson(req, 100000);
       if (p === "/admin/api/print/brief") {   // Status („neu“ / „in Arbeit“ / „erledigt“) und Notiz einer Gestaltungsanfrage
