@@ -5364,6 +5364,47 @@ FIN_PROP.register("eigenbeleg-replace", {
     VM_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
     return { ok: true };
   } });
+// Provisions-Gutschrift als Ausgabe erfasst (z. B. „Hermes Paketshop Provision Gutschrift 10/2026“ als Benzin mit Vorsteuer, Simon 06.11.2026):
+// Gutschriften, die ein Partner FÜR Simon ausstellt, sind Einnahmen (USt 20 %, kein Vorsteuerabzug). Vorschlag: Entwurf auf Einnahme umstellen –
+// Kategorie wie die letzte richtig verbuchte Gutschrift desselben Partners (sonst Erlös-/Provisionskategorie). Nur unverbuchte Entwürfe (status 50/100).
+const CREDIT_IN_RX = /gutschrift|provision/i, CREDIT_PARTNER_RX = /paket.?shop|provision/i;
+async function creditIncomeAccount(v) {
+  const sup = String(v.supplierName || "").trim().toLowerCase();
+  const prev = FIN_LOCAL.all("Voucher").filter(x => String(x.creditDebit) === "D" && String(x.status) === "1000" && String(x.supplierName || "").trim().toLowerCase() === sup && CREDIT_IN_RX.test(String(x.description || "")))
+    .sort((a, b) => String(b.voucherDate).localeCompare(String(a.voucherDate)))[0];
+  const pp = prev && FIN_LOCAL.all("VoucherPos").find(p => p.voucher && String(p.voucher.id) === String(prev.id) && p.accountingType);
+  if (pp) return { id: String(pp.accountingType.id), from: prev };
+  const at = FIN_LOCAL.all("AccountingType").filter(a => String(a.active) !== "0").find(a => /provision/i.test(a.name || "")) || FIN_LOCAL.all("AccountingType").filter(a => String(a.active) !== "0").find(a => /erl[öo]s|umsatz/i.test(a.name || "") && /20/.test(a.name || ""));
+  return at ? { id: String(at.id), from: null } : null;
+}
+FIN_PROP.register("credit-income", {
+  label: "Gutschrift ist eine Einnahme",
+  list: async () => {
+    if (!FIN_STATE.local) return [];
+    await FIN_LOCAL.load(); const out = [];
+    for (const v of FIN_LOCAL.all("Voucher").filter(v => String(v.creditDebit || "C") === "C" && ["50", "100"].indexOf(String(v.status)) > -1 && CREDIT_IN_RX.test(String(v.description || "")) && CREDIT_PARTNER_RX.test(String(v.description || "") + " " + String(v.supplierName || "")))) {
+      const g = Math.abs(+v.sumGross || 0); if (!(g > 0)) continue;
+      const acc = await creditIncomeAccount(v); if (!acc) continue;
+      const atName = ((FIN_LOCAL.get("AccountingType", acc.id) || {}).name) || "Erlöse";
+      out.push({ id: "cin:" + v.id, key: "cin:" + v.id, voucherId: String(v.id), amount: g, date: String(v.voucherDate || "").slice(0, 10), payload: { voucherId: String(v.id), at: acc.id },
+        title: "„" + (v.supplierName || "Gutschrift") + "“ ist eine Einnahme, keine Ausgabe · " + g.toFixed(2).replace(".", ",") + " €",
+        detail: String(v.description || "").slice(0, 90) + " · als Einnahme „" + atName + "“ mit 20 % USt erfassen" + (acc.from ? " (wie " + String(acc.from.description || "").slice(0, 40) + ")" : ""), source: "Belege" });
+    }
+    return out;
+  },
+  valid: it => { const v = FIN_LOCAL.get("Voucher", (it.payload || it).voucherId); return !!(v && String(v.creditDebit || "C") === "C" && ["50", "100"].indexOf(String(v.status)) > -1); },
+  exec: async it => {
+    const p = it.payload || it, v = FIN_LOCAL.get("Voucher", p.voucherId); if (!v) throw new Error("Beleg nicht mehr vorhanden");
+    if (["50", "100"].indexOf(String(v.status)) < 0) throw new Error("Beleg ist schon verbucht – bitte von Hand prüfen");
+    const ps = FIN_LOCAL.all("VoucherPos").filter(x => x.voucher && String(x.voucher.id) === String(v.id));
+    const g = Math.round(Math.abs(+v.sumGross || 0) * 100) / 100, rate = 20;
+    const body = { voucher: { id: v.id, objectName: "Voucher", mapAll: true, creditDebit: "D", taxType: "default", taxRule: null, reverseCharge: false },
+      voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: p.at, objectName: "AccountingType" }, taxRate: rate, net: false, sumGross: g, sumNet: sevNet(g, rate), comment: String(v.description || "").slice(0, 250) }],
+      voucherPosDelete: ps.map(x => ({ id: x.id, objectName: "VoucherPos" })) };
+    await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
+    VM_CACHE.at = 0; STEUER_CACHE.at = 0; SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+    return { ok: true };
+  } });
 const VM_CACHE = { at: 0, items: null, p: null };
 // jede Buchungsänderung (Beleg, Zahlung, Import) → Beleg-Abgleich neu rechnen
 if (SEV_OPS && SEV_OPS.resetCaches && !SEV_OPS._vmHook) { const rc = SEV_OPS.resetCaches; SEV_OPS.resetCaches = function () { VM_CACHE.at = 0; return rc.apply(this, arguments); }; SEV_OPS._vmHook = true; }
