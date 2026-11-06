@@ -1111,7 +1111,7 @@
       else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", n === 2 && S.prod.slug ? "/print/" + S.prod.slug : location.href); } } catch (e) {} }   // Produkt gewählt → seine sprechende Adresse
   function go(n, nopush) { if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
     if (!nopush) stepPush(n, n === 3 ? S.mode : ""); var up = n === 3 && S.step < 3; S.step = n; S.err = ""; render(); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); }
-    if (up && !nopush && kind() === "textile" && !S.file) setTimeout(function () { if (S.step === 3 && kind() === "textile") openTexDesigner(); }, 250); }   // Textil: gestaltet wird immer im Shirt-Designer (Wunsch Simon 04.11.2026)
+    }   // Textil: Designer öffnet sich nicht mehr von selbst, sondern über den großen Knopf „Im Shirt-Designer gestalten“ (Wunsch Simon 06.11.2026)
 
   // ── Startseite: „Was möchtest du heute drucken?“ + Suche, Klassiker (Flyer, Banner), täglich 4 andere Produkte, Kategorien, Designer ──
   function daySeed() { var d = new Date(); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate(); }
