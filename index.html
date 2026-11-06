@@ -229,6 +229,10 @@ html.light .hx-print{--hx-g:rgba(255,190,0,.26);--hx-acc:#9a6b00}
 .hx-web .hx-tag{color:var(--hx-web-t);background:rgba(10,132,255,.15)}
 html.light .hx-web .hx-tag{background:rgba(10,111,224,.09)}
 .hx-print .hx-tag{color:#1d1d1f;background:var(--hx-ink)}
+/* Druckshop-Logo statt Plakette (Simon 06.11.2026): dunkles Design helle Schrift, helles Design dunkle Schrift */
+.hx-plogo{display:inline-flex;align-items:center;gap:10px;margin:0;line-height:0}.hx-plogo a{display:block;line-height:0}.hx-plogo img{display:block;height:clamp(34px,3.2vw,50px);width:auto}
+.hx-plogo .lt{display:none}html.light .hx-plogo .lt{display:block}html.light .hx-plogo .dk{display:none}
+.hx-new{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1;padding:5px 8px;border-radius:999px;color:#1d1d1f;background:var(--hx-ink)}
 .hx-h2{margin-top:14px;font-size:clamp(24px,2.45vw,36px);font-weight:700;letter-spacing:-.032em;line-height:1.08}
 /* ganze Tür klickbar: der Titel-Link spannt sich über die Karte, Buttons und Produktfotos liegen darüber */
 .hx-h2 a{color:inherit}
@@ -319,6 +323,7 @@ html.hx-pv .fscc-print{opacity:0;visibility:hidden;pointer-events:none;transform
   .hx-copy{grid-row:2/6;padding:12px 0 0;justify-items:start;text-align:left}
   .hx-tag{font-size:10px;letter-spacing:.05em;padding:4px 8px 4px 7px;gap:4px}
   .hx-tag svg{width:12px;height:12px}
+  .hx-plogo{gap:6px}.hx-plogo img{height:22px}.hx-new{font-size:9px;padding:4px 6px}
   .hx-h2{margin-top:8px;font-size:18px;line-height:1.12;letter-spacing:-.025em}
   .hx-text{margin:5px 0 0;font-size:13px;line-height:1.42}
   .hx-dt,.hx-note{display:none}
@@ -352,6 +357,7 @@ html.hx-pv .fscc-print{opacity:0;visibility:hidden;pointer-events:none;transform
   .hx-h2{font-size:16.5px}
   .hx-text,.hx-price{font-size:12.5px}
   .hx-tag{font-size:9.5px;letter-spacing:.03em}
+  .hx-plogo img{height:20px}.hx-new{display:none}
   .hx-cta .btn{font-size:13px;padding:10px 6px}
   .hx-more{font-size:12.5px}
 }
@@ -886,7 +892,7 @@ html.light{
           <!--PRINT_LIVE-->
           <article class="hx-door hx-print" aria-labelledby="hx-print-h">
             <div class="hx-copy">
-              <p class="hx-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg><span>Neu · <span class="hx-dt">Online-</span>Druckshop</span></p>
+              <p class="hx-plogo"><a href="/print" aria-label="FS Creative Druckshop"><img class="dk" src="/logos/druckshop-logo.svg" alt="FS Creative Druckshop" width="2170" height="690" decoding="async"><img class="lt" src="/logos/druckshop-logo-dunkel.svg" alt="" width="2170" height="690" loading="lazy" decoding="async"></a><span class="hx-new">Neu</span></p>
               <h2 class="hx-h2" id="hx-print-h"><a href="/print">Druck &amp; Werbeartikel</a></h2>
               <p class="hx-text">Über 900 Produkte<span class="hx-dt"> von Flyer bis T-Shirt</span>. Online gestalten oder Datei hochladen<span class="hx-dt">, Preis sofort sehen</span>.<span class="hx-note">Endpreise inkl. 20&nbsp;% USt und Versand in Österreich</span><span class="hx-price" data-from="flyer" data-name="Flyer">Preis sofort im Konfigurator</span></p>
               <div class="hx-cta">

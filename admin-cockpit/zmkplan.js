@@ -859,7 +859,7 @@ function musPanel(p){
   var comp=c.canCompose?'<button type="button" class="btn sm" data-act="mpmcomp:'+id+'"'+(busy?' disabled':'')+' title="Stable Audio 3.0 komponiert einen eigenen Titel für dieses Reel">'+F.svg("mspark")+' Neu komponieren (≈ 0,08 $)</button>'
     :'<button type="button" class="btn sm" disabled title="'+esc((c.stability&&c.stability.configured?"":"Kein Stability-Key – ")+(c.composeBlock||"")+" (Kanäle › Extras)")+'">'+F.svg("mspark")+' Neu komponieren</button>';
   var act='<div class="mu-act">'+(p.music==="none"?'<button type="button" class="btn sm" data-act="mpmnone:'+id+'|0">Mit Musik</button>':
-      '<button type="button" class="btn sm" data-act="mpmshuf:'+id+'"'+(busy?' disabled':'')+'>'+F.svg("mshuffle")+' Andere Musik</button><button type="button" class="btn sm" data-act="mpmsug:'+id+'"'+(busy?' disabled':'')+'>'+F.svg("mplay")+' 3 Vorschläge</button>'+comp+
+      '<button type="button" class="btn sm" data-act="mpmshuf:'+id+'"'+(busy?' disabled':'')+'>'+F.svg("mshuffle")+' Andere Musik</button><button type="button" class="btn sm" data-act="mpmsug:'+id+'"'+(busy?' disabled':'')+'>'+F.svg("mplay")+' 3 Vorschläge</button><button type="button" class="btn sm" data-act="mpmlib:'+id+'"'+(busy?' disabled':'')+' title="Alle Titel mit Hörprobe – nur die Musik wird getauscht, das Video bleibt">'+F.svg("mplay")+' Aus Bibliothek wählen</button>'+comp+
       '<button type="button" class="btn sm" data-act="mpmnone:'+id+'|1">Ohne Musik</button>')+'</div>';
   var want=p.music==="none"?'':'<div class="mu-want"><label>Stimmung <select class="f" data-mpmw="mood" data-id="'+id+'">'+(PL.moods||[]).map(function(m){ return '<option value="'+esc(m.key)+'"'+(m.key===mood?' selected':'')+'>'+esc(m.label)+'</option>'; }).join("")+'</select></label>'+
       '<span>Energie <span class="mu-en" role="group" aria-label="Energie 1 bis 5">'+[1,2,3,4,5].map(function(n){ return '<button type="button" data-act="mpmen:'+id+'|'+n+'" aria-pressed="'+(n===en)+'">'+n+'</button>'; }).join("")+'</span></span>'+
@@ -881,8 +881,32 @@ F.action("mpmnone",function(a){ var x=a.split("|"); musOp(x[0],"musicNone",{on:x
 F.action("mpmrate",function(a){ var x=a.split("|"), v=+x[1], p=PL.posts.find(function(q){ return q.id===x[0]; }), lib=p&&p.track?musTrack(p.track.id):null, cur=lib&&lib.rating?lib.rating[p.brand]||0:0;
   if(v>0&&cur===1) v=0;   // nochmal Daumen hoch = zurücknehmen
   musOp(x[0],"musicRate",{v:v},v<0?MUS_SWAP:v>0?"Gemerkt: passt zu dieser Marke":"Bewertung zurückgenommen").then(function(j){ if(j&&lib){ lib.rating=Object.assign({},lib.rating||{}); if(v) lib.rating[p.brand]=v; else delete lib.rating[p.brand]; musRepaint(x[0]); } }); });
-F.action("mpmen",function(a){ var x=a.split("|"); musOp(x[0],"musicWant",{energy:+x[1]},"Energie "+x[1]+" – neue Auswahl, Reel wird neu erstellt"); });
-F.listen("change","[data-mpmw]",function(el){ var o={}; o[el.getAttribute("data-mpmw")]=el.value; musOp(el.getAttribute("data-id"),"musicWant",o,"Neue Auswahl – Reel wird neu erstellt"); });
+F.action("mpmen",function(a){ var x=a.split("|"); musOp(x[0],"musicWant",{energy:+x[1]},function(j){ return j.remuxed?"Energie "+x[1]+" – nur die Musik wurde getauscht":"Energie "+x[1]+" – Reel wird neu erstellt"; }); });
+F.listen("change","[data-mpmw]",function(el){ var o={}; o[el.getAttribute("data-mpmw")]=el.value; musOp(el.getAttribute("data-id"),"musicWant",o,function(j){ return j.remuxed?"Neue Musik – nur die Tonspur wurde getauscht":"Neue Auswahl – Reel wird neu erstellt"; }); });
+/* Ganze Bibliothek für einen Post (Wunsch Simon 06.11.2026): filtern nach Stimmung, Jahreszeit, Text – „Übernehmen“ tauscht nur die Tonspur */
+var MLIB={};
+function seasLbl(k){ var v=((PL.musicVocab&&PL.musicVocab.seasons)||[]).find(function(x){ return x.key===k; }); return v?v.label:k; }
+function libPaint(id){ var L=MLIB[id], box=document.getElementById("mpmSug-"+id); if(!L||!box) return;
+  var f=L.list.filter(function(t){ var txt=(t.name+" "+(t.genres||[]).join(" ")+" "+(t.instruments||[]).join(" ")+" "+(t.vibe||"")).toLowerCase();
+    return (!L.mood||t.mood===L.mood||(t.moods||[]).indexOf(L.mood)>-1)&&(!L.season||(L.season==="-"?!(t.season||[]).length:(t.season||[]).indexOf(L.season)>-1))&&(!L.q||txt.indexOf(L.q)>-1); });
+  var sel=function(k,opts,cur){ return '<select class="f" data-mplf="'+k+'" data-id="'+esc(id)+'">'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(o[0]===cur?' selected':'')+'>'+esc(o[1])+'</option>'; }).join("")+'</select>'; };
+  box.innerHTML='<div class="mu-want"><label>Stimmung '+sel("mood",[["","alle"]].concat((PL.moods||[]).map(function(m){ return [m.key,m.label]; })),L.mood)+'</label>'+
+    '<label>Jahreszeit '+sel("season",[["","alle"],["-","ohne Saison"]].concat(((PL.musicVocab&&PL.musicVocab.seasons)||[]).map(function(x){ return [x.key,x.label]; })),L.season)+'</label>'+
+    '<label>Suche <input class="f" type="search" data-mplq="'+esc(id)+'" value="'+esc(L.q)+'" placeholder="Titel, Genre, Instrument …"></label></div>'+
+    '<p class="muted small" style="margin:6px 0">'+f.length+' von '+L.list.length+' Titeln · beste Treffer für diesen Post zuerst</p>'+
+    f.slice(0,L.n).map(function(t){ return '<div class="mu-card"><b>'+esc(t.name)+(t.current?' <span class="mu-b">aktuell</span>':'')+'</b><div class="mu-t">'+musBadges(t)+'</div>'+
+      '<span class="tags">'+esc([].concat((t.moods||[]).map(function(m){ var x=(PL.moods||[]).find(function(y){ return y.key===m; }); return x?x.label:m; }),(t.season||[]).map(seasLbl),t.genres||[]).join(" · "))+'</span>'+
+      (t.last?'<span class="tags">'+esc(t.last)+'</span>':'<span class="tags">noch nie verwendet</span>')+
+      '<audio controls preload="none" src="'+esc(t.preview)+'" aria-label="Hörprobe"></audio>'+(t.current?'':'<button type="button" class="btn sm primary" data-act="mpmset:'+esc(id)+'|'+esc(t.id)+'">Übernehmen</button>')+'</div>'; }).join("")+
+    (f.length>L.n?'<button type="button" class="btn sm" data-act="mplmore:'+esc(id)+'">Weitere '+Math.min(30,f.length-L.n)+' anzeigen</button>':'');
+}
+F.action("mpmlib",function(id){ var box=document.getElementById("mpmSug-"+id); if(box) box.innerHTML='<span class="muted small">Lade die Musik-Bibliothek …</span>';
+  api("/admin/api/mkt/post",{id:id,op:"musicLibrary"}).then(function(j){ if(!box) return; if(!j||!j.ok){ box.innerHTML='<span class="bad-t small">'+esc((j&&j.error)||"Fehler")+'</span>'; return; }
+    MLIB[id]={list:j.tracks||[],mood:"",season:"",q:"",n:30}; libPaint(id); }).catch(function(){ if(box) box.innerHTML='<span class="bad-t small">Keine Verbindung</span>'; }); });
+F.action("mplmore",function(id){ if(MLIB[id]){ MLIB[id].n+=30; libPaint(id); } });
+F.listen("change","[data-mplf]",function(el){ var id=el.getAttribute("data-id"); if(!MLIB[id]) return; MLIB[id][el.getAttribute("data-mplf")]=el.value; MLIB[id].n=30; libPaint(id); });
+var mplT=0; F.listen("input","[data-mplq]",function(el){ var id=el.getAttribute("data-mplq"); clearTimeout(mplT); mplT=setTimeout(function(){ if(!MLIB[id]) return; MLIB[id].q=el.value.trim().toLowerCase(); MLIB[id].n=30; libPaint(id);
+  var i=document.querySelector('[data-mplq="'+id+'"]'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } },250); });
 F.action("mpmsug",function(id){ var box=document.getElementById("mpmSug-"+id); if(box) box.innerHTML='<span class="muted small">Suche passende Titel …</span>';
   api("/admin/api/mkt/post",{id:id,op:"musicSuggest"}).then(function(j){ if(!box) return; if(!j||!j.ok){ box.innerHTML='<span class="bad-t small">'+esc((j&&j.error)||"Fehler")+'</span>'; return; }
     box.innerHTML=(j.suggestions||[]).map(function(t){ return '<div class="mu-card"><b>'+esc(t.name)+'</b><div class="mu-t">'+musBadges(t)+'</div>'+

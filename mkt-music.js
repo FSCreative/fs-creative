@@ -21,21 +21,30 @@ const TARGET = -14;           // LUFS im fertigen Reel
 const MAX_STORE = 60;         // Sekunden je gespeichertem Titel (längere Quellen: bestes Fenster)
 
 // ───────────── Vokabular ─────────────
-const MOODS = ["froehlich", "lustig", "elegant", "ruhig", "episch", "alpin", "elektronisch"];
-const MOOD_DE = { froehlich: "fröhlich", lustig: "lustig", elegant: "elegant", ruhig: "ruhig", episch: "episch", alpin: "alpin/volkstümlich", elektronisch: "elektronisch" };
-const MOOD_NEAR = { froehlich: ["lustig", "alpin"], lustig: ["froehlich"], elegant: ["ruhig", "elektronisch"], ruhig: ["elegant"], episch: ["elektronisch"], alpin: ["froehlich"], elektronisch: ["episch", "elegant"] };
-const MOOD_WORDS = { froehlich: "happy, sunny, feel-good", lustig: "playful, quirky, cheeky", elegant: "elegant, stylish, warm", ruhig: "calm, peaceful, warm", episch: "epic, heroic, powerful", alpin: "alpine, festive, oompah, party", elektronisch: "modern, sleek, upbeat electronic" };
+// Stimmungen (06.11.2026 erweitert: pop, rock, chill, romantisch, inspirierend, spannend) – gelten auch für post.mood (mkt-posts.js nimmt sie von hier)
+const MOODS = ["froehlich", "lustig", "elegant", "ruhig", "episch", "alpin", "elektronisch", "pop", "rock", "chill", "romantisch", "inspirierend", "spannend"];
+const MOOD_DE = { froehlich: "fröhlich", lustig: "lustig", elegant: "elegant", ruhig: "ruhig", episch: "episch", alpin: "alpin/volkstümlich", elektronisch: "elektronisch",
+  pop: "Pop", rock: "Rock", chill: "chillig/Lo-Fi", romantisch: "romantisch", inspirierend: "inspirierend", spannend: "spannend" };
+const MOOD_NEAR = { froehlich: ["lustig", "alpin", "pop"], lustig: ["froehlich"], elegant: ["ruhig", "elektronisch", "romantisch"], ruhig: ["elegant", "chill"], episch: ["elektronisch", "inspirierend", "spannend"], alpin: ["froehlich"],
+  elektronisch: ["episch", "elegant", "pop"], pop: ["froehlich", "elektronisch"], rock: ["episch"], chill: ["ruhig", "elektronisch"], romantisch: ["ruhig", "elegant"], inspirierend: ["episch", "froehlich"], spannend: ["episch"] };
+const MOOD_WORDS = { froehlich: "happy, sunny, feel-good", lustig: "playful, quirky, cheeky", elegant: "elegant, stylish, warm", ruhig: "calm, peaceful, warm", episch: "epic, heroic, powerful", alpin: "alpine, festive, oompah, party", elektronisch: "modern, sleek, upbeat electronic",
+  pop: "catchy, modern pop, bright", rock: "rock, driving electric guitars, energetic", chill: "chill, laid-back, lo-fi", romantisch: "romantic, tender, heartfelt", inspirierend: "inspiring, uplifting, hopeful", spannend: "suspenseful, mysterious, tense" };
+// Jahreszeiten/Anlässe je Titel (tags.season): Auswahl bevorzugt die Saison des Post-Termins, Weihnachten/Halloween nur in ihrem Zeitraum
+const SEASONS = ["fruehling", "sommer", "herbst", "winter", "weihnachten", "halloween"];
+const SEASON_DE = { fruehling: "Frühling", sommer: "Sommer", herbst: "Herbst", winter: "Winter", weihnachten: "Weihnachten", halloween: "Halloween" };
 const ENERGY_WORDS = ["", "very calm, soft, sparse", "calm, gentle", "upbeat, positive", "energetic, driving, punchy", "high energy, powerful, euphoric"];
 const TEMPI = ["langsam", "mittel", "schnell"];
 const GENRES = ["acoustic pop", "funk pop", "indie folk", "quirky pop", "swing pop", "nu disco", "lounge house", "cinematic pop", "jazzy piano", "cinematic acoustic", "ambient folk", "neo classical",
-  "epic hybrid orchestral", "electronic action", "trailer rock", "apres ski party", "polka pop", "folk rock", "corporate electronic", "tech house light", "minimal pop", "future bass", "lo-fi house", "synth pop", "chill hip hop", "christmas pop"];
+  "epic hybrid orchestral", "electronic action", "trailer rock", "apres ski party", "polka pop", "folk rock", "corporate electronic", "tech house light", "minimal pop", "future bass", "lo-fi house", "synth pop", "chill hip hop", "christmas pop",
+  "pop", "rock", "indie rock", "lo-fi chill", "orchestral", "jazz", "classical", "country", "world", "reggae", "latin", "christmas orchestral"];
 const INSTRUMENTS = ["ukulele", "acoustic guitar", "electric guitar", "piano", "felt piano", "rhodes", "strings", "pizzicato strings", "brass", "tuba", "accordion", "fiddle", "marimba", "glockenspiel", "whistle",
   "claps", "stomps", "big drums", "four on the floor", "synth plucks", "synth bass", "pads", "bells", "bass guitar", "upright bass"];
 // Hauptwort für Titelnamen von KI-Titeln (ohne Markennamen)
 const GENRE_NOUN = { "acoustic pop": "Pop", "funk pop": "Groove", "indie folk": "Folk", "quirky pop": "Caper", "swing pop": "Swing", "nu disco": "Disco", "lounge house": "Lounge", "cinematic pop": "Theme",
   "jazzy piano": "Keys", "cinematic acoustic": "Journey", "ambient folk": "Air", "neo classical": "Etude", "epic hybrid orchestral": "Anthem", "electronic action": "Rush", "trailer rock": "Charge",
   "apres ski party": "Party", "polka pop": "Polka", "folk rock": "Stomp", "corporate electronic": "Pulse", "tech house light": "House", "minimal pop": "Minimal", "future bass": "Wave", "lo-fi house": "Lo-Fi",
-  "synth pop": "Synth", "chill hip hop": "Beat", "christmas pop": "Holiday" };
+  "synth pop": "Synth", "chill hip hop": "Beat", "christmas pop": "Holiday", pop: "Pop", rock: "Riff", "indie rock": "Indie", "lo-fi chill": "Chill", orchestral: "Score", jazz: "Jazz", classical: "Sonata",
+  country: "Country", world: "World", reggae: "Reggae", latin: "Latin", "christmas orchestral": "Noel" };
 
 // ───────────── Musikprofile je Marke (Standard; Simon passt sie in Kanäle › Extras an → state.brands[key].music) ─────────────
 const PROFILES = {
@@ -67,7 +76,7 @@ const LICENSES = {
 };
 const LIC_BLOCKED = /^(cc-by-(sa|nc|nd)|unbekannt|unknown)/;   // NC, ND, SA und Unbekanntes: gesperrt
 const CID_BAD = ["registriert", "claim"];
-const SRC_LABEL = { seed: "CC0", stability: "KI · Stability", elevenlabs: "KI · ElevenLabs", lyria: "KI · Lyria", upload: "eigene", envato: "Envato", ccmixter: "ccMixter", pixabay: "Pixabay" };
+const SRC_LABEL = { seed: "CC0", freepd: "CC0 · FreePD", stability: "KI · Stability", elevenlabs: "KI · ElevenLabs", lyria: "KI · Lyria", upload: "eigene", envato: "Envato", ccmixter: "ccMixter", pixabay: "Pixabay" };
 const AI_SOURCES = ["stability", "elevenlabs", "lyria"];
 // Engines: nur Stability aktiv; weitere Adapter (elevenlabs, lyria) später hier eintragen
 const ENGINES = { stability: { label: "Stability AI Stable Audio 3.0", costUsd: 0.08 } };
@@ -86,6 +95,14 @@ const uniq = a => Array.from(new Set(a));
 function jaccard(a, b) { a = uniq(a || []); b = uniq(b || []); if (!a.length || !b.length) return 0; const B = new Set(b); const i = a.filter(x => B.has(x)).length; return i / (a.length + b.length - i); }
 const vocab = (list, V) => uniq((Array.isArray(list) ? list : String(list || "").split(/[,;]/)).map(x => String(x || "").toLowerCase().trim().replace(/\s+/g, " ")).filter(x => V.indexOf(x) > -1));
 const viennaDay = ms => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+// Saison eines Tages (Wiener Zeit): Weihnachten 15.11.–6.1., Halloween 1.–31.10.
+function seasonsAt(ms) { const d = viennaDay(ms), m = +d.slice(5, 7), day = +d.slice(8, 10), out = [];
+  out.push(m === 12 || m <= 2 ? "winter" : m <= 5 ? "fruehling" : m <= 8 ? "sommer" : "herbst");
+  if ((m === 11 && day >= 15) || m === 12 || (m === 1 && day <= 6)) out.push("weihnachten"); if (m === 10) out.push("halloween"); return out; }
+// freier Text (Plan-KI, Cockpit) → Saison-Schlüssel
+const seasonKeys = v => { const t = (Array.isArray(v) ? v.join(" ") : String(v || "")).toLowerCase(), out = [];
+  if (/frühling|fruehling|spring|ostern|easter/.test(t)) out.push("fruehling"); if (/sommer|summer|beach|strand/.test(t)) out.push("sommer"); if (/herbst|autumn|fall\b|harvest/.test(t)) out.push("herbst");
+  if (/winter|schnee|snow|ski/.test(t)) out.push("winter"); if (/weihnacht|advent|christmas|xmas|nikolaus|krampus/.test(t)) out.push("weihnachten"); if (/halloween/.test(t)) out.push("halloween"); return out; };
 const monthKey = ms => viennaDay(ms || Date.now()).slice(0, 7);
 function isoWeek(ms) { const d = new Date(viennaDay(ms) + "T00:00:00Z"), day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3); const w1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return d.getUTCFullYear() + "-W" + String(Math.round(((d - w1) / 864e5 - 3 + ((w1.getUTCDay() + 6) % 7)) / 7 + 1)).padStart(2, "0"); }
 
@@ -326,7 +343,7 @@ module.exports = function (C) {
   function publicTrack(t) {
     const L = LICENSES[t.license.key] || {};
     return { id: t.id, name: t.name, source: t.source, src: SRC_LABEL[t.source] || t.source, seed: !!t.seed, ai: isAi(t), mood: t.tags.mood || "", moods: t.tags.moods || [], energy: energyOf(t), genres: t.tags.genres || [], instruments: t.tags.instruments || [],
-      vocals: !!t.tags.vocals, brands: t.tags.brands || [], vibe: t.tags.vibe || "", moodGuess: !!t.tags.moodGuess, confirmed: !!t.tags.confirmed, bpm: syncedBpm(t), dur: t.a && t.a.dur || 0, lufs: t.a && t.a.lufs,
+      vocals: !!t.tags.vocals, brands: t.tags.brands || [], season: t.tags.season || [], vibe: t.tags.vibe || "", moodGuess: !!t.tags.moodGuess, confirmed: !!t.tags.confirmed, bpm: syncedBpm(t), dur: t.a && t.a.dur || 0, lufs: t.a && t.a.lufs,
       license: t.license.text || L.text || "", licKey: t.license.key, licLabel: L.label || t.license.key, credit: !!L.attribution, contentId: t.license.contentId || "", artist: t.license.artist || "", sourceUrl: t.license.sourceUrl || "",
       hidden: !!t.hidden, gone: !!t.gone, rating: t.rating || {}, use: { count: (t.use || {}).count || 0, last: (t.use || {}).last || "", lastBrand: (t.use || {}).lastBrand || "" }, addedAt: t.addedAt || "",
       q: t.q ? { ok: t.q.ok !== false, reasons: t.q.reasons || [] } : null, analysed: !!(t.a && t.a.v >= AV), forBrand: (t.tags.brands || [])[0] || "", composedFor: t.forPost || "" };
@@ -335,7 +352,7 @@ module.exports = function (C) {
   function list() { return all().filter(t => !t.hidden && !t.gone).map(t => ({ id: t.id, name: t.name, mood: t.tags.mood || "", license: t.license.text, source: t.source, bpm: syncedBpm(t), beat0: (t.a && t.a.beat0) || 0, file: t.fileAbs, seed: !!t.seed })); }
 
   // ───────────── Einstellungen, Schlüssel, Budget ─────────────
-  function cfg() { const st = S().mkt; st.musicCfg = Object.assign({ engine: "auto", limitEur: 15, revenueOk: "", variants: 1, saver: false, weekly: 1, ytAi: true, cfgScale: 1, maxMb: 400, maxTracks: 600 }, st.musicCfg || {}); return st.musicCfg; }
+  function cfg() { const st = S().mkt; st.musicCfg = Object.assign({ engine: "auto", limitEur: 15, revenueOk: "", variants: 1, saver: false, weekly: 1, ytAi: true, cfgScale: 1, maxMb: 900, maxTracks: 900 }, st.musicCfg || {}); return st.musicCfg; }
   function stabilityKey() { const st = S().mkt, k = st.stability && C.unseal ? C.unseal(st.stability) : null; return (k && k.v) || process.env.STABILITY_API_KEY || ""; }
   function budget() { const st = S().mkt, m = monthKey(); if (!st.musicBudget || st.musicBudget.month !== m) { if (st.musicBudget && st.musicBudget.month) { st.musicBudgetHist = st.musicBudgetHist || {}; st.musicBudgetHist[st.musicBudget.month] = { usd: st.musicBudget.usd, count: st.musicBudget.count }; } st.musicBudget = { month: m, usd: 0, count: 0, weeklyUsd: 0 }; } return st.musicBudget; }
   const limitEur = () => Math.max(0, +cfg().limitEur || 0);
@@ -367,7 +384,7 @@ module.exports = function (C) {
     let genres = vocab(x.genres, GENRES).slice(0, 2), instruments = vocab(x.instruments, INSTRUMENTS).slice(0, 3);
     const inP = genres.filter(g => p.genres.indexOf(g) > -1); if (inP.length) genres = inP.concat(genres.filter(g => inP.indexOf(g) < 0)).slice(0, 2); if (!genres.length) genres = p.genres.slice(0, 1);
     if (!instruments.length) instruments = p.instruments.slice(0, 3);
-    return { mood: m, energy, tempo: TEMPI.indexOf(x.tempo) > -1 ? x.tempo : "", genres, instruments, vibe: cleanVibe(x.vibe, brandNames()), season: clip(String(x.season || "").toLowerCase().replace(/[^a-zäöü ]/g, ""), 30) };
+    return { mood: m, energy, tempo: TEMPI.indexOf(x.tempo) > -1 ? x.tempo : "", genres, instruments, vibe: cleanVibe(x.vibe, brandNames()), season: seasonKeys(x.season).join(" ") || clip(String(x.season || "").toLowerCase().replace(/[^a-zäöü ]/g, ""), 30) };
   }
   function wantOf(post) {
     const p = profile(post.brand), w = post.musicWant || {};
@@ -381,7 +398,7 @@ module.exports = function (C) {
     const strs = { type: "array", items: { type: "string" } }, props = { mood: { type: "string", enum: MOODS }, energy: { type: "integer", enum: [1, 2, 3, 4, 5] }, tempo: { type: "string", enum: TEMPI }, genres: strs, instruments: strs, vibe: { type: "string" }, season: { type: "string" } };
     return { type: "object", additionalProperties: false, required: Object.keys(props), properties: props };
   }
-  const promptLine = () => "music (nur bei reel, sonst Standard der Marke): Musik fürs Reel passend zu Idee, Erzählformat, Saison und <musikprofil> der Marke – mood (froehlich, lustig, elegant, ruhig, episch, alpin, elektronisch; dasselbe auch ins Feld mood), energy 1–5, tempo (langsam/mittel/schnell), genres und instruments NUR aus <musikprofil> (1–2 Genres, 2–3 Instrumente). Variiere gegenüber <musik-bisher>: nicht dasselbe Genre wie die letzten 2 Reels der Marke. vibe: 3–8 englische Wörter zur Stimmung des konkreten Posts (z. B. „crisp autumn morning, cozy“), KEINE Künstler-, Song-, Marken- oder Ortsnamen. Energie nach Erzählformat: Countdown/Top 3/Aktion 4–5, POV/Vorher-Nachher 3–4, Mythos vs. Fakt 3, Einblick/Region/Saison 2–3 – innerhalb des Energiebereichs der Marke. season: leer, „winter“, „weihnachten“, „sommer“ o. ä.";
+  const promptLine = () => "music (nur bei reel, sonst Standard der Marke): Musik fürs Reel passend zu Idee, Erzählformat, Saison und <musikprofil> der Marke – mood (" + MOODS.join(", ") + "; dasselbe auch ins Feld mood), energy 1–5, tempo (langsam/mittel/schnell), genres und instruments NUR aus <musikprofil> (1–2 Genres, 2–3 Instrumente). Variiere gegenüber <musik-bisher>: nicht dasselbe Genre wie die letzten 2 Reels der Marke. vibe: 3–8 englische Wörter zur Stimmung des konkreten Posts (z. B. „crisp autumn morning, cozy“), KEINE Künstler-, Song-, Marken- oder Ortsnamen. Energie nach Erzählformat: Countdown/Top 3/Aktion 4–5, POV/Vorher-Nachher 3–4, Mythos vs. Fakt 3, Einblick/Region/Saison 2–3 – innerhalb des Energiebereichs der Marke. season: leer oder " + SEASONS.join("/") + " (nur wenn der Post wirklich saisonal ist; Weihnachten nur ab Mitte November bis 6. Jänner).";
   function promptBlocks(key) {
     const p = profile(key), hist = brandReels(key).slice(0, 5).map(x => ({ genre: x.genre || "", energy: x.energy || 0, bpm: x.bpm || 0 }));
     return "<musikprofil>" + JSON.stringify({ stimmung: p.mood, stimmungen: p.moods, genres: p.genres, instruments: p.instruments, energie: p.energy, bpm: p.bpm, meiden: p.avoid }) + "</musikprofil>\n<musik-bisher>" + (hist.length ? JSON.stringify(hist) : "(noch keine)") + "</musik-bisher>\n";
@@ -423,6 +440,9 @@ module.exports = function (C) {
     parts.jitter = 0.3 * (hashNum(post.id + "|" + ((post.media || {}).rerender || "") + "|" + t.id) / 0xffffffff);
     parts.repeat = mainGenre(t) && ctx.lastGenres.indexOf(mainGenre(t)) > -1 ? -1.5 : 0;
     parts.seed = t.seed && ctx.aiCount >= 5 ? -0.5 : 0;
+    // Saison: passt zum Termin (oder zum Saisonwunsch) +1,5; Saison-Titel außerhalb ihrer Zeit −3, Weihnachten/Halloween außerhalb −8
+    const ts = t.tags.season || [], now = ctx.seasons || [], want = seasonKeys(w.season);
+    if (ts.length) { const hit = ts.some(x => now.indexOf(x) > -1 || want.indexOf(x) > -1); parts.season = hit ? 1.5 : ts.some(x => x === "weihnachten" || x === "halloween") && !ts.some(x => now.indexOf(x) > -1) ? -8 : -3; } else parts.season = 0;
     let s = 0; Object.keys(parts).forEach(k => { s += parts[k]; }); return { s: r2(s), parts };
   }
   const LADDER = [
@@ -438,7 +458,7 @@ module.exports = function (C) {
     const ok = all().filter(t => usable(t, post, p, T)), hist = history(post.id), posts = new Set(S().posts.map(x => x.id));
     const mine = hist.filter(h => h.brand === post.brand), near = mine.slice().sort((a, b) => Math.abs(a.t - t0) - Math.abs(b.t - t0));
     const lastGenres = mine.filter(h => h.t <= t0).sort((a, b) => b.t - a.t).slice(0, 2).map(h => h.genre).filter(Boolean);
-    const N = Math.min(15, Math.floor(0.6 * ok.filter(t => moodFit(t, w.mood) >= 0.6).length)), ctx = { t0, lastGenres, aiCount: ok.filter(t => isAi(t) && (t.tags.brands || []).indexOf(post.brand) > -1).length };
+    const N = Math.min(15, Math.floor(0.6 * ok.filter(t => moodFit(t, w.mood) >= 0.6).length)), ctx = { t0, lastGenres, seasons: seasonsAt(t0), aiCount: ok.filter(t => isAi(t) && (t.tags.brands || []).indexOf(post.brand) > -1).length };
     const scored = ok.map(t => Object.assign({ t }, scoreOf(t, w, p, post, ctx))).sort((a, b) => b.s - a.s || (a.t.id < b.t.id ? -1 : 1));
     const day0 = viennaDay(t0);
     for (let lv = 0; lv < LADDER.length; lv++) {
@@ -685,11 +705,16 @@ module.exports = function (C) {
   async function postOp(post, op, pl) {
     pl = pl || {};
     if (post.format !== "reel") throw fail(400, "Musik gibt es nur bei Reels.");
-    if (op !== "musicSuggest" && ["läuft", "gepostet", "teilweise"].indexOf(post.status) > -1) throw fail(400, "Schon veröffentlicht.");
+    if (op !== "musicSuggest" && op !== "musicLibrary" && ["läuft", "gepostet", "teilweise"].indexOf(post.status) > -1) throw fail(400, "Schon veröffentlicht.");
     if (/^gewinnspiel/.test(post.source || "")) throw fail(400, "Gewinnspiel-Videos haben ihre eigene Musik.");
     const T = +(post.media && (post.media.grid || {}).T) || +(post.media || {}).duration || 12;
     if (op === "musicSuggest") { const s = suggest(post, 3, { T }), hist = history(post.id), t0 = postTime(post);
       return { out: { suggestions: s.list.map(x => Object.assign(publicTrack(x.t), { score: x.s, last: lastUseText(x.t, hist, t0), preview: previewUrl(x.t, placeOf(x.t, { T: Math.max(T, 12) }, post)) })), note: s.note, current: currentPublic(post) } }; }
+    // ganze Bibliothek für diesen Post (lizenz-tauglich, nicht ausgeblendet), beste zuerst – im Cockpit nach Stimmung/Saison/Text filterbar
+    if (op === "musicLibrary") { const r = rank(post, { T }), seen = new Set(), hist = history(post.id), t0 = postTime(post), cur = (trackRef(post) || {}).id, out = [];
+      r.list.forEach(x => { if (seen.has(x.t.id)) return; seen.add(x.t.id); out.push(x); });
+      const p = profile(post.brand); all().filter(t => !seen.has(t.id) && usable(t, post, p, T, {})).forEach(t => out.push({ t, s: -99 }));   // auch gerade gesperrte (kürzlich verwendete) Titel
+      return { out: { tracks: out.slice(0, 600).map(x => Object.assign(publicTrack(x.t), { score: x.s, current: x.t.id === cur, last: lastUseText(x.t, hist, t0), preview: previewUrl(x.t, placeOf(x.t, { T: Math.max(T, 12) }, post)) })) } }; }
     if (op === "musicShuffle") { const tried = new Set((post.musicTried || []).concat([(trackRef(post) || {}).id])), r = rank(post, { T, exclude: tried }), nx = r.list[0];   // bereits Versuchtes raus, notfalls über die Lockerungsleiter
       if (!nx) throw fail(400, "Keine weitere passende Musik in der Bibliothek – „Neu komponieren“ oder Stimmung/Energie ändern."); return setTrack(post, nx.t); }
     if (op === "musicSet") { const t = byId(String(pl.track || "")); if (!t || t.gone) throw fail(404, "Titel nicht gefunden"); const why = licenseProblem(t, post.platforms); if (why) throw fail(400, why); return setTrack(post, t); }
@@ -697,7 +722,10 @@ module.exports = function (C) {
     if (op === "musicRate") { const cur = trackRef(post); if (!cur) throw fail(400, "Noch keine Musik gewählt."); const v = +pl.v > 0 ? 1 : +pl.v < 0 ? -1 : 0, r = rec(cur.id); r.rating = Object.assign({}, r.rating || {}); if (v) r.rating[post.brand] = v; else delete r.rating[post.brand]; saveCat();
       if (v < 0) { if (post.music === cur.id) post.music = ""; return postOp(post, "musicShuffle", {}); } return { out: { rated: v } }; }
     if (op === "musicWant") { const w = Object.assign({}, post.musicWant || wantOf(post)); if (MOODS.indexOf(pl.mood) > -1) w.mood = pl.mood; if (+pl.energy >= 1 && +pl.energy <= 5) w.energy = Math.round(+pl.energy); if (pl.tempo !== undefined) w.tempo = TEMPI.indexOf(pl.tempo) > -1 ? pl.tempo : "";
-      post.musicWant = w; post.mood = w.mood; if (post.music !== "none") post.music = ""; post.musicTried = []; return { rerender: true }; }
+      post.musicWant = w; post.mood = w.mood; post.musicTried = [];
+      // nur die Musik tauschen (Video bleibt): bester Titel zum neuen Wunsch, gleiche Remux-Logik wie „Andere Musik“; ohne fertiges Reel → neu erstellen
+      if (post.music !== "none") { const cur = (trackRef(post) || {}).id, nx = rank(post, { T, want: w, exclude: new Set(cur ? [cur] : []) }).list[0]; if (nx) return setTrack(post, nx.t); post.music = ""; }
+      return { rerender: true }; }
     if (op === "musicNone") { post.music = pl.on === false ? "" : "none"; return { rerender: true }; }
     throw fail(400, "Unbekannte Musik-Aktion");
   }
@@ -757,6 +785,40 @@ module.exports = function (C) {
     return WEEKLY;
   }
 
+  // ───────────── Import aus dem FreePD-Archiv (CC0, Freigabe Simon 06.11.2026) ─────────────
+  // Der Server lädt jeden Titel selbst (nur https://a.ocv.me/pub/stuff/music/freepd/…, max. 60 MB), schneidet das beste Fenster (ingest), analysiert und
+  // verschlagwortet ihn (Stimmungen, Saison, Genres, Instrumente, Energie); doppelte (gleiche Quelle oder gleicher Inhalt) werden übersprungen. Nacheinander im Hintergrund.
+  const FREEPD = "https://a.ocv.me/pub/stuff/music/freepd/";
+  let IMP = { running: false, total: 0, done: 0, added: 0, skipped: 0, errors: [], at: "" };
+  function importStart(items) {
+    if (IMP.running) throw fail(409, "Es läuft schon ein Import (" + IMP.done + "/" + IMP.total + ")");
+    const list = (Array.isArray(items) ? items : []).filter(x => x && typeof x.url === "string" && x.url.indexOf(FREEPD) === 0 && !/\.\.|[?#]/.test(x.url.slice(FREEPD.length))).slice(0, 400);
+    if (!list.length) throw fail(400, "Keine gültigen Titel");
+    IMP = { running: true, total: list.length, done: 0, added: 0, skipped: 0, errors: [], at: nowIso() };
+    (async () => { for (const x of list) { try { (await importOne(x)) ? IMP.added++ : IMP.skipped++; } catch (e) { IMP.errors.push(clip(x.name || x.url, 60) + ": " + clip(e.message || e, 120)); } IMP.done++; }
+      IMP.running = false; IMP.end = nowIso(); log("musik: FreePD-Import " + IMP.added + " neu, " + IMP.skipped + " übersprungen, " + IMP.errors.length + " Fehler"); })();
+  }
+  async function importOne(x) {
+    loadCat(); if (CAT.tracks.some(t => !t.gone && t.license && t.license.sourceUrl === x.url)) return false;
+    const r = await fetch(x.url, { signal: AbortSignal.timeout(180000) }); if (!r.ok) throw new Error("HTTP " + r.status);
+    const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 60e6 || buf.length < 2e4) throw new Error("Größe " + buf.length);
+    const srcSha = sha(buf); loadCat(); if (CAT.tracks.some(t => t.sha === srcSha && !t.gone)) return false;
+    const id = (C.newId ? C.newId("m") : "m" + Date.now().toString(36) + rand().slice(0, 8)), rel = id + ".m4a", out = path.join(MDIR, rel), tmp = path.join(WORK, "music-imp-" + rand() + ".mp3");
+    fs.mkdirSync(WORK, { recursive: true }); fs.mkdirSync(MDIR, { recursive: true }); fs.writeFileSync(tmp, buf);
+    try {
+      const ing = await ingest(tmp, out, {}), q = quality(ing.a, { upload: true }), mood = MOODS.indexOf(x.mood) > -1 ? x.mood : ing.a.moodGuess;
+      const proof = proofAdd({ trackId: id, provider: "freepd", license: "cc0", licenseText: LICENSES.cc0.text, sourceUrl: x.url, artist: "", at: nowIso(), sha256: srcSha, fileSha256: sha(fs.readFileSync(out)), declaredVocals: false });
+      const e = Math.round(+x.energy); loadCat();
+      CAT.tracks.push({ id, name: clip(x.name, 80) || "Titel", title: clip(x.name, 120), file: rel, source: "freepd", addedAt: nowIso(), sha: srcSha,
+        tags: { mood, moodGuess: false, moods: uniq([mood].concat((x.moods || []).filter(m => MOODS.indexOf(m) > -1))), energy: e >= 1 && e <= 5 ? e : ing.a.energy, genres: vocab(x.genres, GENRES), instruments: vocab(x.instruments, INSTRUMENTS),
+          vocals: false, season: (x.season || []).filter(k => SEASONS.indexOf(k) > -1), brands: [], vibe: clip(x.vibe, 120), confirmed: false },
+        a: ing.a, license: { key: "cc0", text: LICENSES.cc0.text, url: LICENSES.cc0.url, attribution: "", artist: "", sourceUrl: x.url, contentId: "unbekannt", proof },
+        use: { count: 0 }, rating: {}, hidden: !!x.hidden, q });
+      saveCat(); return true;
+    } catch (e) { try { fs.unlinkSync(out); } catch (e2) {} throw e; }
+    finally { try { fs.unlinkSync(tmp); } catch (e) {} }
+  }
+
   // ───────────── Hochladen (Pflicht-Lizenz) ─────────────
   async function upload(pl) {
     const lk = String(pl.license || ""); if (!licOf(lk) || !LICENSES[lk].upload) throw fail(400, LIC_BLOCKED.test(lk) ? "Diese Lizenz ist gesperrt (NC/ND/SA bzw. unbekannt) – bitte nicht verwenden." : "Bitte die Lizenz des Titels wählen.");
@@ -787,7 +849,7 @@ module.exports = function (C) {
       costUsd: STAB.costUsd, usdEur: USD_EUR, weeklyLast: st.musicWeekly || null, storage: storage(), engines: ENGINES };
   }
   function overview() {
-    return { music: all().filter(t => !t.gone).map(publicTrack), musicCfg: cfgPublic(), musicVocab: { genres: GENRES, instruments: INSTRUMENTS, tempi: TEMPI },
+    return { music: all().filter(t => !t.gone).map(publicTrack), musicCfg: cfgPublic(), musicVocab: { genres: GENRES, instruments: INSTRUMENTS, tempi: TEMPI, moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })), seasons: SEASONS.map(k => ({ key: k, label: SEASON_DE[k] })) },
       musicProfiles: Object.fromEntries(Object.keys(S().brands).map(k => [k, profile(k)])), musicLicenses: Object.keys(LICENSES).filter(k => LICENSES[k].upload).map(k => ({ key: k, label: LICENSES[k].label, text: LICENSES[k].text, attribution: !!LICENSES[k].attribution, platforms: LICENSES[k].platforms, note: LICENSES[k].note || "" })) };
   }
   const reply = (res, extra) => C.J(res, 200, Object.assign({ ok: true }, C.overview ? C.overview() : overview(), extra || {}));
@@ -804,6 +866,8 @@ module.exports = function (C) {
     if (p !== "/admin/api/mkt/music" || req.method !== "POST") return false;
     const pl = await C.body(req, 16e6), op = String(pl.op || (pl.remove ? "remove" : pl.restore ? "restore" : pl.data ? "upload" : ""));
     if (op === "upload") { const r = await upload(pl); return reply(res, { uploaded: r.track, quality: r.quality }), true; }
+    if (op === "import") { importStart(pl.items); return reply(res, { import: IMP }), true; }
+    if (op === "importStatus") return reply(res, { import: IMP }), true;
     if (op === "keys") { if (pl.provider !== "stability") throw fail(400, "Unbekannter Anbieter"); const k = String(pl.key || "").trim(); if (k && !/^[\w.\-]{16,300}$/.test(k)) throw fail(400, "Das sieht nicht wie ein Stability-API-Key aus.");
       S().mkt.stability = k ? C.seal({ v: k }) : undefined; S().mkt.stabilityCheck = null; setWarn(""); save(true); return reply(res), true; }
     if (op === "balance") { const b = await balance(); return reply(res, { balance: b }), true; }
@@ -824,7 +888,9 @@ module.exports = function (C) {
     if (op === "tag") { const r = rec(t.id), tg = r.tags = Object.assign({}, t.seed ? (r.tags || {}) : t.tags);
       if (MOODS.indexOf(pl.mood) > -1) { tg.mood = pl.mood; tg.moodGuess = false; } if (pl.moods) tg.moods = uniq([tg.mood || t.tags.mood].concat((pl.moods || []).filter(m => MOODS.indexOf(m) > -1)));
       if (pl.genres) tg.genres = vocab(pl.genres, GENRES); if (pl.instruments) tg.instruments = vocab(pl.instruments, INSTRUMENTS); if (+pl.energy >= 1 && +pl.energy <= 5) tg.energy = Math.round(+pl.energy);
-      if (pl.vocals !== undefined) tg.vocals = !!pl.vocals; if (Array.isArray(pl.brands)) tg.brands = pl.brands.filter(k => S().brands[k]); tg.confirmed = true; saveCat(); return reply(res), true; }
+      if (pl.vocals !== undefined) tg.vocals = !!pl.vocals; if (Array.isArray(pl.brands)) tg.brands = pl.brands.filter(k => S().brands[k]);
+      if (pl.season !== undefined) tg.season = (Array.isArray(pl.season) ? pl.season : [pl.season]).filter(x => SEASONS.indexOf(x) > -1); if (pl.vibe !== undefined) tg.vibe = clip(pl.vibe, 120);
+      tg.confirmed = true; saveCat(); return reply(res), true; }
     if (op === "rate") { const r = rec(t.id), v = +pl.v > 0 ? 1 : +pl.v < 0 ? -1 : 0, bk = String(pl.brand || ""); if (!S().brands[bk]) throw fail(400, "Unbekannte Marke"); r.rating = Object.assign({}, r.rating || {}); if (v) r.rating[bk] = v; else delete r.rating[bk]; saveCat(); return reply(res), true; }
     if (op === "hide" || (op === "remove" && t.seed)) { rec(t.id).hidden = true; saveCat(); return reply(res), true; }
     if (op === "remove") { if (isAi(t)) { rec(t.id).hidden = true; saveCat(); return reply(res), true; }   // KI-Titel: Nachweis bleibt, nur ausblenden
@@ -848,9 +914,9 @@ module.exports = function (C) {
       pr && pr.sha256 ? "SHA-256 (Original): " + pr.sha256 : "", pr && pr.fileSha256 ? "SHA-256 (Datei): " + pr.fileSha256 : "", "Content-ID-Status: " + (t.license.contentId || "unbekannt")].filter(Boolean).join("\n");
   }
 
-  return { MOODS, MOOD_DE, GENRES, INSTRUMENTS, TEMPI, LICENSES, PROFILES, STAB, all, byId, list, publicTrack, profile, wantOf, cleanWant, schema, promptLine, promptBlocks, rank, suggest, pick, placeOf, compose, balance,
+  return { MOODS, MOOD_DE, SEASONS, SEASON_DE, seasonsAt, GENRES, INSTRUMENTS, TEMPI, LICENSES, PROFILES, STAB, all, byId, list, publicTrack, profile, wantOf, cleanWant, schema, promptLine, promptBlocks, rank, suggest, pick, placeOf, compose, balance,
     postOp, licenseFor, licenseProblem, creditFor, withCredit, overview, cfgPublic, cfg, budget, handleAdmin, weekly, cleanup, upload, analyse, queueAnalysis, previewFile, proofText, tryRemux, ytAi: post => { const r = (post.media || {}).track; return !!(r && r.ai && cfg().ytAi !== false); },
     _test: { loadCat, saveCat, rec, history, jobFor, stabGenerate, stabOnce, ingest, canSpend, spend, composeBlock, stabilityKey, CATF, PROOF, MDIR, PREV, cutLen, ecOf, quality } };
 };
 // reine Funktionen für Tests und Werkzeuge (Grundstock-Analyse)
-Object.assign(module.exports, { MOODS, GENRES, INSTRUMENTS, LICENSES, PROFILES, STAB, winLufs, parseEbur, signal, features, quality, licenseProblem, creditText, withCredit, buildPrompt, cleanVibe, jaccard, mcEncode, mcDecode, hashNum, AV });
+Object.assign(module.exports, { MOODS, SEASONS, seasonsAt, seasonKeys, GENRES, INSTRUMENTS, LICENSES, PROFILES, STAB, winLufs, parseEbur, signal, features, quality, licenseProblem, creditText, withCredit, buildPrompt, cleanVibe, jaccard, mcEncode, mcDecode, hashNum, AV });

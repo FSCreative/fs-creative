@@ -283,7 +283,8 @@ function measure(file, extra) { const r = spawnSync(R.FFMPEG(), ["-hide_banner",
     for (let i = 1; i < 3; i++) assert.ok((L[i].genres[0] || "") !== (L[i - 1].genres[0] || "") || L[i].source !== L[i - 1].source, "MMR");
     const seen = new Set([g.track.id]); for (let i = 0; i < 4; i++) { const x = await MU.postOp(p, "musicShuffle", {}); assert.ok(x.rerender); assert.ok(!seen.has(p.music), "Wiederholung " + p.music); seen.add(p.music); p.media.track = { id: p.music }; }
     const cur = p.music, y = await MU.postOp(p, "musicRate", { v: -1 }); assert.ok(y.rerender && p.music !== cur); assert.strictEqual(MU.byId(cur).rating["fs-creative"], -1);
-    const z = await MU.postOp(p, "musicWant", { mood: "ruhig", energy: 2, tempo: "langsam" }); assert.ok(z.rerender); assert.strictEqual(p.mood, "ruhig"); assert.strictEqual(p.music, ""); assert.strictEqual(p.musicWant.energy, 2);
+    const z = await MU.postOp(p, "musicWant", { mood: "ruhig", energy: 2, tempo: "langsam" }); assert.ok(z.rerender); assert.strictEqual(p.mood, "ruhig"); assert.ok(p.music && p.music !== cur, "neuer Wunsch → gleich ein passender Titel (nur Ton tauschen, wenn möglich)"); assert.strictEqual(p.musicWant.energy, 2);
+    const lib = await MU.postOp(p, "musicLibrary", {}); assert.ok(lib.out.tracks.length >= 10 && lib.out.tracks.every(t => t.preview), "ganze Bibliothek mit Hörprobe");
     await assert.rejects(() => MU.postOp(p, "musicCompose", {}), /Stability-Key|kein/);
   });
   await t("Aufräumen: nur KI-Audio (Daumen runter, nie benutzt > 90 Tage, zuletzt > 180 Tage), Metadaten und Nachweis bleiben", () => {
