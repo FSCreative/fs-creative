@@ -5007,6 +5007,23 @@ async function handleAdmin(req, res, u, p) {
       return res.end(buf);
     } catch (e) { return send(res, 502, "attachment_failed"); }
   }
+  // Entwurf im Postfach ablegen (Ordner „Entwürfe“ am Mailserver) – mit der Mail-Signatur des Cockpits; sichtbar auf allen Geräten (Simon 06.11.2026)
+  if (p === "/admin/api/mail-draft" && req.method === "POST") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 5000000) req.destroy(); });
+    req.on("end", async () => {
+      let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
+      if (payload.sig !== false && payload.html) { const sg = mailSignature(); if (sg) payload.html = String(payload.html) + "<br>" + sg; }
+      delete payload.sig;
+      try {
+        const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/draft"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)), signal: AbortSignal.timeout(60000) });
+        const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
+        return send(res, r.status, txt, TYPES[".json"]);
+      } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_draft_failed" }), TYPES[".json"]); }
+    });
+    return;
+  }
   if (p === "/admin/api/mail-send" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     let body = "";
