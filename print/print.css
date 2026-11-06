@@ -2276,3 +2276,10 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-musttpl{margin:12px 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--ps-warn) 55%,transparent);background:color-mix(in srgb,var(--ps-warn) 12%,transparent);font-size:14px;line-height:1.5}
 /* Textil: großer Gestalten-Knopf statt automatisch geöffnetem Designer */
 .ps-texd{flex-direction:column;align-items:stretch;text-align:center;gap:10px;padding:20px}.ps-texd .ps-btn.primary{font-size:19px;font-weight:700;padding:18px 28px;min-height:64px;border-radius:14px;width:100%;justify-content:center}
+
+/* Lookbooks auf der Startseite */
+.ps-lbteaser{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:24px;align-items:center;padding:20px;border-radius:20px;border:1px solid var(--ps-line2);background:var(--ps-card)}
+.ps-lbteaser .lb-im img{width:100%;height:auto;border-radius:14px;display:block}
+.ps-lbteaser h2{margin:6px 0 10px}.ps-lbteaser p{margin:0 0 14px;color:var(--text-dim);line-height:1.5}
+.ps-lbteaser .btn-row{display:flex;flex-wrap:wrap;gap:8px}
+@media (max-width:720px){.ps-lbteaser{grid-template-columns:1fr;padding:14px}}

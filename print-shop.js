@@ -609,9 +609,10 @@ module.exports = function (D) {
         const raw = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null && String(o.slug) !== "");
         if (p.required && raw.length === 1) fixed[p.slug] = String(raw[0].slug);
         return; }
-      const hidden = pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden");
+      // „gefaltet geliefert“ blendet Print.com in der eigenen App aus – ist aber eine echte Wahl ohne Aufpreis (Wunsch Simon 06.11.2026: bei allen Produkten zeigen)
+      const showAnyway = /^(folded)$/.test(p.slug), hidden = !showAnyway && (pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden"));
       const anyOpt = opts.length > 1 && !hidden && fo[p.slug] === undefined && !/^(finish_(left|right|top|bottom)|printingmethod)$/.test(p.slug) && !AUTO_SKIP.test(p.slug);
-      const want = autoExp ? anyOpt : expose.indexOf(p.slug) > -1 || (anyOpt && OPT_EXTRA.test(p.slug));   // kuratiert: Zusatzoptionen (Stanzung, Bündelung …) trotzdem zeigen   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
+      const want = autoExp ? anyOpt : expose.indexOf(p.slug) > -1 || (anyOpt && (OPT_EXTRA.test(p.slug) || showAnyway));   // kuratiert: Zusatzoptionen (Stanzung, Bündelung …) trotzdem zeigen   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
       // parentOptions sind bei Print.com Gruppenüberschriften der Optionen (z. B. „A-Formate“, „Quadrat“, Papierfamilien) – keine Bedingung
       const grp = Array.isArray(p.parentOptions) ? p.parentOptions.filter(x => x && typeof x === "object" && x.slug != null).map(x => ({ slug: String(x.slug), name: String(x.name || x.slug) })).slice(0, 50) : [];
       if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, 160).map(o => optOut(p.slug, o))) }, grp.length > 1 ? { groups: grp } : {}));
@@ -4070,6 +4071,16 @@ module.exports = function (D) {
     }
     if (ch) await crSet(all);
   }
+  // Kurzlinks: id → { u: Shop-Adresse, at } (nur Adressen unter /print, gleiche Adresse = gleicher Kurzlink)
+  async function shortGet() { const m = await store.getMeta("print_short").catch(() => null); return m && typeof m === "object" ? m : {}; }
+  async function shortMake(url) {
+    let x; try { x = new URL(String(url || ""), SITE); } catch (e) { throw bad("Link ungültig"); }
+    if (!/(^|\.)fs-creative\.at$/i.test(x.hostname) || !/^\/print(\/|$|\?)/.test(x.pathname + (x.search ? "?" : ""))) throw bad("Nur Links in den Druckshop können gekürzt werden");
+    const full = x.pathname + x.search, all = await shortGet(), have = Object.keys(all).find(k => all[k].u === full); if (have) return SITE + "/print/l/" + have;
+    let id; do { id = crypto.randomBytes(5).toString("base64").replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 6); } while (id.length < 6 || all[id]);
+    all[id] = { u: full, at: nowIso() }; const ks = Object.keys(all); if (ks.length > 20000) ks.sort((a, b) => String(all[a].at).localeCompare(String(all[b].at))).slice(0, ks.length - 20000).forEach(k => delete all[k]);
+    await store.setMeta("print_short", all); return SITE + "/print/l/" + id;
+  }
   async function rememberDue() {
     const all = await rememberGet(); let ch = false; const now = Date.now();
     for (const r of all) {
@@ -4203,6 +4214,9 @@ module.exports = function (D) {
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
     if (gated && !open && !admin && !view) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
     if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
+    // Kurzlink /print/l/<id> → gespeicherte Shop-Adresse (Wunsch Simon 06.11.2026: Angebots-Links kürzen)
+    { const sm = p.match(/^\/print\/l\/([a-z0-9]{4,12})\/?$/i); if (sm && (req.method === "GET" || req.method === "HEAD")) { const all = await shortGet(), x = all[sm[1].toLowerCase()];
+      return D.send(res, 302, "", "text/plain", { Location: x ? x.u : "/print", "Cache-Control": "no-store" }); } }
     if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") });
       // alter Produktlink /print?produkt=… → dauerhaft auf die sprechende Adresse (übrige Abfrageteile wie ?format=, ?menge=, ?c= bleiben)
       const pk0 = u.searchParams.get("produkt"); if (pk0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), sl = M && M.byKey[pk0];
@@ -5002,6 +5016,7 @@ module.exports = function (D) {
         req.on("close", () => LIVE_SUBS.delete(res)); return;
       }
       if (p === "/admin/api/print/live" && req.method === "GET") { await visitsLoad().catch(() => null); liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
+      if (p === "/admin/api/print/short" && req.method === "POST") { try { const sb = await readJson(req, 20000); return J(res, 200, { ok: true, url: await shortMake(sb.url) }); } catch (e) { return J(res, 400, { ok: false, error: e.message }); } }
       if (p === "/admin/api/print/staffel") {   // Staffel-Prüfung: GET = Stand, POST {op:"run"} = neu prüfen (Hintergrund, ca. 2 s je Menge)
         const sb = req.method === "POST" ? await readJson(req, 1000) : {};
         if (sb.op === "run" && cfg().pcKey) staffelRun().catch(e => { if (ST) ST.running = false; log("Staffel-Prüfung:", e.message); });
