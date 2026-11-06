@@ -1020,7 +1020,8 @@ module.exports = function (D) {
   const bigOf = p => p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "");
   const posterOf = p => /plakat|poster|wahlplakat/i.test(p.key + " " + p.title);
   // Startauflage wie bisher im Shop: Bestseller-Auflage (500, sonst 250/1 000; Plakate 5/10/25), Großformat 1 Stk., sonst eine runde, übliche Menge
-  function startCopies(p) { const T = p.tiers || [], bt = (posterOf(p) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1), nice = [100, 50, 250, 25, 500, 10].find(x => T.indexOf(x) > -1);
+  function startCopies(p) { if (LOOKBOOK_SKUS[p.sku] || LOOKBOOK_SKUS[p.key]) return 1;   // Musterordner: einer
+    const T = p.tiers || [], bt = (posterOf(p) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1), nice = [100, 50, 250, 25, 500, 10].find(x => T.indexOf(x) > -1);
     return bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : T[0] === 1 && bigOf(p) ? 1 : nice || T[Math.min(1, T.length - 1)] || 0; }
   // ── Startausführung: womit der Konfigurator ein Produkt öffnet (Wunsch Simon 28.10.2026: beim Öffnen immer eine bestellbare Ausführung mit Preis) ──
   // Auflage und Vorauswahl wie bisher (Bestseller bei Format/Papier/Druck), aber passend zu den Mengen je Druckverfahren und zu den Ausschlussregeln:
@@ -3265,8 +3266,10 @@ module.exports = function (D) {
     ld.sku = key; if (x.cat && x.cat.mainName) ld.category = x.cat.mainName + (x.cat.subName ? " > " + x.cat.subName : "");
     // Titel/Beschreibung: Produkt (+ Format), günstigster Preis der Preisübersicht, Versand inkl. – Beschreibung an der Wortgrenze gekürzt
     const t = escH(logoK ? x.title + " bedrucken mit Logo" + (loP ? " – ab " + (loP.copies > 1 ? pieceDe(loP.gross, loP.copies) : eurDe(loP.gross)) + " pro Stück" : "") + " | FS Creative"
+      : LOOKBOOK_SKUS[key] ? x.title + (lo ? " – ab " + eurDe(lo.gross) + " inkl. Versand" : "") + " | FS Creative"   // Musterordner: kein „drucken“
       : x.title + fvT + (lo ? " drucken – ab " + eurDe(lo.gross) + " inkl. Versand" : " online drucken – Preis sofort") + " | FS Creative");
     const d = escH(logoK ? cutWords(x.title + " mit deinem Logo bedrucken" + (loP ? ": ab " + (loP.copies > 1 ? pieceDe(loP.gross, loP.copies) : eurDe(loP.gross)) + " pro Stück (" + loP.copies.toLocaleString("de-AT") + " Stück " + eurDe(loP.gross) + ") inkl. 20 % USt und Versand in ganz Österreich." : ", Preis sofort im Konfigurator, Versand in Österreich inklusive.") + (lo && lo.copies === 1 ? " Schon ab 1 Stück." : "") + " Logo hochladen, Druckposition wählen, automatischer Datencheck.", 158)
+      : LOOKBOOK_SKUS[key] ? cutWords(x.title + ": echte Papier- und Materialmuster im neutral schwarzen Ordner, deutsch beschriftet" + (lo ? " – ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : "."), 155)
       : cutWords(x.title + fvT + " drucken" + (lo ? ": " + lo.copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : " mit Preis sofort im Konfigurator, Versand in ganz Österreich inklusive.") + " Online gestalten oder Druckdaten hochladen, automatischer Datencheck. FS Creative aus dem Montafon.", 158));
     const rvP = ld.aggregateRating ? "<p>★ " + escH(String(ld.aggregateRating.ratingValue).replace(".", ",")) + " von 5 – " + ld.aggregateRating.ratingCount + " Kundenbewertungen</p>" : "";
     return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => rvP ? block.replace('<p class="pd-muted">Konfigurator wird geladen', rvP + '<p class="pd-muted">Konfigurator wird geladen') : block)
