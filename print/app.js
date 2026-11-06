@@ -202,6 +202,8 @@
   document.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-promo-copy],[data-promo-x]"); if (!b) return;
     if (b.hasAttribute("data-promo-x")) { try { localStorage.setItem("fsc-print-promo-x", b.getAttribute("data-promo-x")); } catch (er) {} document.documentElement.classList.add("promo-x"); return; }
     var code = b.getAttribute("data-promo-copy"), lab = b.querySelector("i"); copyText(code).then(function () { if (lab) { lab.textContent = "Kopiert ✓"; b.classList.add("ok"); setTimeout(function () { lab.textContent = "Kopieren"; b.classList.remove("ok"); }, 2200); } toast("Code " + code + " kopiert – an der Kasse einfügen 🎉"); }, function () { window.prompt("Code kopieren:", code); }); });
+  document.addEventListener("click", function (e) { var a = e.target.closest && e.target.closest("[data-proj]"); if (!a) return; e.preventDefault();
+    galPop(+a.getAttribute("data-proj"), { title: "Druckprojekte aus der Region", ims: PROJ.map(function (x) { return "/print/projekte/" + x[0] + ".jpg"; }), alts: PROJ.map(function (x) { return x[2]; }) }); });
   document.addEventListener("click", function (e) { var c = e.target.closest && e.target.closest("[data-copy]"); if (!c) return; copyText(c.getAttribute("data-copy")).then(function () { toast("Sendungsnummer kopiert"); }, function () {}); });
   // Vorschaubild kaputt (z. B. abgelaufen) → Produktbild
   document.addEventListener("error", function (e) { var t = e.target; if (t && t.tagName === "IMG" && t.closest && t.closest(".ps-ci-img")) { var fb = t.getAttribute("data-fb"); if (fb && t.src !== fb) { t.removeAttribute("data-fb"); t.src = fb; } else t.style.visibility = "hidden"; } }, true);
@@ -1007,7 +1009,7 @@
     return '<div class="ps-me"><img src="/logos/simon-avatar.jpg" alt="Simon Felder" width="56" height="56" loading="lazy" decoding="async"><div><b>Simon aus Gaschurn</b>' +
       "<span>Dein Druckshop aus dem Montafon – bei Fragen zu Datei, Papier oder Termin bin ich persönlich für dich da.</span>" +
       '<span class="ps-me-c"><a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a></span></div></div>' +
-      '<div class="ps-proj"><b>Echte Druckprojekte aus der Region</b><div>' + PROJ.map(function (x) { return '<a href="/print/projekte/' + x[0] + '.jpg" target="_blank" rel="noopener" title="' + esc(x[2]) + '"><img src="/print/projekte/' + x[0] + '-k.jpg" alt="' + esc(x[1]) + '" width="96" height="96" loading="lazy" decoding="async"></a>'; }).join("") + "</div></div>";
+      '<div class="ps-proj"><b>Echte Druckprojekte aus der Region</b><div>' + PROJ.map(function (x, i) { return '<a href="/print/projekte/' + x[0] + '.jpg" data-proj="' + i + '" title="' + esc(x[2]) + '"><img src="/print/projekte/' + x[0] + '-k.jpg" alt="' + esc(x[1]) + '" width="96" height="96" loading="lazy" decoding="async"></a>'; }).join("") + "</div></div>";
   }
   // Fotos echter Aufträge (print/projekte/<name>.jpg + -k.jpg Vorschau): Datei, Alt-Text, kurzer Titel
   var PROJ = [
@@ -1731,11 +1733,12 @@
     return '<div class="ps-gal"><div class="main"><img src="' + esc(im[i]) + '" alt="' + esc(p.title) + '" data-galzoom="1"><button type="button" class="ps-gal-z" data-galzoom="1" aria-label="Bild vergrößern" title="Vergrößern">⤢</button>' + (im.length > 1 ? '<span class="ps-gal-n">' + (i + 1) + " / " + im.length + "</span>" : "") + "</div>" + (im.length > 1 ? '<div class="th">' + im.map(function (u, k) { return '<button type="button" data-gal="' + k + '" aria-label="Bild ' + (k + 1) + '" aria-pressed="' + (k === i) + '"><img src="' + esc(u.replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy"></button>'; }).join("") + "</div>" : "") + "</div>";
   }
   // Großansicht der Produktbilder: Klick aufs Bild, Pfeile/Wischen zum Blättern, Esc oder Klick daneben schließt
-  function galPop(i) {
-    var p = S.prod, im = p ? galImgs(p) : []; if (!im.length) return; var k = Math.max(0, Math.min(i || 0, im.length - 1)), back = document.activeElement;
+  // own = { title, ims, alts } für andere Bilderreihen (Druckprojekte aus der Region, Wunsch Simon 06.11.2026)
+  function galPop(i, own) {
+    var p = own || S.prod, im = own ? own.ims : p ? galImgs(p) : []; if (!im.length) return; var k = Math.max(0, Math.min(i || 0, im.length - 1)), back = document.activeElement;
     var m = document.createElement("div"); m.className = "ps-lb"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", p.title + " – Bilder");
-    var draw = function () { m.innerHTML = '<img src="' + esc(String(im[k]).replace(/w=\d+/, "w=1800")) + '" alt="' + esc(p.title + " – Bild " + (k + 1)) + '">' +
-      (im.length > 1 ? '<button type="button" class="ps-lb-n p" data-lb="-1" aria-label="Vorheriges Bild">‹</button><button type="button" class="ps-lb-n n" data-lb="1" aria-label="Nächstes Bild">›</button><span class="ps-lb-c">' + (k + 1) + " / " + im.length + "</span>" : "") +
+    var draw = function () { m.innerHTML = '<img src="' + esc(String(im[k]).replace(/w=\d+/, "w=1800")) + '" alt="' + esc(own && own.alts ? own.alts[k] : p.title + " – Bild " + (k + 1)) + '">' +
+      (im.length > 1 ? '<button type="button" class="ps-lb-n p" data-lb="-1" aria-label="Vorheriges Bild">‹</button><button type="button" class="ps-lb-n n" data-lb="1" aria-label="Nächstes Bild">›</button><span class="ps-lb-c">' + (own && own.alts ? esc(own.alts[k]) + " · " : "") + (k + 1) + " / " + im.length + "</span>" : "") +
       '<button type="button" class="ps-lb-x" aria-label="Schließen">×</button>'; var x = m.querySelector(".ps-lb-x"); if (x) x.focus(); };
     var go = function (d) { k = (k + d + im.length) % im.length; draw(); };
     var close = function () { m.remove(); document.removeEventListener("keydown", key); document.documentElement.classList.remove("ps-noscroll"); if (back && back.focus) back.focus(); };
