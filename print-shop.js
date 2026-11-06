@@ -4498,7 +4498,8 @@ module.exports = function (D) {
       else if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
       if (!cfg().pcKey) return J(res, 503, { ok: false, error: "Der Shop wird gerade eingerichtet" });
       if (p === "/print/api/price") {
-        if (limited("price", ip, 240, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
+        // 480 statt 240 je 10 Min. (06.11.2026): Handy-Kunden teilen sich oft eine Mobilfunk-IP (A1/Magenta), am 05.11. lief ein Kunde in die Bremse – Print.com schützt der Cache und pcWait
+        if (limited("price", ip, 480, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
         const b = await readJson(req, 20000);
         const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
         const n = normalizeSel(prod, b);
@@ -4621,7 +4622,7 @@ module.exports = function (D) {
         const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "draft", name: "entwurf.json", bytes: data.length, createdAt: nowIso(), orderId: null };
         await store.putFile(meta, Buffer.from(data, "utf8"));
         const me = await accountMod().current(req).catch(() => null);   // angemeldet: Entwurf im Kundenkonto merken
-        if (me) { const pr = CURATED.find(x => x.key === b.product); await accountMod().addDraft(me, { id: meta.id, t: sig("draft", meta.id), product: clip(b.product, 80), title: pr ? pr.title : clip(b.product, 80), preview: typeof b.preview === "string" ? b.preview : "" }).catch(() => {}); }
+        if (me && !b.cart) { const pr = CURATED.find(x => x.key === b.product); await accountMod().addDraft(me, { id: meta.id, t: sig("draft", meta.id), product: clip(b.product, 80), title: pr ? pr.title : clip(b.product, 80), preview: typeof b.preview === "string" ? b.preview : "" }).catch(() => {}); }
         return J(res, 200, { ok: true, id: meta.id, token: sig("draft", meta.id), saved: !!me, url: cfg().publicUrl + "/print?entwurf=" + meta.id + "&t=" + sig("draft", meta.id) });
       }
       if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
