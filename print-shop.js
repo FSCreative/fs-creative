@@ -609,8 +609,7 @@ module.exports = function (D) {
         const raw = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null && String(o.slug) !== "");
         if (p.required && raw.length === 1) fixed[p.slug] = String(raw[0].slug);
         return; }
-      // „gefaltet geliefert“ blendet Print.com in der eigenen App aus – ist aber eine echte Wahl ohne Aufpreis (Wunsch Simon 06.11.2026: bei allen Produkten zeigen)
-      const showAnyway = /^(folded)$/.test(p.slug), hidden = !showAnyway && (pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden"));
+      const showAnyway = false, hidden = pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden");   // „gefaltet geliefert“ (folded) ist bei Print.com gesperrt (locked) – nicht anbieten
       const anyOpt = opts.length > 1 && !hidden && fo[p.slug] === undefined && !/^(finish_(left|right|top|bottom)|printingmethod)$/.test(p.slug) && !AUTO_SKIP.test(p.slug);
       const want = autoExp ? anyOpt : expose.indexOf(p.slug) > -1 || (anyOpt && (OPT_EXTRA.test(p.slug) || showAnyway));   // kuratiert: Zusatzoptionen (Stanzung, Bündelung …) trotzdem zeigen   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
       // parentOptions sind bei Print.com Gruppenüberschriften der Optionen (z. B. „A-Formate“, „Quadrat“, Papierfamilien) – keine Bedingung
