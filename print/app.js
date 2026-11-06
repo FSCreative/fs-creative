@@ -910,9 +910,9 @@
   });
   function vienna() { var f = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date()), g = function (t) { return (f.filter(function (x) { return x.type === t; })[0] || {}).value; }; return { wd: g("weekday"), h: +g("hour"), m: +g("minute") }; }
   function dueHtml() { var p = S.price; if (!p || !p.deliveryDate) return ""; var d = new Date(p.deliveryDate + "T12:00:00"); if (isNaN(d)) return "";
-    var day = d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "numeric" }), v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m);
-    var cd = work && left > 0 ? "Bestellst du in den nächsten <b>" + (left >= 60 ? Math.floor(left / 60) + " Std. " : "") + (left % 60) + " Min.</b>, kommt es" : "Bestellst du jetzt, kommt es";
-    return '<p class="ps-due" id="psDue">🚚 ' + cd + " voraussichtlich am <b>" + esc(day.replace(/\.$/, "")) + "</b>.</p>"; }
+    var day = d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }), v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m);
+    // ruhig statt Countdown (06.11.2026): Liefertag groß, Bestellschluss nur als kleine Zeile
+    return '<p class="ps-due" id="psDue"><span>Lieferung voraussichtlich</span><b>' + esc(day.replace(/\.$/, "")) + "</b>" + (work && left > 0 ? "<small>bei Bestellung heute bis 14 Uhr</small>" : "") + '<small>Die Zustellung kann sich durch den Paketdienst um einen Werktag verschieben.</small></p>'; }
   setInterval(function () { var e = document.getElementById("psDue"); if (e && !document.hidden) { var t = document.createElement("div"); t.innerHTML = dueHtml(); if (t.firstChild) e.innerHTML = t.firstChild.innerHTML; } }, 30000);
   function socialHtml() { var n = +S.liveSame || 0, w = +S.liveWeek || 0, t = S.prod ? S.prod.title : ""; if (!t) return "";
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
@@ -993,13 +993,13 @@
     var u = unitOf();
     if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0" + U() + "" : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0" + U() + " · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() + (compact ? "" : dueHtml() + socialHtml() + trustHtml()) +
-      (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>" + (U() === "m" ? "Meterpreis" : "Stückpreis") + "</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + (compact ? tierHintHtml() : dueHtml() + "<!--CTA-->" + '<details class="ps-pmore"><summary>Preisdetails, Tipps &amp; Teilen</summary>' + tierHintHtml() + socialHtml() + trustHtml()) +
+      (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>" + (U() === "m" ? "Meterpreis" : "Stückpreis") + "</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "") + "</details>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + tierHintHtml() + (compact ? "" : dueHtml() + socialHtml() + trustHtml()) +
-      (compact ? "" : '<dl><dt>' + (U() === "m" ? "Meterpreis" : "Stückpreis") + '</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + (compact ? tierHintHtml() : dueHtml() + "<!--CTA-->" + '<details class="ps-pmore"><summary>Preisdetails, Tipps &amp; Teilen</summary>' + tierHintHtml() + socialHtml() + trustHtml()) +
+      (compact ? "" : '<dl><dt>' + (U() === "m" ? "Meterpreis" : "Stückpreis") + '</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "") + "</details>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
   function whoHtml() {
@@ -1007,10 +1007,11 @@
       (S.cat.countries.length > 1 ? '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select>" : "") + "</div>";
   }
   function renderPrice() {
-    var b = document.getElementById("psPrice"); if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + priceHtml(false) + (S.step === 2 ? whoHtml() : "") +
-      (S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
-       S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
-      '<ul class="ps-ptrust"><li>Automatischer Datencheck, Profi-Check optional</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
+    var b = document.getElementById("psPrice"), cta = S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
+       S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "";
+    // Reihenfolge (06.11.2026): Preis → Liefertag → Weiter → Privat/Firma; alles Weitere aufklappbar
+    var ph = priceHtml(false), hasSlot = ph.indexOf("<!--CTA-->") > -1;
+    if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + (hasSlot ? ph.replace("<!--CTA-->", cta + (S.step === 2 ? whoHtml() : "")) : ph + cta + (S.step === 2 ? whoHtml() : ""));
     var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "" + (szl ? " · " + szl : "");
       var u0 = p && unitOf(); if (u0 && u0.div > 0) sm = eur((S.ctype === "company" ? p.net : p.gross) / u0.div) + "/" + u0.unit + " · " + sm;
       m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
@@ -1191,10 +1192,24 @@
       if (!savedList().length) { toast("Noch nichts gemerkt – tippe bei einem Produkt auf „Merken“."); return; }
       S.view = ""; setPage("home"); setTimeout(function () { var x = document.querySelector(".ps-savhome"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60); });
     try { headUpdate(); } catch (e) {}
-    // Platzhalter wechselt zwischen Beispielen, solange das Feld leer ist und nicht fokussiert (zeigt, was man suchen kann)
-    (function () { var inp0 = q.querySelector("input"), ex = ["Flyer", "Visitenkarten", "T-Shirts mit Logo", "Banner", "Aufkleber", "Roll-ups", "Kalender", "Tassen mit Foto"], k = 0;
-      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      setInterval(function () { if (document.hidden || document.activeElement === inp0 || inp0.value) return; k = (k + 1) % ex.length; inp0.setAttribute("placeholder", "Produkt suchen, z. B. " + ex[k] + " …"); }, 2600); })();
+    // Platzhalter tippt Beispiele wie eine Schreibmaschine (Wunsch Simon 06.11.2026): Buchstabe für Buchstabe, blinkender Cursor, löschen, nächstes –
+    // nur solange das Feld leer, nicht fokussiert und der Tab sichtbar ist; bei „Bewegung reduzieren“ fester Text
+    (function () { var inp0 = q.querySelector("input"), ex = ["Flyer", "Visitenkarten", "T-Shirts mit Logo", "Banner", "Aufkleber", "Roll-ups", "Kalender", "Tassen mit Foto", "Werbeartikel", "Plakate"], pre = "Produkt suchen, z. B. ", base = pre + "Flyer, Banner …";
+      if (!inp0 || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) return;
+      var k = 0, n = 0, phase = "type", wait = 0, blink = 0, T = 0;
+      var idle = function () { return document.hidden || document.activeElement === inp0 || inp0.value; };
+      var tick = function () {
+        if (idle()) { inp0.setAttribute("placeholder", base); phase = "type"; n = 0; T = setTimeout(tick, 600); return; }
+        var w = ex[k], cur = "", d = 90;
+        if (phase === "type") { n++; if (n >= w.length) { phase = "hold"; wait = 4; } d = 70 + Math.round(Math.random() * 60); }
+        else if (phase === "hold") { blink++; if (--wait <= 0) phase = "del"; d = 450; }
+        else if (phase === "del") { n--; d = 35; if (n <= 0) { n = 0; phase = "type"; k = (k + 1) % ex.length; d = 380; } }
+        cur = phase === "hold" ? (blink % 2 ? "|" : "\u2009") : "|";
+        inp0.setAttribute("placeholder", pre + w.slice(0, n) + cur);
+        T = setTimeout(tick, d);
+      };
+      inp0.addEventListener("blur", function () { clearTimeout(T); T = setTimeout(tick, 400); });
+      T = setTimeout(tick, 900); })();
     // Suchvorschläge direkt im Kopf (wie auf der Startseite): Produkte mit Bild, Pfeiltasten, Enter öffnet
     var inp = q.querySelector("input"), box = document.createElement("div"); box.className = "ps-sug ps-v2sug"; box.setAttribute("role", "listbox"); box.hidden = true; q.appendChild(box);
     var paint = function () { if (!S || !S.cat) return; var h = sugHtml(inp.value); box.innerHTML = h; box.hidden = !h; };

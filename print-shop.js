@@ -240,7 +240,7 @@ function bonusCalc(orders, at) {
 }
 
 // Shop-AGB: Version wird bei jeder Bestellung gespeichert (bei Änderung der AGB hochzählen, Datum = Stand)
-const AGB_VERSION = "2026-10-19";
+const AGB_VERSION = "2026-11-06";
 // Mitgelieferte Schriften (SIL Open Font License, latin-Teilmenge, aus @fontsource) – Browser und PDF nutzen dieselben Dateien (print/fonts/*.woff)
 const FONTS = [
   ["Inter", "inter", 1], ["Open Sans", "open-sans", 1], ["Montserrat", "montserrat", 1], ["Lato", "lato", 1], ["Poppins", "poppins", 1], ["Raleway", "raleway", 1], ["Nunito", "nunito", 1],
@@ -1262,7 +1262,10 @@ module.exports = function (D) {
     poss.sort((a, b) => cost(a) - cost(b) || String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
     if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 400, shipping: true });   // 400 statt 502: Cloudflare ersetzt 502-Antworten durch eine HTML-Fehlerseite (Shop zeigte nur „Fehler 502“); andere Menge/Ausführung kann gehen. shipping: oft nur kurze Störung (Weihnachtsseite, Aufpreise: wie Störung behandeln)
     const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)) || cost(a) - cost(b))[0];
-    const best = n.urgency === "urgent" ? fastest : poss[0];   // Standard/Schnell: günstigste Lieferung, Express: schnellste (Wunsch Simon)
+    // Standard/Schnell: günstigste Lieferung, Express: schnellste (Wunsch Simon). Kostet ein früherer Tag höchstens 10 Cent mehr Versand, gilt der frühere –
+    // sonst zeigt der Kalender den früheren Tag zum (gerundet) gleichen Preis, die Preisbox aber einen späteren (06.11.2026: Flyer 16. vs. 17. November)
+    const cheap = poss.filter(x => cost(x) <= cost(poss[0]) + 0.1).sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)) || cost(a) - cost(b))[0];
+    const best = n.urgency === "urgent" ? fastest : cheap || poss[0];
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10),
       // alle Liefertage dieser Produktionszeit mit dem günstigsten Versand je Tag (für die Datumsleiste)
       days: Object.values(poss.reduce((m, x) => { const d = String(x.deliveryDate || "").slice(0, 10); if (/^\d{4}-\d\d-\d\d$/.test(d) && (!m[d] || cost(x) < m[d].ship)) m[d] = { d, ship: r2(cost(x)), carrier: String(x.carrier || ""), method: String(x.method || "") }; return m; }, {})).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 25) };
