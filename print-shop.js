@@ -5108,7 +5108,7 @@ module.exports = function (D) {
       // Preis-Aufschlüsselung wie im Shop (nur lesend): Einkauf Produkt/Versand, Aufschlag, Verkauf; optional Print.com-Optionen überschreiben (pcOverride)
       // alle Produktfotos aus dem Print.com-CMS (Shop zeigt nur 7) – z. B. Farbvarianten für Angebote mit Fotos
       if (p === "/admin/api/print/gallery") {
-        const prod = await findProduct(b.product || u.searchParams.get("product")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
+        const prod = await findProduct(b.product || u.searchParams.get("product"), null, true); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });   // auch nicht freigeschaltete (Vorschau)
         await cms(); const cp = cmsProd(prod.sku); const all = cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).map(x => IMG(x, 1000)) : [];
         return J(res, 200, { ok: true, images: all });
       }
@@ -5129,6 +5129,7 @@ module.exports = function (D) {
           if (b.op === "tplauditstate") return J(res, 200, { ok: true, busy: TPL_AUDIT.busy, at: TPL_AUDIT.at, done: TPL_AUDIT.done, total: TPL_AUDIT.total, rows: b.rows ? TPL_AUDIT.rows : undefined });
           if (b.op === "accsync") { accSync(true).catch(() => {}); return J(res, 200, { ok: true, started: true }); }
           if (b.op === "accstate") { await accLoad(); return J(res, 200, { ok: true, at: ACC_MAP.at, products: Object.keys(ACC_MAP.map || {}).length, withAcc: Object.values(ACC_MAP.map || {}).filter(l => l.length).length, accSkus: ACC_ON.size, busy: accBusy }); }
+          if (b.op === "prod") return J(res, 200, { ok: true, raw: await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller") });   // Rohdaten eines Produkts (Optionen prüfen)
           if (b.op === "acc") return J(res, 200, { ok: true, raw: await pcApi("GET", "/accessories/" + encodeURIComponent(sku)) });
           if (b.op === "wf") return J(res, 200, { ok: true, raw: await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/workfile", { options: b.options || {} }) });
           if (b.op === "tpl") return J(res, 200, { ok: true, raw: await pcApi("POST", "/printjobs/templates", { sku, options: b.options || {} }, { base: "https://platform.print.com" }) });

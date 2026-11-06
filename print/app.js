@@ -2065,7 +2065,9 @@
       var left = '<div class="ps-upv-l">' + mtabs + "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) : f.kind === "design" ? "Deine Gestaltung" : "Deine Datei") + '</h2><p class="sub">' + esc(sum) + "</p>" +
         '<div class="ps-upv-st"><div class="ps-upv-tabs" role="tablist" aria-label="Vorschau"><button type="button" role="tab" data-pvtab="mock" aria-selected="' + (tab === "mock") + '">Auf dem Produkt</button><button type="button" role="tab" data-pvtab="pfv" aria-selected="' + (tab === "pfv") + '">Mit Druckrändern</button></div>' +
         '<div class="ps-upv-pane" data-pane="mock"' + (tab === "mock" ? "" : " hidden") + ">" + pmkHtml() + "</div>" +
-        '<div class="ps-upv-pane" data-pane="pfv"' + (tab === "pfv" ? "" : " hidden") + '><div class="ps-pfv" id="psPfv" data-fid="' + esc(f.fileId) + '"><div class="ps-pfv-h"><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
+        '<div class="ps-upv-pane" data-pane="pfv"' + (tab === "pfv" ? "" : " hidden") + '><div class="ps-pfv' + (S.pfvBg ? " tr" : "") + '" id="psPfv" data-fid="' + esc(f.fileId) + '"><div class="ps-pfv-h"><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label>' +
+          // Hintergrund weiß ↔ transparent (Wunsch Simon 06.11.2026): die Vorschau ist durchsichtig gerendert – auf dem Kachelmuster sieht man weißen Druck (z. B. Pantone-Weiß auf Luftballons) und transparente Flächen
+          '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund der Vorschau"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
         '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie</li>' : "") + "</ul></div></div></div>" +
         (spec ? '<p class="ps-upv-spec">' + (p.dimsArea ? "Druckfläche " : "Endformat ") + esc(spec) + "</p>" : "") + "</div>";
       var right = '<aside class="ps-upv-r"><div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages || "?") + " Seite" + (f.pages === 1 ? "" : "n") + (f.bytes ? " · " + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
@@ -2227,12 +2229,12 @@
       return Promise.all(jobs).then(function (pages) { return Promise.all(pages.map(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
         var sc = Math.min(2, 560 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function () { return pdfDeep(pg).catch(function () { return {}; }); }).then(function (deep) { return { cv: cv, b: b, mmW: wmm, deep: deep }; }); })); });
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () { return pdfDeep(pg).catch(function () { return {}; }); }).then(function (deep) { return { cv: cv, b: b, mmW: wmm, deep: deep }; }); })); });
     }).then(function (res) {
       var warns = [], okNotes = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
         // Randanalyse: Pixel zwischen Endformat und Sicherheitslinie, die deutlich vom typischen Randton abweichen
-        if (!/rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"))) try { var data = x.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        if (!/rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"))) try { var wc = document.createElement("canvas"); wc.width = W; wc.height = H; var wx = wc.getContext("2d"); wx.fillStyle = "#fff"; wx.fillRect(0, 0, W, H); wx.drawImage(cv, 0, 0); var data = wx.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
           var px = function (xx, yy) { var o = (yy * W + xx) * 4; return [data[o], data[o + 1], data[o + 2]]; };
           var dist = function (a, b2) { return Math.abs(a[0] - b2[0]) + Math.abs(a[1] - b2[1]) + Math.abs(a[2] - b2[2]); };
           var b0 = Math.ceil(bp) + 1, s0 = Math.floor(sp) - 1, hit = 0, sideNames = [];
@@ -2594,6 +2596,7 @@
     if (k === "savdel") { savDel(v); return; }
     if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0" + (sx.unit || "Stk.") + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
+    if (k === "pfvbg") { S.pfvBg = v === "1"; var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
