@@ -64,7 +64,7 @@
    "mc": "AAAAfHuAgX+BgICBf3+BgIOCgIOCgoN/fn98gYF/gX5+gH9/gX+Af32BgYODf399fH9/foGAg4OBgYCAgYB+gX+AgXx9fX6Af4CBgIGAfoGAgIKBgYSDhISAgYGEhYSDgoGBgX+BgIGBgIGBf4F/foGAgoKAgH9/gH59f36BhIWGhoWEg4CAfoKCgIKAgYKBgIGAgoKBg4GCgoCAgYCBgX5/fYCDg4SFg4WGhoaEhYOAgX5+gX9+f3x/f36Af3+CgYCCgIKDgIF/f399fX1+gIKDg4KCgoOEgoCCgH5+eX5+fX99fX99fYCAgH97enZ4gIKCg4CAf35/gIGEg4OCfoGBgoSDgoKAgH98goGChH+AgYCBgH2BgYKDgICCgYKAfX9/gYOAgYODhYWEhYSEhYOEg4CBf4CCf35/fH+AfoB+f4B+foB+gYB8fXx+f39/gH+CgH6BgYKCgIKDg4SAfHx6fX16e3t7fn19f31/f3yAf4CCgH9/e319e319fYB/foB/gYB+gH5/f3t6fHt/f36Af4B/fHx9fIB/fX99f399fHp4fHt8fXt8enh6e3t+fHp6dXZ1cXBraWplYmFeXVdR",
    "bright": 0.156,
    "onsetRate": 2.62,
-   "clip": 0.00009,
+   "clip": 9e-05,
    "energy": 3
   }
  },
@@ -132,7 +132,10 @@
    "onsetRate": 3.03,
    "clip": 0,
    "energy": 3
-  }
+  },
+  "season": [
+   "fruehling"
+  ]
  },
  {
   "file": "alpin--lukewarm-banjo.m4a",
@@ -339,7 +342,10 @@
    "onsetRate": 3.62,
    "clip": 0.00034,
    "energy": 4
-  }
+  },
+  "season": [
+   "sommer"
+  ]
  },
  {
   "file": "elegant--night-in-venice.m4a",
@@ -486,7 +492,7 @@
    "mc": "AAAAf31/f4CBf4GAgIB8fn+AgX+BgIGCgIGBgoOBgYCAgYCBgYKCgYF+fn16fHx9fn1+fX19enx7fX59f31/gH1/f4CBf4F/gIF+f35/gH6Afn+Afn9+f4B/f31+f35+fYCAf4B9f4GAgoKDg4KDgYGCgIGCg4OCgn9/fnt8fH5/fn99fX57fHx+fn1/fX+Afn9+f4B/gH5+f31+foCAf39+gYOCg4GAgH9+fX5+fn5+gIB/gH+BgoGCgYGBgICAgYGAgYGBgoGAfX19e3x6enp5enp7fXx8fHx9fH17fX57fHp6enl7e31+fHx8fXx7e3t+f35/fXx9e319fX9+f39/fn5+fX+BgIKCgoKCgYGBgoGBgICBgH98fXx7fHp6enh6ent8e3t8e3t7e3t/gH+Af35+fHt5d3VwbG5ydHR5en6Af4OBgYF9fn5+f36BgoKBfYCAgoOBhYSEhICCgoKDgYSEhISAgH5/f3yAfn5+eHt6fHx6gICAgHp7eXt7eH59fX53e3x8fXqAgICAeXt7foB/goKBgX1/fn9/fYGBgoJ/f35/gH6BgICAfHx7e3t3eXd3dnFwbWpoYmNfXVxQ",
    "bright": 0.084,
    "onsetRate": 4.64,
-   "clip": 0.00003,
+   "clip": 3e-05,
    "energy": 4
   }
  },
@@ -784,7 +790,7 @@
    "mc": "AAAAam1xcnN0dXRzcHFzdHV1dHd7gIaJioqIhoOEhYaGg4GAgoSFhYJ/foGEhYSCfXp9fn9+e3p7fYCBf355fYGCg4B9fH6AgYF+fX6BhIaGhIKAgYOEg4F+fn5/gH9+fXx+gICAf31+fX19e31+f4CAf319f4KEhIJ+e3x/f4B+fHuBhYeIhoSDhIWFhYOCgYOEhYWDgoGBgoOCgX9+f4CAf3x6e32AgYB9eHl8fn99e3p9fn5/fHx+gYOEhIODg4SEhIOBgIGBgoKAf31/gIGDgX98fHx9fn+AgIKCgoKBgICCg4KCf319f39/fnt7foKEhoaEgoGAgYKCgYCBgYKDgoGAgICBgYCAgYGBf318e3x8fX18fHh8f4CBf317fX9/f319foKEhYWDg4ODg4KBgIGDg4ODgoB/foGCg4J/fHx+f4CAfn6BgYKCgH58foCBgYB+f4CAf359fX+DhYaFg4KDg4ODgoGAgIGBgX58e36Bg4OBfnt8fX18eXd4en6Af314d3t9fnx5dHl6fH17e3p/goSFg4KCgoKDgX99fX5/f358eHh4eXp4dnFxcG9va2poamxra2ZhXVxdWldP",
    "bright": 0.089,
    "onsetRate": 2.42,
-   "clip": 0.00002,
+   "clip": 2e-05,
    "energy": 3
   }
  },
@@ -935,7 +941,10 @@
    "onsetRate": 3.27,
    "clip": 0.00045,
    "energy": 3
-  }
+  },
+  "season": [
+   "sommer"
+  ]
  },
  {
   "file": "froehlich--fresh-focus.m4a",
@@ -1078,7 +1087,10 @@
    "onsetRate": 3.11,
    "clip": 0,
    "energy": 3
-  }
+  },
+  "season": [
+   "sommer"
+  ]
  },
  {
   "file": "froehlich--happy-whistling-ukulele.m4a",
@@ -1435,7 +1447,7 @@
    "mc": "AAAAgXl+g4WFg4GAgYOCgH98eXd+fX19dXR+goODgX1+g4ODgn58e39+fHx0cnl9fXx4bmp/goOEfnx9g4OCg4KDhYWDgX98e39/f395dneDhIWEfX6EhoeFgH6Ag4ODgn9/f4ODg4SBgIKFhISBfn+EhYSEgoGBgoB/f3x6fX9+fnp1c4CDhIWBgYKFhoSFgoGCgYCAfnx7fn5+gH1+foOEhIR+gYSFhYKBgIGDgoKBfnt6fn5+fXZ1foKDg398foKEg4KAf4CBgICAfXyAgoOFgn98f4OEhYGAf4ODgoF+f4CBgYF/fHp9fn9/fHx+hIWFhH59gYODgoB/gIOCgH55d3Z9fX18c297g4WFg35+g4SDgn19foGAgIB6eXx+fn98eHd/g4SFgn9/goKBgoKDhISCgH56eH19fXx1cGyBg4SEfn+ChIOBgYCBg4CAgH9+fYGBgIB6eH6Dg4SBfX6BgoGBf3+AgYGAgHx7fH19fHlzcYGCg4R9fHyAgYGCf3+Af319e3h3fH19fHZyb3+AgYJ9fYCCgX99ent/fX19eXZ1fH18fHFsen+AgH13eHp6eXdzcnJxbmtpY2BeW1dV",
    "bright": 0.096,
    "onsetRate": 2.53,
-   "clip": 0.00006,
+   "clip": 6e-05,
    "energy": 3
   }
  },
@@ -1506,7 +1518,10 @@
    "onsetRate": 2.18,
    "clip": 0,
    "energy": 3
-  }
+  },
+  "season": [
+   "sommer"
+  ]
  },
  {
   "file": "ruhig--infinite-peace.m4a",

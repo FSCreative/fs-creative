@@ -866,7 +866,8 @@ module.exports = function (C) {
     if (p !== "/admin/api/mkt/music" || req.method !== "POST") return false;
     const pl = await C.body(req, 16e6), op = String(pl.op || (pl.remove ? "remove" : pl.restore ? "restore" : pl.data ? "upload" : ""));
     if (op === "upload") { const r = await upload(pl); return reply(res, { uploaded: r.track, quality: r.quality }), true; }
-    if (op === "import") { importStart(pl.items); return reply(res, { import: IMP }), true; }
+    if (op === "import") { let items = pl.items; if (pl.preset === "freepd") { try { items = JSON.parse(fs.readFileSync(path.join(SEEDDIR, "freepd-import.json"), "utf8")); } catch (e) { throw fail(500, "Importliste fehlt"); } }
+      importStart(items); return reply(res, { import: IMP }), true; }
     if (op === "importStatus") return reply(res, { import: IMP }), true;
     if (op === "keys") { if (pl.provider !== "stability") throw fail(400, "Unbekannter Anbieter"); const k = String(pl.key || "").trim(); if (k && !/^[\w.\-]{16,300}$/.test(k)) throw fail(400, "Das sieht nicht wie ein Stability-API-Key aus.");
       S().mkt.stability = k ? C.seal({ v: k }) : undefined; S().mkt.stabilityCheck = null; setWarn(""); save(true); return reply(res), true; }
