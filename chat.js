@@ -413,7 +413,9 @@ module.exports = function (D) {
       if (p === "/admin/api/chat/typing" && req.method === "GET") { const id = String(u.searchParams.get("id") || ""); return J(res, 200, { ok: true, typing: CID_RX.test(id) && typingOf(VTYP, id) }); }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       let d; try { d = await body(req, 20000); } catch (e) { return J(res, e.code || 400, { ok: false, error: e.message }); }
-      if (p === "/admin/api/chat/status") return J(res, 200, { ok: true, online: await setStatus(d.online !== false) });
+      // Nur der Schalter im Cockpit (manual: true) ändert den Status. Ältere, noch offene Cockpit-Versionen (z. B. am Handy) schickten alle 45 s
+      // „online: true“ als Herzschlag und haben Simon so wieder online gesetzt (06.11.2026) – solche Anfragen liefern nur noch den Stand
+      if (p === "/admin/api/chat/status") { if (d.manual === true && typeof d.online === "boolean") return J(res, 200, { ok: true, online: await setStatus(d.online) }); return J(res, 200, { ok: true, online: await online() }); }
       if (p === "/admin/api/chat/typing") { const id = String(d.id || ""); if (CID_RX.test(id) && CONVS.get(id)) ATYP.set(id, Date.now()); return J(res, 200, { ok: true }); }   // Simon tippt
       const id = String(d.id || ""), c = CID_RX.test(id) && CONVS.get(id);
       if (!c) return J(res, 404, { ok: false, error: "not_found" });

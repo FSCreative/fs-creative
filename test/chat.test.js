@@ -114,7 +114,10 @@ async function startServer(dir, env) {
   });
 
   await t("Status online + Herzschlag; Besucher sieht „online“", async () => {
-    const s = await adm("/admin/api/chat/status", { online: true }); assert.strictEqual(s.online, true);
+    const s = await adm("/admin/api/chat/status", { online: true, manual: true }); assert.strictEqual(s.online, true);
+    // alter Herzschlag ohne manual (offene ältere Cockpit-Version am Handy) ändert nichts mehr
+    await adm("/admin/api/chat/status", { online: false, manual: true }); assert.strictEqual((await adm("/admin/api/chat/status", { online: true })).online, false, "Herzschlag setzt nicht online");
+    await adm("/admin/api/chat/status", { online: true, manual: true });
     assert.strictEqual((await pj("/chat/api/status")).online, true);
   });
 
@@ -147,7 +150,7 @@ async function startServer(dir, env) {
   });
 
   await t("Online nur von Hand: bleibt ohne Herzschlag an, aus erst per Schalter; Gelesen in beide Richtungen", async () => {
-    await adm("/admin/api/chat/status", { online: true }); assert.strictEqual((await pj("/chat/api/status")).online, true);
+    await adm("/admin/api/chat/status", { online: true, manual: true }); assert.strictEqual((await pj("/chat/api/status")).online, true);
     await sleep(1700);
     assert.strictEqual((await pj("/chat/api/status")).online, true, "keine automatische Abmeldung");
     // Simon schreibt → beim Besucher noch nicht gelesen; Besucher öffnet (Poll) → im Cockpit „gelesen“
@@ -160,7 +163,7 @@ async function startServer(dir, env) {
     assert.ok(((await pj("/chat/api/poll?c=" + A + "&after=0")).seen || 0) < vid, "Simon hat noch nicht gelesen");
     await fetch(B + "/admin/api/chat/conv?id=" + A + "&read=1", { headers: { cookie: COOKIE } });
     assert.ok((await pj("/chat/api/poll?c=" + A + "&after=0")).seen >= vid, "Simon hat gelesen");
-    await adm("/admin/api/chat/status", { online: false }); assert.strictEqual((await pj("/chat/api/status")).online, false, "aus per Schalter");
+    await adm("/admin/api/chat/status", { online: false, manual: true }); assert.strictEqual((await pj("/chat/api/status")).online, false, "aus per Schalter");
   });
 
   await t("Offline: KI antwortet (Sonnet, max_tokens 400, kurzer Verlauf, Simons Antwort als Kontext), als „ki“ markiert", async () => {
@@ -196,7 +199,7 @@ async function startServer(dir, env) {
   });
 
   await t("Simon online + schreibt → KI schweigt; „KI: An“ übernimmt wieder; „Aus“ schaltet ab", async () => {
-    await adm("/admin/api/chat/status", { online: true });
+    await adm("/admin/api/chat/status", { online: true, manual: true });
     const n0 = mock.calls.length;
     await adm("/admin/api/chat/send", { id: A, text: "Ich übernehme ab hier." });
     await pj("/chat/api/send", { cid: A, text: "Super, danke Simon" }); await sleep(500);
@@ -204,7 +207,7 @@ async function startServer(dir, env) {
     const on = await adm("/admin/api/chat/op", { id: A, op: "ai", mode: "on" }); assert.strictEqual(on.conv.ai, "on");
     assert.ok(await waitFor(async () => mock.calls.length === n0 + 1), "KI übernimmt wieder");
     await adm("/admin/api/chat/send", { id: A, text: "Doch ich." }); assert.strictEqual((await adm("/admin/api/chat/conv?id=" + A)).conv.ai, "auto", "Schreiben stoppt die KI");
-    await adm("/admin/api/chat/op", { id: A, op: "ai", mode: "off" }); await adm("/admin/api/chat/status", { online: false });
+    await adm("/admin/api/chat/op", { id: A, op: "ai", mode: "off" }); await adm("/admin/api/chat/status", { online: false, manual: true });
     await pj("/chat/api/send", { cid: A, text: "Noch eine Frage" }); await sleep(500); assert.strictEqual(mock.calls.length, n0 + 1, "KI aus bleibt aus, auch offline");
     assert.strictEqual((await adm("/admin/api/chat/op", { id: A, op: "ai", mode: "bogus" }))._status, 400);
   });
@@ -217,18 +220,18 @@ async function startServer(dir, env) {
   });
 
   await t("Übergabe: Besucher will einen Mitarbeiter → Simon online übernimmt (KI schweigt); offline nimmt die KI wieder auf", async () => {
-    ipN = 5; const H = cidOf("handoff"); await adm("/admin/api/chat/status", { online: true }); const n0 = mock.calls.length;
+    ipN = 5; const H = cidOf("handoff"); await adm("/admin/api/chat/status", { online: true, manual: true }); const n0 = mock.calls.length;
     await pj("/chat/api/send", { cid: H, text: "Ich möchte bitte mit einem Mitarbeiter sprechen" });
     const p = await waitFor(async () => { const x = await pj("/chat/api/poll?c=" + H + "&after=0"); return x.msgs.some(m => m.from === "sys" && /antwortet dir gleich/.test(m.text)) && x; });
     assert.ok(p, "Übergabe-Hinweis"); assert.ok(p.msgs.some(m => m.from === "ki" && /übergebe/.test(m.text)));
     const cv = (await adm("/admin/api/chat/conv?id=" + H)).conv; assert.ok(cv.human, "an Simon übergeben");
     await pj("/chat/api/send", { cid: H, text: "Hallo?" }); await sleep(500); assert.strictEqual(mock.calls.length, n0 + 1, "nach Übergabe keine KI, solange Simon online ist");
-    await adm("/admin/api/chat/status", { online: false });
+    await adm("/admin/api/chat/status", { online: false, manual: true });
     await pj("/chat/api/send", { cid: H, text: "Noch da?" }); assert.ok(await waitFor(async () => mock.calls.length === n0 + 2), "offline → KI nimmt die Anfrage auf");
   });
 
   await t("Rate-Limit: 20 Nachrichten / 10 Min. je IP + Unterhaltung → 429", async () => {
-    ipN = 3; const R = cidOf("ratelimit"); await adm("/admin/api/chat/status", { online: true });
+    ipN = 3; const R = cidOf("ratelimit"); await adm("/admin/api/chat/status", { online: true, manual: true });
     for (let i = 0; i < 20; i++) assert.strictEqual((await pj("/chat/api/send", { cid: R, text: "m" + i }))._status, 200, "Nachricht " + i);
     const r = await pj("/chat/api/send", { cid: R, text: "zu viel" }); assert.strictEqual(r._status, 429); assert.strictEqual(r.error, "too_many");
     ipN = 4; assert.strictEqual((await pj("/chat/api/send", { cid: R, text: "andere IP" }))._status, 200);
