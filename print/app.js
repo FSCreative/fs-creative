@@ -993,12 +993,12 @@
     var u = unitOf();
     if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0" + U() + "" : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0" + U() + " · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + (compact ? tierHintHtml() : dueHtml() + "<!--CTA-->" + '<details class="ps-pmore"><summary>Preisdetails, Tipps &amp; Teilen</summary>' + tierHintHtml() + socialHtml() + trustHtml()) +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + (compact ? tierHintHtml() : tierHintHtml() + dueHtml() + "<!--CTA-->" + '<details class="ps-pmore"><summary>Preisdetails, Tipps &amp; Teilen</summary>' + socialHtml() + trustHtml()) +
       (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>" + (U() === "m" ? "Meterpreis" : "Stückpreis") + "</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "") + "</details>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + (compact ? tierHintHtml() : dueHtml() + "<!--CTA-->" + '<details class="ps-pmore"><summary>Preisdetails, Tipps &amp; Teilen</summary>' + tierHintHtml() + socialHtml() + trustHtml()) +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" + (compact ? tierHintHtml() : tierHintHtml() + dueHtml() + "<!--CTA-->" + '<details class="ps-pmore"><summary>Preisdetails, Tipps &amp; Teilen</summary>' + socialHtml() + trustHtml()) +
       (compact ? "" : '<dl><dt>' + (U() === "m" ? "Meterpreis" : "Stückpreis") + '</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "") + "</details>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
@@ -1006,7 +1006,7 @@
   function meHtml() {
     return '<div class="ps-me"><img src="/logos/simon-avatar.jpg" alt="Simon Felder" width="56" height="56" loading="lazy" decoding="async"><div><b>Simon aus Gaschurn</b>' +
       "<span>Dein Druckshop aus dem Montafon – bei Fragen zu Datei, Papier oder Termin bin ich persönlich für dich da.</span>" +
-      '<span class="ps-me-c"><a href="tel:+436641430620">+43 664 1430620</a> · <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a></span></div></div>' +
+      '<span class="ps-me-c"><a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a></span></div></div>' +
       '<div class="ps-proj"><b>Echte Druckprojekte aus der Region</b><div>' + PROJ.map(function (x) { return '<a href="/print/projekte/' + x[0] + '.jpg" target="_blank" rel="noopener" title="' + esc(x[2]) + '"><img src="/print/projekte/' + x[0] + '-k.jpg" alt="' + esc(x[1]) + '" width="96" height="96" loading="lazy" decoding="async"></a>'; }).join("") + "</div></div>";
   }
   // Fotos echter Aufträge (print/projekte/<name>.jpg + -k.jpg Vorschau): Datei, Alt-Text, kurzer Titel
