@@ -2875,7 +2875,7 @@ module.exports = function (D) {
   // kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG), also keine Rückgabe; Gewährleistung (Punkt 8) bleibt unberührt. Lieferung nur nach Österreich.
   // Shop als Organisation (für Google, Bing und KI-Assistenten): eine @id, auf die alle Angebote verweisen
   const STORE_ID = SITE + "/print#shop";
-  const STORE_LD = { "@type": "OnlineStore", "@id": STORE_ID, name: "FS Creative Druckshop", alternateName: "FS Creative", url: SITE + "/print", logo: SITE + "/logos/druckshop-logo-weiss.png", image: SITE + "/og-image.png",
+  const STORE_LD = { "@type": "OnlineStore", "@id": STORE_ID, name: "FS Creative Druckshop", alternateName: "FS Creative", url: SITE + "/print", logo: SITE + "/logos/druckshop-logo-google.png", image: SITE + "/og-image.png",
     description: "Online-Druckerei aus Gaschurn im Montafon: Flyer, Visitenkarten, Plakate, Banner, Aufkleber, Textilien und Werbeartikel – Preis sofort inkl. 20 % USt und Versand, Lieferung in ganz Österreich.",
     email: "simon@fs-creative.at", telephone: "+43 664 1430620", address: { "@type": "PostalAddress", streetAddress: "Dorfstraße 3/1", postalCode: "6793", addressLocality: "Gaschurn", addressRegion: "Vorarlberg", addressCountry: "AT" },
     areaServed: { "@type": "Country", name: "Österreich" }, hasMap: "https://maps.google.com/maps?cid=5391570456262019394", sameAs: ["https://maps.google.com/maps?cid=5391570456262019394"],   // Google-Unternehmensprofil: verknüpft Shop und Eintrag für die lokale Suche
