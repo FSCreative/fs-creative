@@ -845,7 +845,7 @@ module.exports = function createKi(deps) {
   }
   // Für fin-docmatch.js: Anhang laden (nur lesen) und Beleg auslesen (gecacht je Mail-Anhang)
   function docmatchReady() { return configured() && featureOn("docmatch") && featureOn("mailbeleg") && !overLimit(); }
-  // Website-Chat (chat.js): kurze Antwort + erkannte Kontaktdaten als JSON. Kurzer Verlauf, max. ~400 Tokens, Sonnet (modelFor("chat")).
+  // Website-Chat (chat.js): kurze Antwort + erkannte Kontaktdaten als JSON. Kurzer Verlauf, max. 1200 Tokens (einmal 3000 bei Abschneiden), Sonnet (modelFor("chat")).
   // Druckshop-Designer: Gestaltungsvorschlag als JSON; liefert die tatsächlichen Kosten (EUR) für das Tageslimit je Kunde
   async function printDesign(system, user, schema) {
     const msg = await claude("printdesign", { system, messages: [{ role: "user", content: user }], maxTokens: 1200, effort: "low", schema });
@@ -869,6 +869,11 @@ module.exports = function createKi(deps) {
     const u = msg.usage || {}, usd = priced({ input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 }, PRICES[modelFor("marketing")] || PRICE_USD);
     const j = jsonOf(msg) || {}; return { images: (j.images || []).map(x => ({ id: String(x.id || ""), desc: String(x.desc || "").slice(0, 160) })), eur: usd * USD_EUR };
   }
-  async function chatReply(system, state, messages, schema) { const msg = await claude("chat", { system, system2: state, messages, maxTokens: 400, effort: "low", schema }); return jsonOf(msg); }
+  // 400 Tokens reichten bei Fachfragen (ICC-Profile, Druckdaten) nicht: Antwort abgeschnitten → Besucher bekam nur den Offline-Hinweis (06.11.2026).
+  // Jetzt 1200, bei Abschneiden einmal mit 3000 neu versuchen; die Kürze steuert weiterhin der System-Text.
+  async function chatReply(system, state, messages, schema) {
+    try { return jsonOf(await claude("chat", { system, system2: state, messages, maxTokens: 1200, effort: "low", schema })); }
+    catch (e) { if (!e || e.kiCode !== "max_tokens") throw e; return jsonOf(await claude("chat", { system, system2: state, messages, maxTokens: 3000, effort: "low", schema })); }
+  }
   return { handle, configured, status, ping, health, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign") && !overLimit(), marketingGen, marketingVision, marketingOn: () => configured() && featureOn("marketing") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
 };
