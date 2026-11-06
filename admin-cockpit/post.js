@@ -260,6 +260,10 @@ function threads(){ if(THR&&THR_V===S.ver) return THR; THR_V=S.ver;
   Object.keys(groups).forEach(function(r){ groups[r].sort(function(a,b){ return new Date(b.date)-new Date(a.date); }); });
   THR={key:key,groups:groups}; return THR; }
 function threadOf(m){ if(!m) return []; var t=threads(), r=t.key[m.id]; return r?t.groups[r]:[m]; }
+/* Verschieben/Archivieren/Löschen nimmt die ganze Unterhaltung mit (Wunsch Simon 06.11.2026): ältere Mails desselben Verlaufs im selben Ordner und Konto
+   bleiben sonst allein im Posteingang zurück; Gesendete bleiben in „Gesendet“ (anderer Ordner) */
+function withThread(ids){ var out=[], seen={}; ids.forEach(function(id){ var m=find(id); if(!seen[id]){ seen[id]=1; out.push(id); } if(!m||m.local||m.outbox||m.draftLocal) return;
+  var fk=M.folderKeyOf(m), acc=accOf(m); threadOf(m).forEach(function(x){ if(!seen[x.id]&&!x.local&&!x.outbox&&!x.draftLocal&&M.folderKeyOf(x)===fk&&accOf(x)===acc){ seen[x.id]=1; out.push(x.id); } }); }); return out; }
 function threadKey(m){ return m?threads().key[m.id]||m.id:""; }
 function threadingOn(){ return !!UI.mthreads&&!UI.mq&&["sent","trash","spam","drafts","outbox"].indexOf(UI.mf)<0; }
 M.threadOf=threadOf;
@@ -1077,8 +1081,7 @@ F.action("mpick",function(id,el,e){ togglePick(id,e&&e.shiftKey); });
 
 /* ---------- Verschieben, Spam ---------- */
 function moveMessages(ids,target,op,doneMsg){
-  var msgs=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!msgs.length) return;
-  op=op||"move"; var acc=accOf(msgs[0]);
+  op=op||"move"; if(op!=="spam") ids=withThread(ids); var msgs=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!msgs.length) return; var acc=accOf(msgs[0]);
   if(target&&op==="move"&&target.indexOf("|")>-1){ var bi=target.indexOf("|"), tAcc=target.slice(0,bi); target=target.slice(bi+1); if(tAcc!==acc){ F.toast("Mails können nicht zwischen verschiedenen Konten verschoben werden",true); return; } }
   var other=msgs.filter(function(m){ return accOf(m)!==acc; }).length;
   msgs=msgs.filter(function(m){ return accOf(m)===acc; });
@@ -1099,7 +1102,7 @@ function archivePath(acc){ var k=S.ver+"|"+S.folders.length; if(ARC.k!==k) ARC={
   var f=mine.filter(function(x){ return /\\Archive/i.test(x.special||""); })[0]||mine.filter(function(x){ return ARX.test(x.path); })[0]; return (ARC.m[acc]=f?f.path:""); }
 function canArchive(m){ if(!m||m.local||m.outbox||m.draftLocal||isTrashed(m)||isDraftBox(m)||isSpam(m)) return false; var p=archivePath(accOf(m)); return !p||(m.folder||"INBOX")!==p; }
 function archiveMessages(ids){
-  var msgs=ids.map(find).filter(canArchive);
+  ids=withThread(ids); var msgs=ids.map(find).filter(canArchive);
   if(!msgs.length){ var f0=find(ids[0]); if(f0&&!isTrashed(f0)&&archivePath(accOf(f0))===(f0.folder||"")) F.toast("Liegt bereits im Archiv"); return; }
   var acc=accOf(msgs[0]), ok=msgs.filter(function(m){ return accOf(m)===acc; }).map(function(m){ return m.id; }), p=archivePath(acc);
   var n=ok.length, msg=(n>1?n+" Mails":"Mail")+" archiviert";
@@ -1169,7 +1172,7 @@ window.addEventListener("pagehide",beacon);
 document.addEventListener("visibilitychange",function(){ if(document.hidden&&UNDO.items.length) flushUndo(); });   // App weggewischt/gesperrt: sofort senden (Handy)
 window.addEventListener("beforeunload",beacon);
 function trashMessages(ids){
-  var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); });
+  ids=withThread(ids); var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); });
   if(!msgs.length){ if(ids.some(function(id){ return !find(id); })){ F.toast("Die Mail hat sich inzwischen geändert – Liste wird aktualisiert",true); M.loadFull(); } return; }
   flushUndo();
   var mids=msgs.map(function(m){return m.id;});
