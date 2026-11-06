@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<script>/* Neuer Look ab 04.11.2026 23:30 (Freigabe Simon); ?vorschau=start/aus schaltet für den Besuch um. Hell ist im neuen Look Standard. */(function(){var v2=Date.now()>=Date.parse('2026-11-04T22:30:00Z'),q=location.search,t=null;try{var ss=sessionStorage;if(/[?&]vorschau=aus/.test(q))ss.setItem('psV2','0');else if(/[?&]vorschau=start/.test(q))ss.setItem('psV2','1');var f=ss.getItem('psV2');if(f==='1')v2=true;else if(f==='0')v2=false;}catch(e){}window.__psV2=v2;try{t=localStorage.getItem('fsc-theme');}catch(e){}var R=document.documentElement;if(v2)R.className+=' ps-v2';if(t==='light'||(v2&&t!=='dark'))R.className+=' light';})();</script>
+<script>/* Neuer Look für alle (seit 04.11.2026); der alte Look ist abgeschaltet (Simon 06.11.2026) – ?vorschau=aus wirkt nicht mehr. Hell ist Standard. */(function(){var t=null;try{sessionStorage.removeItem('psV2');}catch(e){}window.__psV2=true;try{t=localStorage.getItem('fsc-theme');}catch(e){}var R=document.documentElement;R.className+=' ps-v2';if(t!=='dark')R.className+=' light';})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Online drucken – Flyer, Visitenkarten &amp; mehr | FS Creative</title>
 <meta name="description" content="Flyer, Visitenkarten, Plakate &amp; Aufkleber online gestalten oder Druckdaten hochladen – Preis sofort inkl. Versand in ganz Österreich." />
