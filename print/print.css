@@ -2269,3 +2269,4 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-me div{display:grid;gap:3px;font-size:13px;line-height:1.45}.ps-me b{font-size:14.5px}.ps-me span{opacity:.85}.ps-me-c{font-size:12.5px}.ps-me-c a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .ps-proj{margin:12px 0 0}.ps-proj>b{display:block;font-size:12.5px;margin-bottom:6px;opacity:.85}.ps-proj>div{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .ps-proj a{display:block;border-radius:8px;overflow:hidden;aspect-ratio:1;box-shadow:0 0 0 1px var(--ps-line)}.ps-proj img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s}.ps-proj a:hover img{transform:scale(1.06)}
+.ps-musttpl{margin:12px 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--ps-warn) 55%,transparent);background:color-mix(in srgb,var(--ps-warn) 12%,transparent);font-size:14px;line-height:1.5}

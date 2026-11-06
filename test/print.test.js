@@ -330,6 +330,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   const svgPage = (extra) => '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="356" height="236" viewBox="0 0 356 236"><rect x="0" y="0" width="356" height="236" fill="#0a84ff"/>' +
     '<text x="20" y="60" font-family="Montserrat" font-weight="bold" font-size="24" fill="#000000">Grüße – Maria Muster</text><text x="20" y="100" font-family="\'Playfair Display\'" font-style="italic" font-size="14" fill="#ffffff">Café · 6793 Gaschurn</text>' + (extra || "") + "</svg>";
   let design;
+  await t("Regionsseiten: Österreich + Bundesländer mit eigener Überschrift, FAQ, areaServed und Sitemap-Eintrag", async () => {
+    for (const sl of ["druckerei-oesterreich", "druckerei-tirol", "druckerei-montafon"]) {
+      const r = await fetch(B + "/print/" + sl); assert.strictEqual(r.status, 200, sl); const h = await r.text();
+      assert.ok(/<h1>[^<]+<\/h1>/.test(h) && /"FAQPage"/.test(h) && /"areaServed"/.test(h), sl); assert.ok(h.indexOf('<link rel="canonical" href="https://www.fs-creative.at/print/' + sl + '"') > -1, "canonical " + sl);
+    }
+    const t1 = await (await fetch(B + "/print/druckerei-tirol")).text(); assert.ok(/Innsbruck/.test(t1) && /druckerei-wien/.test(t1), "Orte + Querverweise");
+    assert.ok(/print\/druckerei-kaernten/.test(await (await fetch(B + "/sitemap.xml")).text()), "Sitemap");
+  });
   await t("Designer-PDF: Maße = Endformat + 2 × Beschnitt, TrimBox, Schriften eingebettet, CMYK, ausreichende Bild-dpi ok", async () => {
     const img = "data:image/png;base64," + png(400, 400, [255, 200, 0]).toString("base64");
     const r = await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<image x="250" y="150" width="40" height="40" xlink:href="' + img + '"/>'), svgPage()] }));
