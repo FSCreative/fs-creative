@@ -656,6 +656,23 @@ function blitzIncomeVouchers() {
   })().catch(e => { BLITZ_INC.p = null; throw e; });
   return BLITZ_INC.p;
 }
+// Zahlstatus an Blitzdings melden (Simon 07.11.2026): ist eine Buchung im Cockpit voll verrechnet und bezahlt, Blitzdings führt sie aber noch
+// als unbezahlt, wird dort „bezahlt“ gesetzt (PATCH paymentStatus). Ändert nur den Status – keine Rechnung, keine Mail. Je Buchung höchstens
+// alle 6 Stunden versucht, damit ein Fehler bei Blitzdings keine Schleife auslöst.
+const BLITZ_PAID_TRY = new Map();
+function blitzPaidSync(items) {
+  if (!BLITZ_COCKPIT.token) return;
+  const due = (items || []).filter(x => x && x.src === "blitzdings" && !x.paidOnPlatform && !x.cancelled && x.bookingId && BLITZ_ID.test(String(x.bookingId))
+    && (+x.paid || 0) > 0.005 && Math.abs(+x.open || 0) < 0.005 && Math.abs(+x.unbilled || 0) < 0.005 && !((x.invoices || []).some(l => l && l.state === "fehlt"))
+    && Date.now() - (BLITZ_PAID_TRY.get(x.bookingId) || 0) > 6 * 3600e3);
+  if (!due.length) return;
+  due.slice(0, 20).forEach(x => BLITZ_PAID_TRY.set(x.bookingId, Date.now()));
+  (async () => { for (const x of due.slice(0, 20)) {
+    const r = await blitzCockpit("PATCH", "/bookings/" + encodeURIComponent(x.bookingId), { paymentStatus: "PAID" }).catch(e => ({ status: 0, json: { error: e.message } }));
+    if (r.status === 200 && r.json && r.json.ok) { x.paidOnPlatform = true; console.log("Blitzdings bezahlt gemeldet:", x.reference || x.bookingId); }
+    else console.error("Blitzdings bezahlt melden:", x.reference || x.bookingId, (r.json && r.json.error) || r.status);
+  } if (BLITZ.url) forgetStats(BLITZ.url); })().catch(e => console.error("Blitzdings bezahlt melden:", e.message));
+}
 // Nach einem Storno einer Rechnung bzw. einer Abrechnung (billMonth) den Belegstatus bei kochdu ohne Zwischenspeicher laden (&fresh=1,
 // CONTRACT-fs-order §1) – sonst gälte eine eben stornierte Monatsrechnung bis zu 5 min weiter als gültig und der Monat ließe sich nicht neu abrechnen.
 // Ein altes kochdu ignoriert den Parameter.
@@ -3081,6 +3098,7 @@ function abgleichBuild(ctx) {
   // Ausgeblendet bzw. „Passt so“: Hinweise nicht mehr unter „Zur Prüfung“ (Simon 07.11.2026) – „Passt so“ nur, solange sich der Hinweistext nicht ändert
   const noteSig = x => (x.notes || []).map(n => n.text).join("|");
   items.forEach(x => { const g = ign[x.key]; if (!g || !(x.notes || []).length) return; if (x.ignored || (g.ack && g.ackSig === noteSig(x))) x.notes = []; });
+  blitzPaidSync(items);
   // 6) Offene sevDesk-Rechnungen ohne Zuordnung (alle offenen, auch ältere)
   const unlinked = sevAllInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
   const totals = items.reduce((t, x) => { t.unbilled += x.unbilled || 0; t.open += x.open || 0; t.refund += x.refund || 0; if (x.unbilled > 0.005) t.unbilledCount++; if (x.invoices.some(l => l && l.state === "fehlt")) t.missing++; return t; }, { unbilled: 0, open: 0, refund: 0, unbilledCount: 0, missing: 0 });

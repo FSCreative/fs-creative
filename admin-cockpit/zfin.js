@@ -519,13 +519,17 @@ F.action("febsync",function(){ F.toast("Rufe Bankumsätze ab …"); F.api("/admi
 var KCOL=["#2870ed","#0b8f6a","#7a4fd6","#e0692b","#d23f6a","#1f9bb5","#4a5568","#b8860b"];
 function kPrefs(){ var p=(F.ls&&F.ls("fsc_konten"))||{}; p.order=p.order||[]; p.hide=p.hide||{}; p.col=p.col||{}; p.view=p.view||"cards"; return p; }
 function kSave(p){ if(F.ls) F.ls("fsc_konten",p); F.render(); }
-function kColor(a,i){ var p=kPrefs(); return p.col[a.id]||KCOL[i%KCOL.length]; }
+/* Farbe je Anbieter (Simon 07.11.2026): George/Erste blau, Mollie dunkel, PayPal navy, Kasse grün – eigene Farbe aus „Anpassen“ geht vor */
+function kProv(a){ var n=String(a.name||"")+" "+String(a.type||""); if(/mollie/i.test(n)) return "mollie"; if(/paypal/i.test(n)) return "paypal"; if(/kass|register|bar/i.test(n)) return "kasse"; if(/stripe/i.test(n)) return "stripe"; return "george"; }
+var KPROV={george:"#2870ed",mollie:"#1f2430",paypal:"#003087",kasse:"#0b8f6a",stripe:"#635bff"};
+function kColor(a,i){ var p=kPrefs(); return p.col[a.id]||KPROV[kProv(a)]||KCOL[i%KCOL.length]; }
 function kSorted(accs){ var o=kPrefs().order; return accs.slice().sort(function(a,b){ var x=o.indexOf(a.id), y=o.indexOf(b.id); return (x<0?999:x)-(y<0?999:y); }); }
 function kNorm(n){ return String(n||"").toLowerCase().replace(/[–—-]/g," ").replace(/\s+/g," ").trim(); }
 function kStat(a){ var n=kNorm(a.name), hit=null;
   ((EB&&EB.sessions)||[]).forEach(function(x){ (x.accounts||[]).forEach(function(y){ if(kNorm(y.name)===n||(a.iban&&y.iban&&String(y.iban).replace(/\s/g,"")===String(a.iban).replace(/\s/g,""))) hit={d:y.diff}; }); });
-  ((MO&&MO.summary)||[]).forEach(function(m){ if(kNorm(m.name)===n) hit={d:m.diff}; });
-  if(!hit||hit.d==null) return ""; return Math.abs(hit.d)<0.02?'<span class="k-st ok">✓ Saldo stimmt</span>':'<span class="k-st bad">Abweichung '+eur(hit.d)+'</span>'; }
+  ((MO&&MO.summary)||[]).forEach(function(m){ if(kNorm(m.name)===n) hit={d:m.diff,why:"Laut Buchhaltung liegen noch "+eur(m.stillAtMollie)+" bei Mollie, Mollie meldet "+eur(m.mollieBalance!=null?m.mollieBalance:0)+(m.pending?" (davon "+eur(m.pending)+" in Bearbeitung – die sind in der Buchhaltung noch nicht drin)":"")+". Meist fehlt eine Auszahlung als Geldtransit oder Zahlungen sind noch in Bearbeitung."}; });
+  if(hit&&hit.why==null&&hit.d!=null) hit.why="Der Kontostand, den die Bank meldet, und die Summe der Umsätze im Cockpit unterscheiden sich um "+eur(Math.abs(+hit.d||0))+". Meist ist ein Umsatz von heute bei der Bank schon im Saldo, aber noch nicht abgerufen – sonst fehlt oder doppelt ein Umsatz.";
+  if(!hit||hit.d==null) return ""; return Math.abs(hit.d)<0.02?'<span class="k-st ok">✓ Saldo stimmt</span>':'<span class="k-st bad" title="'+esc(hit.why||"")+'">Abweichung '+eur(hit.d)+' ⓘ</span>'; }
 function kIban(a){ var s=String(a.iban||"").replace(/\s+/g,""); return s?s.replace(/(.{4})/g,"$1 ").trim():""; }
 function txF(){ var f=(F.ls&&F.ls("fsc_txf"))||{}; return {t:f.t||"all",p:f.p||"all",s:f.s||"date"}; }
 F.action("ktxf",function(v){ var k=v.split("|"), f=txF(); f[k[0]]=k[1]; if(F.ls) F.ls("fsc_txf",f); UI.fpg=0; F.render(); });
