@@ -1438,4 +1438,10 @@ F.css('.fsd .fsd-head h1{font-size:26px;font-weight:600;letter-spacing:-.5px}.fs
   '.fsm .fsm-card{border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 6px 18px rgba(0,0,0,.05)}.fsm .fsm-chip{border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,.04)}.fsm .fsm-chip b{font-size:19px;font-weight:700;letter-spacing:-.02em}.fsm .fsm-chip.on{box-shadow:0 0 0 2px var(--sd-pri) inset}'+
   '.fsm .fsm-row,.fsm .fsm-txm{gap:12px;align-items:center}.fsm .fsm-row .k-av{width:36px;height:36px}.fsm .fsm-row .k-av+.fsm-l{flex:1;min-width:0}.fsm .fsm-mh,.fsm .fsm-dh{position:sticky;top:0;z-index:1;background:var(--panel-solid,var(--panel))}'+
   '.k-av{background:hsl(var(--h) 55% 92%);color:hsl(var(--h) 55% 32%)}@media(prefers-color-scheme:dark){.k-av{background:hsl(var(--h) 35% 26%);color:hsl(var(--h) 70% 82%)}}');
+
+/* „Beträge ausblenden“ auch in den neuen Ansichten (Konten, Spotlight, Umsatzliste, Finanzamt, Druck) */
+F.css('body.priv .k-bal,body.priv .k-st,body.priv .kl-a b,body.priv .kl-day b,body.priv .k-net,body.priv .k-io b,body.priv .k-bar b,body.priv .fsm-r b,body.priv .fsm-sacc b,body.priv .fsm-chip b,body.priv .fsm-mh b,body.priv .fsm-dh b,'+
+  'body.priv .fa-k b,body.priv .fa-qz,body.priv .fa-qd,body.priv .fa-p b,body.priv .mo-line b.num,body.priv .mo-k b,body.priv .mo-acc b.num,body.priv .fin-auto .amt,body.priv .k-conn .num,'+
+  'body.priv .pr-kpi:nth-child(3) b,body.priv .pr-kpi:nth-child(4) b,body.priv .prlv-t.warn b,body.priv .pr-row .num b,body.priv .pr-row .num .muted,body.priv .prlv-fr small{filter:blur(7px)}');
 })();
+
