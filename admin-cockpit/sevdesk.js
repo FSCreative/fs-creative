@@ -217,6 +217,27 @@ F.action("sdremind",function(id){ dunDefaults(id,function(st,b2b,det){
     '<p class="muted" style="margin:0;font-size:13px">Mahngebühren sind Schadenersatz: ohne Umsatzsteuer, nicht in der UVA. Bei Zahlung wird die Gebühr als eigene Einnahme gebucht (E/A-Rechnung).</p>'+
     '<div class="foot"><span class="err" id="sdRemErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Erstellen &amp; senden</button></span></div></form>',"narrow");
 }); });
+/* Mahnen mit einem Klick (Simon 07.11.2026): Mahnung mit den Mahnlauf-Werten (Gebühr/Frist je Stufe, Firma/privat) gleich anlegen,
+   PDF-Vorschau öffnen, darunter „Senden“. Gibt es schon eine nicht versendete Mahnung, wird diese gezeigt statt eine weitere Stufe anzulegen. */
+function dunPreview(maId,maNr,invNr){
+  var url="/admin/api/sevdesk/pdf?id="+encodeURIComponent(maId);
+  F.modal('<div class="row-between"><h2 style="font-size:19px">'+esc(maNr||"Mahnung")+' – Vorschau</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted small" style="margin:4px 0 10px">Zu Rechnung '+esc(invNr||"")+'. Noch nicht versendet – prüfen und dann senden.</p>'+
+    F.docEmbed(url,(maNr||"Mahnung"),'<div class="fsd-pdf" style="height:min(68vh,760px)"><iframe title="Mahnung" src="'+url+'#view=FitH" style="width:100%;height:100%;border:0;border-radius:10px"></iframe></div>',"Mahnung ansehen")+
+    '<div class="foot" style="margin-top:12px"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Später</button><button type="button" class="btn primary" data-act="sdsendma:'+esc(maId)+'|'+esc(invNr||"")+'">'+'Senden</button></span></div>',"wide");
+}
+F.action("sdremq",function(id){
+  var ma=((F.D.sev&&F.D.sev.reminderDrafts)||[]).filter(function(m){ return String(m.invoiceId)===String(id); })[0];
+  var i0=F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;})||{};
+  if(ma){ dunPreview(ma.id,ma.nr,i0.nr||ma.invoiceNr); return; }
+  F.toast("Mahnung wird erstellt …");
+  dunDefaults(id,function(st,b2b,det){
+    var i=i0.id?i0:(det||{}), lvl=Math.min(3,(i.dunning||i.dunningLevel||0)), saved=F.ls("fsc_dunfee")||DUN_FEE, k=Math.min(2,lvl);
+    var fees=st&&b2b!=null?(b2b?st.b2bFees:st.b2cFees):null, fee=fees&&fees[k]!=null?+fees[k]||0:(+saved[lvl]||0), days=st&&st.ttp&&+st.ttp[k]>0?+st.ttp[k]:(lvl?10:7);
+    post("/admin/api/sev/invoice-op",{op:"reminder",id:id,fee:fee.toFixed(2),days:days}).then(function(j){ if(!j||!j.ok) return fail(j);
+      F.toast((DUN_T[lvl]||"Mahnung")+" "+(j.reminder.nr||"")+" erstellt"); F.load(true); dunPreview(j.reminder.id,j.reminder.nr,i.nr); }).catch(function(){ fail(); });
+  });
+});
 F.form("sdremind",function(f){
   var id=f.getAttribute("data-id"), nr=f.getAttribute("data-nr"), err=document.getElementById("sdRemErr"), btn=f.querySelector("[type=submit]");
   var i=F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;})||{}, lvl=Math.min(3,(i.dunning||0)), saved=(F.ls("fsc_dunfee")||DUN_FEE).slice(); saved[lvl]=+f.fee.value||0; F.ls("fsc_dunfee",saved);
