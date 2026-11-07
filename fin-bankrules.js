@@ -65,6 +65,14 @@ module.exports = function (D) {
     if (a.type === "privat") { t.status = "300"; t.privat = amt < 0 ? "Entnahme" : "Einlage"; t.ruleId = r.id; await L.save("CheckAccountTransaction", t); return "privat"; }
     if (a.type === "done") { t.status = "350"; t.ruleId = r.id; t.doneNote = r.name; await L.save("CheckAccountTransaction", t); return "erledigt"; }   // z. B. 0-€-Abschlussbuchung der Bank: nur Info, nichts zu buchen
     if (a.type === "transit") { t.status = "400"; t.transitWith = "regel:" + r.id; t.ruleId = r.id; await L.save("CheckAccountTransaction", t); return "transit"; }
+    // Teilzahlung an einen bestehenden Beleg (Ratenkauf, z. B. MacBook über asgoodasnew – Simon 07.11.2026): nur solange der Beleg noch offen ist
+    if (a.type === "teil") {
+      const v = a.voucherId && L.get("Voucher", a.voucherId); if (!v) return "";
+      const st = String(v.status), paid = L.all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id)).reduce((s2, l) => s2 + (+l.amountPaid || 0), 0);
+      const offen = r2(Math.abs(+v.sumGross || 0) - paid); if (st === "1000" || offen < Math.abs(amt) - 0.02) return "";
+      await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: r2(Math.abs(amt)), date: day(t.valueDate), checkAccountTransaction: { id: String(t.id) } } });
+      return "teilzahlung";
+    }
     if (a.type === "beleg") {
       const tr0 = amt < 0 && TR_OK.indexOf(String(a.taxRule || "")) > -1 ? String(a.taxRule) : "", rcAuto = !tr0 && !!a.rc && amt < 0, rc = rcAuto || TR_RC.indexOf(tr0) > -1;
       const rate = rc || TR_ZERO.indexOf(tr0) > -1 ? 0 : ([0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20), gross = r2(Math.abs(amt)), c = card(t.paymtPurpose), d = day(t.valueDate);
@@ -95,6 +103,7 @@ module.exports = function (D) {
     const a = r.act || {}, amt = +t.amount || 0;
     if (a.type === "privat") return amt < 0 ? "Privatentnahme" : "Privateinlage";
     if (a.type === "done") return "Als erledigt markieren";
+    if (a.type === "teil") { const v = a.voucherId && L.get("Voucher", a.voucherId); return "Teilzahlung an Beleg " + (v ? (v.supplierName || "") + " " + (v.description || "") : a.voucherId); }
     if (a.type === "transit") return "Geldtransit (eigene Konten)";
     if (a.type === "beleg") { const tr = amt < 0 && TR_OK.indexOf(String(a.taxRule || "")) > -1 ? String(a.taxRule) : "";
       return "Beleg anlegen: " + (catName(a.category) || "Kategorie " + a.category) + " · " + (tr ? TR_NAME[tr] + (TR_ZERO.indexOf(tr) > -1 ? "" : " " + (+a.rate || 0) + " %") : a.rc && amt < 0 ? "Reverse Charge" : (+a.rate || 0) + " %") + (a.supplier ? " · " + a.supplier : ""); }
@@ -144,7 +153,7 @@ module.exports = function (D) {
     const c = r.cond || {}, a = r.act || {}, n = v => v === "" || v == null || !isFinite(+v) ? "" : r2(Math.abs(+v));
     return { id: r.id || ("b" + Date.now().toString(36)), name: String(r.name || "Regel").slice(0, 80), active: r.active !== false,
       cond: { name: String(c.name || "").slice(0, 300), purpose: String(c.purpose || "").slice(0, 300), dir: ["in", "out"].indexOf(c.dir) > -1 ? c.dir : "", min: n(c.min), max: n(c.max), account: String(c.account || "").slice(0, 40) },
-      act: { type: ["privat", "transit", "beleg", "done"].indexOf(a.type) > -1 ? a.type : "", category: String(a.category || "").slice(0, 40), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, supplier: String(a.supplier || "").slice(0, 120), desc: String(a.desc || "").slice(0, 120), rc: a.type === "beleg" && (a.rc === true || a.rc === "true" || a.rc === 1 || a.taxRule === "rc") && TR_OK.indexOf(String(a.taxRule || "")) < 0,
+      act: { type: ["privat", "transit", "beleg", "done", "teil"].indexOf(a.type) > -1 ? a.type : "", voucherId: a.type === "teil" ? String(a.voucherId || "").replace(/[^\w-]/g, "").slice(0, 40) : "", category: String(a.category || "").slice(0, 40), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, supplier: String(a.supplier || "").slice(0, 120), desc: String(a.desc || "").slice(0, 120), rc: a.type === "beleg" && (a.rc === true || a.rc === "true" || a.rc === 1 || a.taxRule === "rc") && TR_OK.indexOf(String(a.taxRule || "")) < 0,
         taxRule: a.type === "beleg" && TR_OK.indexOf(String(a.taxRule || "")) > -1 ? String(a.taxRule) : "" },
       hits: +r.hits || 0, lastHit: r.lastHit || null };
   }

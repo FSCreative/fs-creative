@@ -5532,6 +5532,61 @@ FIN_PROP.register("mollie-opening", {
     SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
     return { ok: true };
   } });
+// Ratenkauf (Simon 07.11.2026, MacBook über asgoodasnew): Raten gehören als Teilzahlung an den einen offenen Beleg.
+// „rate-open“: offener Umsatz mit dem gleichen Betrag und Zahler wie mindestens zwei frühere Raten → an den Beleg hängen.
+// „rate-dup“: eigener Beleg ohne Datei, angelegt für eine einzelne Rate (Betrag = Rate, gleicher Lieferant) → Rate an den Hauptbeleg, Extra-Beleg weg.
+function rateVouchers() {
+  const L = FIN_LOCAL, logs = L.all("CheckAccountTransactionLog"), r2 = x => Math.round(x * 100) / 100, out = [];
+  for (const m of L.all("Voucher").filter(v => ["100", "750"].indexOf(String(v.status)) > -1 && String(v.creditDebit || "C") === "C")) {
+    const ls = logs.filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(m.id)), by = {};
+    ls.forEach(l => { const t = L.get("CheckAccountTransaction", l.checkAccountTransaction && l.checkAccountTransaction.id); if (!t) return; const k = r2(Math.abs(+l.amountPaid || 0)) + "|" + String(t.payeePayerName || "").toLowerCase(); (by[k] = by[k] || []).push(t); });
+    const paid = r2(ls.reduce((a, l) => a + (+l.amountPaid || 0), 0)), offen = r2(Math.abs(+m.sumGross || 0) - paid);
+    Object.keys(by).filter(k => by[k].length >= 2).forEach(k => out.push({ m, rate: +k.split("|")[0], payee: k.split("|").slice(1).join("|"), offen }));
+  }
+  return out;
+}
+FIN_PROP.register("rate-open", {
+  label: "Rate an den Beleg hängen",
+  list: async () => {
+    if (!FIN_STATE.local) return []; await FIN_LOCAL.load(); const out = [];
+    for (const R of rateVouchers()) for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && Math.abs(Math.abs(+t.amount || 0) - R.rate) < 0.005 && +t.amount < 0 && String(t.payeePayerName || "").toLowerCase() === R.payee && R.offen >= R.rate - 0.02)) {
+      out.push({ id: "rto:" + t.id, key: "rto:" + t.id, amount: R.rate, date: String(t.valueDate || "").slice(0, 10), payload: { txId: String(t.id), voucherId: String(R.m.id) },
+        title: "Rate " + R.rate.toFixed(2).replace(".", ",") + " € vom " + String(t.valueDate || "").slice(0, 10).split("-").reverse().join(".") + " → Beleg " + (R.m.supplierName || "") + " " + (R.m.description || ""),
+        detail: "Wie die bisherigen Raten als Teilzahlung an den offenen Beleg (noch offen " + R.offen.toFixed(2).replace(".", ",") + " €). Verwendungszweck diesmal: „" + String(t.paymtPurpose || "").slice(0, 40) + "“", source: "Bank" });
+    }
+    return out;
+  },
+  valid: it => { const p = it.payload || it, t = FIN_LOCAL.get("CheckAccountTransaction", p.txId), v = FIN_LOCAL.get("Voucher", p.voucherId); return !!(t && String(t.status) === "100" && v && String(v.status) !== "1000"); },
+  exec: async it => {
+    const p = it.payload || it, t = FIN_LOCAL.get("CheckAccountTransaction", p.txId); if (!t || String(t.status) !== "100") throw new Error("Umsatz ist nicht mehr offen");
+    await FIN_LOCAL.request("PUT", "/Voucher/" + p.voucherId + "/bookAmount", { body: { amount: Math.round(Math.abs(+t.amount) * 100) / 100, date: String(t.valueDate || "").slice(0, 10), checkAccountTransaction: { id: String(t.id) } } });
+    SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return { ok: true };
+  } });
+FIN_PROP.register("rate-dup", {
+  label: "Rate doppelt als eigener Beleg",
+  list: async () => {
+    if (!FIN_STATE.local) return []; await FIN_LOCAL.load(); const out = [], L = FIN_LOCAL, logs = L.all("CheckAccountTransactionLog");
+    const low = x => String(x || "").toLowerCase().trim();
+    for (const R of rateVouchers()) for (const v of L.all("Voucher").filter(v => String(v.id) !== String(R.m.id) && low(v.supplierName) === low(R.m.supplierName) && Math.abs(Math.abs(+v.sumGross || 0) - R.rate) < 0.005 && String(v.creditDebit || "C") === "C" && !v.document && !v.docId && !v.enshrined)) {
+      const ls = logs.filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id)); if (ls.length !== 1) continue;
+      const t = L.get("CheckAccountTransaction", ls[0].checkAccountTransaction && ls[0].checkAccountTransaction.id); if (!t || String(t.payeePayerName || "").toLowerCase() !== R.payee) continue;
+      out.push({ id: "rtd:" + v.id, key: "rtd:" + v.id, amount: R.rate, date: String(v.voucherDate || "").slice(0, 10), payload: { dupId: String(v.id), voucherId: String(R.m.id), txId: String(t.id), logId: String(ls[0].id) },
+        title: "Rate vom " + String(t.valueDate || "").slice(0, 10).split("-").reverse().join(".") + " ist doppelt als eigener Beleg erfasst – an den Hauptbeleg hängen",
+        detail: "Beleg „" + (v.description || "") + "“ (" + R.rate.toFixed(2).replace(".", ",") + " €, ohne Datei) wird entfernt, die Zahlung kommt als Teilzahlung an „" + (R.m.supplierName || "") + " " + (R.m.description || "") + "“. Sonst ist die Rate doppelt als Ausgabe drin.", source: "Belege" });
+    }
+    return out;
+  },
+  valid: it => { const p = it.payload || it; return !!(FIN_LOCAL.get("Voucher", p.dupId) && FIN_LOCAL.get("Voucher", p.voucherId)); },
+  exec: async it => {
+    const p = it.payload || it, L = FIN_LOCAL, v = L.get("Voucher", p.dupId), t = L.get("CheckAccountTransaction", p.txId); if (!v || !t) throw new Error("Beleg oder Umsatz nicht mehr vorhanden");
+    if (v.enshrined || (L.isLocked && L.isLocked("Voucher", v))) throw new Error("Beleg ist festgeschrieben – bitte von Hand korrigieren");
+    for (const l of L.all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id))) await L.del("CheckAccountTransactionLog", l.id);
+    for (const ps of L.positionsOf("Voucher", v.id)) await L.del("VoucherPos", ps.id);
+    await L.del("Voucher", v.id);
+    t.status = "100"; await L.save("CheckAccountTransaction", t);
+    await L.request("PUT", "/Voucher/" + p.voucherId + "/bookAmount", { body: { amount: Math.round(Math.abs(+t.amount) * 100) / 100, date: String(t.valueDate || "").slice(0, 10), checkAccountTransaction: { id: String(t.id) } } });
+    SEV_CACHE.at = 0; STEUER_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return { ok: true };
+  } });
 const VM_CACHE = { at: 0, items: null, p: null };
 // jede Buchungsänderung (Beleg, Zahlung, Import) → Beleg-Abgleich neu rechnen
 if (SEV_OPS && SEV_OPS.resetCaches && !SEV_OPS._vmHook) { const rc = SEV_OPS.resetCaches; SEV_OPS.resetCaches = function () { VM_CACHE.at = 0; return rc.apply(this, arguments); }; SEV_OPS._vmHook = true; }
