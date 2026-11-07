@@ -123,6 +123,21 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
     if (lic) { const r = await fetch(B + "/node_modules/" + lic); const h = await r.text(); assert.ok(!(r.status === 200 && h === fs.readFileSync(path.join(ROOT, "node_modules", lic), "utf8")), lic + " ausgeliefert"); }
   });
 
+  await t("Passkey als zweiter Faktor: Passwort allein gibt keine Sitzung, Passkey-Seite nur mit Vorstufe", async () => {
+    const f = path.join(dir, "admin-passkeys.json"); fs.writeFileSync(f, JSON.stringify([{ id: "abc", alg: -7, jwk: { kty: "EC", crv: "P-256", x: "x", y: "y" }, counter: 0, name: "Test" }]));
+    try {
+      const r = await login(B, "richtig-123"); assert.strictEqual(r.status, 302); assert.strictEqual(r.headers.get("location"), "/admin/login/passkey");
+      const c = r.headers.get("set-cookie") || ""; assert.ok(/^fspre=/.test(c) && !/fsadmin=s/.test(c), c);
+      const pre = c.split(";")[0];
+      assert.strictEqual((await fetch(B + "/admin/api/push", { redirect: "manual", headers: { cookie: pre } })).status, 302, "Vorstufe ist keine Sitzung");
+      const pg = await fetch(B + "/admin/login/passkey", { redirect: "manual", headers: { cookie: pre } }); assert.strictEqual(pg.status, 200);
+      const js = (await pg.text()).match(/<script>([\s\S]*?)<\/script>/); assert.ok(js); new Function(js[1]);   // Skript der Seite fehlerfrei
+      assert.strictEqual((await fetch(B + "/admin/login/passkey", { redirect: "manual" })).status, 302, "ohne Vorstufe zurück zum Passwort");
+      const v = await fetch(B + "/admin/login/passkey/verify", { method: "POST", headers: { cookie: pre, "sec-fetch-site": "same-origin", "content-type": "application/json" }, body: "{}" });
+      assert.strictEqual(v.status, 401); assert.ok(!/fsadmin=s/.test(v.headers.get("set-cookie") || ""));
+    } finally { fs.unlinkSync(f); }
+  });
+
   await t("Alle anderen Geräte abmelden: alte Cookies ungültig, dieses Gerät bleibt angemeldet, nur von der eigenen Seite", async () => {
     const st = c => fetch(B + "/admin/api/push", { redirect: "manual", headers: { cookie: c } });
     const old = "fsadmin=" + tok("s1." + Date.now());

@@ -147,7 +147,7 @@ function body(){
     '<section class="set-sec" id="set-ski"><h3>Skikaiser</h3>'+skiHtml()+'</section>'+
     (F.kiSettingsHtml?'<section class="set-sec" id="set-ki"><h3>KI (Claude)</h3>'+F.kiSettingsHtml()+'</section>':'')+
     '<section class="set-sec" id="set-int"><h3>Verbindungen</h3><p class="set-p">Alle Schnittstellen werden am Server regelmäßig geprüft – mit Grund, was davon abhängt und dem Weg zur Behebung.</p>'+intHtml()+'</section>'+
-    '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a><button type="button" class="btn" data-act="revokeall" title="Meldet alle anderen Geräte und Browser ab – dieses Gerät bleibt angemeldet">Alle anderen Geräte abmelden</button></div>'+
+    '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a><button type="button" class="btn" data-act="revokeall" title="Meldet alle anderen Geräte und Browser ab – dieses Gerät bleibt angemeldet">Alle anderen Geräte abmelden</button><button type="button" class="btn primary" data-act="pkmanage">Passkey (Face ID) verwalten</button></div>'+
   '</div>';
 }
 function paint(){
@@ -280,4 +280,23 @@ F.searcher(function(q){
 
 /* Sicherheitsprüfung 07.11.2026: alle anderen Sitzungen ungültig machen (z. B. Gerät verloren) */
 F.action("revokeall",function(){ F.confirm("Alle anderen Geräte und Browser abmelden? Dieses Gerät bleibt angemeldet, überall sonst musst du dich neu anmelden (auch Handy und Cockpit-App).","Abmelden",function(){ F.api("/admin/api/session/revoke-all",{body:{}}).then(function(j){ F.toast(j&&j.ok?"Alle anderen Geräte sind abgemeldet":"Fehler",!(j&&j.ok)); }); }); });
+
+/* Passkey als zweiter Faktor (Simon 07.11.2026): nach dem Passwort zusätzlich Face ID / Touch ID */
+var PKB=function(s2){ s2=s2.replace(/-/g,"+").replace(/_/g,"/"); var b=atob(s2), a=new Uint8Array(b.length); for(var i=0;i<b.length;i++) a[i]=b.charCodeAt(i); return a.buffer; };
+var PKE=function(buf){ var s2="", a=new Uint8Array(buf); for(var i=0;i<a.length;i++) s2+=String.fromCharCode(a[i]); return btoa(s2).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); };
+function pkModal(j){ var L=(j&&j.list)||[];
+  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:19px">Passkey · zweiter Faktor</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted" style="margin:0">'+(L.length?(j.off?'<b>Ausgeschaltet</b> über ADMIN_PASSKEY_OFF in Railway – es reicht das Passwort.':'<b>Aktiv:</b> Nach dem Passwort fragt das Cockpit nach Face ID / Touch ID.'):'Noch kein Passkey. Nach dem Hinzufügen fragt das Cockpit bei jeder Anmeldung zusätzlich nach Face ID / Touch ID.')+'</p>'+
+    (L.length?'<div class="stackf" style="gap:6px">'+L.map(function(k){ return '<div class="row-between" style="padding:8px 10px;border:1px solid var(--line);border-radius:12px"><span><b>'+F.esc(k.name)+'</b><br><span class="muted small">hinzugefügt '+F.esc(String(k.created).slice(0,10).split("-").reverse().join("."))+(k.lastUsed?' · zuletzt '+F.esc(String(k.lastUsed).slice(0,10).split("-").reverse().join(".")):'')+'</span></span><button type="button" class="btn sm" data-act="pkdel:'+F.esc(k.id)+'">Entfernen</button></div>'; }).join("")+'</div>':'')+
+    '<p class="muted small" style="margin:0">Tipp: auf Mac <b>und</b> iPhone je einen Passkey anlegen (über iCloud-Schlüsselbund sind sie ohnehin auf beiden). Notausgang, falls alle verloren: Railway-Variable <b>ADMIN_PASSKEY_OFF=1</b>.</p>'+
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button><button type="button" class="btn primary" data-act="pkadd">Passkey hinzufügen</button></span></div></div>',"narrow"); }
+F.action("pkmanage",function(){ F.api("/admin/api/passkeys").then(function(j){ if(!j||!j.ok){ F.toast("Passkeys nicht ladbar",true); return; } pkModal(j); }); });
+F.action("pkadd",function(){ if(!window.PublicKeyCredential){ F.toast("Dieser Browser unterstützt keine Passkeys",true); return; }
+  var name=(/iPhone|iPad/.test(navigator.userAgent)?"iPhone":/Mac/.test(navigator.userAgent)?"Mac":"Gerät")+" · "+new Date().toLocaleDateString("de-AT");
+  F.api("/admin/api/passkeys/options",{body:{}}).then(function(j){ if(!j||!j.ok) throw new Error((j&&j.error)||"Fehler"); var o=j.options; o.challenge=PKB(o.challenge); o.user.id=PKB(o.user.id); o.excludeCredentials=(o.excludeCredentials||[]).map(function(c){ return {type:c.type,id:PKB(c.id)}; }); return navigator.credentials.create({publicKey:o}); })
+  .then(function(c){ return F.api("/admin/api/passkeys/register",{body:{name:name,clientDataJSON:PKE(c.response.clientDataJSON),attestationObject:PKE(c.response.attestationObject)}}); })
+  .then(function(j){ if(!j||!j.ok) throw new Error((j&&j.error)||"Fehler"); F.toast("Passkey hinzugefügt – ab jetzt mit Face ID / Touch ID"); pkModal({list:j.list}); })
+  .catch(function(e){ F.toast(e&&e.name==="NotAllowedError"?"Abgebrochen":((e&&e.message)||"Fehler"),true); }); });
+F.action("pkdel",function(id){ F.confirm("Diesen Passkey entfernen? Ist es der letzte, reicht beim Anmelden wieder das Passwort allein.","Entfernen",function(){ F.api("/admin/api/passkeys/delete",{body:{id:id,confirm:true}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Passkey entfernt"); pkModal({list:j.list}); }); },true); });
 })();
+

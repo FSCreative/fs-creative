@@ -413,6 +413,12 @@ function parseCookies(req) {
   return out;
 }
 function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
+// Passkey als zweiter Faktor (passkey.js): nach richtigem Passwort gibt es nur ein 5-Minuten-Vorstufen-Cookie, die Sitzung erst nach Face ID / Touch ID
+const PASSKEY = require("./passkey.js")({ DATA_DIR });
+const preCookie = () => "fspre=" + encodeURIComponent(sign("p1." + Date.now())) + "; HttpOnly; Path=/admin/login; Max-Age=300; SameSite=Strict; Secure";
+function preOk(req) { const tok = parseCookies(req)["fspre"] || "", i = tok.lastIndexOf("."); if (i < 0) return false; const v = tok.slice(0, i), sig = tok.slice(i + 1), exp = hmac(v);
+  if (sig.length !== exp.length) return false; try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(exp))) return false; } catch (e) { return false; }
+  const m = /^p1\.(\d{13})$/.exec(v); return !!m && Date.now() - Number(m[1]) < 300000 && Date.now() - Number(m[1]) > -60000; }
 // Anfrage stammt von der eigenen Seite (Sec-Fetch-Site / Origin); ohne beide Header (ältere Clients, Skripte) erlaubt – Cookie ist SameSite=Lax
 function sameSiteReq(req) {
   const sfs = String(req.headers["sec-fetch-site"] || ""); if (sfs && sfs !== "same-origin" && sfs !== "none") return false;
@@ -1469,6 +1475,14 @@ async function railwaySnapshot() {
   }).sort((a, b) => (b.lastDeploy || "").localeCompare(a.lastDeploy || ""));
   const totals = projects.reduce((t, p) => { t.projects++; t.services += p.services.length; if (p.status === "FAILED" || p.status === "CRASHED") t.failed++; else if (["BUILDING", "DEPLOYING", "INITIALIZING", "QUEUED", "WAITING"].indexOf(p.status) > -1) t.deploying++; else if (p.status === "SUCCESS") t.ok++; return t; }, { projects: 0, services: 0, ok: 0, failed: 0, deploying: 0 });
   return { configured: true, fetchedAt: new Date().toISOString(), totals, projects };
+}
+function adminPasskeyPage() {
+  return adminLoginPage("").replace(/<form class="card"[\s\S]*<\/form>/, `<div class="card"><div class="logo">FS</div><h1>Bestätigen</h1><p>Mit Face ID, Touch ID oder deinem Passkey anmelden.</p><div class="err" id="e"></div><button type="button" id="go">Mit Passkey anmelden</button><p style="margin:14px 0 0"><a href="/admin/login" style="color:var(--mut)">Zurück zum Passwort</a></p></div>
+<script>(function(){var u=function(s){s=s.replace(/-/g,"+").replace(/_/g,"/");var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a.buffer;},e=function(b){var s="",a=new Uint8Array(b);for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");},E=document.getElementById("e"),B=document.getElementById("go");
+function go(){E.textContent="";B.disabled=true;fetch("/admin/login/passkey/options",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:"{}"}).then(function(r){return r.json();}).then(function(j){if(!j.ok)throw new Error(j.error);var o=j.options;o.challenge=u(o.challenge);o.allowCredentials=o.allowCredentials.map(function(c){return {type:c.type,id:u(c.id)};});return navigator.credentials.get({publicKey:o});})
+.then(function(c){return fetch("/admin/login/passkey/verify",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({id:c.id,clientDataJSON:e(c.response.clientDataJSON),authenticatorData:e(c.response.authenticatorData),signature:e(c.response.signature)})});}).then(function(r){return r.json();}).then(function(j){if(!j.ok)throw new Error(j.error);location.href="/admin";})
+.catch(function(x){B.disabled=false;E.textContent=(x&&x.name==="NotAllowedError")?"Abgebrochen – bitte noch einmal.":((x&&x.message)||"Fehler");});}
+B.onclick=go;if(window.PublicKeyCredential)setTimeout(go,300);else E.textContent="Dieser Browser unterstützt keine Passkeys.";})();</script>`);
 }
 function adminLoginPage(err) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>FS Cockpit — Anmelden</title><link rel="apple-touch-icon" href="/logos/cockpit-icon-180.png"><link rel="icon" type="image/png" href="/logos/cockpit-favicon.png"><link rel="manifest" href="/cockpit.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cockpit"><meta name="theme-color" content="#0a0a0f">
@@ -4097,12 +4111,37 @@ async function handleAdmin(req, res, u, p) {
       const ok = ADMIN_PW && pw.length === ADMIN_PW.length && crypto.timingSafeEqual(Buffer.from(pw), Buffer.from(ADMIN_PW));
       if (ok) {
         LOGIN_FAILS.reset(ip);
-        return send(res, 302, "", "text/plain", { "Set-Cookie": sessionCookie(), Location: "/admin" });   // ip0 bleibt nur für die Zählung oben
+        if (PASSKEY.enabled()) return send(res, 302, "", "text/plain", { "Set-Cookie": preCookie(), Location: "/admin/login/passkey" });   // zweiter Faktor
+        return send(res, 302, "", "text/plain", { "Set-Cookie": sessionCookie(), Location: "/admin" });
       }
       loginFailed(ip);
       setTimeout(() => send(res, 401, adminLoginPage("Falsches Passwort."), TYPES[".html"]), LOGIN_DELAY);
     });
     return;
+  }
+ if (p === "/admin/login/passkey" && req.method === "GET") { if (!preOk(req)) return send(res, 302, "", "text/plain", { Location: "/admin/login" }); return send(res, 200, adminPasskeyPage(), TYPES[".html"], { "Cache-Control": "no-store" }); }
+  if (p === "/admin/login/passkey/options" && req.method === "POST") { if (!preOk(req) || !sameSiteReq(req)) return send(res, 401, JSON.stringify({ ok: false, error: "Bitte neu anmelden" }), TYPES[".json"]); return send(res, 200, JSON.stringify({ ok: true, options: PASSKEY.loginOptions(req) }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+  if (p === "/admin/login/passkey/verify" && req.method === "POST") {
+    const ip0 = clientIp(req), ip = /:/.test(ip0) ? ip0.split(":").slice(0, 4).join(":") + "::/64" : ip0;
+    if (!preOk(req) || !sameSiteReq(req)) return send(res, 401, JSON.stringify({ ok: false, error: "Bitte neu anmelden" }), TYPES[".json"]);
+    if (LOGIN_FAILS.count(ip, 900000) >= 8) return send(res, 429, JSON.stringify({ ok: false, error: "Zu viele Fehlversuche" }), TYPES[".json"]);
+    let body = ""; req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on("end", () => { try { PASSKEY.verifyLogin(req, JSON.parse(body || "{}")); LOGIN_FAILS.reset(ip);
+        return send(res, 200, JSON.stringify({ ok: true }), TYPES[".json"], { "Set-Cookie": [sessionCookie(), "fspre=; HttpOnly; Path=/admin/login; Max-Age=0; SameSite=Strict; Secure"] }); }
+      catch (e) { loginFailed(ip); console.log("Passkey-Anmeldung fehlgeschlagen:", e.message); setTimeout(() => send(res, 401, JSON.stringify({ ok: false, error: String(e.message || "Fehler") }), TYPES[".json"]), LOGIN_DELAY); } });
+    return;
+  }
+  // Passkeys verwalten (angemeldet, nur von der eigenen Seite)
+  if (p.indexOf("/admin/api/passkeys") === 0 && adminAuthed(req) && sameSiteReq(req)) {
+    const J = (c, o) => send(res, c, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    if (p === "/admin/api/passkeys" && req.method === "GET") return J(200, { ok: true, list: PASSKEY.list(), active: PASSKEY.enabled(), off: !!process.env.ADMIN_PASSKEY_OFF });
+    if (req.method === "POST") { let body = ""; req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+      req.on("end", () => { try { const b = JSON.parse(body || "{}");
+          if (p === "/admin/api/passkeys/options") return J(200, { ok: true, options: PASSKEY.registerOptions(req) });
+          if (p === "/admin/api/passkeys/register") { const r = PASSKEY.register(req, b); console.log("Passkey hinzugefügt"); return J(200, { ok: true, id: r.id, list: PASSKEY.list() }); }
+          if (p === "/admin/api/passkeys/delete" && b.confirm === true) { PASSKEY.remove(String(b.id || "")); console.log("Passkey entfernt"); return J(200, { ok: true, list: PASSKEY.list() }); }
+          return J(404, { ok: false, error: "unbekannt" }); } catch (e) { return J(400, { ok: false, error: String(e.message || e).slice(0, 200) }); } });
+      return; }
   }
   if (p === "/admin/api/session/revoke-all" && req.method === "POST" && adminAuthed(req) && sameSiteReq(req)) {
     sessBump(); console.log("Cockpit: alle Sitzungen abgemeldet (Generation " + SESS_GEN + ")");
