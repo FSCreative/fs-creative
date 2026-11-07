@@ -1718,7 +1718,9 @@ async function sevBuild() {
       ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
       net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, credit: sevNum(o.creditOpen), payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, stornoNr: o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : undefined, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
       mpid: notePid(o.customerInternalNote),   // Kantineur: „Mollie tr_…“ in der Notiz → Zuordnung im Abgleich (KA-5)
-      overdue: open > 0.005 && !!due && due < today };
+      // Lastschrift (z. B. Kantineur-Abo über Mollie, Simon 07.11.2026): wird automatisch eingezogen – nie „fällig“, nie im Mahnlauf, bis die Zahlung zugeordnet ist
+      sepa: /per\s+(SEPA-)?Lastschrift\s+(eingezogen|abgebucht)|wird\s+per\s+(SEPA-)?Lastschrift|SEPA-Lastschrift/i.test(String(o.footText || "") + " " + String(o.headText || "")) || undefined,
+      overdue: open > 0.005 && !!due && due < today && !/per\s+(SEPA-)?Lastschrift\s+(eingezogen|abgebucht)|wird\s+per\s+(SEPA-)?Lastschrift|SEPA-Lastschrift/i.test(String(o.footText || "") + " " + String(o.headText || "")) };
   }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
   // Storno: sevDesk setzt beim Original kein „storniert“ – erkennbar an der Stornorechnung (SR) mit origin = Original
   { const srOf = {}; all.forEach(i => { if (i.type === "SR" && i.origin) srOf[i.origin] = i.nr || true; }); all.forEach(i => { if (i.type !== "SR" && srOf[i.id]) { i.cancelled = true; i.stornoNr = srOf[i.id] === true ? "" : srOf[i.id]; i.overdue = false; } }); }
@@ -2333,7 +2335,7 @@ function billingOp(pl) {
   } else if (op === "noteok" && pl.key) {        // Hinweis gelesen, passt so (z. B. Rabatt auf der Rechnung) – kommt wieder, wenn sich der Hinweis ändert
     o.ignore = (o.ignore && typeof o.ignore === "object") ? o.ignore : {};
     const k = cleanKey(pl.key), prev = o.ignore[k] || { amount: 0 };
-    o.ignore[k] = Object.assign({}, prev, { at: prev.at || new Date().toISOString(), ack: true, ackSig: String(pl.sig || "").slice(0, 2000), ackAt: new Date().toISOString() });
+    o.ignore[k] = Object.assign({}, prev, { at: prev.at || new Date().toISOString(), ack: true, ackSig: String(pl.sig || "").slice(0, 2000) || prev.ackSig || "", ackAt: new Date().toISOString() });
   } else if (op === "unignore" && pl.key) {
     if (o.ignore) delete o.ignore[cleanKey(pl.key)];
   } else if (op === "unbill" && pl.key) {

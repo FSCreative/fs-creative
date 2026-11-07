@@ -85,6 +85,7 @@ function invPill(i){
   if(i.status===100) return pill("draft","Entwurf");
   if(i.status===1000) return pill("paid","Bezahlt");
   if(isPart(i)) return pill(i.overdue?"due":"part",i.overdue?"Teilbezahlt · fällig":"Teilbezahlt");
+  if(i.sepa) return pill("open","Lastschrift");
   if(i.overdue) return pill("due","Fällig");
   return pill("open","Offen");
 }
@@ -92,6 +93,7 @@ function relDue(i){
   if(i.status===100||!i.due) return '<span class="m">– – –</span>';
   if(i.status===1000||i.cancelled||i.type==="SR") return '<span class="fsd-strike">'+de(i.due)+'</span>';
   var d=Math.round((new Date(i.due+"T12:00:00")-new Date(F.D.today+"T12:00:00"))/864e5);
+  if(i.sepa) return '<span style="color:var(--sd-ink2)">wird eingezogen</span>';
   if(d<0) return '<span class="fsd-due">Seit '+(-d)+' Tag'+(d===-1?"":"en")+'</span>';
   if(d===0) return '<span class="fsd-due">Heute</span>';
   return '<span style="color:var(--sd-ink2)">In '+d+' Tag'+(d===1?"":"en")+'</span>';
