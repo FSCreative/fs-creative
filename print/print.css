@@ -2283,3 +2283,5 @@ html.ps-v2 #shop:has(.xm-hero:first-child),html.ps-v2 #shop:has(>div>.xm-hero:fi
 .ps-lbteaser h2{margin:6px 0 10px}.ps-lbteaser p{margin:0 0 14px;color:var(--text-dim);line-height:1.5}
 .ps-lbteaser .btn-row{display:flex;flex-wrap:wrap;gap:8px}
 @media (max-width:720px){.ps-lbteaser{grid-template-columns:1fr;padding:14px}}
+
+.ps-due small strong{font-weight:700;opacity:1;color:inherit}

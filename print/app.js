@@ -952,7 +952,7 @@
     // heute vor 14 Uhr (Mo–Fr), sonst am nächsten Werktag (Fr nach 14 Uhr und am Wochenende: Montag)
     var dl = new Date(), add = work && left > 0 ? 0 : 1; if (add) { do { dl.setDate(dl.getDate() + 1); } while (dl.getDay() === 0 || dl.getDay() === 6); }
     var dlTxt = !add ? "heute" : (function () { var t = new Date(); t.setDate(t.getDate() + 1); return dl.toDateString() === t.toDateString() ? "morgen" : dl.toLocaleDateString("de-AT", { weekday: "long", day: "numeric", month: "long" }); })();
-    return '<p class="ps-due" id="psDue"><span>Lieferung voraussichtlich</span><b>' + esc(day.replace(/\.$/, "")) + "</b><small>bei Upload und Bestellung bis " + esc(dlTxt) + ", 14:00 Uhr</small>" + '<small>Die Zustellung kann sich durch den Paketdienst um einen Werktag verschieben.</small></p>'; }
+    return '<p class="ps-due" id="psDue"><span>Lieferung voraussichtlich</span><b>' + esc(day.replace(/\.$/, "")) + "</b><small>bei Upload und Bestellung bis <strong>" + esc(dlTxt) + ", 14:00 Uhr</strong>. Die Zustellung kann sich durch den Paketdienst um einen Werktag verschieben.</small></p>"; }
   setInterval(function () { var e = document.getElementById("psDue"); if (e && !document.hidden) { var t = document.createElement("div"); t.innerHTML = dueHtml(); if (t.firstChild) e.innerHTML = t.firstChild.innerHTML; } }, 30000);
   function socialHtml() { var n = +S.liveSame || 0, w = +S.liveWeek || 0, t = S.prod ? S.prod.title : ""; if (!t) return "";
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
