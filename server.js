@@ -364,6 +364,7 @@ function serveFile(req, res, filePath) {
 // ===========================================================================
 const ADMIN_PW = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SECRET = process.env.ADMIN_AUTH_SECRET || "bitte-ADMIN_AUTH_SECRET-setzen";
+if (!process.env.ADMIN_AUTH_SECRET && process.env.RAILWAY_ENVIRONMENT) console.error("SICHERHEIT: ADMIN_AUTH_SECRET fehlt – Cockpit-Cookies und Shop-Signaturen wären fälschbar. Bitte in Railway setzen.");
 const KANTINEUR = { url: process.env.KANTINEUR_STATS_URL || "https://kantineur.at/api/stats", token: process.env.KANTINEUR_STATS_TOKEN || "" };
 const MAIL = { url: process.env.MAIL_API_URL || "", token: process.env.MAIL_API_TOKEN || "" };
 const BLITZ = { url: process.env.BLITZDINGS_STATS_URL || "https://blitzdings.co.at/api/stats", token: process.env.BLITZDINGS_STATS_TOKEN || "" };
@@ -387,19 +388,25 @@ function sign(v) { return v + "." + hmac(v); }
 // Alte Cookies ohne Zeitstempel („ok“) gelten nur noch bis ADMIN_LEGACY_UNTIL und werden bei der nächsten Nutzung umgestellt.
 // Überall abmelden: ADMIN_AUTH_SECRET in Railway ändern.
 const SESSION_MS = 30 * 86400000, ADMIN_LEGACY_UNTIL = Date.parse("2026-11-20T00:00:00Z");
+// Sitzungs-Generation (Sicherheitsprüfung 07.11.2026): „Überall abmelden“ zählt sie hoch – alle älteren Cookies sind dann ungültig.
+const SESS_FILE = path.join(DATA_DIR, "admin-session.json");
+let SESS_GEN = (() => { try { return +JSON.parse(fs.readFileSync(SESS_FILE, "utf8")).gen || 0; } catch (e) { return 0; } })();
+function sessBump() { SESS_GEN++; try { fs.writeFileSync(SESS_FILE, JSON.stringify({ gen: SESS_GEN, at: new Date().toISOString() })); } catch (e) {} }
 function sessionAge(tok) {   // Alter der Sitzung in ms, -1 = ungültig
   if (!tok) return -1;
   const i = tok.lastIndexOf("."); if (i < 0) return -1;
   const v = tok.slice(0, i), sig = tok.slice(i + 1), exp = hmac(v);
   if (sig.length !== exp.length) return -1;
   try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(exp))) return -1; } catch (e) { return -1; }
-  if (v === "ok") return Date.now() < ADMIN_LEGACY_UNTIL ? SESSION_MS - 1 : -1;
-  const m = /^s1\.(\d{10,14})$/.exec(v); if (!m) return -1;
-  const age = Date.now() - Number(m[1]);
+  if (v === "ok") return SESS_GEN === 0 && Date.now() < ADMIN_LEGACY_UNTIL ? SESSION_MS - 1 : -1;
+  const m = /^(?:s1\.(\d{10,14})|s2\.(\d{10,14})\.(\d{1,6}))$/.exec(v); if (!m) return -1;
+  if ((m[1] ? 0 : +m[3]) !== SESS_GEN) return -1;   // s1-Cookies (vor der Generation) gelten als Generation 0
+  const ts = m[1] || m[2];
+  const age = Date.now() - Number(ts);
   return age > -60000 && age < SESSION_MS ? Math.max(0, age) : -1;
 }
 const verify = tok => sessionAge(tok) >= 0;
-const sessionCookie = () => "fsadmin=" + encodeURIComponent(sign("s1." + Date.now())) + "; HttpOnly; Path=/; Max-Age=" + SESSION_MS / 1000 + "; SameSite=Lax; Secure";
+const sessionCookie = () => "fsadmin=" + encodeURIComponent(sign("s2." + Date.now() + "." + SESS_GEN)) + "; HttpOnly; Path=/; Max-Age=" + SESSION_MS / 1000 + "; SameSite=Lax; Secure";
 function parseCookies(req) {
   const out = {}; const c = req.headers.cookie || "";
   c.split(";").forEach(p => { const i = p.indexOf("="); if (i > 0) { const k = p.slice(0, i).trim(), v = p.slice(i + 1).trim(); try { out[k] = decodeURIComponent(v); } catch (e) { out[k] = v; } } });   // ungültige Kodierung (z. B. „%“) nie zum Absturz führen lassen
@@ -4079,7 +4086,9 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "POST") {
     // Schutz gegen Passwort-Raten: pro IP max. 8 Fehlversuche in 15 Min. (danach gesperrt, Passwort wird gar nicht erst geprüft),
     // jeder Fehlversuch antwortet verzögert; viele Fehlversuche insgesamt → Push-Warnung (höchstens 1× pro Stunde). Kein globales Aussperren.
-    const ip = clientIp(req);
+    const ip0 = clientIp(req), ip = /:/.test(ip0) ? ip0.split(":").slice(0, 4).join(":") + "::/64" : ip0;   // IPv6: ganzes /64-Netz zählt als ein Absender
+    // viele Fehlversuche insgesamt (verteilter Angriff): wer in der letzten Stunde schon falsch lag, wird gesperrt – neue Absender (du) kommen weiter rein
+    if (LOGIN_ALL.count("all", 3600000) >= 60 && LOGIN_FAILS.count(ip, 3600000) >= 1) return send(res, 429, adminLoginPage("Zu viele Fehlversuche. Bitte später erneut versuchen."), TYPES[".html"], { "Retry-After": "3600" });
     if (LOGIN_FAILS.count(ip, 900000) >= 8) return send(res, 429, adminLoginPage("Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen."), TYPES[".html"], { "Retry-After": "900" });
     let body = "";
     req.on("data", c => { body += c; if (body.length > 4096) req.destroy(); });
@@ -4088,12 +4097,16 @@ async function handleAdmin(req, res, u, p) {
       const ok = ADMIN_PW && pw.length === ADMIN_PW.length && crypto.timingSafeEqual(Buffer.from(pw), Buffer.from(ADMIN_PW));
       if (ok) {
         LOGIN_FAILS.reset(ip);
-        return send(res, 302, "", "text/plain", { "Set-Cookie": sessionCookie(), Location: "/admin" });
+        return send(res, 302, "", "text/plain", { "Set-Cookie": sessionCookie(), Location: "/admin" });   // ip0 bleibt nur für die Zählung oben
       }
       loginFailed(ip);
       setTimeout(() => send(res, 401, adminLoginPage("Falsches Passwort."), TYPES[".html"]), LOGIN_DELAY);
     });
     return;
+  }
+  if (p === "/admin/api/session/revoke-all" && req.method === "POST" && adminAuthed(req) && sameSiteReq(req)) {
+    sessBump(); console.log("Cockpit: alle Sitzungen abgemeldet (Generation " + SESS_GEN + ")");
+    return send(res, 200, JSON.stringify({ ok: true }), TYPES[".json"], { "Set-Cookie": sessionCookie(), "Cache-Control": "no-store" });   // dieses Gerät bleibt angemeldet
   }
   if (p === "/admin/logout") {
     return send(res, 302, "", "text/plain", { "Set-Cookie": "fsadmin=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure", Location: "/admin/login" });
@@ -5720,7 +5733,7 @@ FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
 if (require.main === module) setInterval(() => PRINT.pollActive().catch(e => console.error("Druck-Status:", e.message)), 30 * 60 * 1000).unref();   // laufende Druckaufträge: Status/Tracking alle 30 min
 // ── Vertraulichkeitsvereinbarungen (nda.js): Links aus dem Cockpit „Rechtliches“, online unterschreiben, PDF an beide Seiten ──
-const UPLOADS = require("./uploads.js")({ DATA_DIR, ORIGIN, send, sendGz, adminAuthed, mailSend: m => mailApiSend(m), push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+const UPLOADS = require("./uploads.js")({ DATA_DIR, ORIGIN, send, sendGz, adminAuthed, sameSiteReq, mailSend: m => mailApiSend(m), push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m), mailReady: () => !!(MAIL.url && MAIL.token) });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);

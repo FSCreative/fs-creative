@@ -147,7 +147,7 @@ function body(){
     '<section class="set-sec" id="set-ski"><h3>Skikaiser</h3>'+skiHtml()+'</section>'+
     (F.kiSettingsHtml?'<section class="set-sec" id="set-ki"><h3>KI (Claude)</h3>'+F.kiSettingsHtml()+'</section>':'')+
     '<section class="set-sec" id="set-int"><h3>Verbindungen</h3><p class="set-p">Alle Schnittstellen werden am Server regelmäßig geprüft – mit Grund, was davon abhängt und dem Weg zur Behebung.</p>'+intHtml()+'</section>'+
-    '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a></div>'+
+    '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a><button type="button" class="btn" data-act="revokeall" title="Meldet alle anderen Geräte und Browser ab – dieses Gerät bleibt angemeldet">Alle anderen Geräte abmelden</button></div>'+
   '</div>';
 }
 function paint(){
@@ -277,4 +277,7 @@ F.searcher(function(q){
   var hits=[["E-Mail-Konten & Passwörter","settings:mail","Einstellungen"],["Privater Kalender (iCloud) verbinden","settings:icloud","Einstellungen"],["Darstellung: Alpenglas, Hell, Dunkel","settings:prefs","Einstellungen"],["Skikaiser einrichten","settings:ski","Einstellungen"]];   // „Verbindungen“ liefert zconn.js
   return hits.filter(function(h){ return h[0].toLowerCase().indexOf(q)>-1; }).map(function(h){ return {group:"Einstellungen",label:h[0],sub:h[2],act:h[1]}; });
 });
+
+/* Sicherheitsprüfung 07.11.2026: alle anderen Sitzungen ungültig machen (z. B. Gerät verloren) */
+F.action("revokeall",function(){ F.confirm("Alle anderen Geräte und Browser abmelden? Dieses Gerät bleibt angemeldet, überall sonst musst du dich neu anmelden (auch Handy und Cockpit-App).","Abmelden",function(){ F.api("/admin/api/session/revoke-all",{body:{}}).then(function(j){ F.toast(j&&j.ok?"Alle anderen Geräte sind abgemeldet":"Fehler",!(j&&j.ok)); }); }); });
 })();

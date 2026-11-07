@@ -65,7 +65,7 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
 
   await t("Anmeldung: richtiges Passwort → Sitzung mit Zeitstempel (30 Tage, HttpOnly, Secure, SameSite)", async () => {
     const r = await login(B, "richtig-123"); assert.strictEqual(r.status, 302); assert.strictEqual(r.headers.get("location"), "/admin");
-    const c = r.headers.get("set-cookie"); assert.ok(/^fsadmin=s1\.\d{13}\./.test(decodeURIComponent(c)), c);
+    const c = r.headers.get("set-cookie"); assert.ok(/^fsadmin=s2\.\d{13}\.0\./.test(decodeURIComponent(c)), c);
     assert.ok(/HttpOnly/.test(c) && /Secure/.test(c) && /SameSite=Lax/.test(c) && /Max-Age=2592000/.test(c));
     const a = await fetch(B + "/admin/api/push", { headers: { cookie: c.split(";")[0] } }); assert.strictEqual(a.status, 200);
   });
@@ -86,10 +86,10 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
     assert.strictEqual((await st(tok("s2." + Date.now()))).status, 302, "unbekanntes Format");
     assert.strictEqual((await st(encodeURIComponent("s1." + Date.now() + ".deadbeef"))).status, 302, "falsche Signatur");
     const old = await st(tok("s1." + (Date.now() - 3 * 86400000))); assert.strictEqual(old.status, 200);
-    assert.ok(/^fsadmin=s1\.\d{13}\./.test(decodeURIComponent(old.headers.get("set-cookie") || "")), "Sitzung bei Nutzung erneuert");
+    assert.ok(/^fsadmin=s2\.\d{13}\.0\./.test(decodeURIComponent(old.headers.get("set-cookie") || "")), "Sitzung bei Nutzung erneuert");
     const fresh = await st(tok("s1." + Date.now())); assert.strictEqual(fresh.status, 200); assert.ok(!fresh.headers.get("set-cookie"), "frische Sitzung nicht bei jeder Anfrage neu gesetzt");
     const legacy = await st(tok("ok")); assert.strictEqual(legacy.status, Date.now() < Date.parse("2026-11-20") ? 200 : 302);
-    if (legacy.status === 200) assert.ok(/^fsadmin=s1\./.test(decodeURIComponent(legacy.headers.get("set-cookie") || "")), "altes Cookie wird umgestellt");
+    if (legacy.status === 200) assert.ok(/^fsadmin=s2\./.test(decodeURIComponent(legacy.headers.get("set-cookie") || "")), "altes Cookie wird umgestellt");
   });
   await t("CSRF: ändernde Cockpit-Anfragen von fremden Seiten → 403, eigene Seite erlaubt", async () => {
     const post = h => fetch(B + "/admin/api/push", { method: "POST", headers: Object.assign({ cookie: COOKIE, "content-type": "application/json" }, h), body: JSON.stringify({ op: "x" }) });
@@ -121,6 +121,18 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
     }
     const lic = fs.readdirSync(path.join(ROOT, "node_modules")).map(d => ["LICENSE.txt", "README.txt", "index.html"].map(f => path.join(d, f))).flat().find(f => fs.existsSync(path.join(ROOT, "node_modules", f)));
     if (lic) { const r = await fetch(B + "/node_modules/" + lic); const h = await r.text(); assert.ok(!(r.status === 200 && h === fs.readFileSync(path.join(ROOT, "node_modules", lic), "utf8")), lic + " ausgeliefert"); }
+  });
+
+  await t("Alle anderen Geräte abmelden: alte Cookies ungültig, dieses Gerät bleibt angemeldet, nur von der eigenen Seite", async () => {
+    const st = c => fetch(B + "/admin/api/push", { redirect: "manual", headers: { cookie: c } });
+    const old = "fsadmin=" + tok("s1." + Date.now());
+    const x = await fetch(B + "/admin/api/session/revoke-all", { method: "POST", redirect: "manual", headers: { cookie: old, "sec-fetch-site": "cross-site" } });
+    assert.notStrictEqual(x.status, 200, "fremde Seite darf nicht abmelden");
+    const r = await fetch(B + "/admin/api/session/revoke-all", { method: "POST", redirect: "manual", headers: { cookie: old, "sec-fetch-site": "same-origin", "content-type": "application/json" }, body: "{}" });
+    assert.strictEqual(r.status, 200);
+    const neu = (r.headers.get("set-cookie") || "").split(";")[0];
+    assert.strictEqual((await st(old)).status, 302, "altes Cookie gilt nicht mehr");
+    assert.strictEqual((await st(neu)).status !== 302, true, "neues Cookie gilt");
   });
 
   srv.kill();

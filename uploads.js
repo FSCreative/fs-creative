@@ -234,6 +234,7 @@ module.exports = function (D) {
         return void sendFile(res, l, f);
       }
       if (p === "/admin/api/uploads/zip" && req.method === "GET") { const l = byId(String(u.searchParams.get("link") || "")); if (!l) return J(res, 404, { ok: false, error: "Nicht gefunden" }); return void await sendZip(res, l, u.searchParams.get("dir")); }
+      if (req.method !== "GET" && D.sameSiteReq && !D.sameSiteReq(req)) { req.resume(); return J(res, 403, { ok: false, error: "forbidden" }); }   // CSRF: Ändern nur von der eigenen Seite
       if (p === "/admin/api/uploads/chunk" && req.method === "PUT") {   // Simon lädt selbst in einen Link hoch (für den Kunden)
         const l = byId(String(u.searchParams.get("link") || "")); if (!l) { req.resume(); return J(res, 404, { ok: false, error: "Nicht gefunden" }); }
         return J(res, 200, await chunkFile(req, l, u.searchParams.get("f"), parseInt(u.searchParams.get("o") || "-1", 10)));
