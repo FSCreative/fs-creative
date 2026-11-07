@@ -3858,6 +3858,54 @@ async function fonUebermitteln(z, pin, art, modus, daten) {
     try { await fonRuf(FON.sessionUrl, "logout", fonSoap(FON.nsSession, "logoutRequest", [["tid", z.tid], ["benid", z.benid], ["id", id]])); } catch (e) {}
   }
 }
+// ── FinanzOnline lesen (Simon 07.11.2026): Verbindungstest und Databox (Bescheide, Buchungsmitteilungen, Ergänzungsersuchen) ──
+// Databox-Webservice des BMF: getDatabox (Liste je Zeitraum, höchstens 31 Tage pro Abfrage) und getDataboxEntry (Dokument, Base64).
+// Das PIN kommt aus FON_PIN oder aus der Anfrage – nie gespeichert, nie geloggt.
+FON.databoxUrl = process.env.FON_DATABOX_URL || "https://finanzonline.bmf.gv.at/fon/ws/databox"; FON.nsDatabox = "https://finanzonline.bmf.gv.at/fon/ws/databox";
+async function fonSitzung(pin, fn) {
+  const z = fonZugang(); if (z.fehlt) throw new Error(z.fehlt);
+  pin = String(pin || "").trim() || String(process.env.FON_PIN || "").trim(); if (!pin) throw new Error("PIN des Webservice-Benutzers fehlt (FON_PIN in Railway oder beim Abruf eingeben).");
+  const an = await fonRuf(FON.sessionUrl, "login", fonSoap(FON.nsSession, "loginRequest", [["tid", z.tid], ["benid", z.benid], ["pin", pin], ["herstellerid", z.herstellerid]]));
+  const id = fonFeld(an, "id") || "", rc0 = Number(fonFeld(an, "rc") || -3);
+  if (rc0 !== 0 || !id) { const e = new Error(fonRcText(rc0, fonFeld(an, "msg") || "")); e.rc = rc0; throw e; }
+  try { return await fn(z, id); }
+  finally { try { await fonRuf(FON.sessionUrl, "logout", fonSoap(FON.nsSession, "logoutRequest", [["tid", z.tid], ["benid", z.benid], ["id", id]])); } catch (e) {} }
+}
+function fonDbEntries(xml) {
+  const out = []; const re = /<(?:[\w.-]+:)?result\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?result>/g; let m;
+  while ((m = re.exec(xml))) { const x = m[1], f = n => fonFeld(x, n) || "";
+    out.push({ applkey: f("applkey"), stnr: f("stnr"), name: f("name"), anbringen: f("anbringen"), zrvon: f("zrvon"), zrbis: f("zrbis"), datbesch: f("datbesch"), erltyp: f("erltyp"), fileart: f("fileart"), ts: f("ts_zust"), filebez: f("filebez"), status: f("status") }); }
+  return out.filter(e => e.applkey);
+}
+const FON_ERLTYP = { B: "Bescheid", M: "Mitteilung", I: "Information", P: "Protokoll", EU: "Ergänzungsersuchen", E: "Ergänzungsersuchen", V: "Vorhalt" };
+async function fonDatabox(pin, tage) {
+  tage = Math.max(1, Math.min(365, +tage || 90));
+  return fonSitzung(pin, async (z, id) => {
+    const all = [], seen = new Set(), bis = new Date(); let err = "";
+    for (let off = 0; off < tage; off += 31) {
+      const to = new Date(bis.getTime() - off * 864e5), from = new Date(to.getTime() - Math.min(31, tage - off) * 864e5 + 1000);
+      const iso = d => d.toISOString().slice(0, 19);
+      const x = await fonRuf(FON.databoxUrl, "getDatabox", fonSoap(FON.nsDatabox, "getDataboxRequest", [["tid", z.tid], ["benid", z.benid], ["id", id], ["erltyp", ""], ["ts_zust_von", iso(from)], ["ts_zust_bis", iso(to)]]));
+      const rc = Number(fonFeld(x, "rc") || 0); if (rc !== 0) { err = fonRcText(rc, fonFeld(x, "msg") || ""); if (rc === -1 || rc === -4 || rc === -5) break; continue; }
+      fonDbEntries(x).forEach(e => { if (!seen.has(e.applkey)) { seen.add(e.applkey); e.art = FON_ERLTYP[e.erltyp] || e.erltyp || "Dokument"; all.push(e); } });
+    }
+    all.sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
+    const o = readSteuer(); o.fon = o.fon || { archive: [] }; const prev = new Set(((o.fon.databox && o.fon.databox.entries) || []).map(e => e.applkey));
+    o.fon.databox = { at: new Date().toISOString(), tage, entries: all.slice(0, 300), error: err || undefined, neu: all.filter(e => !prev.has(e.applkey)).length }; writeSteuer(o);
+    return o.fon.databox;
+  });
+}
+async function fonDataboxEntry(pin, applkey) {
+  if (!/^[\w.:-]{1,80}$/.test(String(applkey || ""))) throw new Error("Ungültiger Eintrag");
+  return fonSitzung(pin, async (z, id) => {
+    const x = await fonRuf(FON.databoxUrl, "getDataboxEntry", fonSoap(FON.nsDatabox, "getDataboxEntryRequest", [["tid", z.tid], ["benid", z.benid], ["id", id], ["applkey", applkey]]));
+    const rc = Number(fonFeld(x, "rc") || 0); if (rc !== 0) throw new Error(fonRcText(rc, fonFeld(x, "msg") || ""));
+    const b64 = (fonFeld(x, "result") || "").replace(/\s+/g, ""); if (!b64) throw new Error("Dokument ist leer");
+    return Buffer.from(b64, "base64");
+  });
+}
+// Databox täglich automatisch (nur mit FON_PIN): neue Bescheide/Mitteilungen erscheinen im Cockpit
+setTimeout(function fonDbTick() { if (process.env.FON_PIN && !fonZugang().fehlt) fonDatabox("", 31).catch(e => console.error("FinanzOnline Databox:", e.message)); setTimeout(fonDbTick, 24 * 3600e3).unref(); }, 5 * 60e3).unref();
 // Entwurf aus den aktuellen sevDesk-Daten (serverseitig berechnet)
 const FON_JAHR_SCHEMA = { 2025: true };   // veröffentlichte BMF-Schemata „Jahreserklärungen“, gegen die der Builder geprüft ist
 async function fonEntwurf(art, key, paket, fresh) {
@@ -4863,6 +4911,22 @@ async function handleAdmin(req, res, u, p) {
   // sevDesk-Abgleich: Steuerregel korrigieren, UVA-Tags setzen, USt-Zahlung als Beleg – jeweils nur mit confirm:true aus dem Bestätigungsdialog
   if ((p === "/admin/api/steuer/sevfix" || p === "/admin/api/steuer/sevtag" || p === "/admin/api/steuer/ustpay") && req.method === "POST") {
     try { const pl = await sevBody(req, 20000); const r = p.endsWith("sevfix") ? await sevFixTaxRule(pl) : p.endsWith("sevtag") ? await sevTagUva(pl) : await sevUstPayment(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  // FinanzOnline: Verbindungstest (nur An- und Abmelden), Databox-Liste, Databox-Dokument
+  if (p === "/admin/api/fon/test" && req.method === "POST") {
+    try { const pl = await sevBody(req, 2000); await fonSitzung(pl.pin, async () => true); return send(res, 200, JSON.stringify({ ok: true, msg: "Anmeldung bei FinanzOnline klappt." }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, rc: e.rc, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/fon/databox" && (req.method === "GET" || req.method === "POST")) {
+    try { if (req.method === "GET" && u.searchParams.get("refresh") !== "1") { const o = readSteuer(); return send(res, 200, JSON.stringify({ ok: true, databox: (o.fon && o.fon.databox) || null, pinEnv: !!process.env.FON_PIN }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+      const pl = req.method === "POST" ? await sevBody(req, 2000) : {}; const d = await fonDatabox(pl.pin, pl.tage || u.searchParams.get("tage")); return send(res, 200, JSON.stringify({ ok: true, databox: d, pinEnv: !!process.env.FON_PIN }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, rc: e.rc, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/fon/databox/file" && (req.method === "GET" || req.method === "POST")) {
+    try { const pl = req.method === "POST" ? await sevBody(req, 2000) : {}; const key = pl.applkey || u.searchParams.get("applkey"), buf = await fonDataboxEntry(pl.pin, key);
+      const isPdf = buf.slice(0, 4).toString() === "%PDF";
+      res.writeHead(200, { "Content-Type": isPdf ? "application/pdf" : "application/octet-stream", "Content-Disposition": (isPdf ? "inline" : "attachment") + '; filename="databox-' + String(key).replace(/[^\w.-]/g, "") + (isPdf ? ".pdf" : "") + '"', "Cache-Control": "private, no-store" }); return res.end(buf); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   // UVA-Abschluss: abgegeben vermerken + Zeitraum festschreiben (nicht umkehrbar) – Zahllast bleibt als offener Posten bis zur Zahlung
