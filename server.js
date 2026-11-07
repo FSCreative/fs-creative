@@ -3886,7 +3886,7 @@ async function fonDatabox(pin, tage) {
       const to = new Date(bis.getTime() - off * 864e5), from = new Date(to.getTime() - Math.min(31, tage - off) * 864e5 + 1000);
       const iso = d => d.toISOString().slice(0, 19);
       const x = await fonRuf(FON.databoxUrl, "getDatabox", fonSoap(FON.nsDatabox, "getDataboxRequest", [["tid", z.tid], ["benid", z.benid], ["id", id], ["erltyp", ""], ["ts_zust_von", iso(from)], ["ts_zust_bis", iso(to)]]));
-      const rc = Number(fonFeld(x, "rc") || 0); if (rc !== 0) { err = fonRcText(rc, fonFeld(x, "msg") || ""); if (rc === -1 || rc === -4 || rc === -5) break; continue; }
+      const rc = Number(fonFeld(x, "rc") || 0); if (rc !== 0) { err = rc === -5 ? "Keine Berechtigung für die Databox – beim Webservice-Benutzer in FinanzOnline das Recht für die Databox-Abfrage freischalten." : fonRcText(rc, fonFeld(x, "msg") || ""); if (rc === -1 || rc === -4 || rc === -5) break; continue; }
       fonDbEntries(x).forEach(e => { if (!seen.has(e.applkey)) { seen.add(e.applkey); e.art = FON_ERLTYP[e.erltyp] || e.erltyp || "Dokument"; all.push(e); } });
     }
     all.sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
