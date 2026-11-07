@@ -3877,21 +3877,26 @@ function fonDbEntries(xml) {
     out.push({ applkey: f("applkey"), stnr: f("stnr"), name: f("name"), anbringen: f("anbringen"), zrvon: f("zrvon"), zrbis: f("zrbis"), datbesch: f("datbesch"), erltyp: f("erltyp"), fileart: f("fileart"), ts: f("ts_zust"), filebez: f("filebez"), status: f("status") }); }
   return out.filter(e => e.applkey);
 }
-const FON_ERLTYP = { B: "Bescheid", M: "Mitteilung", I: "Information", P: "Protokoll", EU: "Ergänzungsersuchen", E: "Ergänzungsersuchen", V: "Vorhalt" };
+const FON_ERLTYP = { B: "Bescheid", M: "Mitteilung", I: "Information", P: "Protokoll", EU: "EU-Erledigung", GM: "Grundsteuermessbetrag", SS: "Selbstberechnung" };
 async function fonDatabox(pin, tage) {
-  tage = Math.max(1, Math.min(365, +tage || 90));
+  // BMF-Spezifikation (Stand 29.10.2026): ohne Zeitraum alle ungelesenen; mit Zeitraum höchstens 31 Tage zurück, je Aufruf höchstens 7 Tage.
+  // Die Liste im Cockpit sammelt deshalb über die Zeit (ältere Einträge bleiben gespeichert).
   return fonSitzung(pin, async (z, id) => {
-    const all = [], seen = new Set(), bis = new Date(); let err = "";
-    for (let off = 0; off < tage; off += 31) {
-      const to = new Date(bis.getTime() - off * 864e5), from = new Date(to.getTime() - Math.min(31, tage - off) * 864e5 + 1000);
-      const iso = d => d.toISOString().slice(0, 19);
-      const x = await fonRuf(FON.databoxUrl, "getDatabox", fonSoap(FON.nsDatabox, "getDataboxRequest", [["tid", z.tid], ["benid", z.benid], ["id", id], ["erltyp", ""], ["ts_zust_von", iso(from)], ["ts_zust_bis", iso(to)]]));
-      const rc = Number(fonFeld(x, "rc") || 0); if (rc !== 0) { err = rc === -5 ? "Keine Berechtigung für die Databox – beim Webservice-Benutzer in FinanzOnline das Recht für die Databox-Abfrage freischalten." : fonRcText(rc, fonFeld(x, "msg") || ""); if (rc === -1 || rc === -4 || rc === -5) break; continue; }
-      fonDbEntries(x).forEach(e => { if (!seen.has(e.applkey)) { seen.add(e.applkey); e.art = FON_ERLTYP[e.erltyp] || e.erltyp || "Dokument"; all.push(e); } });
-    }
-    all.sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
-    const o = readSteuer(); o.fon = o.fon || { archive: [] }; const prev = new Set(((o.fon.databox && o.fon.databox.entries) || []).map(e => e.applkey));
-    o.fon.databox = { at: new Date().toISOString(), tage, entries: all.slice(0, 300), error: err || undefined, neu: all.filter(e => !prev.has(e.applkey)).length }; writeSteuer(o);
+    const got = [], seen = new Set(); let err = "";
+    const ruf = async (von, bis) => {
+      const f = [["tid", z.tid], ["benid", z.benid], ["id", id], ["erltyp", ""]]; if (von) f.push(["ts_zust_von", von], ["ts_zust_bis", bis]);
+      const x = await fonRuf(FON.databoxUrl, "getDatabox", fonSoap(FON.nsDatabox, "getDataboxRequest", f));
+      const rc = Number(fonFeld(x, "rc") || 0); if (rc !== 0) { err = ({ "-4": "Zeitraum unvollständig", "-5": "Zeitraum reicht weiter als 31 Tage zurück", "-6": "Zeitraum länger als 7 Tage" })[rc] || fonRcText(rc, fonFeld(x, "msg") || ""); return; }
+      fonDbEntries(x).forEach(e => { if (!seen.has(e.applkey)) { seen.add(e.applkey); e.art = FON_ERLTYP[e.erltyp] || e.erltyp || "Dokument"; got.push(e); } });
+    };
+    await ruf();   // alle ungelesenen
+    const iso = d => new Date(d.getTime() + 3600e3).toISOString().slice(0, 19);   // Wiener Zeit (Winter) reicht für die Grenzen
+    const now = new Date(), start = new Date(now.getTime() - 30 * 864e5);
+    for (let a = start; a < now; a = new Date(a.getTime() + 7 * 864e5)) { const b = new Date(Math.min(now.getTime(), a.getTime() + 7 * 864e5 - 1000)); await ruf(iso(a), iso(b)); }
+    const o = readSteuer(); o.fon = o.fon || { archive: [] };
+    const prev = (o.fon.databox && o.fon.databox.entries) || [], pk = new Set(prev.map(e => e.applkey));
+    const merged = got.concat(prev.filter(e => !seen.has(e.applkey))).sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 500);
+    o.fon.databox = { at: new Date().toISOString(), tage: 31, entries: merged, error: err || undefined, neu: got.filter(e => !pk.has(e.applkey)).length }; writeSteuer(o);
     return o.fon.databox;
   });
 }
