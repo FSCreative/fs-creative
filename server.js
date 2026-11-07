@@ -5432,6 +5432,37 @@ FIN_PROP.register("credit-income", {
     VM_CACHE.at = 0; STEUER_CACHE.at = 0; SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
     return { ok: true };
   } });
+// Doppelter Mollie-Anfangsbestand (Simon 07.11.2026): der Anfangsbestand beim Umstieg wurde berechnet, bevor ältere Zahlungen und Auszahlungen
+// nachimportiert waren – dasselbe Geld steckt dann doppelt im Saldo. Vorschlag nur, wenn ohne den Anfangsbestand der Saldo genau dem passt, was
+// Mollie verfügbar meldet (Saldo minus „in Bearbeitung“). Der Anfangsbestand hat keine Buchungswirkung (Status 400), nur der Kontosaldo ändert sich.
+FIN_PROP.register("mollie-opening", {
+  label: "Doppelter Mollie-Anfangsbestand",
+  list: async () => {
+    if (!FIN_STATE.local) return [];
+    await FIN_LOCAL.load(); const out = [], r2 = x => Math.round(x * 100) / 100;
+    for (const acc of FIN_LOCAL.all("CheckAccount").filter(a => a.mollieBalance && a.mollieApiBalance != null)) {
+      const txs = FIN_LOCAL.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id));
+      const op = txs.find(x => x.mollieType === "opening"); if (!op || Math.abs(+op.amount || 0) < 0.005) continue;
+      if (FIN_LOCAL.all("CheckAccountTransactionLog").some(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(op.id))) continue;
+      const book = r2(txs.reduce((a, x) => a + (+x.amount || 0), 0)), avail = r2((+acc.mollieApiBalance || 0) - (+acc.mollieApiPending || 0)), oa = r2(+op.amount || 0);
+      if (Math.abs(book - avail) < 0.02 || Math.abs(book - oa - avail) >= 0.02) continue;
+      out.push({ id: "mop:" + op.id, key: "mop:" + op.id, amount: Math.abs(oa), date: String(op.valueDate || "").slice(0, 10), payload: { txId: String(op.id), accId: String(acc.id) },
+        title: "„" + acc.name + "“: Anfangsbestand " + oa.toFixed(2).replace(".", ",") + " € ist doppelt – entfernen",
+        detail: "Saldo im Cockpit " + book.toFixed(2).replace(".", ",") + " €, Mollie meldet verfügbar " + avail.toFixed(2).replace(".", ",") + " €. Ohne den Anfangsbestand passt es genau. Keine Steuer- oder Umsatzwirkung, nur der Kontosaldo.", source: "Bank" });
+    }
+    return out;
+  },
+  valid: it => { const p = it.payload || it, t = FIN_LOCAL.get("CheckAccountTransaction", p.txId); return !!(t && t.mollieType === "opening" && Math.abs(+t.amount || 0) >= 0.005); },
+  exec: async it => {
+    const p = it.payload || it, t = FIN_LOCAL.get("CheckAccountTransaction", p.txId);
+    if (!t || t.mollieType !== "opening") throw new Error("Anfangsbestand nicht mehr vorhanden");
+    if (FIN_LOCAL.all("CheckAccountTransactionLog").some(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(t.id))) throw new Error("Anfangsbestand ist inzwischen verknüpft – bitte von Hand prüfen");
+    // auf 0 setzen statt löschen – sonst legt der nächste Mollie-Abruf einen neuen Anfangsbestand an
+    t.paymtPurpose = String(t.paymtPurpose || "Anfangsbestand") + " – war doppelt (" + (+t.amount || 0).toFixed(2) + " €), am " + new Date().toISOString().slice(0, 10) + " auf 0 gesetzt"; t.amount = "0";
+    await FIN_LOCAL.save("CheckAccountTransaction", t);
+    SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+    return { ok: true };
+  } });
 const VM_CACHE = { at: 0, items: null, p: null };
 // jede Buchungsänderung (Beleg, Zahlung, Import) → Beleg-Abgleich neu rechnen
 if (SEV_OPS && SEV_OPS.resetCaches && !SEV_OPS._vmHook) { const rc = SEV_OPS.resetCaches; SEV_OPS.resetCaches = function () { VM_CACHE.at = 0; return rc.apply(this, arguments); }; SEV_OPS._vmHook = true; }
