@@ -6,6 +6,7 @@
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, UI=F.UI;
 function deShort(v){ var m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"."+m[2]+"."+m[1].slice(2):""; }
 UI.fin=UI.fin||F.ls("fsc_fin_page")||"dash";
+if(/^(fa|steuer|uva|u1|jab|anlagen|prognose)(:|$)/.test(UI.fin)) UI.fin="dash";   // Steuerliches ist jetzt der eigene Menüpunkt „Finanzamt“
 if(/^invd(:|$)/.test(UI.fin)&&!UI.fin.split(":")[1]) UI.fin="inv";   // Detailseite ohne Rechnung nie wiederherstellen
 var C={tx:null,vou:{},cn:null,busy:{}};
 var IC={
@@ -48,8 +49,6 @@ var NAV=[
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou",sub:[["vou","Alle"],["rvou","Wiederkehrend"]]},
   {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["pay","Zahlungsaufträge"],["kasse","Kassenbuch"]]},
-  /* Finanzamt (Simon 07.11.2026): alles Steuerliche an einem Ort – Übersicht, UVA, U1, Jahreserklärung, Anlagen, Prognose; die frühere Steuer-Übersicht bleibt als „Steuer-Details“ */
-  {id:"fa",label:"Finanzamt",icon:"building",sub:[["fa","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Gewinn & Jahreserklärung"],["anlagen","Anlagen & Abschreibungen"],["prognose","Prognose"],["steuer","Steuer-Details"]]},
   {sep:"Verwalten"},
   {id:"ct",label:"Kontakte",icon:"ct"},
   {id:"prod",label:"Produkte",icon:"prod"},
@@ -70,7 +69,7 @@ function sidebar(){
   }).join("")+'<button type="button" class="fsd-i fsd-help" data-act="help">'+ic("help")+'<span>Hilfe</span><kbd>?</kbd></button></nav>';
 }
 /* auch von außerhalb (Heute, Suche, Feed „Ansehen“): erst zu Finanzen wechseln */
-F.action("fin",function(p){ if(/^invd/.test(p)&&!p.split(":")[1]) p="inv"; UI.fin=p; if(!/^invd/.test(p)) F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; if(F.current!=="geld"){ F.go("geld"); return; } F._forceRender=true; F.render(); window.scrollTo(0,0); });
+F.action("fin",function(p){ var tx=String(p).split(":")[0]; if(/^(fa|steuer|uva|u1|jab|anlagen|prognose)$/.test(tx)&&F.actions.fatab){ F.actions.fatab(tx==="fa"?"start":tx==="steuer"?"details":tx); return; } if(/^invd/.test(p)&&!p.split(":")[1]) p="inv"; UI.fin=p; if(!/^invd/.test(p)) F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; if(F.current!=="geld"){ F.go("geld"); return; } F._forceRender=true; F.render(); window.scrollTo(0,0); });
 
 /* Status-Pillen */
 /* Druckshop-Entwurf (src/printId vom Server, fehlt bei altem Server → wie bisher normaler Entwurf) */
@@ -1011,12 +1010,11 @@ function content(){
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["fa","Finanzamt"]];
+var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"]];
 var MMORE=[["Rechnungen & Belege",[["wkr","Wiederkehrende Rechnungen"],["rvou","Wiederkehrende Belege"],["dun","Mahnungen"],["cn","Gutschriften"],["orders","Angebote"]]],
   ["Bank",[["pay","Zahlungsaufträge"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"]]],
-  ["Finanzamt",[["fa","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Jahreserklärung"],["anlagen","Abschreibungen"],["prognose","Prognose"],["steuer","Steuer-Details"]]],
   ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen verrechnen"],["mydata","Meine Daten"],["lock","Festschreiben"],["archiv","Archiv"],["umstieg","Firma & Einstellungen"]]]];
-function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; if(/^(uva|u1|jab|anlagen|prognose|steuer)$/.test(g)) g="fa";
+function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; 
   var main=MNAV.some(function(n){ return n[0]===g; }), more=null; MMORE.forEach(function(sec){ sec[1].forEach(function(x){ if(x[0]===g) more=x[1]; }); });
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+(n[0]==="review"&&F.reviewCount&&F.reviewCount()?' ('+F.reviewCount()+')':'')+'</button>'; }).join("")+
     '<button type="button" data-act="fmore" aria-haspopup="dialog"'+(!main&&more?' aria-current="page"':'')+'>'+esc(!main&&more?more:"Mehr")+ic("chevD")+'</button></nav>'; }
@@ -1222,6 +1220,7 @@ if(gv){
   // alte Sprungziele (F.UI.geldTab aus Heute, Suche, Steuer-Hinweisen …) auf die neuen Seiten abbilden
   var GT={rechnungen:"inv",bank:"open",belege:"vou",stamm:"ct",uva:"uva",u1:"u1",jab:"jab",prognose:"prognose",umstieg:"umstieg",steuer:"fa"};
   gv.render=function(){
+    if(UI.geldTab&&/^(uva|u1|jab|prognose|steuer|anlagen)$/.test(UI.geldTab)&&F.actions.fatab){ var gt=UI.geldTab; UI.geldTab="__z"; setTimeout(function(){ F.actions.fatab(gt==="steuer"?"start":gt); },0); }
     if(UI.geldTab&&UI.geldTab!=="__z"){ var m=GT[UI.geldTab]; if(m){ UI.fin=m+(m==="inv"&&UI.rgF&&UI.rgF!=="todo"&&UI.rgF!=="all"?":"+({open:"open",overdue:"due",draft:"draft"}[UI.rgF]||"all"):""); } UI.geldTab="__z"; }
     if(window.innerWidth<=900) return mobile();
     return '<div class="fsd">'+sidebar()+'<div class="fsd-main">'+content()+'</div></div>';
