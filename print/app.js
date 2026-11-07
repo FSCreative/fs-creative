@@ -948,7 +948,11 @@
   function dueHtml() { var p = S.price; if (!p || !p.deliveryDate) return ""; var d = new Date(p.deliveryDate + "T12:00:00"); if (isNaN(d)) return "";
     var day = d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }), v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m);
     // ruhig statt Countdown (06.11.2026): Liefertag groß, Bestellschluss nur als kleine Zeile
-    return '<p class="ps-due" id="psDue"><span>Lieferung voraussichtlich</span><b>' + esc(day.replace(/\.$/, "")) + "</b>" + (work && left > 0 ? "<small>bei Bestellung heute bis 14 Uhr</small>" : "") + '<small>Die Zustellung kann sich durch den Paketdienst um einen Werktag verschieben.</small></p>'; }
+    // Bestellschluss wie bei Print.com (Wunsch Simon 07.11.2026): Der Liefertag gilt bei Upload und Bestellung bis 14:00 am nächsten Produktionstag –
+    // heute vor 14 Uhr (Mo–Fr), sonst am nächsten Werktag (Fr nach 14 Uhr und am Wochenende: Montag)
+    var dl = new Date(), add = work && left > 0 ? 0 : 1; if (add) { do { dl.setDate(dl.getDate() + 1); } while (dl.getDay() === 0 || dl.getDay() === 6); }
+    var dlTxt = !add ? "heute" : (function () { var t = new Date(); t.setDate(t.getDate() + 1); return dl.toDateString() === t.toDateString() ? "morgen" : dl.toLocaleDateString("de-AT", { weekday: "long", day: "numeric", month: "long" }); })();
+    return '<p class="ps-due" id="psDue"><span>Lieferung voraussichtlich</span><b>' + esc(day.replace(/\.$/, "")) + "</b><small>bei Upload und Bestellung bis " + esc(dlTxt) + ", 14:00 Uhr</small>" + '<small>Die Zustellung kann sich durch den Paketdienst um einen Werktag verschieben.</small></p>'; }
   setInterval(function () { var e = document.getElementById("psDue"); if (e && !document.hidden) { var t = document.createElement("div"); t.innerHTML = dueHtml(); if (t.firstChild) e.innerHTML = t.firstChild.innerHTML; } }, 30000);
   function socialHtml() { var n = +S.liveSame || 0, w = +S.liveWeek || 0, t = S.prod ? S.prod.title : ""; if (!t) return "";
     var a = n >= 1 ? "👀 Gerade " + (n === 1 ? "sieht sich noch 1 weitere Person" : "sehen sich noch " + n + " weitere Personen") + " " + esc(t) + " an" : "", b = w >= 3 ? "Diese Woche " + w + "× bestellt" : "";
