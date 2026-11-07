@@ -479,8 +479,8 @@ function bzStatusNote(){ var s=F.D&&F.D.abgleich&&F.D.abgleich.blitzStatus; if(!
 /* Prüfpunkte Blitzdings: Abgleich-Hinweise (Storno prüfen, offenes Angebot, Doppelrechnung, Betrag geändert …) + Rechnungsmeldung an Blitzdings */
 function bzChecks(bz){
   var rows=[], rep=bz&&bz.invoiceReport;
-  items("blitzdings").forEach(function(x){ (x.notes||[]).forEach(function(n){ var id=x.bookingId||String(x.key).replace(/^blitz:/,"");
-    var acts=(F.actions.bkshow?'<button class="btn" data-act="bkshow:'+esc(id)+'">Buchung</button>':'')+(x.offerOpen?'<button class="btn primary" data-act="plbaccept:'+esc(id)+'">Als angenommen markieren</button>':'');
+  items("blitzdings").forEach(function(x){ (x.notes||[]).forEach(function(n){ if(n.lvl==="ok") return; var id=x.bookingId||String(x.key).replace(/^blitz:/,"");
+    var acts=(F.actions.bkshow?'<button class="btn" data-act="bkshow:'+esc(id)+'">Buchung</button>':'')+(x.offerOpen?'<button class="btn primary" data-act="plbaccept:'+esc(id)+'">Als angenommen markieren</button>':'')+'<button class="btn" data-act="plbnoteok:'+esc(x.key)+'" title="Gelesen, passt so – kommt wieder, wenn sich etwas ändert">Passt so</button>';
     rows.push({lvl:n.lvl,tag:n.lvl==="bad"&&x.cancelled?"Storno prüfen":x.offerOpen?"Angebot offen":"",text:(x.name||"Buchung")+(x.reference?" ("+x.reference+")":"")+": "+n.text,inv:n.inv||((x.cancelled||/Doppelrechnung/.test(n.text))&&x.last&&x.last.id)||"",acts:acts}); }); });
   if(rep){
     if((rep.stock||[]).length) rows.push({lvl:"warn",tag:"An Blitzdings melden",text:rep.stock.length+(rep.stock.length===1?" Cockpit-Rechnung ist":" Cockpit-Rechnungen sind")+" Blitzdings noch nicht gemeldet (ältere Einträge). Melden sperrt dort die automatische Rechnung bei Online-Zahlung oder Angebotsannahme – keine Rechnung wird geändert.",acts:'<button class="btn primary" data-act="plbrep:stock"'+(BUSY.brep?" disabled":"")+'>An Blitzdings melden</button>'});
@@ -490,6 +490,9 @@ function bzChecks(bz){
   }
   return rows;
 }
+/* „Passt so“: Hinweis ausblenden, solange er gleich bleibt (Simon 07.11.2026) */
+F.action("plbnoteok",function(key){ var x=items("blitzdings").find(function(y){ return y.key===key; }); if(!x) return;
+  F.api("/admin/api/billing",{body:{op:"noteok",key:key,sig:(x.notes||[]).map(function(n){ return n.text; }).join("|")}}).then(function(j){ if(j&&j.ok===false){ F.toast("Nicht gespeichert",true); return; } F.toast("Erledigt"); F.load(true); }); });
 F.action("plbrep",function(what){
   var rep=(P().blitzdings||{}).invoiceReport||{}, list=what==="stock"?(rep.stock||[]):(rep.pending||[]); if(!list.length||BUSY.brep) return;
   var go=function(){ BUSY.brep=1; F.render();

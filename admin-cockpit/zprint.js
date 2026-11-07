@@ -37,10 +37,23 @@ function list(){ var o=(ST&&ST.orders)||[]; if(FILTER==="review") return o.filte
 /* Fortschrittsleiste: Bestellt → Print.com → In Produktion → Versendet → Zugestellt (Status kommt per Webhook/Abfrage von Print.com) */
 var STEPS=[["order","Bestellt"],["printcom","Bei Print.com"],["production","In Produktion"],["shipped","Versendet"],["delivered","Zugestellt"]];
 var RANK={pending_payment:0,payment_failed:0,paid:1,invoice_requested:1,ordered:2,in_production:3,shipped:4,delivered:5};
+/* Kompakter Status in der Auftragsliste (Simon 07.11.2026): Segment-Balken, aktueller Schritt groß, Lieferung + Print.com-Status als Chips */
+var PCDE={designconfirmed:"Druckdaten bestätigt",designreceived:"Druckdaten erhalten",inproduction:"in Produktion",printed:"gedruckt",shipped:"versendet",delivered:"zugestellt",ordered:"bestellt",cancelled:"storniert",onhold:"angehalten",waitingfordesign:"wartet auf Druckdaten"};
+function stepMini(o,pr,cur,done,bad,dTxt,dd){
+  var c=Math.max(0,cur), now=STEPS[Math.min(c,STEPS.length-1)], since=pr.at&&pr.at[now[0]]?dd(pr.at[now[0]]):"";
+  var segs=STEPS.map(function(st,i){ return '<i class="'+(done||i<c?"ok":i===c?(bad?"bad":"now"):"")+'" title="'+esc(st[1])+'"></i>'; }).join("");
+  var pc=pr.pc?String(pr.pc).toLowerCase().replace(/[_\s-]/g,""):"", pcT=pc?(PCDE[pc]||String(pr.pc).toLowerCase().replace(/_/g," ")):"";
+  var chips=(bad?'<span class="pr-chip bad">'+ico("alertCircle")+esc(o.status==="rejected"?"Abgelehnt":"Problem bei Print.com")+'</span>':'')+
+    (dTxt&&!done&&!bad?'<span class="pr-chip">'+ico("truck")+'Lieferung <b>'+esc(dTxt)+'</b></span>':'')+
+    (pcT&&!bad?'<span class="pr-chip soft">Print.com: '+esc(pcT)+'</span>':'')+(pr.motifs>1?'<span class="pr-chip soft">'+pr.motifs+' Motive</span>':'')+
+    (pr.track&&pr.track.url?'<a href="'+esc(pr.track.url)+'" target="_blank" rel="noopener" class="pr-chip link" onclick="event.stopPropagation()">'+ico("external")+'Sendung verfolgen'+(pr.track.carrier?" · "+esc(pr.track.carrier):"")+'</a>':'');
+  return '<div class="pr-sm'+(bad?" bad":"")+(done?" done":"")+'"><div class="pr-sm-h"><b>'+(done?"Zugestellt":esc(now[1]))+'</b><span class="muted">Schritt '+(done?STEPS.length:c+1)+' von '+STEPS.length+(since?' · seit '+esc(since):'')+'</span></div><div class="pr-sm-bar">'+segs+'</div>'+(chips?'<div class="pr-sm-c">'+chips+'</div>':'')+'</div>';
+}
 function stepper(o,pr,big){ pr=pr||{}; var bad=o.status==="problem"||o.status==="rejected", r=o.status==="problem"?(o.pcOrder||(o.printcom&&o.printcom.orderNumber)?2:1):o.status==="rejected"?1:(RANK[o.status]||0);
   var cur=Math.min(r,STEPS.length)-1, pct=STEPS.length>1?Math.max(0,cur)/(STEPS.length-1)*100:0, done=r>=STEPS.length;
   var dd=function(v){ if(!v) return ""; var d=new Date(v); return isNaN(d)?"":d.toLocaleDateString("de-AT",{day:"numeric",month:"numeric"})+(big?" "+d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):""); };
   var dl=pr.delivery?new Date(pr.delivery+"T12:00:00"):null, dTxt=dl&&!isNaN(dl)?dl.toLocaleDateString("de-AT",{weekday:"short",day:"numeric",month:"numeric"}):"";
+  if(!big) return stepMini(o,pr,cur,done,bad,dTxt,dd);
   return '<div class="pr-st'+(big?" big":"")+(bad?" bad":"")+(done?" done":"")+'" style="--p:'+pct+'%"><div class="pr-st-track"><i></i></div><ol>'+STEPS.map(function(s,i){ var cls=i<cur||done?"ok":i===cur?"now":"";
       return '<li class="'+cls+'"><span class="d">'+(cls==="ok"?"✓":i+1)+'</span><b>'+s[1]+'</b><small>'+(i<=cur&&pr.at?dd(pr.at[s[0]]):"")+'</small></li>'; }).join("")+'</ol>'+
     '<div class="pr-st-f">'+(bad?'<span class="bad-t">'+ico("alertCircle")+esc(o.status==="rejected"?"Abgelehnt":"Problem bei Print.com"+(pr.pc?" ("+pr.pc+")":""))+'</span>':done?'<span class="ok-t">'+ico("box")+'Zugestellt</span>':'<span>'+(dTxt?"Lieferung voraussichtlich <b>"+esc(dTxt)+"</b>":"")+'</span>')+
@@ -595,4 +608,10 @@ F.css('.prg .pr-nav{display:flex;flex-direction:column;gap:10px;margin:0 0 14px}
   '.prg .pr-list{display:grid;gap:10px;padding:12px}.prg .pr-list .pr-row{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:14px 16px;transition:box-shadow .15s,transform .15s}.prg .pr-list .pr-row:hover{background:var(--panel);box-shadow:0 4px 18px rgba(0,0,0,.08);transform:translateY(-1px)}.prg .panel:has(.pr-list){background:transparent;border:0;box-shadow:none}.prg .panel:has(.pr-list) .pr-list{padding:0}'+
   '.prg .pr-row b{font-weight:600}.prg .pr-row .tag{border-radius:99px;padding:4px 10px;font-weight:600}.prg .pr-st{margin-top:4px;padding-top:4px;border-top:1px dashed var(--line)}.prg .pr-st ol{font-size:12px}'+
   '@media(max-width:1100px){.prg .prlv-ts{grid-template-columns:repeat(3,minmax(0,1fr))}.prg .prlv-d{grid-template-columns:1fr}}@media(max-width:700px){.prg .prlv-ts{grid-template-columns:repeat(2,minmax(0,1fr))}.prg .pr-seg2 button{font-size:13px;padding:9px 6px}.prg .pr-tools{grid-template-columns:repeat(2,1fr)}}');
+
+F.css('.prg .pr-sm{grid-column:2/-1;display:grid;gap:8px;margin-top:6px;padding:12px 14px;border-radius:14px;background:var(--sunk)}.prg .pr-sm-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.prg .pr-sm-h b{font-size:15px;font-weight:700}.prg .pr-sm-h .muted{font-size:12px}'+
+  '.prg .pr-sm-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}.prg .pr-sm-bar i{height:6px;border-radius:4px;background:var(--line)}.prg .pr-sm-bar i.ok{background:var(--ok)}.prg .pr-sm-bar i.now{background:var(--glow);animation:prSmP 1.6s ease-in-out infinite}.prg .pr-sm-bar i.bad{background:var(--bad)}@keyframes prSmP{50%{opacity:.45}}'+
+  '.prg .pr-sm.done .pr-sm-h b{color:var(--ok)}.prg .pr-sm.bad .pr-sm-h b{color:var(--bad)}.prg .pr-sm-c{display:flex;gap:6px;flex-wrap:wrap}.prg .pr-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--panel-solid,var(--panel));border:1px solid var(--line);font-size:12px;color:var(--ink);text-decoration:none}.prg .pr-chip .pr-i{width:14px;height:14px}'+
+  '.prg .pr-chip.soft{color:var(--ink-2)}.prg .pr-chip.bad{background:var(--bad-soft,rgba(198,40,40,.1));border-color:transparent;color:var(--bad)}.prg .pr-chip.link{color:var(--glow);font-weight:600}.prg .pr-chip.link:hover{border-color:var(--glow)}'+
+  '@media(max-width:700px){.prg .pr-sm{grid-column:1/-1}}');
 })();

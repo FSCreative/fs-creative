@@ -2313,6 +2313,10 @@ function billingOp(pl) {
     o.ignore = (o.ignore && typeof o.ignore === "object") ? o.ignore : {};
     o.ignore[cleanKey(pl.key)] = { amount: Math.round((parseFloat(pl.amount) || 0) * 100) / 100, at: new Date().toISOString(), note: String(pl.note || "").slice(0, 200) };
     if (/^\d{4}-\d{2}-\d{2}$/.test(pl.from || "")) o.ignore[cleanKey(pl.key)].from = pl.from;   // Website: nur dieser Zeitraum (Folgejahre kommen wieder)
+  } else if (op === "noteok" && pl.key) {        // Hinweis gelesen, passt so (z. B. Rabatt auf der Rechnung) – kommt wieder, wenn sich der Hinweis ändert
+    o.ignore = (o.ignore && typeof o.ignore === "object") ? o.ignore : {};
+    const k = cleanKey(pl.key), prev = o.ignore[k] || { amount: 0 };
+    o.ignore[k] = Object.assign({}, prev, { at: prev.at || new Date().toISOString(), ack: true, ackSig: String(pl.sig || "").slice(0, 2000), ackAt: new Date().toISOString() });
   } else if (op === "unignore" && pl.key) {
     if (o.ignore) delete o.ignore[cleanKey(pl.key)];
   } else if (op === "unbill" && pl.key) {
@@ -2681,7 +2685,7 @@ function abgleichBlitz(o) {
     if (c.inc && !c.live.length && !c.weak) {   // Altbuchung: im alten Buchungssystem bezahlt und als Einnahme verbucht – erledigt, keine Rechnung (B12)
       const v = c.inc, l = { id: "", nr: v.nr, date: v.date, gross: v.gross, paid: v.gross, open: 0, state: "bezahlt", label: "Einnahme-Beleg", src: "beleg", voucherId: v.id };
       out.push(Object.assign({}, base, { name: who + (pkg ? " · " + pkg : ""), sub: subOf(" · Einnahme-Beleg " + v.nr), unbilled: 0, invoiced: v.gross, paid: v.gross, open: 0, last: l, invoices: [l], action: null, viaVoucher: true,
-        notes: [{ lvl: "info", text: "Im alten Buchungssystem bezahlt und als Einnahme-Beleg " + v.nr + " vom " + deDate(v.date) + " (" + eu(v.gross) + ") verbucht – keine Rechnung nötig." + (Math.abs(v.gross - amt) >= 0.02 ? " Blitzdings führt " + eu(amt) + " (Extras bzw. Rabatt im Beleg)." : "") }] }));
+        notes: [{ lvl: "ok", text: "Im alten Buchungssystem bezahlt und als Einnahme-Beleg " + v.nr + " vom " + deDate(v.date) + " (" + eu(v.gross) + ") verbucht – keine Rechnung nötig." + (Math.abs(v.gross - amt) >= 0.02 ? " Blitzdings führt " + eu(amt) + " (Extras bzw. Rabatt im Beleg)." : "") }] }));
       return;
     }
     const viaGroup = !c.live.length && !c.weak && groupInv[b.id];
@@ -3074,6 +3078,9 @@ function abgleichBuild(ctx) {
   // Websites: nur der ausgeblendete Zeitraum (mit „from“; ältere Einträge ohne „from“ nur für Zeiträume, die beim Ausblenden schon begonnen hatten) – Folgejahre kommen wieder (WEB-6)
   const ignOk = (x, g) => { const f = x.src === "website" && x.action && x.action.after && x.action.after.billing ? x.action.after.billing.from : ""; return !f || (g.from ? g.from === f : f <= String(g.at || "").slice(0, 10)); };
   items.forEach(x => { const g = ign[x.key]; if (g && x.unbilled > 0.005 && x.unbilled <= (+g.amount || 0) + 0.01 && ignOk(x, g)) { x.ignored = { amount: x.unbilled, at: g.at, note: g.note || "" }; x.unbilled = 0; x.action = null; } });
+  // Ausgeblendet bzw. „Passt so“: Hinweise nicht mehr unter „Zur Prüfung“ (Simon 07.11.2026) – „Passt so“ nur, solange sich der Hinweistext nicht ändert
+  const noteSig = x => (x.notes || []).map(n => n.text).join("|");
+  items.forEach(x => { const g = ign[x.key]; if (!g || !(x.notes || []).length) return; if (x.ignored || (g.ack && g.ackSig === noteSig(x))) x.notes = []; });
   // 6) Offene sevDesk-Rechnungen ohne Zuordnung (alle offenen, auch ältere)
   const unlinked = sevAllInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
   const totals = items.reduce((t, x) => { t.unbilled += x.unbilled || 0; t.open += x.open || 0; t.refund += x.refund || 0; if (x.unbilled > 0.005) t.unbilledCount++; if (x.invoices.some(l => l && l.state === "fehlt")) t.missing++; return t; }, { unbilled: 0, open: 0, refund: 0, unbilledCount: 0, missing: 0 });
