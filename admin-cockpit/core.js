@@ -181,7 +181,7 @@ FSC.renderNav = function(){
   var cur=FSC.current, bad=FSC.connErrors(), act=FSC.actions.conn?"conn":"settings";
   /* Seitenleiste in Gruppen; Seiten ohne Gruppe landen unter „System“ */
   var RL={viw:"VIW Cloud",mkt:"Marketing",post:"Postfach",web:"Websites",plat:"Plattformen",kunden:"Kunden",kal:"Kalender",geld:"Finanzen",print:"Druckshop",legal:"Rechtliches"};
-  var GRP=[["Arbeit",["heute","auftraege","post","kal","chat","viw","mkt"]],["Kunden & Geld",["kunden","geld","print"]],["System",["web","plat","legal","ki"]]];
+  var GRP=[["Arbeit",["heute","auftraege","post","kal","chat","viw","mkt"]],["Kunden & Geld",["kunden","geld","finanzamt","print"]],["System",["web","plat","legal","ki"]]];
   var vis=FSC.views.filter(function(v){return !v.hidden;}), used={};
   var btn=function(v){ var c=navCount(v); return '<button type="button" class="nav-btn" data-go="'+v.id+'" title="'+FSC.esc(v.label)+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.navIcon(v)+'<span class="nl">'+FSC.esc(RL[v.id]||v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; };
   var groups=GRP.map(function(g){ return [g[0],g[1].map(function(id){ return vis.find(function(v){ return v.id===id; }); }).filter(Boolean)]; });
