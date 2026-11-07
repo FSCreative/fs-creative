@@ -541,9 +541,13 @@ function vBlitz(){
       kpi("Diesen Monat bezahlt",'<span class="money">'+eur(c2e(r.thisMonthPaidCents))+'</span>',r.refundedCents?'<span class="money">'+eur(c2e(r.refundedCents))+'</span> erstattet':"seit Monatsanfang")+
     '</div>'+checkSec("Zur Prüfung",bzChecks(bz))+kal+
     sec("Nächste Termine",'<span class="muted">„Als bezahlt“ wird direkt in Blitzdings gespeichert</span>',ups.length?list:'<div class="empty">Keine anstehenden Termine.</div>')+
-    bzPastSec(sevOk)+
+    bzPastSec(sevOk)+bzDocs()+
     sec("Bezahlt vs. offen",'<span class="muted">'+esc(F.D.year)+'</span>',donut([["Bezahlt",c2e(r.paidCents),"ok",'<span class="money">'+eur(c2e(r.paidCents))+'</span>'],["Offen",c2e(r.openCents),"warn",'<span class="money">'+eur(c2e(r.openCents))+'</span>']].concat(r.refundedCents?[["Erstattet",c2e(r.refundedCents),"ink-3",'<span class="money">'+eur(c2e(r.refundedCents))+'</span>']]:[]),num((+bk.paidCount||0)+(+bk.openCount||0))));
 }
+/* Anleitungen zum Download (Simon 07.11.2026): Papierwechsel (geht auch automatisch am Vortag an den Kunden) + DNP-Bedienungsanleitung */
+function bzDocs(){ var b="https://www.blitzdings.co.at/papierwechsel/", d=function(f,t,s2){ return '<a class="pl-doc" href="'+b+f+'" target="_blank" rel="noopener" download><b>'+t+'</b><span class="muted small">'+s2+'</span></a>'; };
+  return sec("Anleitungen",'<span class="muted">zum Ausdrucken oder Weiterschicken</span>','<div class="panel-b"><div class="pl-docs">'+d("papierwechsel-anleitung.pdf","Papierwechsel – Fotodrucker","PDF im Blitzdings-Design · 12 Schritte mit Bildern · geht am Tag vor dem Event automatisch an Kunden mit Drucker")+d("dnp-ds620-ds820-bedienungsanleitung.pdf","DNP DS620 / DS820 – Bedienungsanleitung","Original des Herstellers (Deutsch, 28 Seiten)")+'</div></div>'); }
+F.css('.pl-docs{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.pl-doc{display:grid;gap:3px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--ink);text-decoration:none}.pl-doc:hover{background:var(--hover,var(--sunk))}.pl-doc b{font-weight:600}');
 /* Vergangene Buchungen ohne Rechnung (aus dem Abgleich): Rechnung, bezahlte Rechnung, einer bestehenden zuordnen oder ausblenden */
 function bzPastSec(sevOk){
   var t=F.D.today||"", past=items("blitzdings").filter(function(x){ return (+x.unbilled||0)>0.005&&x.date&&x.date<t; }).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
