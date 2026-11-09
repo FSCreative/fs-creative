@@ -590,6 +590,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await (await fetch(B + "/print/api/order/" + o2.id + "?t=" + o2.token)).json()).order.feedback.source, true); assert.strictEqual(Object.keys(M.payments).length, nPay + 1, "eine Zahlung für den ganzen Warenkorb");
     const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "76.80");
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    { await new Promise(r => setTimeout(r, 300)); const conf = M.mails.filter(x => x.to === em && /^Bestellbestätigung/.test(x.subject || "")); assert.strictEqual(conf.length, 1, "Warenkorb: genau eine Bestellbestätigung – " + conf.map(x => x.subject).join(" | ")); assert.ok(/\(\+1\)/.test(conf[0].subject), conf[0].subject); }
     for (const o of r.j.orders) { const st = await (await fetch(B + "/print/api/order/" + o.id + "?t=" + o.token)).json(); assert.notStrictEqual(st.order.status, "pending_payment", o.id); assert.strictEqual(st.order.groupSize, 2); }
     const me2 = await (await fetch(B + "/print/api/account/me", { headers: { cookie: ck } })).json(); assert.strictEqual(me2.orders.length, 2);
     assert.strictEqual(me2.bonus.company, false); assert.strictEqual(me2.bonus.revenue, 64);

@@ -2484,7 +2484,29 @@ module.exports = function (D) {
     if (D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
       detail: o.product.title + " · " + o.copies + " Stk. · " + (o.payment.method === "invoice" ? "Rechnung (Freigabe nötig)" : "bezahlt") + " · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
     if (D.push) D.push("lead", { title: "Druckauftrag: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: o.nr + " · " + o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck – bitte persönlich prüfen" : o.check === "graphic" ? " · Grafikaufbereitung – Grafik druckfertig machen und zur Freigabe senden" : "") + "\n" + (o.payment.method === "invoice" ? "Auf Rechnung – Freigabe nötig" : "Bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
-    if (!o.mails.confirm) {
+    if (!o.mails.confirm && o.groupId && (o.groupSize || 1) > 1) {
+      // Warenkorb mit mehreren Positionen (Simon 09.11.2026): EINE Bestätigung mit allen Positionen – verschickt, sobald die letzte Position bezahlt bzw. angelegt ist
+      const sib = (await store.listOrders().catch(() => [])).filter(x => x && x.groupId === o.groupId).map(x => x.id === o.id ? o : x).sort((a, b) => String(a.nr).localeCompare(String(b.nr)));
+      const sent = sib.find(x => x.id !== o.id && x.mails && x.mails.confirm);
+      if (sent) o.mails.confirm = sent.mails.confirm;
+      else if (sib.length >= (o.groupSize || 1) && sib.every(x => x.id === o.id || ["pending_payment", "payment_failed"].indexOf(x.status) < 0)) {
+        const c = o.customer, sum = r2(sib.reduce((a, x) => a + (+x.price.gross || 0), 0)), net = r2(sib.reduce((a, x) => a + (+x.price.net || 0), 0));
+        const rows = [].concat.apply([], sib.map((x, k) => [["Position " + (k + 1) + " · " + x.nr, x.product.title + " · " + x.copies.toLocaleString("de-AT") + " Stk. · " + eur(x.price.gross)],
+          ["Ausführung", (x.labels || []).filter(l => l && l[1] && !/^(ohne|nein|keine?\b.*|none|unbedruckt)$/i.test(String(l[1]).trim()) && !/druckverfahren/i.test(l[0])).slice(0, 5).map(l => l[1]).join(" · ")]]))
+          .concat([["Lieferadresse", [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, COUNTRIES[c.country]].filter(Boolean).join(", ")],
+            [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(sum) + (o.price.rate ? " (netto " + eur(net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
+        const ok = await mail(c.email, "Bestellbestätigung " + sib[0].nr + " (+" + (sib.length - 1) + ") · FS Creative Druck", "Danke für deine Bestellung!",
+          ["Hallo " + c.firstName + ",", "wir haben deine Bestellung mit " + sib.length + " Positionen erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnungen bekommst du, sobald die Aufträge in Produktion gehen.") +
+            (sib.some(x => x.check === "graphic") ? " Wo du Grafikaufbereitung gewählt hast, schicken wir dir die druckfertige Datei vor dem Druck zur Freigabe." : sib.some(x => x.check === "pro" || x.check === "review") ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : " Du hast deine Druckdaten direkt freigegeben – wir geben die Aufträge " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion."),
+            "Jede Position wird einzeln produziert und hat eine eigene Bestellnummer – deshalb können die Lieferungen auch an verschiedenen Tagen ankommen."],
+          rows.concat(await acctRows(o)), ["Den Versand bestätigen wir dir je Position mit Sendungsverfolgung per E-Mail."].concat(o.customerId ? [] : [ACCT_HINT], [
+            "Es gelten unsere AGB für den Druckshop (Stand " + deDate(AGB_VERSION) + "), die du bei der Bestellung akzeptiert hast: " + cfg().publicUrl + "/print/agb",
+            "Hinweis: Da die Drucksachen nach deinen Vorgaben angefertigt werden, besteht kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG).",
+            "Bei Fragen antworte einfach auf diese Mail."]), D.notifyTo, 0) ? nowIso() : null;
+        o.mails.confirm = ok;
+        if (ok) for (const x of sib) if (x.id !== o.id) { x.mails = x.mails || {}; x.mails.confirm = ok; hist(x, "Bestellbestätigung gemeinsam mit " + o.nr + " verschickt"); await store.putOrder(x); }
+      }
+    } else if (!o.mails.confirm) {
       o.mails.confirm = await mail(o.customer.email, "Bestellbestätigung " + o.nr + " · FS Creative Druck", "Danke für deine Bestellung!",
         ["Hallo " + o.customer.firstName + ",", "wir haben deine Bestellung erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung bekommst du, sobald der Auftrag in Produktion geht.") + (o.check === "review" ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : o.check === "graphic" ? " Wir machen deine Grafik jetzt druckfertig und schicken sie dir vor dem Druck zur Freigabe – gedruckt wird erst, wenn du sie freigegeben hast." : o.check === "self" ? " Du hast deine Druckdaten direkt freigegeben – wir geben den Auftrag " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion." : " Du hast den Profi-Datencheck gewählt: Wir prüfen deine Druckdaten persönlich und melden uns bei Fragen, bevor gedruckt wird.")],
         orderRows(o).concat(await acctRows(o)), ["Den Versand bestätigen wir dir mit Sendungsverfolgung per E-Mail."].concat(o.customerId ? [] : [ACCT_HINT], [
