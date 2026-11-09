@@ -193,6 +193,9 @@ const NICE_TIERS = [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 100
 const URGENCY_DE = { standard: "Standard", quick: "Schnell", urgent: "Express" };
 const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420], a4: [210, 297], a5: [148, 210], a6: [105, 148], a7: [74, 105], dl: [99, 210], din_lang: [99, 210] };
 // Status im Shop (nicht Print.com): Reihenfolge = Ablauf
+// Beschnitt-Hinweis entschärfen, wenn die Vorschau rundum einen weißen Rand gefunden hat (kein Motiv bis zum Rand, Simon 09.11.2026)
+const BLEED_RX = /keinen Beschnitt|ohne Beschnitt/;
+function bleedOkChecks(l) { l = Array.isArray(l) ? l : []; return l.some(c => BLEED_RX.test(c.text || "")) ? l.filter(c => !BLEED_RX.test(c.text || "")).concat([{ level: "ok", text: "Kein Beschnitt nötig – laut Vorschau rundum weißer Rand." }]) : l; }
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
   ordered: "Bei Print.com bestellt", in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", rejected: "Abgelehnt", problem: "Problem bei Print.com" };
 const REVIEW = { paid: 1, invoice_requested: 1 };
@@ -1860,6 +1863,18 @@ module.exports = function (D) {
       { product: m.product, sel: m.sel, size: m.size, bleed: m.bleed, sides: m.sides, pages, multi: m.multi }, all,
       { original: "pdf", pageChecks, generalChecks: general, pageNames, front: m.front || m.id });
   }
+  // Seiten umsortieren (Drag & Drop im Shop, Simon 09.11.2026): order = neue Reihenfolge der bisherigen Seiten (0-basiert, vollständige Permutation)
+  async function reorderPages(m, order) {
+    const pages = +m.pages || 1; if (!Array.isArray(order) || order.length !== pages || order.some((v, i) => order.indexOf(v) !== i || !(v >= 0 && v < pages))) throw bad("Ungültige Reihenfolge");
+    if (order.every((v, i) => v === i)) return m;
+    const cur = await store.fileData(m.id); if (!cur) throw bad("Datei nicht mehr vorhanden – bitte neu hochladen");
+    const { PDFDocument } = require("pdf-lib"), out = await PDFDocument.create(), cd = await PDFDocument.load(cur), cp = await out.copyPages(cd, order.filter(i => i < cd.getPageCount()));
+    cp.forEach(pg => out.addPage(pg)); const pdf = Buffer.from(await out.save({ useObjectStreams: false }));
+    const pc0 = Array.isArray(m.pageChecks) && m.pageChecks.length === pages ? m.pageChecks : Array.from({ length: pages }, () => []);
+    const general = Array.isArray(m.pageChecks) ? (m.generalChecks || []) : (m.checks || []).filter(c => !PAGE_GENERIC.test(c.text || ""));
+    const nm0 = Array.isArray(m.pageNames) && m.pageNames.length === pages ? m.pageNames : Array.from({ length: pages }, () => m.name || "");
+    return savePages(m, pdf, pages, order.map(i => pc0[i]), general, order.map(i => nm0[i]), { level: "ok", text: "Seiten neu angeordnet (" + order.map(i => i + 1).join(", ") + ")." });
+  }
   async function addBackSide(base, buf, name) {
     const front = await store.fileData(base.id); if (!front) throw bad("Vorderseite nicht mehr vorhanden – bitte neu hochladen");
     const l0 = pageLabel(base, 0), l1 = pageLabel(base, 1), r = await pageFromFile(buf, name, base, l1), pdf = await rebuildPages(front, 1, 1, r.pdf);
@@ -2361,6 +2376,7 @@ module.exports = function (D) {
       const o = x.o; o.check = check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
       if (input.__origin) o.origin = Object.assign({}, input.__origin);
       if (Array.isArray(x.clientWarn) && x.clientWarn.length) { o.clientChecks = x.clientWarn.slice(0, 10).map(t => clip(t, 300)); }
+      if (x.bleedOk === true) { o.bleedOk = true; o.fileChecks = bleedOkChecks(o.fileChecks); }   // Vorschau: Motiv endet vor dem Rand → Beschnitt-Hinweis entfällt
       hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "graphic" ? "Datencheck mit Grafikaufbereitung gewünscht – Grafik druckfertig machen und dem Kunden zur Freigabe senden" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
       x.fm.orderId = o.id; await store.putFile(x.fm);
@@ -4672,6 +4688,13 @@ module.exports = function (D) {
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "seite")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
         try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await replacePage(fm, pg - 1, buf, sb ? sb.name : name); } finally { rel(); }
+        return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
+      if (p === "/print/api/file/reorder" && req.method === "POST") {   // Seiten per Drag & Drop umsortieren: { fileId, token, order: [1,0,2,…] }
+        if (limited("upload", ip, 300, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const b = await readJson(req, 4000), id = String(b.fileId || ""); if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
+        const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !((+fm.pages || 1) >= 2)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const rel = await pdfSlot(); let meta; try { meta = await reorderPages(fm, (b.order || []).map(Number)); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/fit" && req.method === "POST") {   // Anpassen: einpassen/füllen, drehen, skalieren, verschieben – immer vom Original aus (neue Datei)

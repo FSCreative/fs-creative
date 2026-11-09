@@ -69,6 +69,14 @@ function kpis(live){ var o=(ST&&ST.orders)||[], mk=new Date().toISOString().slic
   return '<div class="pr-kpis">'+k("prf:review","Zur Prüfung",String(ST.review||0),ST.review?"wartet auf dich":"alles erledigt",ST.review?"warn":"")+k("prf:active","In Arbeit",String(act),"bei Print.com / unterwegs")+
     k("","Umsatz "+new Date().toLocaleDateString("de-AT",{month:"long"}),eur(g),m.length+(m.length===1?" Auftrag":" Aufträge"))+k("prf:marge","Marge "+yk,eur(mg),yl.length+" Aufträge · "+(yg?Math.round(mg/yg*100)+" % vom Umsatz":"–"))+
     k("prf:settings","Shop",live?"Live":"Gesperrt",live?"nimmt Bestellungen an":"nur Vorschau für dich",live?"ok":"warn")+'</div>'; }
+/* Warenkorb = ein Auftrag (Simon 09.11.2026): Positionen derselben Bestellung (groupId) als eine Karte mit Kopf (Kunde, Anzahl, Summe, Zahlung) */
+function grouped(L){ var seen={}, out=[];
+  L.forEach(function(o){ if(!o.groupId||(o.groupSize||1)<2){ out.push(row(o)); return; } if(seen[o.groupId]) return; seen[o.groupId]=1;
+    var g=L.filter(function(x){ return x.groupId===o.groupId; }); if(g.length<2){ out.push(row(o)); return; }
+    var sum=g.reduce(function(a,x){ return a+(+x.gross||0); },0), mg=g.reduce(function(a,x){ return a+(+x.margin||0); },0), sts={}; g.forEach(function(x){ sts[x.statusText]=x.status; });
+    out.push('<div class="pr-cart"><div class="pr-cart-h">'+av(o.customer)+'<span><b>'+esc(o.customer)+'</b><span class="muted">Warenkorb · '+g.length+' Positionen'+(g.length<(o.groupSize||g.length)?' (von '+o.groupSize+')':'')+' · '+de(String(o.createdAt).slice(0,10))+' · '+(o.payment==="invoice"?"Rechnung":"Mollie ("+esc(o.paymentStatus)+")")+'</span></span><span class="num" style="text-align:right"><b>'+eur(sum)+'</b><span class="muted">Marge '+eur(mg)+'</span></span>'+
+      Object.keys(sts).map(function(t){ return '<span class="tag '+(TAG[sts[t]]||"grey")+'">'+esc(t)+'</span>'; }).join("")+'</div><div class="pr-cart-b">'+g.map(row).join("")+'</div></div>'); });
+  return out.join(""); }
 function row(o){ return '<button type="button" class="pr-row" data-act="prord:'+esc(o.id)+'" title="'+esc([o.nr,o.customer,o.product,o.copies+" Stk."].filter(Boolean).join(" · "))+'">'+av(o.customer)+'<span><b>'+esc(o.nr)+' · '+esc(o.customer)+'</b><span class="muted">'+esc(o.product)+' · '+o.copies+' Stk. · '+de(String(o.createdAt).slice(0,10))+(o.check==="pro"?' · <span class="'+(o.status==="paid"||o.status==="invoice_requested"?"bad-t":"muted")+'">'+ico("alertCircle")+'Profi-Datencheck'+(o.status==="paid"||o.status==="invoice_requested"?' – du prüfst':'')+'</span>':'')+(o.groupSize>1?' · Warenkorb ('+o.groupSize+' Pos.)':'')+(o.warn?' · <span class="warn-t">'+ico("alertCircle")+'Datei-Hinweise</span>':'')+(o.invoice&&o.invoice.needsStorno?' · <span class="bad-t">'+ico("alertCircle")+'Rechnung stornieren</span>':'')+'</span></span>'+
   '<span class="pr-c2 muted">'+(o.payment==="invoice"?"Rechnung":"Mollie ("+esc(o.paymentStatus)+")")+(o.pcOrder?' · Print.com '+esc(o.pcOrder):'')+(o.origin?'<br>über '+esc(o.origin.channel)+(o.city?' · '+esc(o.city):''):'')+'</span><span class="num" style="text-align:right"><b>'+eur(o.gross)+'</b><span class="muted">Marge '+eur(o.margin)+'</span></span><span class="tag '+(TAG[o.status]||"grey")+'">'+esc(o.statusText)+'</span>'+(FILTER==="active"&&o.progress?stepper(o,o.progress):'')+'</button>'; }
 function render(){
@@ -97,7 +105,7 @@ function render(){
   if(FILTER==="marge") return head+stat+tabs+mgView();
   if(FILTER==="feedback") return head+stat+tabs+fbView();
   var L=list();
-  return head+stat+tabs+'<section class="panel">'+(L.length?'<div class="pr-list">'+L.map(row).join("")+'</div>':'<div class="empty">'+(FILTER==="review"?"Nichts zu prüfen.":"Keine Aufträge.")+'</div>')+'</section>';
+  return head+stat+tabs+'<section class="panel">'+(L.length?'<div class="pr-list">'+grouped(L)+'</div>':'<div class="empty">'+(FILTER==="review"?"Nichts zu prüfen.":"Keine Aufträge.")+'</div>')+'</section>';
 }
 function settings(){
   var s=ST.settings||{}, cat=ST.catalog, d=ST.defaults||{};
@@ -614,4 +622,9 @@ F.css('.prg .pr-sm{grid-column:2/-1;display:grid;gap:8px;margin-top:6px;padding:
   '.prg .pr-sm.done .pr-sm-h b{color:var(--ok)}.prg .pr-sm.bad .pr-sm-h b{color:var(--bad)}.prg .pr-sm-c{display:flex;gap:6px;flex-wrap:wrap}.prg .pr-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--panel-solid,var(--panel));border:1px solid var(--line);font-size:12px;color:var(--ink);text-decoration:none}.prg .pr-chip .pr-i{width:14px;height:14px}'+
   '.prg .pr-chip.soft{color:var(--ink-2)}.prg .pr-chip.bad{background:var(--bad-soft,rgba(198,40,40,.1));border-color:transparent;color:var(--bad)}.prg .pr-chip.link{color:var(--glow);font-weight:600}.prg .pr-chip.link:hover{border-color:var(--glow)}'+
   '@media(max-width:700px){.prg .pr-sm{grid-column:1/-1}}');
+
+F.css('.prg .pr-cart{border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:6px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 6px 18px rgba(0,0,0,.05)}.prg .pr-cart-h{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:10px 12px 12px}.prg .pr-cart-h>span:nth-child(2){display:grid;min-width:0}.prg .pr-cart-h>span.num{display:grid}'+
+  '.prg .pr-cart-b{display:grid;gap:6px}.prg .pr-cart-b .pr-row{box-shadow:none;border-radius:14px;background:var(--panel-solid,var(--panel))}.prg .pr-cart-b .pr-row>.k-av{visibility:hidden}'+
+  '@media(max-width:700px){.prg .pr-cart-h{grid-template-columns:auto minmax(0,1fr) auto}.prg .pr-cart-h .tag{grid-column:2/-1}}');
 })();
+
