@@ -4594,7 +4594,10 @@ module.exports = function (D) {
         if (!m[2] && req.method === "GET") {
           if (u.searchParams.get("refresh") === "1" && o.printcom && o.printcom.orderNumber && ["ordered", "in_production", "shipped", "problem"].indexOf(o.status) > -1
             && (!o.printcom.checkedAt || Date.now() - Date.parse(o.printcom.checkedAt) > 15 * 60e3) && !limited("track", ip, 20, 3600e3)) { try { await pollOrder(o); } catch (e) { log("Tracking", o.nr, e.message); } }
-          return J(res, 200, { ok: true, order: orderPublic(o) });
+          // Warenkorb (Simon 09.11.2026): alle Positionen derselben Bestellung mitliefern – die Bestätigungsseite zeigte nur eine
+          let group = null; if (o.groupId && (o.groupSize || 1) > 1) { const all = await store.listOrders().catch(() => []);
+            group = all.filter(x => x && x.groupId === o.groupId).sort((a, b) => String(a.nr).localeCompare(String(b.nr))).map(x => ({ id: x.id, nr: x.nr, product: x.product && x.product.title || "", copies: x.copies, gross: x.price && x.price.gross, net: x.price && x.price.net, status: x.status, statusText: STATUS_DE[x.status] || x.status, token: sig("order", x.id), current: x.id === o.id })); }
+          return J(res, 200, { ok: true, order: Object.assign(orderPublic(o), group && group.length > 1 ? { group } : {}) });
         }
         if (m[2] && req.method === "POST") {
           if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });

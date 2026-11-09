@@ -3020,6 +3020,10 @@
     var fresh = st === "paid" || st === "invoice_requested" || ((st === "ordered" || st === "in_production") && now - Date.parse(o.createdAt || "") < 2 * 3600e3);
     var contact = 'Fragen? Schreib uns an <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a> oder ruf an: ' + nw('<a href="tel:+436641430620">+43 664 1430620</a>') + ".";
     var sub = '<p class="ps-osub"><span>Bestellnummer <b>' + F.esc(o.nr) + "</b></span><span>" + F.esc(o.product) + " · " + nw(F.stk(o.copies)) + " · " + nw(o.business ? F.eur(o.net) + " netto" : F.eur(o.gross)) + "</span></p>";
+    // Warenkorb mit mehreren Positionen: alle zeigen (Simon 09.11.2026), jede mit eigenem Status-Link
+    if (o.group && o.group.length > 1) { var gs = o.group.reduce(function (a, x) { return a + (+(o.business ? x.net : x.gross) || 0); }, 0);
+      sub = '<div class="ps-ogrp"><p class="ps-osub"><span>Deine Bestellung · <b>' + o.group.length + ' Positionen</b></span></p><ul>' + o.group.map(function (x) { return '<li' + (x.current ? ' class="on"' : "") + '><a href="/print?bestellung=' + encodeURIComponent(x.id) + "&t=" + encodeURIComponent(x.token) + '"><span><b>' + F.esc(x.product) + "</b> · " + nw(F.stk(x.copies)) + '<small>' + F.esc(x.nr) + " · " + F.esc(x.statusText || "") + "</small></span><b>" + nw(F.eur(o.business ? x.net : x.gross)) + "</b></a></li>"; }).join("") +
+        '</ul><p class="ps-ogrp-t"><span>Gesamt' + (o.business ? " netto" : "") + "</span><b>" + F.eur(gs) + "</b></p></div>"; }
     var r = { sub: sub };
     if (st === "pending_payment" || st === "payment_failed") { r.key = "pay"; r.icon = "⚠️"; r.title = "Zahlung nicht abgeschlossen"; r.html = p("Die Bestellung " + nw(F.esc(o.nr)) + " ist gespeichert, aber noch nicht bezahlt."); }
     else if (st === "rejected") { r.key = "rejected"; r.icon = "✋"; r.title = "Bestellung storniert";

@@ -2337,3 +2337,8 @@ html.light .ps-co-sec{box-shadow:0 1px 2px rgba(18,20,28,.04),0 8px 24px rgba(18
 .ps-pgc-m{width:28px;height:28px;border-radius:50%;border:1px solid var(--ps-line);background:none;color:inherit;font-size:16px;line-height:1;cursor:pointer}.ps-pgc-m:disabled{opacity:.25;cursor:default}
 .ps-pgc-new{border-style:dashed;cursor:pointer}.ps-pgc-new input{position:absolute;inset:0;opacity:0;cursor:pointer}.ps-pgc-new:hover .ps-pgc-th>i{opacity:.9}
 @media(hover:hover){.ps-pgc-m{opacity:.6}.ps-pgc:hover .ps-pgc-m:not(:disabled){opacity:1}}
+
+/* Bestätigung: alle Positionen eines Warenkorbs (09.11.2026) */
+.ps-ogrp{max-width:520px;margin:6px auto 14px;text-align:left}.ps-ogrp .ps-osub{justify-content:center}
+.ps-ogrp ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}.ps-ogrp li a{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--ps-line);border-radius:12px;color:inherit;text-decoration:none}
+.ps-ogrp li.on a{border-color:var(--ps-focus)}.ps-ogrp li a>span{display:grid}.ps-ogrp li small{opacity:.65;font-size:12px}.ps-ogrp-t{display:flex;justify-content:space-between;margin:10px 4px 0;font-size:15px}.ps-ogrp-t b{font-size:17px}
