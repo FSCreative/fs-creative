@@ -306,7 +306,7 @@ module.exports = function (D) {
   const okId = id => /^[A-Za-z0-9_-]{6,60}$/.test(String(id || ""));
   // Aufträge im Cockpit (server.js): jede gespeicherte Bestellung meldet ihren Stand – daraus wird die Aufgabe im Auftrag „Druckshop“
   function taskInfo(o) { const c = o.customer || {}, p = o.price || {};
-    return { id: o.id, nr: o.nr, status: o.status, statusText: STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
+    return { id: o.id, nr: o.nr, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
       gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
       invoiceId: (o.invoice && o.invoice.id && !o.invoice.deleted && String(o.invoice.id)) || "", invoiceNr: (o.invoice && !o.invoice.deleted && o.invoice.nr) || "", email: c.email || "" }; }
   function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
@@ -4042,6 +4042,9 @@ module.exports = function (D) {
       const age = now - Date.parse(o.createdAt || 0); if (!forceId && (age < 2 * 3600e3 || age > 60 * 3600e3)) continue; if (age > 72 * 3600e3) continue;
       const key = o.groupId || o.id; if (done[key]) continue; done[key] = 1;
       const grp = o.groupId ? open.filter(x => x.groupId === o.groupId) : [o], em = String(o.customer.email).toLowerCase();
+      // Banküberweisung über Mollie (Simon 09.11.2026, Lorant hatte überwiesen und bekam trotzdem die Erinnerung): Zahlung bleibt „offen“, bis Mollie das Geld zuordnet (1–3 Werktage)
+      try { const pay = o.payment.mollieId ? await mollie("GET", "/payments/" + encodeURIComponent(o.payment.mollieId)) : null;
+        if (pay && pay.method === "banktransfer" && pay.status === "open") { for (const x of grp) { x.payment.transfer = true; x.payment.methodDetail = "banktransfer"; x.mails = x.mails || {}; x.mails.payRemind = "ueberweisung"; hist(x, "Kunde zahlt per Banküberweisung über Mollie – keine Erinnerung, Zahlung kommt in 1–3 Werktagen"); await store.putOrder(x); } continue; } } catch (e) {}
       if (all.some(x => x && x.customer && String(x.customer.email || "").toLowerCase() === em && Date.parse(x.createdAt || 0) > Date.parse(o.createdAt) && x.payment && x.payment.status === "paid")) { for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = "skip"; await store.putOrder(x); } continue; }
       const sum = grp.reduce((a, x) => a + (+x.price.gross || 0), 0), link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id));
       const rows = [].concat.apply([], grp.map(x => [[x.product.title, x.copies.toLocaleString("de-AT") + " Stk. · " + eur(x.price.gross)], ["Ausführung", (x.labels || []).filter(l => l && l[1] && !/druckverfahren/i.test(l[0])).slice(0, 5).map(l => l[1]).join(" · ")]]))
@@ -4753,7 +4756,7 @@ module.exports = function (D) {
 
   // ───────────────────────── HTTP: Cockpit (/admin/api/print/…) ─────────────────────────
   function orderSummary(o) {
-    return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
+    return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: o.customer.zip || "", city: o.customer.city || "", region: regionOf(o.customer.country, o.customer.zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
