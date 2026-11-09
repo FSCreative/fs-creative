@@ -1095,6 +1095,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.ok(r2.history.some(h => /bitte unter Finanzen stornieren/.test(h.what)));
       assert.strictEqual(PS._test.orderSummary(r2).invoice.needsStorno, true);
       const idx2 = await PS.invoiceIndex(); assert.ok(!idx2["8804"], "gelöschter Entwurf nicht mehr im Index"); assert.strictEqual(idx2["8805"].draft, false);
+      // Warenkorb mit 2 Positionen: EINE Sammelrechnung – gesendet erst, wenn beide Positionen bei Print.com bestellt sind, sentAt an beiden
+      status = "100"; const gi = { id: "8810", group: "GUNIT1", orders: ["D-UNIT-11", "D-UNIT-12"] };
+      mk("PUNIT11", gi, { groupId: "GUNIT1", groupSize: 2 }); mk("PUNIT12", gi, { groupId: "GUNIT1", groupSize: 2 });
+      const s0 = sent.length, g1 = await PS.placeOrder("PUNIT11", "Test");
+      assert.strictEqual(sent.length, s0, "erste Position bestellt → Sammelrechnung noch nicht senden"); assert.ok(!g1.invoice.sentAt);
+      assert.ok(g1.history.some(h => /sobald alle Positionen bestellt sind \(offen: D-UNIT-12\)/.test(h.what)), JSON.stringify(g1.history));
+      const g2 = await PS.placeOrder("PUNIT12", "Test");
+      assert.strictEqual(sent.length, s0 + 1, "genau eine Rechnungsmail für den Warenkorb"); assert.strictEqual(sent[s0][0], "8810"); assert.ok(/D-UNIT-11 \(\+1\)/.test(sent[s0][2]), sent[s0][2]);
+      assert.ok(g2.invoice.sentAt); assert.ok(JSON.parse(fs.readFileSync(path.join(od, "PUNIT11.json"), "utf8")).invoice.sentAt, "sentAt auch an der ersten Position");
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
   });
   // ── 4) Bestellstatus im Kundenbereich: Schrittdaten, Bewertungsmail nach der Zustellung, Texte der Bestellseite ──

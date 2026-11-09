@@ -2443,7 +2443,7 @@ module.exports = function (D) {
   }
   // Bestellung ist verbindlich (bezahlt bzw. Rechnung gewählt): Rechnungsentwurf, Vorschlag, Push, Mails – dann ggf. automatisch senden
   async function submitted(o) {
-    await makeInvoice(o);
+    if (!isGroup(o)) await makeInvoice(o);
     await store.putOrder(o);
     return submittedRest(o);
   }
@@ -2463,27 +2463,72 @@ module.exports = function (D) {
     return p;
   }
   // Rechnungs-ENTWURF in der eigenen Buchhaltung (fertiggestellt und gesendet wird erst beim Bestellen bei Print.com)
+  // Rechnungspositionen einer Bestellung (bei Sammelrechnung mit Bestellnummer vorne)
+  function invItems(o, withNr) {
+    const c = o.customer, mot = Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs : null;
+    const posName = (withNr ? o.nr + " · " : "") + o.product.title + " – " + o.copies + " Stück" + (mot ? " (" + mot.length + " Motive)" : "");
+    const posText = (mot ? ["Motive: " + mot.map(m => "Motiv " + m.motif + " × " + m.copies + " Stk.").join(", ")] : []).concat(o.labels.map(l => l[0] + ": " + l[1])).concat(["Lieferzeit: " + (URGENCY_DE[o.urgency] || o.urgency), "inkl. Versand nach " + COUNTRIES[c.country]]).join("\n");
+    return [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []);
+  }
+  function invHead(o, nrs) {
+    const c = o.customer, name = c.type === "company" ? c.company : c.firstName + " " + c.lastName, many = nrs.length > 1;
+    return { contactName: name, email: c.email, uid: c.uidValid ? c.uid : "", street: c.street, zip: c.zip, city: c.city, country: c.country.toLowerCase(), contactPerson: c.type === "company" ? c.firstName + " " + c.lastName : "",
+      header: (many ? "Rechnung Druckbestellung " : "Rechnung Druckauftrag ") + nrs[0] + (many ? " (+" + (nrs.length - 1) + ")" : ""), reference: nrs[0],
+      headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (" + (many ? "Bestellungen " + nrs.join(", ") : "Bestellung " + nrs[0]) + ")." + (o.payment.method === "mollie" && o.payment.mollieId ? " Bezahlt online – Mollie " + o.payment.mollieId + "." : ""),
+      footText: (o.price.taxNote ? o.price.taxNote + "\n" : "") + (o.payment.method === "mollie" ? "Der Betrag wurde bereits online bezahlt." : "Zahlbar innerhalb von 14 Tagen ohne Abzug."),
+      timeToPay: o.payment.method === "mollie" ? 0 : 14, taxRule: o.price.taxCase === "igl" ? cfg().taxRuleIgl : "" };
+  }
+  // Rechnungs-ENTWURF in der eigenen Buchhaltung (fertiggestellt und gesendet wird erst beim Bestellen bei Print.com)
   async function makeInvoice(o) {
     if (!o.invoice.id && D.createInvoice) {
       try {
-        const c = o.customer, name = c.type === "company" ? c.company : c.firstName + " " + c.lastName;
-        const mot = Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs : null;
-        const posName = o.product.title + " – " + o.copies + " Stück" + (mot ? " (" + mot.length + " Motive)" : "");
-        const posText = (mot ? ["Motive: " + mot.map(m => "Motiv " + m.motif + " × " + m.copies + " Stk.").join(", ")] : []).concat(o.labels.map(l => l[0] + ": " + l[1])).concat(["Lieferzeit: " + (URGENCY_DE[o.urgency] || o.urgency), "inkl. Versand nach " + COUNTRIES[c.country]]).join("\n");
-        const r = await D.createInvoice({ contactName: name, email: c.email, uid: c.uidValid ? c.uid : "", street: c.street, zip: c.zip, city: c.city, country: c.country.toLowerCase(), contactPerson: c.type === "company" ? c.firstName + " " + c.lastName : "",
-          header: "Rechnung Druckauftrag " + o.nr, reference: o.nr,
-          headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung " + o.nr + ")." + (o.payment.method === "mollie" && o.payment.mollieId ? " Bezahlt online – Mollie " + o.payment.mollieId + "." : ""),
-          footText: (o.price.taxNote ? o.price.taxNote + "\n" : "") + (o.payment.method === "mollie" ? "Der Betrag wurde bereits online bezahlt." : "Zahlbar innerhalb von 14 Tagen ohne Abzug."),
-          timeToPay: o.payment.method === "mollie" ? 0 : 14, taxRule: o.price.taxCase === "igl" ? cfg().taxRuleIgl : "",
-          items: [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []) });
+        const r = await D.createInvoice(Object.assign(invHead(o, [o.nr]), { items: invItems(o, false) }));
         o.invoice = { id: r.id, nr: r.nr || "", draft: true, at: nowIso() }; hist(o, "Rechnungsentwurf angelegt" + (r.nr ? " " + r.nr : ""));
       } catch (e) { o.invoice = { error: clip(e.message, 300) }; hist(o, "Rechnungsentwurf fehlgeschlagen: " + e.message); log("Rechnungsentwurf", o.nr, e.message); }
     }
+  }
+  // Warenkorb mit mehreren Positionen (Simon 09.11.2026): EINE Sammelrechnung über alle Positionen statt einer Rechnung je Position
+  const isGroup = o => !!(o && o.groupId && (o.groupSize || 1) > 1);
+  const PLACED = ["ordered", "in_production", "shipped", "delivered"];
+  async function siblingsOf(o) { return (await store.listOrders().catch(() => [])).filter(x => x && x.groupId === o.groupId).map(x => x.id === o.id ? o : x).sort((a, b) => String(a.nr).localeCompare(String(b.nr))); }
+  const groupReady = (o, sib) => sib.length >= (o.groupSize || 1) && sib.every(x => x.id === o.id || ["pending_payment", "payment_failed"].indexOf(x.status) < 0);
+  // legt die Sammelrechnung (Entwurf) an und hängt sie an alle Positionen; o wird vom Aufrufer gespeichert, die anderen hier
+  async function makeGroupInvoice(o, sib) {
+    if (!D.createInvoice) return;
+    const live = sib.filter(x => x.status !== "rejected");
+    if (!live.length) return;
+    const ex = live.find(x => x.invoice && x.invoice.id && !x.invoice.deleted);
+    if (ex) { if (o.status !== "rejected" && !(o.invoice && o.invoice.id)) o.invoice = Object.assign({}, ex.invoice); return; }   // schon angelegt (z. B. von einer anderen Position) → übernehmen
+    const head = live.find(x => x.id === o.id) || live[0], nrs = live.map(x => x.nr);
+    try {
+      const r = await D.createInvoice(Object.assign(invHead(head, nrs), { items: [].concat.apply([], live.map(x => invItems(x, true))) }));
+      for (const x of live) { x.invoice = { id: r.id, nr: r.nr || "", draft: true, at: nowIso(), group: o.groupId, orders: nrs }; hist(x, "Sammelrechnung (Entwurf) für den Warenkorb angelegt" + (r.nr ? " " + r.nr : "") + " · " + nrs.join(", ")); if (x.id !== o.id) await store.putOrder(x); }
+    } catch (e) { o.invoice = { error: clip(e.message, 300) }; hist(o, "Sammelrechnung fehlgeschlagen: " + e.message); log("Sammelrechnung", o.nr, e.message); }
+  }
+  // Sammelrechnung senden, sobald alle (nicht abgelehnten) Positionen bei Print.com bestellt sind
+  async function sendGroupInvoice(o) {
+    const sib = await siblingsOf(o), live = sib.filter(x => x.status !== "rejected" && x.invoice && String(x.invoice.id) === String(o.invoice.id));
+    const open = live.filter(x => PLACED.indexOf(x.status) < 0);
+    if (open.length) { hist(o, "Sammelrechnung wird gesendet, sobald alle Positionen bestellt sind (offen: " + open.map(x => x.nr).join(", ") + ")"); await store.putOrder(o); return; }
+    const done = (patch, what) => Promise.all(live.map(x => { Object.assign(x.invoice, patch); hist(x, what); return store.putOrder(x); }));
+    const nrs = live.map(x => x.nr), st = await invoiceStatusOf(o.invoice.id);
+    let nr = o.invoice.nr; if (!nr && D.invoiceNr) { try { nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+    if (INV_SENT.indexOf(st) > -1) return done({ sentAt: nowIso(), draft: false, sentBefore: true, nr }, "Sammelrechnung " + (nr ? nr + " " : "") + "war bereits versendet – nicht erneut gesendet");
+    try {
+      await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + nrs[0] + (nrs.length > 1 ? " (+" + (nrs.length - 1) + ")" : "") + " · FS Creative",
+        "Hallo " + o.customer.firstName + ",\n\ndeine Druckaufträge " + nrs.join(", ") + " sind jetzt in Produktion. Anbei die Rechnung über alle Positionen" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
+      if (!nr && D.invoiceNr) { try { nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+      await done({ sentAt: nowIso(), draft: false, nr }, "Sammelrechnung " + (nr ? nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
+    } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Sammelrechnung senden fehlgeschlagen: " + e.message); await store.putOrder(o); }
   }
   async function submittedRest(o) {
     if (D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
       detail: o.product.title + " · " + o.copies + " Stk. · " + (o.payment.method === "invoice" ? "Rechnung (Freigabe nötig)" : "bezahlt") + " · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
     if (D.push) D.push("lead", { title: "Druckauftrag: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: o.nr + " · " + o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck – bitte persönlich prüfen" : o.check === "graphic" ? " · Grafikaufbereitung – Grafik druckfertig machen und zur Freigabe senden" : "") + "\n" + (o.payment.method === "invoice" ? "Auf Rechnung – Freigabe nötig" : "Bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
+    if (isGroup(o) && !(o.invoice && o.invoice.id)) {
+      const sib0 = await siblingsOf(o);
+      if (groupReady(o, sib0)) { await makeGroupInvoice(o, sib0); await store.putOrder(o); }
+    }
     if (!o.mails.confirm && o.groupId && (o.groupSize || 1) > 1) {
       // Warenkorb mit mehreren Positionen (Simon 09.11.2026): EINE Bestätigung mit allen Positionen – verschickt, sobald die letzte Position bezahlt bzw. angelegt ist
       const sib = (await store.listOrders().catch(() => [])).filter(x => x && x.groupId === o.groupId).map(x => x.id === o.id ? o : x).sort((a, b) => String(a.nr).localeCompare(String(b.nr)));
@@ -2496,7 +2541,7 @@ module.exports = function (D) {
           .concat([["Lieferadresse", [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, COUNTRIES[c.country]].filter(Boolean).join(", ")],
             [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(sum) + (o.price.rate ? " (netto " + eur(net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
         const ok = await mail(c.email, "Bestellbestätigung " + sib[0].nr + " (+" + (sib.length - 1) + ") · FS Creative Druck", "Danke für deine Bestellung!",
-          ["Hallo " + c.firstName + ",", "wir haben deine Bestellung mit " + sib.length + " Positionen erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnungen bekommst du, sobald die Aufträge in Produktion gehen.") +
+          ["Hallo " + c.firstName + ",", "wir haben deine Bestellung mit " + sib.length + " Positionen erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung über alle Positionen bekommst du, sobald die Aufträge in Produktion gehen.") +
             (sib.some(x => x.check === "graphic") ? " Wo du Grafikaufbereitung gewählt hast, schicken wir dir die druckfertige Datei vor dem Druck zur Freigabe." : sib.some(x => x.check === "pro" || x.check === "review") ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : " Du hast deine Druckdaten direkt freigegeben – wir geben die Aufträge " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion."),
             "Jede Position wird einzeln produziert und hat eine eigene Bestellnummer – deshalb können die Lieferungen auch an verschiedenen Tagen ankommen."],
           rows.concat(await acctRows(o)), ["Den Versand bestätigen wir dir je Position mit Sendungsverfolgung per E-Mail."].concat(o.customerId ? [] : [ACCT_HINT], [
@@ -2604,13 +2649,14 @@ module.exports = function (D) {
       await store.putOrder(o);
       // Rechnung fertigstellen und an den Kunden senden – außer sie ist schon fertiggestellt (z. B. von Hand unter Finanzen gesendet): dann kein zweites Mal
       // Status unbekannt (alter Server, Buchhaltung antwortet nicht) → wie bisher senden
-      const invSt = o.invoice.id && !o.invoice.sentAt && D.sendInvoice ? await invoiceStatusOf(o.invoice.id) : "";
-      if (o.invoice.id && !o.invoice.sentAt && D.sendInvoice && INV_SENT.indexOf(invSt) > -1) {
+      if (o.invoice.group && o.invoice.id && !o.invoice.sentAt && D.sendInvoice) { await sendGroupInvoice(o); return o; }
+      const invSt = o.invoice.id && !o.invoice.sentAt && !o.invoice.group && D.sendInvoice ? await invoiceStatusOf(o.invoice.id) : "";
+      if (o.invoice.id && !o.invoice.group && !o.invoice.sentAt && D.sendInvoice && INV_SENT.indexOf(invSt) > -1) {
         o.invoice.sentAt = nowIso(); o.invoice.draft = false; o.invoice.sentBefore = true;
         if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
         hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "war bereits versendet – nicht erneut gesendet");
         await store.putOrder(o);
-      } else if (o.invoice.id && !o.invoice.sentAt && D.sendInvoice) {
+      } else if (o.invoice.id && !o.invoice.group && !o.invoice.sentAt && D.sendInvoice) {
         try { await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + o.nr + " · FS Creative",
           "Hallo " + o.customer.firstName + ",\n\ndein Druckauftrag " + o.nr + " ist jetzt in Produktion. Anbei die Rechnung" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
           o.invoice.sentAt = nowIso(); o.invoice.draft = false;
@@ -2630,8 +2676,15 @@ module.exports = function (D) {
       const rf = await mollie("POST", "/payments/" + encodeURIComponent(o.payment.mollieId) + "/refunds", { amount: { currency: "EUR", value: o.price.gross.toFixed(2) }, description: "Erstattung Druckauftrag " + o.nr });
       o.payment.refund = { id: String(rf.id || ""), status: String(rf.status || ""), at: nowIso(), amount: o.price.gross }; hist(o, "Erstattung über Mollie veranlasst (" + eur(o.price.gross) + ")");
     }
+    let regroup = null;   // Sammelrechnung-Entwurf: löschen und für die übrigen Positionen neu anlegen
+    if (o.invoice.group && o.invoice.id && o.invoice.draft && D.deleteInvoice && INV_SENT.indexOf(await invoiceStatusOf(o.invoice.id)) < 0) {
+      try { await D.deleteInvoice(o.invoice.id); const oldId = String(o.invoice.id); o.invoice.deleted = nowIso(); hist(o, "Sammelrechnung (Entwurf) gelöscht – wird ohne diese Position neu angelegt");
+        regroup = (await siblingsOf(o)).filter(x => x.id !== o.id && x.invoice && String(x.invoice.id) === oldId);
+        for (const x of regroup) { x.invoice = {}; }
+      } catch (e) { o.invoice.deleteError = clip(e.message, 200); }
+    }
     // Entwurf löschen. Ist die Rechnung schon versendet (z. B. von Hand), geht das nicht mehr: nur vermerken – stornieren macht Simon selbst, nie automatisch
-    if (o.invoice.id && o.invoice.draft && D.deleteInvoice) {
+    if (o.invoice.id && o.invoice.draft && !o.invoice.deleted && D.deleteInvoice) {
       const st0 = await invoiceStatusOf(o.invoice.id);
       if (INV_SENT.indexOf(st0) > -1) { o.invoice.needsStorno = true; o.invoice.draft = false; if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} } hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "ist schon versendet – nicht gelöscht, bitte unter Finanzen stornieren"); }
       else { try { await D.deleteInvoice(o.invoice.id); o.invoice.deleted = nowIso(); hist(o, "Rechnungsentwurf gelöscht"); }
@@ -2639,6 +2692,8 @@ module.exports = function (D) {
     }
     o.status = "rejected"; stamp(o); o.rejectReason = clip(reason, 500); hist(o, "Abgelehnt" + (reason ? ": " + reason : ""));
     await store.putOrder(o);
+    if (regroup && regroup.length) { const sib = regroup.concat([o]), first = regroup[0]; await makeGroupInvoice(first, sib); for (const x of regroup) await store.putOrder(x);
+      if (first.invoice.id && regroup.every(x => PLACED.indexOf(x.status) > -1)) await sendGroupInvoice(first); }
     if (o.status === "rejected" && o.payment.status !== "open") await mail(o.customer.email, "Deine Druckbestellung " + o.nr + " · FS Creative", "Deine Bestellung konnte leider nicht gedruckt werden",
       ["Hallo " + o.customer.firstName + ",", "leider können wir deine Bestellung " + o.nr + " so nicht in Druck geben." + (o.rejectReason ? " Grund: " + o.rejectReason : ""), o.payment.refund ? "Den Betrag von " + eur(o.price.gross) + " erstatten wir dir über den gewählten Zahlungsweg – das dauert meist ein paar Werktage." : ""].filter(Boolean),
       [], ["Melde dich gern, dann finden wir gemeinsam eine Lösung."], D.notifyTo);
@@ -5275,7 +5330,7 @@ module.exports = function (D) {
           o.price.liveCheck = { at: nowIso(), total: buy.total, product: buy.product, shipping: buy.shipping, margin: r2(o.price.net - buy.total) }; hist(o, "Einkaufspreis neu geprüft: " + eur(buy.total)); await store.putOrder(o);
           return J(res, 200, { ok: true, order: o });
         }
-        if (op === "invoice") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); if (o.invoice.id) throw new Error("Rechnungsentwurf existiert schon"); o.invoice = {}; await makeInvoice(o); await store.putOrder(o); if (o.invoice.error) throw new Error(o.invoice.error); return J(res, 200, { ok: true, order: o }); }
+        if (op === "invoice") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); if (o.invoice.id) throw new Error("Rechnungsentwurf existiert schon"); o.invoice = {}; if (isGroup(o)) await makeGroupInvoice(o, await siblingsOf(o)); else await makeInvoice(o); await store.putOrder(o); if (o.invoice.error) throw new Error(o.invoice.error); return J(res, 200, { ok: true, order: o }); }
         if (op === "note") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); o.note = clip(b.note, 2000); await store.putOrder(o); return J(res, 200, { ok: true, order: o }); }
         return J(res, 400, { ok: false, error: "unbekannte Aktion" });
       }
