@@ -22,7 +22,7 @@
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   // Herkunft (Wunsch Simon 30.10.2026): Vorseite + Einstieg dieses Seitenaufrufs – nur im Speicher, nichts im Browser abgelegt; geht nur mit der Bestellung an uns
   var ORIGIN = { ref: String(document.referrer || "").slice(0, 400), land: (location.pathname + location.search).slice(0, 400) };
-  S.page = "home"; S.check = "self"; S.cart = cartLoad(); S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
+  S.page = "home"; S.check = "self"; S.cart = []; S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }).replace(/\s/g, " "); };   // „€ 95,24“ nie umbrechen
   var deDate = function (iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }); };
@@ -43,6 +43,8 @@
   var CTF = "https://images.ctfassets.net/";
   var viaUs = function (v) { if (typeof v === "string") return v.indexOf(CTF) === 0 ? "/print/bild/" + v.slice(CTF.length) : v; if (v && typeof v === "object") Object.keys(v).forEach(function (k) { v[k] = viaUs(v[k]); }); return v; };
   var imgOk = function (u) { return /^(https:\/\/images\.ctfassets\.net\/|\/print\/bild\/)/.test(String(u || "")); };
+  // Warenkorb erst hier laden: cartLoad braucht viaUs – vorher lief es ins Leere und jede neu geladene Seite (z. B. Klick ins Menü) hatte einen leeren Warenkorb (Simon 09.11.2026)
+  S.cart = cartLoad();
   function api(path, body, method, tries) {
     return fetch(path, { method: method || (body ? "POST" : "GET"), headers: body ? H : {}, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" })
       .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status, noJson: true }; }).then(function (j) { j = viaUs(j); j.status = r.status; return j; }); })
@@ -2487,16 +2489,33 @@
     var acct = S.me ? '<p class="pd-muted">Die Bestellung wird in deinem Kundenkonto (' + esc(S.me.email) + ") gespeichert.</p>" :
       '<label class="ps-cb"><input type="checkbox" data-act="newacct"' + (S.newAcct ? " checked" : "") + '><span><b>Kundenkonto anlegen</b> – Bestellungen und Adresse speichern (Bestätigung per Code an ' + esc(c.email) + ")</span></label>" +
       (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort (mind. 8 Zeichen)</label><input id="psNewPw" type="password" autocomplete="new-password" value="' + esc(S.newPw || "") + '"></div>' : "");
-    return '<div class="ps-layout"><div class="ps-panel"><h2>Prüfen &amp; bestellen</h2><p class="sub">Bitte prüfe deine Druckdaten genau – gedruckt wird genau so, wie du sie freigibst.</p>' + items +
-      '<div class="ps-sum"><div><span>Lieferung an</span><b>' + esc(addr) + ' <button type="button" class="ps-link" data-go="5">ändern</button></b></div>' + (lastDel ? "<div><span>Voraussichtlich bei dir<small class=\"ps-dnote\">ggf. auch erst am darauffolgenden Werktag</small></span><b>" + esc(deDate(lastDel)) + "</b></div>" : "") + money + "</div>" +
-      (!co && S.cat.payments.mollie ? '<div class="ps-pay1"><span class="ps-lbl">Zahlung</span><p><b>Online bezahlen</b> – Kreditkarte, Apple Pay, EPS u. a., sicher über Mollie</p></div>' : ('<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
+    /* Bestellübersicht vor dem Bezahlen (Simon 09.11.2026): nummerierte Abschnitte, rechts mitlaufende Zusammenfassung mit dem Bestellknopf */
+    var sec = function (nr, title, body, right) { return '<section class="ps-co-sec"><div class="ps-co-sh"><span class="ps-co-n">' + nr + '</span><h3>' + title + '</h3>' + (right || "") + '</div>' + body + '</section>'; };
+    var who = [c.company, (c.firstName + " " + c.lastName).trim()].filter(Boolean), dl = lastDel ? deDate(lastDel) : "";
+    var addrCard = '<div class="ps-co-addr"><div class="ps-co-card"><span class="ps-co-k">Lieferadresse</span><b>' + who.map(esc).join("<br>") + '</b><span>' + esc(c.street) + "<br>" + esc(c.zip + " " + c.city) + '<br>Österreich</span></div>' +
+      '<div class="ps-co-card"><span class="ps-co-k">Kontakt</span><span>' + esc(c.email) + (c.phone ? "<br>" + esc(c.phone) : "") + (co && S.uid ? "<br>UID " + esc(S.uid) : "") + '</span></div>' +
+      (dl ? '<div class="ps-co-card ps-co-del"><span class="ps-co-k">Voraussichtlich bei dir</span><b>' + esc(dl) + '</b><span class="ps-dnote">ggf. auch erst am darauffolgenden Werktag · Versand innerhalb Österreichs inklusive</span></div>' : "") + '</div>';
+    return '<div class="ps-layout ps-co"><div class="ps-co-main"><div class="ps-panel ps-co-head"><h2>Bestellübersicht</h2><p class="sub">Noch einmal alles prüfen – gedruckt wird genau so, wie du es freigibst.</p></div>' +
+      sec(1, "Deine Drucksachen", items, '<button type="button" class="ps-link" data-go="4">Warenkorb ändern</button>') +
+      sec(2, "Lieferung", addrCard, '<button type="button" class="ps-link" data-go="5">ändern</button>') +
+      sec(3, "Datencheck", chk) +
+      sec(4, "Zahlung", (!co && S.cat.payments.mollie ? '<div class="ps-pay1"><span class="ps-lbl">Zahlung</span><p><b>Online bezahlen</b> – Kreditkarte, Apple Pay, EPS u. a., sicher über Mollie</p></div>' : ('<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
       '<label class="ps-radio' + (S.cat.payments.mollie ? "" : " dis") + '"><input type="radio" name="pay" value="mollie"' + (S.payment === "mollie" ? " checked" : "") + (S.cat.payments.mollie ? "" : " disabled") + '><span><b>Online bezahlen</b><small>Kreditkarte, Apple Pay, EPS, PayPal u. a. – sicher über Mollie' + (S.cat.payments.mollie ? "" : " (gerade nicht verfügbar)") + "</small></span></label>" +
-      (co ? '' : '<!--') + '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label>" + (co ? "" : "-->") + "</fieldset>")) + chk + vch + acct +
-      '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format ' + (n > 1 ? "aller " + n + " Positionen " : "") + "geprüft und gebe die Daten so zum Druck frei.</span></label>" +
+      (co ? '' : '<!--') + '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label>" + (co ? "" : "-->") + "</fieldset>"))) +
+      sec(5, "Bestätigen", acct + '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format ' + (n > 1 ? "aller " + n + " Positionen " : "") + "geprüft und gebe die Daten so zum Druck frei.</span></label>" +
       '<label class="ps-cb"><input type="checkbox" data-acc="terms"' + (S.accept.terms ? " checked" : "") + '><span>Ich akzeptiere die <a href="/print/agb" target="_blank" rel="noopener">AGB</a> und habe die <a href="/datenschutz" target="_blank" rel="noopener">Datenschutzerklärung</a> gelesen.</span></label>' +
       '<label class="ps-cb"><input type="checkbox" data-acc="fagg"' + (S.accept.fagg ? " checked" : "") + '><span>Ich nehme zur Kenntnis, dass bei Waren, die nach meinen Vorgaben angefertigt bzw. bedruckt werden, <b>kein Rücktrittsrecht</b> besteht (§ 18 Abs. 1 Z 3 FAGG).</span></label>' +
-      '<div class="ps-err" id="psOrderErr" role="alert">' + esc(S.err) + '</div><div class="ps-nav"><button type="button" class="ps-btn" data-go="5">Zurück</button><button type="button" class="ps-btn primary" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : (S.payment === "invoice" ? "Zahlungspflichtig bestellen" : "Zahlungspflichtig bestellen & bezahlen")) + "</button></div>" +
-      '<p class="ps-terms">Mit dem Klick bestellst du verbindlich. Der Vertrag kommt mit unserer Bestellbestätigung per E-Mail zustande' + (S.payment === "invoice" ? ", bei Rechnungskauf mit der Freigabe" : "") + ".</p></div>" + cartAside() + "</div>";
+      '<div class="ps-err" id="psOrderErr" role="alert">' + esc(S.err) + '</div><div class="ps-nav"><button type="button" class="ps-btn" data-go="5">Zurück</button><button type="button" class="ps-btn primary ps-co-go" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : (S.payment === "invoice" ? "Zahlungspflichtig bestellen" : "Zahlungspflichtig bestellen & bezahlen")) + "</button></div>" +
+      '<p class="ps-terms">Mit dem Klick bestellst du verbindlich. Der Vertrag kommt mit unserer Bestellbestätigung per E-Mail zustande' + (S.payment === "invoice" ? ", bei Rechnungskauf mit der Freigabe" : "") + ".</p>") +
+      '</div>' + coAside(money, vch, dl) + "</div>";
+  }
+  /* Zusammenfassung rechts (Handy: darunter) – Positionen, Summen, Gutschein, Bestellknopf (Button-Lösung § 8 FAGG), Vertrauenszeilen */
+  function coAside(money, vch, dl) {
+    var co = S.ctype === "company";
+    return '<aside class="ps-price ps-co-aside" id="psPrice" aria-live="polite"><h3>Deine Bestellung</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + "<small>" + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small></span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
+      '<div class="ps-co-ship"><span>Versand</span><b>gratis</b></div><div class="ps-sum ps-co-sum">' + money + "</div>" + vch +
+      '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : "Zahlungspflichtig bestellen") + "</button>" +
+      '<ul class="ps-co-trust"><li>🔒 ' + (S.payment === "invoice" ? "Rechnung mit 14 Tagen Zahlungsziel" : "Sicher bezahlen über Mollie") + "</li>" + (dl ? "<li>🚚 Voraussichtlich bei dir am " + esc(dl) + "</li>" : "") + "<li>✓ " + (S.check === "pro" || S.check === "graphic" ? "Persönlicher Datencheck vor dem Druck" : "Automatischer Datencheck") + "</li><li>💬 Fragen? Wir helfen im Chat</li></ul></aside>";
   }
 
   // ── Ereignisse ──
