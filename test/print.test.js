@@ -873,6 +873,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "38.40");
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "ordered", "direkt freigegeben → sofort bei Print.com"); assert.strictEqual(M.orders.length, nPc + 1);
+    // Warenkorb mit 2 Positionen, Profi-Datencheck nur für Position 1 (je Position wählbar): +5 € einmal, EINE Sammelrechnung mit 3 Zeilen; Position 2 geht direkt an Print.com
+    const u3 = await upload(await pdfOf(89, 59, 2), "c3.pdf", BC), u4 = await upload(await pdfOf(89, 59, 2), "c4.pdf", BC), nInv = sevMock.state.invoices.length;
+    r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u3.j.fileId, fileToken: u3.j.token, expectedGross: 38.4, check: "pro" }), Object.assign({}, BC, { fileId: u4.j.fileId, fileToken: u4.j.token, expectedGross: 38.4 })], check: "self" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "81.80", "Profi-Datencheck nur für eine Position");
+    M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    const [s3, s4] = await Promise.all(r.j.orders.map(async x => (await (await fetch(B + "/print/api/order/" + x.id + "?t=" + x.token)).json()).order));
+    assert.strictEqual(s3.status, "paid", "Position mit Profi-Check wartet"); assert.strictEqual(s4.status, "ordered", "Position ohne Check direkt bestellt"); assert.strictEqual(M.orders.length, nPc + 2);
+    assert.strictEqual(sevMock.state.invoices.length, nInv + 1, "eine Sammelrechnung für den Warenkorb");
+    const ginv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(ginv.invoicePosSave.length, 3, JSON.stringify(ginv.invoicePosSave.map(x => x.name)));
   });
   await t("Datencheck mit Grafikaufbereitung (+20 €): Druckdaten austauschen, zur Freigabe senden, Kunde gibt frei bzw. wünscht Änderung, erst dann bestellen", async () => {
     const base = { customer: Object.assign({}, cust, { email: "grafik@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };

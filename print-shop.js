@@ -2368,12 +2368,14 @@ module.exports = function (D) {
     else if (input.createAccount === true && input.accountPassword) { const c = await accountMod().createFromCheckout(cust, String(input.accountPassword)); if (c) account = { id: c.id, created: !c.verified }; }
     const groupId = prepared.length > 1 ? "G" + Date.now().toString(36).toUpperCase() + rnd(4) : null;
     const check = input.check === "pro" ? "pro" : input.check === "graphic" ? "graphic" : input.check === "self" ? "self" : "review";   // ohne Angabe (alte Clients): wie bisher prüfen, ohne Aufpreis
-    if (check === "pro" || check === "graphic") {   // Aufpreis einmal je Warenkorb – auf der ersten Position (eigene Rechnungszeile)
-      const fee = check === "graphic" ? GRAPHIC_CHECK_GROSS : PRO_CHECK_GROSS, o0 = prepared[0].o, rate = o0.price.rate || 0, net = r2(fee / (1 + rate / 100)), vat = r2(fee - net);
-      o0.price.checkFee = { gross: fee, net, vat, kind: check }; o0.price.gross = r2(o0.price.gross + fee); o0.price.net = r2(o0.price.net + net); o0.price.vat = r2(o0.price.vat + vat); o0.price.margin = r2(o0.price.margin + net);
-    }
+    // Datencheck je Position (Simon 09.11.2026): jede Position mit Profi-Datencheck bzw. Grafikaufbereitung bekommt den Aufpreis (eigene Rechnungszeile); ohne Angabe je Position gilt die Auswahl für alle
+    const chkOf = v => v === "pro" ? "pro" : v === "graphic" ? "graphic" : v === "self" ? "self" : null;
+    prepared.forEach((x, i) => { const ck = chkOf(items[i] && items[i].check) || check, o0 = x.o; o0.check = ck;
+      if (ck !== "pro" && ck !== "graphic") return;
+      const fee = ck === "graphic" ? GRAPHIC_CHECK_GROSS : PRO_CHECK_GROSS, rate = o0.price.rate || 0, net = r2(fee / (1 + rate / 100)), vat = r2(fee - net);
+      o0.price.checkFee = { gross: fee, net, vat, kind: ck }; o0.price.gross = r2(o0.price.gross + fee); o0.price.net = r2(o0.price.net + net); o0.price.vat = r2(o0.price.vat + vat); o0.price.margin = r2(o0.price.margin + net); });
     for (const x of prepared) {
-      const o = x.o; o.check = check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
+      const o = x.o, check = o.check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
       if (input.__origin) o.origin = Object.assign({}, input.__origin);
       if (Array.isArray(x.clientWarn) && x.clientWarn.length) { o.clientChecks = x.clientWarn.slice(0, 10).map(t => clip(t, 300)); }
       if (x.bleedOk === true) { o.bleedOk = true; o.fileChecks = bleedOkChecks(o.fileChecks); }   // Vorschau: Motiv endet vor dem Rand → Beschnitt-Hinweis entfällt

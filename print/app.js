@@ -189,9 +189,15 @@
     toast(rep ? "Gestaltung von „" + it.title + "“ im Warenkorb aktualisiert ✓" : "„" + it.title + "“ liegt im Warenkorb");
   }
   var PRO_CHECK = 5, GRAPHIC_CHECK = 20;   // Datencheck: Profi (5 €) bzw. mit Grafikaufbereitung (20 €, Wunsch Simon 05.11.2026)
-  var checkFee = function () { return S.check === "graphic" ? GRAPHIC_CHECK : S.check === "pro" ? PRO_CHECK : 0; };
+  // Datencheck je Position (Wunsch Simon 09.11.2026): x.check überschreibt die Auswahl für alle (S.check)
+  var ckNorm = function (v) { return v === "pro" || v === "graphic" ? v : "self"; };
+  var itemCheck = function (x) { return ckNorm(x && x.check ? x.check : S.check); };
+  var ckFee = function (v) { return v === "graphic" ? GRAPHIC_CHECK : v === "pro" ? PRO_CHECK : 0; };
+  var checkFee = function () { return S.cart.reduce(function (a, x) { return a + ckFee(itemCheck(x)); }, 0); };
+  var anyCheck = function () { return S.cart.some(function (x) { return itemCheck(x) !== "self"; }); };
   function cartTotals(noFee) { var t = { net: 0, vat: 0, gross: 0, rate: null, missing: false }; S.cart.forEach(function (x) { if (!x.price) { t.missing = true; return; } t.net += +x.price.net || 0; t.vat += +x.price.vat || 0; t.gross += +x.price.gross || 0; if (x.designFee) { t.net += +x.designFee.net || 0; t.vat += +x.designFee.vat || 0; t.gross += +x.designFee.gross || 0; } if (t.rate == null) t.rate = x.price.rate; });
-    var cf = checkFee(); if (!noFee && cf && S.cart.length) { var fn = cf / (1 + (t.rate || 0) / 100); t.gross += cf; t.net += fn; t.vat += cf - fn; t.fee = cf; }
+    var cf = checkFee(); if (!noFee && cf && S.cart.length) { var fn = cf / (1 + (t.rate || 0) / 100); t.gross += cf; t.net += fn; t.vat += cf - fn; t.fee = cf;
+      t.nPro = S.cart.filter(function (x) { return itemCheck(x) === "pro"; }).length; t.nGra = S.cart.filter(function (x) { return itemCheck(x) === "graphic"; }).length; }
     ["net", "vat", "gross"].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; }); return t; }
   var rqSeq = 0;
   /* Warenkorb-Erinnerung (Wunsch Simon 06.11.2026, nur mit Häkchen): Warenkorb ohne Vorschaubilder auf dem Server merken – kommt keine Bestellung,
@@ -2507,16 +2513,21 @@
     var warnN = S.cart.filter(function (x) { return x.warn; }).length;
     // Profi-Datencheck empfehlen (Wunsch Simon 06.11.2026: öfter anbieten) – bei Hinweisen zur Datei oder größerem Auftrag (ab 100 €), der Check kostet dann nur wenige Prozent
     var big = !S.quoting && t.gross >= 100, proRec = warnN || big, proPct = t.gross ? Math.max(1, Math.round(PRO_CHECK / t.gross * 100)) : 0;
-    var chk = '<fieldset class="ps-pay ps-check" style="border:0;padding:0"><legend class="ps-lbl">Datencheck</legend>' +
-      '<label class="ps-radio"><input type="radio" name="check" value="self"' + (S.check !== "pro" && S.check !== "graphic" ? " checked" : "") + '><span><b>Direkt freigeben · gratis</b><small>Schnellste Lieferung – die automatische Prüfung ' +
+    var mixed = S.cart.some(function (x) { return x.check && ckNorm(x.check) !== ckNorm(S.check); }), warnOpen = S.cart.filter(function (x) { return x.warn && itemCheck(x) === "self"; }).length;
+    var perPos = n > 1 ? '<div class="ps-ckpos"><p class="ps-ckpos-h">' + (mixed ? "Individuell je Position:" : "Gilt für alle Positionen – oder je Position wählen:") + "</p>" + S.cart.map(function (x) { var v = itemCheck(x);
+      return '<label class="ps-ckpos-r"><span>' + esc(x.title) + (x.warn ? ' <em class="ps-warnl">⚠</em>' : "") + '</span><select name="icheck" data-id="' + esc(x.id) + '">' +
+        [["self", "Direkt freigeben · gratis"], ["pro", "Profi-Datencheck · " + eur(PRO_CHECK)], ["graphic", "Grafikaufbereitung · " + eur(GRAPHIC_CHECK)]].map(function (o) { return '<option value="' + o[0] + '"' + (v === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>"; }).join("") + "</div>" : "";
+    var chk = '<fieldset class="ps-pay ps-check" style="border:0;padding:0"><legend class="ps-lbl">Datencheck</legend>' + (n > 1 ? '<p class="ps-ckpos-note">Der Aufpreis gilt je Position mit Datencheck.</p>' : '') +
+      '<label class="ps-radio"><input type="radio" name="check" value="self"' + (!mixed && S.check !== "pro" && S.check !== "graphic" ? " checked" : "") + '><span><b>Direkt freigeben · gratis</b><small>Schnellste Lieferung – die automatische Prüfung ' +
         (warnN ? "hat bei " + warnN + (warnN === 1 ? " Position Hinweise." : " Positionen Hinweise.") : "hat nichts gefunden.") + "</small></span></label>" +
-      '<label class="ps-radio"><input type="radio" name="check" value="pro"' + (S.check === "pro" ? " checked" : "") + '><span><b>Profi-Datencheck · ' + eur(PRO_CHECK) + (proRec ? ' <em class="ps-rec">Empfohlen</em>' : "") + '</b><small>Simon sieht sich deine Daten persönlich an – Format, Beschnitt, Auflösung, Schriften und Farben – und meldet sich vor dem Druck, falls etwas nicht passt. Ca. 1 Werktag länger.' + (weekendNow() ? ' <b>Übers Wochenende (Fr ab 16 Uhr) dauert die Prüfung etwas länger – meist bis Montag.</b>' : '') + '</small></span></label>' +
-      '<label class="ps-radio"><input type="radio" name="check" value="graphic"' + (S.check === "graphic" ? " checked" : "") + '><span><b>Datencheck mit Grafikaufbereitung · ' + eur(GRAPHIC_CHECK) + '</b><small>Deine Datei passt noch nicht ganz? Wir machen sie druckfertig (Format, Beschnitt, Auflösung, Farben, Schriften) und schicken sie dir vor dem Druck zur Freigabe – ca. 1–2 Werktage länger.</small></span></label>' +
-      (warnN && S.check !== "pro" && S.check !== "graphic" ? '<p class="ps-check-warn">⚠ Bei ' + warnN + (warnN === 1 ? " Datei gibt" : " Dateien gibt") + " es Hinweise. Wir empfehlen den Profi-Datencheck – oder, wenn du schon weißt, dass die Datei nicht passt, den Datencheck mit Grafikaufbereitung.</p>" :
-        big && S.check !== "pro" && S.check !== "graphic" ? '<p class="ps-check-tip">Tipp: Bei diesem Auftrag sind das nur ' + proPct + " % – dafür prüft ein Mensch jede Datei, bevor " + (t.gross >= 300 ? "die große Auflage" : "alles") + " gedruckt wird.</p>" : "") + "</fieldset>";
+      '<label class="ps-radio"><input type="radio" name="check" value="pro"' + (!mixed && S.check === "pro" ? " checked" : "") + '><span><b>Profi-Datencheck · ' + eur(PRO_CHECK) + (proRec ? ' <em class="ps-rec">Empfohlen</em>' : "") + '</b><small>Simon sieht sich deine Daten persönlich an – Format, Beschnitt, Auflösung, Schriften und Farben – und meldet sich vor dem Druck, falls etwas nicht passt. Ca. 1 Werktag länger.' + (weekendNow() ? ' <b>Übers Wochenende (Fr ab 16 Uhr) dauert die Prüfung etwas länger – meist bis Montag.</b>' : '') + '</small></span></label>' +
+      '<label class="ps-radio"><input type="radio" name="check" value="graphic"' + (!mixed && S.check === "graphic" ? " checked" : "") + '><span><b>Datencheck mit Grafikaufbereitung · ' + eur(GRAPHIC_CHECK) + '</b><small>Deine Datei passt noch nicht ganz? Wir machen sie druckfertig (Format, Beschnitt, Auflösung, Farben, Schriften) und schicken sie dir vor dem Druck zur Freigabe – ca. 1–2 Werktage länger.</small></span></label>' +
+      perPos + (warnOpen ? '<p class="ps-check-warn">⚠ Bei ' + warnOpen + (warnOpen === 1 ? " Datei gibt" : " Dateien gibt") + " es Hinweise. Wir empfehlen den Profi-Datencheck – oder, wenn du schon weißt, dass die Datei nicht passt, den Datencheck mit Grafikaufbereitung.</p>" :
+        big && !anyCheck() ? '<p class="ps-check-tip">Tipp: Bei diesem Auftrag sind das nur ' + proPct + " % – dafür prüft ein Mensch jede Datei, bevor " + (t.gross >= 300 ? "die große Auflage" : "alles") + " gedruckt wird.</p>" : "") + "</fieldset>";
     var vch = '<details class="ps-voucher"' + (S.voucher || S.voucherErr ? " open" : "") + '><summary class="ps-lbl">Gutscheincode einlösen</summary><div class="ps-uidrow"><input id="psVoucher" value="' + esc(S.voucher || "") + '" placeholder="z. B. WILLKOMMEN10" autocapitalize="characters" autocomplete="off"><button type="button" class="ps-btn small" data-act="voucher">' + (S.voucher ? "Ändern" : "Einlösen") + "</button>" + (S.voucher ? '<button type="button" class="ps-link" data-act="voucher:clear">entfernen</button>' : "") + "</div>" +
       (S.voucherErr ? '<span class="hint bad">' + esc(S.voucherErr) + "</span>" : S.voucherOk ? '<span class="hint ok">✓ ' + esc(S.voucherOk) + "</span>" : "") + "</details>";
-    if (t.fee && !S.quoting) money = '<div><span>' + (S.check === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + '</span><b>' + eur(co ? t.fee / (1 + (t.rate || 0) / 100) : t.fee) + "</b></div>" + money;
+    if (t.fee && !S.quoting) { var fx = function (g) { return eur(co ? g / (1 + (t.rate || 0) / 100) : g); };
+      money = (t.nPro ? '<div><span>Profi-Datencheck' + (t.nPro > 1 ? " × " + t.nPro : "") + '</span><b>' + fx(t.nPro * PRO_CHECK) + "</b></div>" : "") + (t.nGra ? '<div><span>Grafikaufbereitung' + (t.nGra > 1 ? " × " + t.nGra : "") + '</span><b>' + fx(t.nGra * GRAPHIC_CHECK) + "</b></div>" : "") + money; }
     var capN = S.cart.filter(function (x) { return x.price && x.price.bonus && x.price.bonus.capped; }).length;
     if (saved > 0 && !S.quoting) money = '<div class="ps-save"><span>' + esc(dlab ? dlab.tier : "Rabatt") + '</span><b>− ' + eur(co ? saved : saved * (1 + (t.rate || 0) / 100)) + "</b></div>" + money;
     if (capN && !S.quoting) money = '<p class="ps-bonus-tag best">★ ' + (capN === S.cart.length ? "Bester Preis – derzeit kein " + (saved > 0 ? "höherer " : "") + "Rabatt möglich" : capN + " Position" + (capN > 1 ? "en" : "") + " schon zum besten Preis – dort derzeit kein höherer Rabatt möglich") + "</p>" + money;
@@ -2549,7 +2560,7 @@
     return '<aside class="ps-price ps-co-aside" id="psPrice" aria-live="polite"><h3>Deine Bestellung</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + "<small>" + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small></span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
       '<div class="ps-co-ship"><span>Versand</span><b>gratis</b></div><div class="ps-sum ps-co-sum">' + money + "</div>" + vch +
       '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : "Zahlungspflichtig bestellen") + "</button>" +
-      '<ul class="ps-co-trust"><li>🔒 ' + (S.payment === "invoice" ? "Rechnung mit 14 Tagen Zahlungsziel" : "Sicher bezahlen über Mollie") + "</li>" + (dl ? "<li>🚚 Voraussichtlich bei dir am " + esc(dl) + "</li>" : "") + "<li>✓ " + (S.check === "pro" || S.check === "graphic" ? "Persönlicher Datencheck vor dem Druck" : "Automatischer Datencheck") + "</li><li>💬 Fragen? Wir helfen im Chat</li></ul></aside>";
+      '<ul class="ps-co-trust"><li>🔒 ' + (S.payment === "invoice" ? "Rechnung mit 14 Tagen Zahlungsziel" : "Sicher bezahlen über Mollie") + "</li>" + (dl ? "<li>🚚 Voraussichtlich bei dir am " + esc(dl) + "</li>" : "") + "<li>✓ " + (anyCheck() ? "Persönlicher Datencheck vor dem Druck" + (S.cart.every(function (x) { return itemCheck(x) !== "self"; }) ? "" : " (gewählte Positionen)") : "Automatischer Datencheck") + "</li><li>💬 Fragen? Wir helfen im Chat</li></ul></aside>";
   }
 
   // ── Ereignisse ──
@@ -2717,7 +2728,8 @@
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
     if (t.id === "psPfvT") { S.pfvOff = !t.checked; pfvRender(); return; }
-    if (t.name === "check") { S.check = t.value === "pro" ? "pro" : t.value === "graphic" ? "graphic" : "self"; render(); return; }
+    if (t.name === "check") { S.check = ckNorm(t.value); S.cart.forEach(function (x) { delete x.check; }); cartSave(true); render(); return; }
+    if (t.name === "icheck") { var cx = S.cart.filter(function (x) { return x.id === t.getAttribute("data-id"); })[0]; if (cx) { cx.check = ckNorm(t.value); if (S.cart.every(function (x) { return itemCheck(x) === cx.check; })) { S.check = cx.check; S.cart.forEach(function (x) { delete x.check; }); } cartSave(true); render(); } return; }
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
@@ -2987,7 +2999,7 @@
     if (S.cart.some(function (x) { return !x.price; })) { show("Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."); return; }
     if (!S.me && S.newAcct && String(S.newPw || "").length < 8) { er.textContent = "Das Passwort für das Kundenkonto braucht mindestens 8 Zeichen."; if (pw) pw.focus(); return; }
     S.busy = true; S.err = ""; render();
-    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, bleedOk: x.bleedOk || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
+    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, check: itemCheck(x), clientWarn: x.clientWarn || undefined, bleedOk: x.bleedOk || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
       check: S.check === "pro" || S.check === "graphic" ? S.check : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, origin: ORIGIN, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {
