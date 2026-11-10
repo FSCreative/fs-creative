@@ -195,6 +195,7 @@ const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420
 // Status im Shop (nicht Print.com): Reihenfolge = Ablauf
 // Beschnitt-Hinweis entschärfen, wenn die Vorschau rundum einen weißen Rand gefunden hat (kein Motiv bis zum Rand, Simon 09.11.2026)
 const BLEED_RX = /keinen Beschnitt|ohne Beschnitt/;
+const fmtMm = v => String(Math.round(+v * 10) / 10).replace(".", ",");   // Millimeter für Kundentexte (1,5 statt 1.5)
 function bleedOkChecks(l) { l = Array.isArray(l) ? l : []; return l.some(c => BLEED_RX.test(c.text || "")) ? l.filter(c => !BLEED_RX.test(c.text || "")).concat([{ level: "ok", text: "Kein Beschnitt nötig – laut Vorschau rundum weißer Rand." }]) : l; }
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
   ordered: "Bei Print.com bestellt", in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", rejected: "Abgelehnt", problem: "Problem bei Print.com" };
@@ -1437,7 +1438,7 @@ module.exports = function (D) {
     const out = [], W = size.w + 2 * bleed, H = size.h + 2 * bleed;
     if (info.trim && fits(info.trim, size.w, size.h, 1)) out.push({ level: "ok", text: "Endformat (TrimBox) " + size.w + " × " + size.h + " mm passt." });
     if (fits(info.media, W, H, 1.2)) out.push({ level: "ok", text: "Seitengröße inkl. " + bleed + " mm Beschnitt passt (" + W + " × " + H + " mm)." });
-    else if (fits(info.media, size.w, size.h, 1)) out.push({ level: "warn", text: "Die Datei hat keinen Beschnitt (" + bleed + " mm je Seite). Motive bis zum Rand werden evtl. mit weißem Blitzer geschnitten." });
+    else if (fits(info.media, size.w, size.h, 1)) out.push({ level: "warn", text: "Die Datei hat keinen Beschnitt. Bitte im Format " + fmtMm(W) + " × " + fmtMm(H) + " mm anliefern (Endformat " + fmtMm(size.w) + " × " + fmtMm(size.h) + " mm + " + fmtMm(bleed) + " mm Beschnitt je Seite) – reicht der Hintergrund nicht über den Rand, kann nach dem Schneiden ein feiner weißer Rand sichtbar sein." });
     else if (info.media) {
       const ar = (info.media.w / info.media.h), arT = W / H;
       if (near(ar, arT, 0.02) || near(1 / ar, arT, 0.02)) out.push({ level: "warn", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm weicht ab, Seitenverhältnis passt – die Datei wird auf " + W + " × " + H + " mm skaliert." });
@@ -1843,7 +1844,7 @@ module.exports = function (D) {
       const info = await pdfInfoX(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
       if (info.pages > 1) checks.push({ level: "warn", text: label + ": die PDF hat " + info.pages + " Seiten – verwendet wird Seite 1." });
       if (info.media && (fits(info.media, W, H, 1.2) || fits(info.media, size.w, size.h, 1))) {
-        if (!fits(info.media, W, H, 1.2)) checks.push({ level: "warn", text: label + ": ohne Beschnitt (" + bleed + " mm je Seite) – Motive bis zum Rand werden evtl. mit weißem Blitzer geschnitten." });
+        if (!fits(info.media, W, H, 1.2)) checks.push({ level: "warn", text: label + ": ohne Beschnitt – bitte im Format " + fmtMm(W) + " × " + fmtMm(H) + " mm anliefern (inkl. " + fmtMm(bleed) + " mm Beschnitt je Seite), sonst kann nach dem Schneiden ein feiner weißer Rand sichtbar sein." });
         return { pdf: buf, checks };
       }
       if (info.media) checks.push({ level: "warn", text: label + ": Seitengröße " + info.media.w + " × " + info.media.h + " mm automatisch auf " + W + " × " + H + " mm (inkl. Beschnitt) gesetzt – bitte in der Vorschau kontrollieren." });
@@ -4680,6 +4681,8 @@ module.exports = function (D) {
         } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht verarbeitet werden" }); } finally { rel(); }
         const view = fileView(meta);
         if (view.blocked) return J(res, 200, { ok: false, error: "Die Datei hat noch Fehler – bitte korrigieren und erneut hochladen.", file: view });
+        const needP = (view.checks || []).map(c => (String(c.text || "").match(/für die gewählte Druckart werden (\d+) benötigt/) || [])[1]).filter(Boolean)[0];
+        if (needP) return J(res, 200, { ok: false, error: "Bitte alle " + needP + " Seiten in einer PDF hochladen" + (+needP === 2 ? " (Vorder- und Rückseite)" : "") + " – sonst bleibt " + (+needP === 2 ? "die Rückseite" : "der Rest") + " weiß.", file: view });
         meta.orderId = o.id; await store.putFile(meta);
         const oldId = motif > -1 ? o.motifs[motif].fileId : o.fileId;
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileKind = meta.kind; o.fileChecks = meta.checks || []; }
@@ -5331,6 +5334,53 @@ module.exports = function (D) {
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       // Druckdaten austauschen (Profi-Datencheck / Grafikaufbereitung): Body = PDF, ?id=Bestellung[&motif=Index] – geprüft wie beim Kunden, alte Datei bleibt im Verlauf
+      // Druckdaten im Cockpit: einzelne Seite ersetzen bzw. Rückseite ergänzen (Body = Datei, ?id=Auftrag&motif=i&page=1…) und frühere Version wiederherstellen (Simon 10.11.2026)
+      const prSwap = async (o, motif, oldId, meta, by) => {
+        if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileKind = meta.kind; o.fileChecks = meta.checks || []; }
+        o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: oldId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by }]).slice(-30);
+        if (o.proof && o.proof.status !== "approved") o.proof.stale = true; stamp(o); await store.putOrder(o); };
+      const prCan = o => REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber));
+      if (p === "/admin/api/print/page" && req.method === "POST") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) { req.resume(); return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" }); }
+        if (!prCan(o)) { req.resume(); return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Austausch nicht mehr möglich" }); }
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(u.searchParams.get("motif"), 10) || 0)) : -1;
+        const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId), pg = parseInt(String(u.searchParams.get("page") || ""), 10);
+        if (!fm || !fm.size) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "seite")), 120).replace(/[\\/:*?"<>|]/g, "_");
+        const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
+        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
+          const pages = +fm.pages || 1; if (!(pg >= 1 && pg <= pages + 1)) return J(res, 400, { ok: false, error: "Diese Seite gibt es nicht" });
+          meta = pg === pages + 1 ? await addBackSide(fm, buf, name) : await replacePage(fm, pg - 1, buf, name);
+        } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Seite konnte nicht übernommen werden" }); } finally { rel(); }
+        meta.orderId = o.id; await store.putFile(meta);
+        await prSwap(o, motif, curId, meta, "Cockpit (Seite " + pg + (pg === (+fm.pages || 1) + 1 ? " ergänzt)" : " ersetzt)"));
+        hist(o, "Druckdaten im Cockpit: Seite " + pg + (motif > -1 ? " von Motiv " + (motif + 1) : "") + " " + (pg === (+fm.pages || 1) + 1 ? "ergänzt" : "ersetzt") + " (" + name + ")"); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o, checks: meta.checks || [] });
+      }
+      if (p === "/admin/api/print/bleed" && req.method === "POST") {   // Beschnitt im Cockpit ergänzen: Rand spiegeln oder Motiv leicht vergrößern (nur wenn die Datei keinen Beschnitt hat)
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, mode = b.mode === "zoom" ? "zoom" : "mirror";
+        const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId); if (!fm || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const data = await store.fileData(curId), info = data && await pdfInfoX(data); if (!info || info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
+        let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
+        const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randbereiche gespiegelt – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "")));
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
+        await prSwap(o, motif, curId, meta, "Cockpit (Beschnitt " + (mode === "zoom" ? "vergrößert" : "gespiegelt") + ")");
+        hist(o, "Druckdaten im Cockpit: Beschnitt ergänzt (" + (mode === "zoom" ? "Motiv leicht vergrößert" : "Rand gespiegelt") + ")" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
+      if (p === "/admin/api/print/restore" && req.method === "POST") {
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, fid = String(b.fileId || "");
+        if (!(o.fileHistory || []).some(h => h.old === fid && (mot ? h.motif === motif : (h.motif == null || h.motif === -1)))) return J(res, 400, { ok: false, error: "Diese Version gehört nicht zu dieser Datei" });
+        const meta = await store.fileMeta(fid); if (!meta || !(await store.fileData(fid))) return J(res, 404, { ok: false, error: "Version nicht mehr vorhanden" });
+        const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId; await prSwap(o, motif, curId, meta, "Cockpit (wiederhergestellt)");
+        hist(o, "Druckdaten im Cockpit: frühere Version wiederhergestellt" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + " (" + (meta.name || fid) + ")"); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
       if (p === "/admin/api/print/fit" && req.method === "POST") {   // Druckdaten im Cockpit anpassen (einpassen/füllen/drehen) – vom Original aus, neue Datei, alte bleibt im Verlauf
         const b = await readJson(req, 4000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Anpassen nicht mehr möglich" });
@@ -5338,15 +5388,15 @@ module.exports = function (D) {
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId);
         if (!fm || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich (kein Original gespeichert)" });
         const sm = await store.fileMeta(fm.src), data = sm && await store.fileData(fm.src); if (!data) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden" });
-        const pl0 = fm.place || {}, opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: 1 };
+        const pl0 = fm.place || {}, opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.25, +b.scale)) : (+pl0.scale || 1) };
         let r; try { r = await withPdf(() => placeFile(data, sm.original || "pdf", fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
-        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
+        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? " · " + Math.round(opt.scale * 100) + " %" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileChecks = checks; }
         o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: curId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Cockpit (angepasst)" }]).slice(-30);
         if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
-        hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + (opt.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt.rotate ? ", " + opt.rotate + "° gedreht" : "")); stamp(o); await store.putOrder(o);
+        hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + (opt.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt.rotate ? ", " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? ", " + Math.round(opt.scale * 100) + " %" : "")); stamp(o); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/replace" && req.method === "POST") {

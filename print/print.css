@@ -2346,3 +2346,4 @@ html.light .ps-co-sec{box-shadow:0 1px 2px rgba(18,20,28,.04),0 8px 24px rgba(18
 .ps-ogrp{max-width:520px;margin:6px auto 14px;text-align:left}.ps-ogrp .ps-osub{justify-content:center}
 .ps-ogrp ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}.ps-ogrp li a{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--ps-line);border-radius:12px;color:inherit;text-decoration:none}
 .ps-ogrp li.on a{border-color:var(--ps-focus)}.ps-ogrp li a>span{display:grid}.ps-ogrp li small{opacity:.65;font-size:12px}.ps-ogrp-t{display:flex;justify-content:space-between;margin:10px 4px 0;font-size:15px}.ps-ogrp-t b{font-size:17px}
+.ps-bfix-i{margin:4px 0 8px;padding-left:18px;font-size:13px;display:grid;gap:3px}

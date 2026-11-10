@@ -2017,7 +2017,7 @@
     var pgN = pagesNeeded(), pagesTxt = pgN ? "<b>" + pgN + " Seiten in einer PDF</b> (inkl. Umschlag) – Einzelseiten in Leserichtung, keine Doppelseiten: Seite 1 = Titel, Seite " + pgN + " = Rückseite; leere Seiten bitte mitzählen"
       : sd === 2 ? (f ? "Seite 1 = Außenseite, Seite 2 = Innenseite" : "Seite 1 = Vorderseite, Seite 2 = Rückseite") + " – beide in einer PDF" : "1 Seite";
     var items = [
-      ["📏", "Dateiformat", "<b>" + unit(fileW) + " × " + unit(fileH) + "</b> – Endformat " + unit(sz.w) + " × " + unit(sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
+      ["📏", "Anzulieferndes Format", "Datei anlegen in <b>" + unit(fileW) + " × " + unit(fileH) + "</b> – Endformat " + unit(sz.w) + " × " + unit(sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
       ["🛡️", "Sicherheitsabstand", "Texte, Logos und wichtige Inhalte mindestens <b>" + mmF(safe) + " mm</b> vom Rand des Endformats entfernt" + (p.kind === "banner" ? " – im Randbereich sitzen Saum und Ösen" : "")],
       ["🖼️", "Auflösung", "Bilder mit mindestens <b>" + dpi + " dpi</b> in Endgröße" + (big ? " (für Großformat genügt das, aus der Entfernung gesehen)" : "") + "; Logos und Texte am besten als Vektor"],
       ["📄", "Seiten", pagesTxt],
@@ -2275,7 +2275,7 @@
           if (cmk >= 2) warns.push("!" + lab + "Die Datei enthält Schnittmarken (Beschnittmarken) an den Ecken – die würden mitgedruckt. Bitte die PDF ohne Schnittmarken exportieren (nur mit " + (r.b || S.prod.bleed || 2) + " mm Beschnitt), z. B. in InDesign/Illustrator unter „Marken und Anschnitt“ die Schnittmarken abwählen.");
           else if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
           if (r.b > 0) { var wo = 0, ci = 0, tot = 0; for (var yy = Math.round(sp); yy < H - sp; yy += 5) { tot++; var o1 = px(Math.max(0, Math.round(bp * 0.4)), yy), i1 = px(Math.round(bp) + 2, yy); if (o1[0] > 245 && o1[1] > 245 && o1[2] > 245 && !(i1[0] > 245 && i1[1] > 245 && i1[2] > 245)) wo++; }
-            if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden können weiße Ränder (Blitzer) entstehen."); }
+            if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden kann ein feiner weißer Rand sichtbar sein. Hintergrund bitte bis ganz an den Rand der Datei ziehen."); }
           // Weißer Rand im Endformat (Wunsch Simon 06.11.2026: nur bei farbigem Hintergrund mit erkennbarem weißem Rahmen, ganz weiße Seiten sind egal): je Seite Abstand von der Schnittlinie bis zum ersten nicht-weißen Pixel – ist er auf fast allen Zeilen
           // gleich (ein Streifen statt verstreuter Texte auf weißem Grund), ist das ein weißer Rahmen bzw. ein zu klein platziertes Motiv → Hinweis (kein Fehler, kann gewollt sein)
           var wht = function (p2) { return p2[0] > 238 && p2[1] > 238 && p2[2] > 238; }, maxD = Math.round(Math.min(20 * pxmm, Math.min(W, H) / 4)), frm = [], fmm = [];
@@ -2324,7 +2324,7 @@
   function bleedFixHtml(f) {
     if (S.fileOrig && S.fileOrig.next === f.fileId) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedMode === "zoom" ? "Motiv minimal vergrößert." : "Randbereiche gespiegelt – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="bleedundo">Rückgängig</button></div>';
     if (f.kind !== "upload" || !(f.checks || []).some(function (c) { return /keinen Beschnitt/.test(c.text || ""); })) return "";
-    return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so gibt es nach dem Schneiden keine weißen Blitzer.</span><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
+    return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so bleibt nach dem Schneiden kein weißer Rand stehen. Du siehst danach sofort die Vorschau und kannst es rückgängig machen.</span><ul class="ps-bfix-i"><li><b>Ränder spiegeln:</b> die äußersten Millimeter werden nach außen gespiegelt – dein Motiv bleibt gleich groß und unverändert.</li><li><b>Motiv leicht vergrößern:</b> das Motiv wird minimal größer gezogen, bis es den Beschnitt füllt – Inhalte ganz am Rand werden etwas angeschnitten.</li></ul><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
   }
   // ── Anpassen: Upload ganz einpassen / Format füllen, drehen, Größe – der Server setzt die Datei vom Original aus neu (exakte Größe inkl. Beschnitt) ──
   function adjHtml(f) {
