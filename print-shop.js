@@ -1747,7 +1747,7 @@ module.exports = function (D) {
   async function placeFile(buf, type, size, bleed, o, sides) {
     const { PDFDocument, degrees } = require("pdf-lib");
     const out = await PDFDocument.create(), b = (+bleed || 0) * MM_PT, W = size.w * MM_PT + 2 * b, H = size.h * MM_PT + 2 * b;
-    const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.25, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
+    const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.05, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
     let items = [];
     if (type === "pdf") { const src = await PDFDocument.load(buf); for (const sp of src.getPages()) items.push({ el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true }); }
     else items.push({ el: type === "png" ? await out.embedPng(buf) : await out.embedJpg(buf), rot: 0 });
@@ -5481,7 +5481,7 @@ module.exports = function (D) {
         // Ausgangsbasis: Original des Kunden (src) – fehlt es (z. B. nach Seiten-Tausch oder Beschnitt), wird die aktuelle Datei zur Basis (Änderungen schaukeln sich nicht auf)
         let srcId = fm.src, sm = srcId ? await store.fileMeta(srcId) : null, data = sm ? await store.fileData(srcId) : null, isBase = false;
         if (!data) { srcId = fm.id; sm = { original: "pdf" }; data = await store.fileData(fm.id); isBase = true; } if (!data) return J(res, 400, { ok: false, error: "Datei nicht mehr vorhanden" });
-        const pl0 = isBase ? { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 } : (fm.place || {}), opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.25, +b.scale)) : (+pl0.scale || 1),
+        const pl0 = isBase ? { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 } : (fm.place || {}), opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.05, +b.scale)) : (+pl0.scale || 1),
           dx: b.dx != null && isFinite(+b.dx) ? Math.max(-500, Math.min(500, +b.dx)) : (+pl0.dx || 0), dy: b.dy != null && isFinite(+b.dy) ? Math.max(-500, Math.min(500, +b.dy)) : (+pl0.dy || 0) };
         let r; try { r = await withPdf(() => placeFile(data, sm.original || "pdf", fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
