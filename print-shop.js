@@ -1777,7 +1777,9 @@ module.exports = function (D) {
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
     for (const sp of src.getPages()) {
       if ((sp.getRotation().angle || 0) % 360) throw bad("Gedrehte PDF-Seiten können nicht automatisch ergänzt werden");
-      const emb = await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
+      // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
+      const sz = sp.getSize(), hasB = Math.abs(sz.width - (W + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (H + 2 * b)) < 2 * MM_PT;
+      const emb = hasB ? await out.embedPage(sp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
       if (mode === "zoom") { const f = Math.max((W + 2 * b) / pw, (H + 2 * b) / ph); pg.drawPage(emb, { x: (W + 2 * b - pw * f) / 2, y: (H + 2 * b - ph * f) / 2, xScale: f, yScale: f }); }
       else {   // 8 gespiegelte Kopien rundum, leicht überlappend (keine Nahtlinien), Mitte zuletzt obenauf
         const sx = W / pw, sy = H / ph, e = 1.5;
@@ -5385,7 +5387,6 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, mode = b.mode === "zoom" ? "zoom" : "mirror";
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId); if (!fm || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(curId), info = data && await pdfInfoX(data); if (!info || info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
-        if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
         let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randbereiche gespiegelt – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
