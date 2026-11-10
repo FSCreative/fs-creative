@@ -328,6 +328,10 @@ function pageCn(){
     (list.map(function(c){ return '<tr><td>'+(c.status>=1000?pill("paid","Bezahlt"):c.status===100?pill("draft","Entwurf"):pill("open","Offen"))+'</td><td class="nowrap">'+esc(c.nr)+'</td><td><b>'+esc(c.contact)+'</b>'+(c.header?'<div class="sub" title="'+esc(c.header)+'">'+esc(c.header)+'</div>':'')+'</td><td class="num">'+deShort(c.date)+'</td><td class="r num">'+eur(c.gross)+'</td></tr>'; }).join("")||'<tr><td colspan="5" class="empty">Keine Gutschriften.</td></tr>')+'</tbody></table></div></section>';
 }
 
+/* Zahlungsgebühren ohne Kategorie (PayPal/Mollie bis 10.11.2026) – Ein-Klick-Zuordnung, Handy und PC */
+function feeNote(all){ var nocat=(all||[]).filter(function(v){ return !v.category&&v.status!==50&&/zahlungsgeb|zahlungsverkehr/i.test(v.desc||""); }); if(!nocat.length) return "";
+  var sum=nocat.reduce(function(a,v){ return a+(+v.gross||0); },0);
+  return '<div class="notice" style="margin:0 0 12px"><span><b>'+nocat.length+' Zahlungsgebühr'+(nocat.length===1?"":"en")+' ohne Kategorie</b> ('+eur(sum)+') – z. B. PayPal-Gebühren. Richtig ist „Kontoführung / Kartengebühren“ wie bei Mollie.</span><button type="button" class="btn primary" data-act="ffeecat:'+esc(nocat.map(function(v){return v.id;}).join(","))+'">Alle zuordnen</button></div>'; }
 /* ---------- Belege mit Kategorien links ---------- */
 function pageVou(){
   var y=String(F.D.year); vouLoad(); var vd=C.vou[y];
@@ -343,7 +347,7 @@ function pageVou(){
   var nodocN=all.filter(noDocV).length;
   var vp=function(v){ if(v.status===50) return pill("draft","Entwurf"); if(v.status===1000) return pill("paid","Bezahlt"); if(v.open>0.005){ var due=v.dueDate||""; return due&&due<F.D.today?pill("due","Fällig"):pill("open","Offen"); } return pill("grey",v.statusLabel); };
   var rows=list.slice(pg*per,(pg+1)*per).map(function(v){ return '<tr class="fsd-row" data-act="sdvou:'+esc(v.id)+'"'+(v.hasDoc&&v.docId&&F.vouDocUrl?' data-prefetch-doc="'+esc(F.vouDocUrl(v))+'"':'')+'><td>'+vp(v)+'</td><td class="m nowrap">'+(v.status===50?'– – –':de(v.date))+'</td><td><div class="k-who">'+kAv(v.supplier)+'<div><div class="sub fsd-who" style="max-width:260px" title="'+esc(v.supplier||"")+'">'+esc(v.supplier||"—")+'</div><div class="sub" style="max-width:260px" title="'+esc(v.desc||"")+'">'+esc(v.desc||"")+'</div></div></div></td><td class="r nowrap">'+(v.cd==="D"?"":"-")+eur(v.gross)+'</td><td class="r nowrap c-open">'+eur(v.open||0)+'</td><td class="c-cat">'+(v.category?'<span class="fsd-chip" title="'+esc(v.category)+'">'+esc(v.category)+'</span>':'')+'</td><td>'+docBadge(v)+'</td></tr>'; }).join("");
-  return head("Belege","",'<button class="btn" data-act="sdvoureload">'+ic("sync")+'Aktualisieren</button><button class="btn primary" data-act="voucher">'+ic("plus")+'Ausgabe erfassen</button>')+
+  return head("Belege","",'<button class="btn" data-act="sdvoureload">'+ic("sync")+'Aktualisieren</button><button class="btn primary" data-act="voucher">'+ic("plus")+'Ausgabe erfassen</button>')+feeNote(all)+
     '<div class="fsd-vou"><aside class="fsd-card fsd-cats">'+catHtml+'</aside><section class="fsd-card flush fsd-tc"><div class="fsd-bar">'+tabs("fin:vou",f,[["all","Alle"],["draft","Entwurf"],["open","Offen"],["paid","Bezahlt"],["nodoc","Ohne Belegdatei",nodocN]])+search("vou","Suchen …")+'</div>'+
     (f==="nodoc"?mdocPanel(q)+'</section></div>':'<div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Belegdatum</th><th>Lieferant / Kunde</th><th class="r">Betrag (Brutto)</th><th class="r c-open">Offen (Brutto)</th><th class="c-cat">Kategorie</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="8" class="empty">Keine Belege in dieser Ansicht.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section></div>');
 }
@@ -1157,8 +1161,7 @@ function mVou(){
     {label:"Ausgaben "+(thisY?MNL[+mk.slice(5,7)-1]:y),val:eur0(mSum(ex,function(v){return v.gross;})),sub:ex.length+" Beleg"+(ex.length===1?"":"e")},
     {label:"Alle",val:String(all.length),sub:"Belege "+y,act:"fin:vou:all",on:f==="all"}]);
   var row=function(v){ return mRow("sdvou:"+esc(v.id),v.supplier,esc(v.category||"ohne Kategorie")+" · "+(v.date?deShort(v.date):"ohne Datum")+(v.hasDoc?"":' · <span class="fsm-warn">ohne Datei</span>'),(v.cd==="D"?"":"-")+eur(v.gross),vp(v),"lx"); };
-  var nocat=all.filter(function(v){ return !v.category&&v.status!==50&&/zahlungsgeb|zahlungsverkehr/i.test(v.desc||""); });
-  var feeH=nocat.length?'<div class="notice"><span><b>'+nocat.length+' Zahlungsgebühr'+(nocat.length===1?"":"en")+' ohne Kategorie</b> ('+eur(mSum(nocat,function(v){return v.gross;}))+') – z. B. PayPal-Gebühren. Richtig ist „Kontoführung / Kartengebühren“ wie bei Mollie.</span><button type="button" class="btn primary" data-act="ffeecat:'+esc(nocat.map(function(v){return v.id;}).join(","))+'">Alle zuordnen</button></div>':'';
+  var feeH=feeNote(all);
   return top+feeH+chips+
     '<div class="fsm-filt">'+mSearch("vou","Lieferant, Betrag …")+'<select class="f" data-fvsel="1" aria-label="Kategorie"><option value="">Alle Kategorien</option>'+Object.keys(cats).sort().map(function(k){ return '<option'+(k===cat?" selected":"")+' value="'+esc(k)+'">'+esc(k)+' ('+cats[k]+')</option>'; }).join("")+'</select></div>'+
     (f==="nodoc"?'<section class="fsm-card">'+mdocPanel(q)+'</section>':'<section class="fsm-card flush fsm-list">'+(mGrouped(list,list.slice(pg*per,(pg+1)*per),function(v){return v.date;},sg,row,function(s){ return (s>0?"+":"")+eur0(s); })||'<p class="fsm-empty">Keine Belege'+(f!=="all"||q||cat?" in dieser Ansicht":"")+'.</p>')+pager(list.length,per)+'</section>')+
