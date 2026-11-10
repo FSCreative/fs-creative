@@ -30,6 +30,7 @@ F.css(
 '.sd-tx .top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px}.sd-tx .amt{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;white-space:nowrap}.sd-tx .why{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
 '.sd-tx.gone{opacity:.35;pointer-events:none;transition:opacity .3s}'+
 '.sd-pick{display:grid;max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:12px}'+
+'.vps{border:1px solid color-mix(in srgb,var(--glow,#2870ed) 35%,transparent);background:color-mix(in srgb,var(--glow,#2870ed) 7%,transparent);border-radius:14px;padding:10px 12px;margin:0 0 14px}.vps-r{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}.vps-r:first-of-type{border-top:0}.vps-r span{font-size:12.5px}'+
 '.sd-pickrow{display:flex;align-items:stretch;border-top:1px solid var(--line)}.sd-pickrow>button{flex:1;border-top:0!important;min-width:0}.sd-pickm{display:flex;align-items:center;gap:5px;padding:0 10px;font-size:12px;color:var(--ink-3);white-space:nowrap;cursor:pointer}.sd-multi:not(:empty){border-top:1px solid var(--line);padding-top:10px}'+
 '.sd-pick button{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border:0;border-top:1px solid var(--line);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}.sd-pick button>span:first-child{min-width:0;overflow-wrap:anywhere}.sd-pick button>.num{flex:none;white-space:nowrap}.sd-pick button:first-child{border-top:0}.sd-pick button:hover{background:var(--hover,var(--sunk))}'+
 '.sd-vrow{display:grid;grid-template-columns:84px 110px minmax(0,1fr) 34px;gap:6px;align-items:start;padding:8px;border:1px solid var(--line);border-radius:12px}.sd-vrow [data-v=cat]{grid-column:1/-1}@media (max-width:900px){.sd-vrow{grid-template-columns:96px minmax(0,1fr) 40px}.sd-vrow input.cm{grid-column:1/-1;order:9}}'+'.drawer .foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}'+
@@ -521,6 +522,7 @@ function openVou(id){
     var d=document.getElementById("drawer"); d.classList.add("xl");
     F.openDrawer(drawerHead(v.cd==="D"?"Einnahme-Beleg":"Beleg",(v.supplier||"Beleg")+" · "+eur(v.gross),'<div class="row" style="gap:8px;margin-top:6px">'+vTag(v)+(v.enshrined?'<span class="tag grey">festgeschrieben</span>':'')+'</div>')+
       (open&&v.open>0.005&&F.sugBox?F.sugBox("voucher",id):'')+   /* Vorschlag: passender Bankumsatz (zreview.js) */
+      (open&&v.open>0.005?'<div id="vouPaySug" data-id="'+esc(id)+'"></div>':'')+   /* passende offene Zahlungen mit „Verbinden“ (Simon 10.11.2026) */
       '<div class="sd-acts" style="margin-bottom:14px">'+acts.join("")+'</div>'+
       '<div class="sd-split"><form data-form="sdvou" data-id="'+esc(id)+'" class="stackf" style="min-width:0">'+
         (locked?'<div class="notice" style="background:var(--sunk)">'+(v.enshrined?"Festgeschrieben – nicht mehr änderbar.":"Bezahlt – zum Ändern zuerst „Zahlung lösen“.")+'</div>':'')+
@@ -533,8 +535,19 @@ function openVou(id){
     if(locked) document.querySelectorAll("#vrows input,#vrows select,#vrows button").forEach(function(x){ x.disabled=true; });
     else { var rs=document.querySelector('[data-form="sdvou"] [name=rule]'); if(rs) F.taxRuleSync(rs); }
     S.vcats=cats; if(v.cd!=="D") vUvaLoad(id);
+    if(open&&v.open>0.005) bankFresh(function(){ vouPaySug(v); });
   });
 }
+/* Beleg-Ansicht: passende offene Bankumsätze (Server-Vorschlag oder gleicher Betrag, richtige Richtung; bei Ausgaben auch bis 10 € Mehrbetrag → Differenz als Gebühr) */
+function vouPaySug(v){ var el=document.getElementById("vouPaySug"); if(!el||el.getAttribute("data-id")!==String(v.id)) return; var id=String(v.id);
+  var L=(S.bank&&S.bank.ok?S.bank.transactions:[]).filter(function(t){ return v.cd==="D"?t.amount>0:t.amount<0; }).map(function(t){ var sg=(t.suggestions||[]).find(function(x){ return x.kind==="voucher"&&String(x.id)===id; }), d=Math.round((Math.abs(t.amount)-v.open)*100)/100;
+      return {t:t,sg:sg,d:d,ok:Math.abs(d)<=0.01||(v.cd!=="D"&&d>0&&d<=DIFF_MAX&&!!sg)}; }).filter(function(x){ return x.ok&&(x.sg||Math.abs(x.d)<=0.01); })
+    .sort(function(a,b){ return (b.sg?b.sg.score:0)-(a.sg?a.sg.score:0)||Math.abs(a.d)-Math.abs(b.d); }).slice(0,4);
+  if(!L.length){ el.innerHTML=''; return; }
+  el.innerHTML='<div class="vps"><div class="sec-t">Passende Zahlung'+(L.length>1?'en':'')+'</div>'+L.map(function(x){ var t=x.t; return '<div class="vps-r"><div><b>'+esc(t.name||"Umsatz")+'</b> <span class="muted">'+esc(deShort(t.date))+' · '+esc(String(t.purpose||"").slice(0,70))+'</span>'+(Math.abs(x.d)>0.01?'<br><span class="muted small">Differenz '+eur(x.d)+' → wird als Gebühr gebucht (du wählst)</span>':'')+'</div><b class="num">'+eur(t.amount)+'</b><button type="button" class="btn sm primary" data-act="vpslink:'+esc(t.id)+'|'+esc(id)+'|'+x.d+'">Verbinden</button></div>'; }).join("")+'</div>'; }
+F.action("vpslink",function(a){ var p=String(a).split("|"), d=+p[2]||0, done=function(){ setTimeout(function(){ reloadVouThen(p[1]); },700); };
+  if(Math.abs(d)>0.01){ diffAsk(d,function(kind){ bankDo(p[0],{op:"voucher",voucherId:p[1],diff:{kind:kind}},"Verbunden · Differenz "+eur(d)+" als "+(kind==="fees"?"Zahlungsverkehrskosten":"Mahngebühren")); done(); }); return; }
+  bankDo(p[0],{op:"voucher",voucherId:p[1]},"Beleg mit Zahlung verbunden"); done(); });
 /* Steuerliche Regel des Belegs: sichtbar und änderbar. Offen/Entwurf → mit „Speichern“; bezahlt → eigener Knopf (ändert nur die Regel,
    Zahlung bleibt); festgeschrieben → nur Anzeige. Darunter, wie die UVA den Beleg einordnet (gleicher Rechenkern wie die UVA). */
 function vTaxBox(v,locked){
