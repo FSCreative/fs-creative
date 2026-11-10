@@ -2020,15 +2020,18 @@
       '<rect x="' + (pb + ps) + '" y="' + (pb + ps) + '" width="' + Math.max(10, W - 2 * ps) + '" height="' + Math.max(10, H - 2 * ps) + '" rx="2" class="sa"/>' + lines +
       '<g class="tx"><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 10) + '" width="' + Math.min(70, W - 2 * ps - 16) + '" height="6" rx="3"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 22) + '" width="' + Math.min(110, W - 2 * ps - 16) + '" height="4" rx="2"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 31) + '" width="' + Math.min(90, W - 2 * ps - 16) + '" height="4" rx="2"/></g></svg>';
   }
+  // Sicherheitsabstand: Produktwert, bei Tunnelsaum Tunnelbreite + 1 cm (wie Server safeFor)
+  function sleeveCm() { var m = 0; Object.keys(S.sel || {}).forEach(function (k) { var x = /^sleeve_(\d+)_?cm$/.exec(String(S.sel[k])); if (x) m = Math.max(m, +x[1]); }); return m; }
+  function safeOf() { if (S.prod.imprint) return 0; var sl = sleeveCm(); return Math.max(+S.prod.safe || 3, sl ? sl * 10 + 10 : 0); }
   function reqHtml(open) {
-    var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = p.imprint ? 0 : +p.safe || 3, dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
+    var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = safeOf(), dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
     if (!sz) return "";
     var fileW = sz.w + 2 * b, fileH = sz.h + 2 * b, unit = function (v) { return big && v >= 1000 ? mmF(v / 10) + " cm" : mmF(v) + " mm"; };
     var pgN = pagesNeeded(), pagesTxt = pgN ? "<b>" + pgN + " Seiten in einer PDF</b> (inkl. Umschlag) – Einzelseiten in Leserichtung, keine Doppelseiten: Seite 1 = Titel, Seite " + pgN + " = Rückseite; leere Seiten bitte mitzählen"
       : sd === 2 ? (f ? "Seite 1 = Außenseite, Seite 2 = Innenseite" : "Seite 1 = Vorderseite, Seite 2 = Rückseite") + " – beide in einer PDF" : "1 Seite";
     var items = [
       ["📏", "Anzulieferndes Format", "Datei anlegen in <b>" + unit(fileW) + " × " + unit(fileH) + "</b> – Endformat " + unit(sz.w) + " × " + unit(sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
-      ["🛡️", "Sicherheitsabstand", "Texte, Logos und wichtige Inhalte mindestens <b>" + mmF(safe) + " mm</b> vom Rand des Endformats entfernt" + (p.kind === "banner" ? " – im Randbereich sitzen Saum und Ösen" : "")],
+      ["🛡️", "Sicherheitsabstand", "Texte, Logos und wichtige Inhalte mindestens <b>" + mmF(safe) + " mm</b> vom Rand des Endformats entfernt" + (sleeveCm() ? " – im Tunnelsaum (" + sleeveCm() + " cm) steckt die Stange, dort nichts Wichtiges platzieren" : p.kind === "banner" ? " – im Randbereich sitzen Saum und Ösen" : "")],
       ["🖼️", "Auflösung", "Bilder mit mindestens <b>" + dpi + " dpi</b> in Endgröße" + (big ? " (für Großformat genügt das, aus der Entfernung gesehen)" : "") + "; Logos und Texte am besten als Vektor"],
       ["📄", "Seiten", pagesTxt],
       ["🎨", "Farben", "<b>CMYK</b> anlegen – RGB-Dateien werden beim Druck umgerechnet, leuchtende Bildschirmfarben wirken dann etwas ruhiger"],
@@ -2259,7 +2262,7 @@
   function pfvRender() {
     var box = document.getElementById("psPfv"); if (!box || !S.file) return; var f = S.file, key = f.fileId + (S.pfvOff ? ":0" : ":1"), c = box.querySelector(".ps-pfv-c");
     if (PFV[key]) { c.innerHTML = PFV[key].html; document.getElementById("psPfvW").innerHTML = PFV[key].warn; return; }
-    var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = S.prod.imprint ? 0 : S.prod.safe || 3;
+    var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = safeOf();
     if (!trim) { c.textContent = ""; return; }
     pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
       var n = Math.min(doc.numPages, 2), jobs = []; for (var i = 1; i <= n; i++) jobs.push(doc.getPage(i));

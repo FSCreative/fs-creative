@@ -1568,11 +1568,14 @@ module.exports = function (D) {
     }
     ACC_CACHE.set(prod.sku, { at: Date.now(), items }); return items;
   }
+  // Sicherheitsabstand ab Endformat: Produktwert; bei Tunnelsaum (sleeve_Xcm) liegt die Stange im Saum → Tunnelbreite + 1 cm frei halten
+  const sleeveMm = sel => { let m = 0; Object.values(sel || {}).forEach(v => { const x = /^sleeve_(\d+)_?cm$/.exec(String(v)); if (x) m = Math.max(m, +x[1] * 10); }); return m; };
+  const safeFor = (prod, sel) => { if (!prod || prod.imprint) return prod ? 0 : 3; const sl = sleeveMm(sel); return Math.max(+prod.safe || 3, sl ? sl + 10 : 0); };
   // ── Druckvorlage (PDF) je Produkt/Ausführung: Datenformat, Endformat, Beschnitt, Sicherheitsabstand, Falzlinien ──
   const TPL_CACHE = new Map();
   async function templatePdf(prod, n) {
     const PDFDocument = require("pdfkit");
-    const bleed = n.kind === "textile" || n.kind === "promo" || prod.imprint ? 0 : +prod.bleed || 0, safe = prod.imprint ? 0 : +prod.safe || 3;
+    const bleed = n.kind === "textile" || n.kind === "promo" || prod.imprint ? 0 : +prod.bleed || 0, safe = safeFor(prod, n.sel);
     const shapeTxt = (n.labels || []).map(l => l[1]).join(" "), round = /\b(rund|kreis|oval|round|circle)/i.test(shapeTxt) && !/eckig/i.test(shapeTxt);
     const sheets = [];
     if (n.size) { const sd = n.folds ? 2 : Math.max(1, Math.min(2, n.sides || 1)); for (let i = 0; i < sd; i++) sheets.push({ w: n.size.w, h: n.size.h, b: bleed, title: n.folds ? (i ? "Innenseite" : "Außenseite") : sd > 1 ? (i ? "Rückseite" : "Vorderseite") : "Motiv", side: i, area: !!prod.imprint }); }
@@ -5301,7 +5304,7 @@ module.exports = function (D) {
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
           return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
-        const prodX = await findProduct(o.product.key).catch(() => null), safeMm = prodX ? (prodX.imprint ? 0 : +prodX.safe || 3) : 3;   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
+        const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
         const allF = Array.from(new Set([o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean))).slice(0, 60), pagesOf = {};
         for (const f of allF) { const mm = await store.fileMeta(f).catch(() => null); if (mm) pagesOf[f] = +mm.pages || 1; }
