@@ -3102,7 +3102,7 @@
     var hd = statusHead(o, SF, Date.now()), k = hd.key;
     if (k === "fresh" && o.nr) { GT_PEND = o; gtFlush(); }
     LIVE.o = o; LIVE.id = id; LIVE.t = t;
-    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t), pf = k === "pay" || k === "rejected" ? "" : proofHtml(o, id, t);
+    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t), pf = k === "pay" || k === "rejected" ? "" : redoHtml(o, id, t) + proofHtml(o, id, t);
     var body = k === "pay" ? '<div class="btn-row" style="justify-content:center"><button type="button" class="ps-btn primary" data-act="retrypay:' + esc(id) + "|" + esc(t) + '">Erneut bezahlen</button></div>'
       : k === "rejected" ? "" : k === "shipped" ? tc + tr + fb : k === "delivered" ? fb + tr + tc : pf + tr + tc + fb;
     var ofl = (o.files || []).length && k !== "pay" ? '<p class="ps-ofiles">' + o.files.map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ") + "</p>" : "";
@@ -3116,8 +3116,36 @@
     if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
     root.innerHTML = '<div class="ps-panel ps-status st-' + k + '" data-oid="' + esc(id) + '" data-t="' + esc(t) + '" data-st="' + esc(o.status) + '" data-sig="' + esc(liveSig(o)) + '">' + h + "</div>";
     headUpdate();   // Bestellseite: in der Handy-Leiste nicht „Start“ markieren
-    if ((location.hash === "#freigabe" || location.hash === "#konto") && !S.pfScrolled) { var pfx = document.getElementById(location.hash.slice(1)); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); var pw = pfx.querySelector('input[type="password"]'); if (pw) pw.focus({ preventScroll: true }); }, 150); } }   // aus der Mail: Freigabe bzw. „Kundenkonto anlegen“
+    if ((location.hash === "#freigabe" || location.hash === "#konto" || location.hash === "#neu") && !S.pfScrolled) { var pfx = document.getElementById(location.hash.slice(1)); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); var pw = pfx.querySelector('input[type="password"]'); if (pw) pw.focus({ preventScroll: true }); }, 150); } }   // aus der Mail: Freigabe bzw. „Kundenkonto anlegen“
   }
+  // Druckdaten abgelehnt (Wunsch Simon 10.11.2026): Grund anzeigen und neue Datei hochladen – gleiche Prüfung wie im Shop, ersetzt die Druckdatei der Bestellung
+  function redoHtml(o, id, t) {
+    var r = o.redo; if (!r) return "";
+    var files = (o.files || []).map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ");
+    var up = function (lab) { return r.canUpload ? '<div class="ps-redo-u">' + (r.motifs ? '<label class="ps-lbl">Motiv <select class="ps-redo-m">' + Array.apply(null, Array(r.motifs)).map(function (_, i) { return '<option value="' + i + '">Motiv ' + (i + 1) + "</option>"; }).join("") + "</select></label>" : "") +
+      '<label class="ps-btn primary ps-redo-b">' + lab + '<input type="file" accept="' + ACC_UP + '" data-redoup hidden></label><span class="pd-muted">PDF, JPG oder PNG · max. 50 MB</span></div><div class="ps-redo-p" hidden><span class="ps-spin"></span> <span>Datei wird hochgeladen und geprüft …</span></div><div class="ps-redo-c"></div><p class="ps-err" role="alert" hidden></p>' : ""; };
+    if (r.status === "uploaded") return '<div class="ps-pfx ok" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>✓ Neue Druckdaten sind angekommen</h3><p>Danke! Wir prüfen sie und geben den Auftrag dann in den Druck. Bei Fragen melden wir uns.</p><p>' + files + "</p>" + (r.canUpload ? "<details><summary>Doch eine andere Datei hochladen</summary>" + up("Andere Datei wählen") + "</details>" : "") + "</div>";
+    return '<div class="ps-pfx warn" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte neue Druckdaten hochladen</h3><p>Wir haben deine Druckdaten angesehen – so können wir sie leider noch nicht drucken lassen.</p>' +
+      (r.reason ? '<p class="ps-pfx-n"><b>Grund:</b> ' + esc(r.reason) + "</p>" : "") + (files ? "<p>Bisherige Datei: " + files + "</p>" : "") + up("Neue Datei hochladen") + "</div>";
+  }
+  document.addEventListener("change", function (e) {
+    var inp = e.target; if (!inp || !inp.hasAttribute || !inp.hasAttribute("data-redoup")) return; var f = inp.files && inp.files[0]; inp.value = ""; if (!f) return;
+    var bx = inp.closest(".ps-pfx"), err = bx.querySelector(".ps-err"), pr = bx.querySelector(".ps-redo-p"), ck = bx.querySelector(".ps-redo-c"), ms = bx.querySelector(".ps-redo-m");
+    err.hidden = true; ck.innerHTML = "";
+    if (f.size > 50 * 1024 * 1024) { err.textContent = "Die Datei ist größer als 50 MB."; err.hidden = false; return; }
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { err.textContent = "Bitte PDF, JPG oder PNG hochladen."; err.hidden = false; return; }
+    pr.hidden = false;
+    var x = new XMLHttpRequest(); x.open("POST", "/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/reupload?t=" + encodeURIComponent(bx.getAttribute("data-t")) + (ms ? "&motif=" + encodeURIComponent(ms.value) : ""));
+    x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
+    x.upload.onprogress = function (ev) { if (ev.lengthComputable) pr.lastChild.textContent = ev.loaded < ev.total ? "Datei wird hochgeladen … " + Math.round(ev.loaded / ev.total * 100) + " %" : "Datei wird geprüft …"; };
+    x.onload = function () { pr.hidden = true; var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {}
+      if (j.file) { pxMake(f, j.file); ck.innerHTML = checksHtml(j.file.checks || []); }
+      if (!j.ok) { err.textContent = j.error || "Upload fehlgeschlagen – bitte erneut versuchen."; err.hidden = false; return; }
+      if (LIVE.o) { LIVE.o.redo = j.redo; LIVE.o.files = j.files; if (j.redo.status === "uploaded") { renderStatus(LIVE.o, LIVE.id, LIVE.t); return; } }
+      toast("Motiv hochgeladen ✓ – bitte auch die übrigen Motive"); };
+    x.onerror = function () { pr.hidden = true; err.textContent = "Upload fehlgeschlagen – bitte erneut versuchen."; err.hidden = false; };
+    x.send(f);
+  });
   // Druckfreigabe (Wunsch Simon 05.11.2026): aufbereitete bzw. ausgetauschte Druckdaten ansehen und freigeben – oder Änderung wünschen
   function proofHtml(o, id, t) {
     var pf = o.proof; if (!pf) return "";
@@ -3243,7 +3271,7 @@
   }
   // Status leise aktualisieren: alle ~2 min, nur bei sichtbarem Tab und offenen Bestellungen; wer gerade tippt oder bewertet, wird nicht gestört
   var LIVE = { at: 0 }, LIVE_OPEN = ["paid", "invoice_requested", "ordered", "in_production", "shipped", "problem"];
-  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0, o.proof ? o.proof.status + o.proof.sentAt : ""].join("|"); }
+  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0, o.proof ? o.proof.status + o.proof.sentAt : "", o.redo ? o.redo.status + o.redo.sentAt + o.redo.uploadedAt : ""].join("|"); }
   function liveBusy() {
     var a = document.activeElement; if (a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
     if (root.querySelector('.ps-fb[data-r], .ps-fb [aria-pressed="true"]')) return true;

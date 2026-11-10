@@ -2638,6 +2638,7 @@ module.exports = function (D) {
     try {
       const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
       if (!(o.status === "paid" || o.status === "invoice_requested" || (o.status === "problem" && !o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – kann nicht bestellt werden");
+      if (o.redo && o.redo.status === "open") throw new Error("Wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
       const fm = await store.fileMeta(o.fileId); if (!fm) throw new Error("Druckdatei fehlt");
       const c = o.customer, base = cfg().publicUrl;
       const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
@@ -4258,13 +4259,23 @@ module.exports = function (D) {
   const feedId = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8);   // wie im Merchant-Feed
   // Freigabe vor dem Druck (Datencheck mit Grafikaufbereitung bzw. nach Datenaustausch durch Simon): aufbereitete Datei + Stand der Freigabe
   const fileLink = id => "/print/api/file/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(sig("file", id)) + "&pdf=1";
+  /* Druckdaten ablehnen (Simon 10.11.2026): Simon schreibt den Grund, sieht die Mail zuerst als Vorschau und sendet sie; der Kunde lädt auf der Bestellseite
+     eine neue Datei hoch (gleiche Prüfung wie im Shop) – die ersetzt die Druckdatei der Bestellung, Simon bekommt Push + Mail und prüft erneut. */
+  const redoLink = o => cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#neu";
+  const redoMail = (o, reason) => ({ to: o.customer.email, subject: "Bitte neue Druckdaten hochladen · " + o.nr, title: "Deine Druckdaten brauchen eine Korrektur",
+    intro: [(o.customer.firstName ? "Hallo " + o.customer.firstName + "," : "Hallo,"), "wir haben deine Druckdaten für " + o.product.title + " (" + o.copies + " Stk.) angesehen – so können wir sie leider noch nicht drucken lassen.", "Grund: " + reason,
+      "Bitte lade über den Button eine korrigierte Datei hoch. Sobald sie da ist, prüfen wir sie und geben den Auftrag in den Druck. Der Liefertermin verschiebt sich um die Zeit, bis die neue Datei da ist."],
+    rows: [["Neue Druckdatei hochladen", redoLink(o), "button"], ["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]],
+    outro: ["Fragen oder lieber gemeinsam anschauen? Antworte einfach auf diese Mail."] });
+  const redoPublic = o => o.redo ? { status: o.redo.status, reason: o.redo.reason || "", sentAt: o.redo.sentAt || "", uploadedAt: o.redo.uploadedAt || "", motifs: Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.length : 0, canUpload: !!REVIEW[o.status] && !isLogoKind(o) } : null;
+  const isLogoKind = o => o.product && (o.product.kind === "textile" || o.product.kind === "promo");
   const proofPublic = o => o.proof && o.proof.fileId ? { status: o.proof.status, sentAt: o.proof.sentAt, note: o.proof.note || "", answeredAt: o.proof.answeredAt || "", reply: o.proof.reply || "",
     files: (o.proof.files || [o.proof.fileId]).map((id, i, a) => ({ url: fileLink(id), label: a.length > 1 ? "Motiv " + (i + 1) : "Druck-PDF" })) } : null;
   // Druckdaten der Bestellung für die Kundin/den Kunden (Bestellseite und Kundenkonto): die zuletzt gültige Druck-PDF, bei mehreren Motiven je Motiv
   const orderFiles = o => (Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map((m, i) => ({ id: m.fileId, label: "Motiv " + (i + 1) })) : o.fileId ? [{ id: o.fileId, label: "Druckdaten" }] : []).filter(f => f.id).map(f => ({ url: fileLink(f.id), label: f.label }));
   const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
-    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o), files: orderFiles(o),
+    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o), redo: redoPublic(o), files: orderFiles(o),
     canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
     trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!foundOf(o) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
@@ -4624,6 +4635,35 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, draft: d });
       }
       // Druckfreigabe durch den Kunden (nur mit gültigem Bestell-Link): „Freigeben“ oder „Änderung wünschen“ mit Text – Simon bekommt Push und Mail, bestellt wird von ihm
+      const rum = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/reupload$/);
+      if (rum && req.method === "POST") {   // neue Druckdatei nach „Druckdaten abgelehnt“ (Body = Datei, ?t=Bestell-Token&motif=i)
+        if (!sameOrigin(req) || !sigOk("order", rum[1], u.searchParams.get("t"))) { req.resume(); return J(res, 404, { ok: false, error: "not_found" }); }
+        if (limited("upload", ip, 200, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" }); }
+        const o = await store.getOrder(rum[1]), rp = o && redoPublic(o);
+        if (!rp || !rp.canUpload) { req.resume(); return J(res, 409, { ok: false, error: o && o.redo && !REVIEW[o.status] ? "Der Auftrag ist schon in Produktion" : "Für diese Bestellung ist kein neuer Upload offen" }); }
+        const mi = parseInt(String(u.searchParams.get("motif") || ""), 10), motif = rp.motifs && mi >= 0 && mi < rp.motifs ? mi : rp.motifs ? 0 : -1;
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druckdaten")), 120).replace(/[\\/:*?"<>|]/g, "_");
+        const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
+        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
+          meta = await handleUpload(buf, name, { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, motifs: rp.motifs || undefined });
+        } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht verarbeitet werden" }); } finally { rel(); }
+        const view = fileView(meta);
+        if (view.blocked) return J(res, 200, { ok: false, error: "Die Datei hat noch Fehler – bitte korrigieren und erneut hochladen.", file: view });
+        meta.orderId = o.id; await store.putFile(meta);
+        const oldId = motif > -1 ? o.motifs[motif].fileId : o.fileId;
+        if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileKind = meta.kind; o.fileChecks = meta.checks || []; }
+        o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: oldId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Kunde" }]).slice(-30);
+        if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
+        const allNew = motif < 0 || o.motifs.every((m, i) => i === motif || (o.fileHistory || []).some(h => h.by === "Kunde" && h.motif === i && h.at >= o.redo.sentAt));
+        if (allNew) { o.redo.status = "uploaded"; o.redo.uploadedAt = nowIso(); }
+        hist(o, "Neue Druckdaten vom Kunden" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + meta.name); stamp(o); await store.putOrder(o);
+        const who = o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ");
+        if (allNew) {
+          if (D.push) D.push("lead", { title: "Neue Druckdaten: " + (who || o.nr), body: o.nr + " · " + o.product.title + "\nBitte prüfen und bei Print.com bestellen", url: "/admin#print", tag: "redo-" + o.id }).catch(() => {});
+          if (D.notifyTo) await mail(D.notifyTo, "Druckshop: neue Druckdaten " + o.nr, "Kunde hat neue Druckdaten hochgeladen", ["Bitte im Cockpit unter „Druck“ prüfen und dann bei Print.com bestellen."], orderRows(o).concat([["Datei", meta.name]]), [], o.customer.email).catch(() => {});
+        }
+        return J(res, 200, { ok: true, redo: redoPublic(o), file: view, files: orderFiles(o) });
+      }
       const pfm = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/proof$/);
       if (pfm && req.method === "POST") {
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
@@ -4890,7 +4930,7 @@ module.exports = function (D) {
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: o.customer.zip || "", city: o.customer.city || "", region: regionOf(o.customer.country, o.customer.zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
@@ -5331,6 +5371,19 @@ module.exports = function (D) {
         if (op === "place") { const o0 = await store.getOrder(id);
           if (o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" });
           const o = await placeOrder(id, "Cockpit" + (b.force === true && o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
+        if (op === "redo") {   // Druckdaten ablehnen: { reason, send } – ohne send nur Vorschau der Kundenmail
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          if (!REVIEW[o.status] && !(o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) throw new Error("Schon bei Print.com bestellt");
+          if (isLogoKind(o)) throw new Error("Bei Textil/Werbeartikeln bitte die Logos per Mail anfordern");
+          const reason = clip(String(b.reason || "").trim(), 2000); if (reason.length < 5) throw new Error("Bitte den Grund kurz beschreiben");
+          const m = redoMail(o, reason);
+          if (b.send !== true) return J(res, 200, { ok: true, preview: { to: m.to, subject: m.subject, html: mailHtml(m.title, m.intro, m.rows, m.outro) } });
+          const sent = await mail(m.to, m.subject, m.title, m.intro, m.rows, m.outro, D.notifyTo);
+          if (!sent) return J(res, 200, { ok: false, error: "Mail an den Kunden fehlgeschlagen" });
+          o.redo = { status: "open", reason, sentAt: nowIso(), round: ((o.redo && o.redo.round) || 0) + 1 };
+          hist(o, "Druckdaten abgelehnt – Kunde gebeten, neue Daten hochzuladen" + (o.redo.round > 1 ? " (Runde " + o.redo.round + ")" : "") + ": " + reason); stamp(o); await store.putOrder(o);
+          return J(res, 200, { ok: true, order: o });
+        }
         if (op === "proof") {   // aktuelle Druckdaten dem Kunden zur Freigabe senden (Mail mit Link zur Bestellseite: ansehen, freigeben oder Änderung wünschen)
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!REVIEW[o.status] && !(o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) throw new Error("Schon bei Print.com bestellt");

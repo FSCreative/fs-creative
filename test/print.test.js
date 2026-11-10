@@ -896,6 +896,27 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(sevMock.state.invoices.length, nInv + 1, "eine Sammelrechnung für den Warenkorb");
     const ginv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(ginv.invoicePosSave.length, 3, JSON.stringify(ginv.invoicePosSave.map(x => x.name)));
   });
+  await t("Druckdaten ablehnen: Mail-Vorschau, Senden, Bestellen gesperrt, Kunde lädt neue Datei hoch (Prüfung wie im Shop), danach wieder bestellbar", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "redo@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
+    const u1 = await upload(await pdfOf(89, 59, 2), "r1.pdf", BC);
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    const id = r.j.orderId, mails0 = M.mails.length;
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "redo", id, reason: "x", confirm: true })).ok, false, "Grund zu kurz");
+    const pv = await admin("/admin/api/print/op", { op: "redo", id, reason: "Beschnitt fehlt – bitte 2 mm Hintergrund über den Rand ziehen.", confirm: true });
+    assert.strictEqual(pv.ok, true, JSON.stringify(pv)); assert.strictEqual(pv.preview.to, "redo@example.com"); assert.ok(/Beschnitt fehlt/.test(pv.preview.html) && /#neu/.test(pv.preview.html)); assert.strictEqual(M.mails.length, mails0, "Vorschau sendet nichts");
+    const sd = await admin("/admin/api/print/op", { op: "redo", id, reason: "Beschnitt fehlt – bitte 2 mm Hintergrund über den Rand ziehen.", send: true, confirm: true });
+    assert.strictEqual(sd.ok, true, JSON.stringify(sd)); assert.ok(M.mails.some(m => m.to === "redo@example.com" && /Bitte neue Druckdaten hochladen/.test(m.subject)));
+    const pl = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.ok(!pl.ok && /neue Druckdaten/.test(pl.error), JSON.stringify(pl));
+    let st = (await (await fetch(B + "/print/api/order/" + id + "?t=" + r.j.token)).json()).order; assert.strictEqual(st.redo.status, "open"); assert.strictEqual(st.redo.canUpload, true);
+    const ru = (buf, name, tok) => fetch(B + "/print/api/order/" + id + "/reupload?t=" + (tok || r.j.token), { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) }), body: buf }).then(async x => ({ status: x.status, j: await x.json() }));
+    assert.strictEqual((await ru(await pdfOf(89, 59, 2), "x.pdf", "falsch")).status, 404);
+    const bad = await ru(await pdfOf(150, 150, 2), "falsch.pdf"); assert.strictEqual(bad.j.ok, false, JSON.stringify(bad.j)); assert.ok(bad.j.file && bad.j.file.blocked, "falsches Format wird abgelehnt");
+    const okU = await ru(await pdfOf(89, 59, 2), "neu.pdf"); assert.strictEqual(okU.j.ok, true, JSON.stringify(okU.j)); assert.strictEqual(okU.j.redo.status, "uploaded");
+    const od = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(od.order.fileId, okU.j.file.fileId, "Druckdatei der Bestellung ersetzt"); assert.ok(od.order.fileHistory.some(h => h.by === "Kunde"));
+    const pl2 = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.strictEqual(pl2.ok, true, JSON.stringify(pl2));
+    assert.strictEqual((await ru(await pdfOf(89, 59, 2), "spaet.pdf")).status, 409, "nach dem Bestellen kein Upload mehr");
+  });
   await t("Datencheck mit Grafikaufbereitung (+20 €): Druckdaten austauschen, zur Freigabe senden, Kunde gibt frei bzw. wünscht Änderung, erst dann bestellen", async () => {
     const base = { customer: Object.assign({}, cust, { email: "grafik@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     const u1 = await upload(await pdfOf(89, 59, 2), "g1.pdf", BC);
