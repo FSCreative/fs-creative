@@ -628,8 +628,9 @@ module.exports = function (D) {
 
   // ── Kosten des Zahlungsverkehrs (Differenzgrund MTC): Ausgabe 0 % ohne Vorsteuer, über denselben Bankumsatz ──
   async function bookCost(inv, amt, tx, day, supplier) {
-    const at = all("AccountingType").find(x => /geldverkehr|bankspesen|nebenkosten des geld/i.test(String(x.name || "")));
-    const v = { id: newId("Voucher"), status: "1000", creditDebit: "C", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt), sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00",
+    // Kategorie wie bei den Mollie-Gebühren (fin-mollie feeCat): „Kontoführung / Kartengebühren“ (74) – vorher fand die Suche nichts und PayPal-Gebühren blieben ohne Kategorie (Simon 10.11.2026)
+    const ats = all("AccountingType"), at = ats.find(x => String(x.id) === "74") || ats.find(x => /kartengeb|kontof(ü|ue)hrung|bankspesen|bankgeb|geldverkehr|nebenkosten des geld/i.test(String(x.name || "")));
+    const v = { id: newId("Voucher"), status: "1000", creditDebit: "C", voucherType: "VOU", currency: "EUR", taxType: "default", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt), sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00",
       supplierName: supplier || "Bank", description: (supplier && /mollie|paypal/i.test(supplier) ? supplier.replace(/ B\.V\./, "") + "-Zahlungsgebühr zu Rechnung " : "Kosten des Zahlungsverkehrs zu Rechnung ") + (inv.invoiceNumber || "") + " – ohne Vorsteuer", taxText: "keine Vorsteuer", origin: ref("Invoice", inv.id) };
     const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Nebenkosten des Geldverkehrs" };
     if (at) p.accountingType = ref("AccountingType", at.id);

@@ -362,6 +362,17 @@ module.exports = function (D) {
       await sev("PUT", "/Voucher/" + id, { body: { status: 100 } });
     } else if (op === "draft") {
       await sev("PUT", "/Voucher/" + id + "/resetToDraft");
+    } else if (op === "feecat") {        // Zahlungsgebühr ohne Kategorie → „Kontoführung / Kartengebühren“ (Ein-Klick, Simon 10.11.2026); ändert nur leere Positionen, keine Beträge
+      const cur = first(await sev("GET", "/Voucher/" + id)); if (!cur.id) throw new Error("Beleg nicht gefunden");
+      if (cur.enshrined) throw new Error("Der Beleg ist festgeschrieben.");
+      if (!/zahlungsgeb|zahlungsverkehr/i.test(String(cur.description || ""))) throw new Error("Nur für Zahlungsgebühren");
+      const meta = await sevMeta().catch(() => ({ accountingTypes: [] })), ats = meta.accountingTypes || [];
+      const at = ats.find(a => String(a.id) === "74") || ats.find(a => /kartengeb|kontof(ü|ue)hrung|bankspesen|bankgeb|geldverkehr/i.test(String(a.name || ""))); if (!at) throw new Error("Kategorie „Kontoführung / Kartengebühren“ nicht gefunden");
+      const pos = ((await sev("GET", "/VoucherPos", { query: { "voucher[id]": id, "voucher[objectName]": "Voucher", limit: 100 } }).catch(() => ({ objects: [] }))).objects || []).filter(x => !(x.accountingType && x.accountingType.id));
+      for (const x of pos) await sev("PUT", "/VoucherPos/" + x.id, { body: { accountingType: { id: String(at.id), objectName: "AccountingType" } } });
+      if (!cur.taxType) await sev("PUT", "/Voucher/" + id, { body: { taxType: "default" } }).catch(() => null);
+      VOU_CACHE.at = 0;
+      return { ok: true, fixed: pos.length, category: at.name };
     } else if (op === "reopen") {        // bezahlt → offen (Zahlung lösen)
       await sev("PUT", "/Voucher/" + id + "/resetToOpen");
     } else if (op === "delete") {        // nur Entwürfe ohne Zahlung (z. B. doppelt erfasster Beleg)

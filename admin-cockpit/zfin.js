@@ -1157,11 +1157,15 @@ function mVou(){
     {label:"Ausgaben "+(thisY?MNL[+mk.slice(5,7)-1]:y),val:eur0(mSum(ex,function(v){return v.gross;})),sub:ex.length+" Beleg"+(ex.length===1?"":"e")},
     {label:"Alle",val:String(all.length),sub:"Belege "+y,act:"fin:vou:all",on:f==="all"}]);
   var row=function(v){ return mRow("sdvou:"+esc(v.id),v.supplier,esc(v.category||"ohne Kategorie")+" · "+(v.date?deShort(v.date):"ohne Datum")+(v.hasDoc?"":' · <span class="fsm-warn">ohne Datei</span>'),(v.cd==="D"?"":"-")+eur(v.gross),vp(v),"lx"); };
-  return top+chips+
+  var nocat=all.filter(function(v){ return !v.category&&v.status!==50&&/zahlungsgeb|zahlungsverkehr/i.test(v.desc||""); });
+  var feeH=nocat.length?'<div class="notice"><span><b>'+nocat.length+' Zahlungsgebühr'+(nocat.length===1?"":"en")+' ohne Kategorie</b> ('+eur(mSum(nocat,function(v){return v.gross;}))+') – z. B. PayPal-Gebühren. Richtig ist „Kontoführung / Kartengebühren“ wie bei Mollie.</span><button type="button" class="btn primary" data-act="ffeecat:'+esc(nocat.map(function(v){return v.id;}).join(","))+'">Alle zuordnen</button></div>':'';
+  return top+feeH+chips+
     '<div class="fsm-filt">'+mSearch("vou","Lieferant, Betrag …")+'<select class="f" data-fvsel="1" aria-label="Kategorie"><option value="">Alle Kategorien</option>'+Object.keys(cats).sort().map(function(k){ return '<option'+(k===cat?" selected":"")+' value="'+esc(k)+'">'+esc(k)+' ('+cats[k]+')</option>'; }).join("")+'</select></div>'+
     (f==="nodoc"?'<section class="fsm-card">'+mdocPanel(q)+'</section>':'<section class="fsm-card flush fsm-list">'+(mGrouped(list,list.slice(pg*per,(pg+1)*per),function(v){return v.date;},sg,row,function(s){ return (s>0?"+":"")+eur0(s); })||'<p class="fsm-empty">Keine Belege'+(f!=="all"||q||cat?" in dieser Ansicht":"")+'.</p>')+pager(list.length,per)+'</section>')+
     scanInput("fsm-fab","");
 }
+F.action("ffeecat",function(v){ var ids=String(v).split(",").filter(Boolean); if(!ids.length) return; F.toast("Ordne "+ids.length+" Beleg"+(ids.length===1?"":"e")+" zu …");
+  var ok=0, bad=0; ids.reduce(function(p,id){ return p.then(function(){ return F.api("/admin/api/sev/voucher-op",{body:{op:"feecat",id:id,confirm:true}}).then(function(j){ if(j&&j.ok) ok++; else bad++; }).catch(function(){ bad++; }); }); },Promise.resolve()).then(function(){ F.toast(ok+" Zahlungsgebühr"+(ok===1?"":"en")+" auf „Kontoführung / Kartengebühren“ gesetzt"+(bad?" · "+bad+" nicht möglich":""),!!bad); C.vou[String(F.D.year)]=null; vouLoad(); F.render(); }); });
 F.listen("change","[data-fvsel]",function(el){ UI.fvcat=el.value; UI.fpg=0; F.render(); });
 /* Handy: Konten aktualisieren (Wunsch Simon 31.10.2026) – George/Mollie/PayPal abrufen, Kontoauszug importieren, Freigabe & Saldo-Abgleich */
 function mSync(){
