@@ -93,8 +93,9 @@ function render(){
   var stat=kpis(live)+'<section class="panel" id="prLiveBox"><div class="panel-h"><h2><span class="pr-livedot"></span> Live im Shop</h2><span class="muted">echte Browser auf /print in der letzten Minute · anonym, ohne Cookies · in Echtzeit</span></div><div class="panel-b" id="prLiveB">'+(PRLIVE?liveHtml(PRLIVE):'<span class="muted">wird geladen …</span>')+'</div></section>';
   var nAct=(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem"].indexOf(x.status)>-1; }).length;
   var tb=function(k,l,n,icn,hot){ return '<button type="button" data-act="prf:'+k+'" aria-current="'+(FILTER===k)+'">'+(icn?ico(icn):'')+'<span>'+esc(l)+'</span>'+(n?'<em class="'+(hot?"hot":"")+'">'+n+'</em>':'')+'</button>'; };
+  var nDone=(ST.orders||[]).filter(function(x){ return ["shipped","delivered","rejected"].indexOf(x.status)>-1; }).length;
   var nUnp=(ST.orders||[]).filter(function(x){ return x.status==="pending_payment"||x.status==="payment_failed"; }).length;
-  var tabs='<nav class="pr-nav" aria-label="Druckshop"><div class="pr-seg2">'+tb("review","Zur Prüfung",ST.review,"",ST.review>0)+tb("unpaid","Zahlung offen",nUnp)+tb("active","In Arbeit",nAct)+tb("done","Erledigt")+tb("all","Alle")+'</div>'+
+  var tabs='<nav class="pr-nav" aria-label="Druckshop"><div class="pr-seg2">'+tb("review","Zur Prüfung",ST.review,"",ST.review>0)+tb("unpaid","Zahlung offen",nUnp)+tb("active","In Arbeit",nAct)+tb("done","Erledigt",nDone)+tb("all","Alle",(ST.orders||[]).length)+'</div>'+
     '<div class="pr-tools">'+[["anfragen","Gestaltung",ST.briefsNew,"edit",1],["kunden","Kunden",0,"user"],["herkunft","Herkunft",0,"globe"],["gutscheine","Gutscheine",0,"tag"],["newsletter","Newsletter",0,"send"],["sortiment","Sortiment",0,"box"],["pruefung","Prüfung",0,"check"],["marge","Marge",0,"euro"],["feedback","Feedback",0,"star"],["settings","Einstellungen",0,"gear"]].map(function(t){ return tb(t[0],t[1],t[2],t[3],t[4]); }).join("")+'</div></nav>';
   if(FILTER==="anfragen") return head+stat+tabs+briefView();
   if(FILTER==="settings") return head+stat+tabs+liveBox+settings();
