@@ -273,9 +273,9 @@ function sdLive(d,pl){ var cur=SD.base||d.place||{}, s0=+cur.scale||1, r0=+cur.r
   var b=document.querySelector("#sdStudio .stu-f.pc input"); if(b&&pl.scale) b.value=Math.round(pl.scale*100); }
 function sdQueue(b){ var d=sdDoc(); if(!d) return; SDQ.b=Object.assign(SDQ.b||{id:b.id,motif:b.motif},b); var pl=Object.assign({},d.place||{},SDQ.b); sdLive(d,pl);
   var st=document.querySelector("#sdStudio .stu-save"); if(st){ st.textContent="Änderung wird gespeichert …"; st.hidden=false; }
-  clearTimeout(SDQ.t); SDQ.t=setTimeout(function(){ var body=SDQ.b; SDQ.b=null; F.api("/admin/api/print/fit",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); sdReload(); return; } if(body.mode) sdReload(); else sdQuiet(); }); },800); }   /* Einpassen/Füllen lässt sich nicht live zeigen → dann neu zeichnen */
+  clearTimeout(SDQ.t); SDQ.t=setTimeout(function(){ var body=SDQ.b; SDQ.b=null; F.api("/admin/api/print/fit",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); sdReload(); return; } if(body.mode) sdReload(); else sdQuiet(); }); },1500); }   /* Einpassen/Füllen lässt sich nicht live zeigen → dann neu zeichnen */
 /* nach dem Speichern nicht neu zeichnen (Vorschau ist schon verschoben) – nur Daten still aktualisieren */
-function sdQuiet(){ if(!SD.j) return; var oid=SD.j.order.id; F.api("/admin/api/print/order?id="+encodeURIComponent(oid)).then(function(j){ if(!j||!j.ok||!SD.j) return; SD.j=j; var st=document.querySelector("#sdStudio .stu-save"); if(st){ st.textContent="✓ gespeichert"; setTimeout(function(){ if(st) st.hidden=true; },1500); } load(true); }); }
+function sdQuiet(){ if(!SD.j) return; var oid=SD.j.order.id; F.api("/admin/api/print/order?id="+encodeURIComponent(oid)).then(function(j){ if(!j||!j.ok||!SD.j) return; SD.j=j; var st=document.querySelector("#sdStudio .stu-save"); if(st){ st.textContent="✓ gespeichert"; setTimeout(function(){ if(st) st.hidden=true; },1500); } }); }
 /* Freies Platzieren im Studio (Simon 10.11.2026, z. B. Logo auf Notizblock): Ziehen = verschieben, Ecke ziehen oder ⌘/Strg + Scrollen = Größe */
 var SDM=null;
 function sdPl(){ var d=sdDoc(); return Object.assign({mode:"fill",rotate:0,scale:1,dx:0,dy:0},(d&&d.place)||{},SDQ.b||{}); }
@@ -731,13 +731,13 @@ F.css('.prg .pr-cart{border:1px solid var(--line);border-radius:18px;background:
    Jede Änderung = neue Version, die alte bleibt im Verlauf (↶ wiederherstellbar). */
 var SD={j:null,mi:null,pg:1,busy:false,tr:false,pool:null,cache:{}};
 function sdOpen(oid,mi){ SD.mi=mi; SD.pg=1; SD.pool=null; F.api("/admin/api/print/order?id="+encodeURIComponent(oid)).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } SD.j=j; if((j.docs||[]).length<=1&&SD.mi==null) SD.mi=(j.docs[0]&&j.docs[0].motif!=null)?j.docs[0].motif:""; sdPaint(); }); }
-function sdReload(){ var oid=SD.j.order.id; F.api("/admin/api/print/order?id="+encodeURIComponent(oid)).then(function(j){ if(j&&j.ok){ SD.j=j; SD.pool=null; sdPaint(); load(true); } }); }
+function sdReload(){ var oid=SD.j.order.id; F.api("/admin/api/print/order?id="+encodeURIComponent(oid)).then(function(j){ if(j&&j.ok){ SD.j=j; SD.pool=null; sdPaint(); } }); }
 function sdDocs(){ return (SD.j&&SD.j.docs)||[]; }
 function sdDoc(){ var docs=sdDocs(); if(SD.mi==null) return null; return docs.find(function(d){ return String(d.motif==null?"":d.motif)===String(SD.mi); })||docs[0]; }
 function sdIdx(){ var d=sdDoc(), docs=sdDocs(); return d?docs.indexOf(d):-1; }
 function sdCan(){ var o=SD.j.order; return o.status==="paid"||o.status==="invoice_requested"||(o.status==="problem"&&!(o.printcom&&o.printcom.orderNumber)); }
 function sdMi(d){ return d.motif==null?"":d.motif; }
-function sdClose(){ var el=document.getElementById("sdStudio"); if(el) el.remove(); document.removeEventListener("keydown",sdKey); document.documentElement.style.overflow=""; var oid=SD.j&&SD.j.order.id; SD.j=null; if(oid) openOrder(oid); }
+function sdClose(){ if(SDQ&&SDQ.b){ clearTimeout(SDQ.t); var pend=SDQ.b; SDQ.b=null; F.api("/admin/api/print/fit",{body:pend}); } var el=document.getElementById("sdStudio"); if(el) el.remove(); load(true); document.removeEventListener("keydown",sdKey); document.documentElement.style.overflow=""; var oid=SD.j&&SD.j.order.id; SD.j=null; if(oid) openOrder(oid); }
 function sdKey(e){ if(e.key==="Escape") sdClose(); }
 /* pdf.js-Dokumente je Datei zwischenspeichern (Studio blättert viel) */
 function sdPdf(fid,pv){ var k=fid+(pv?":pv":""); if(SD.cache[k]) return SD.cache[k]; var o=SD.j.order; SD.cache[k]=prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(o.id,fid,pv),withCredentials:true}).promise; }); SD.cache[k].catch(function(){ delete SD.cache[k]; }); return SD.cache[k]; }
