@@ -1736,7 +1736,7 @@ module.exports = function (D) {
     return meta;
   }
   const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
-    needBack: needBackOf(m), back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null });
+    needBack: needBackOf(m), back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
   // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
   // Datei aufs Format setzen: „fill“ = füllt die Seite inkl. Beschnitt (Ränder werden angeschnitten), „fit“ = ganz sichtbar im Endformat (Rest weiß),
@@ -1812,6 +1812,19 @@ module.exports = function (D) {
     const n = normalizeSel(prod, input); return { prod, pos: n.positions.find(x => x.slug === String(input.logo || "")) || n.positions[0] };   // beidseitig: Vorder-/Rückseite
   }
   // Original einer hochgeladenen Datei (für „Anpassen“: einpassen/füllen/drehen/skalieren – immer vom Original aus, ohne Qualitätsverlust)
+  /* Schnelle Vorschau (Simon 10.11.2026: Vorschau beim Kunden und im Cockpit dauerte bei großen Bildern ewig – der Browser lud die volle Druckdatei, z. B. 10 MB JPG mit 10 000 px):
+     der Browser schickt nach dem Upload eine verkleinerte Kopie des Bildes (max. 2000 px), daraus entsteht mit derselben Platzierung (placeFile) eine kleine Vorschau-PDF.
+     Nur für Bild-Uploads (JPG/PNG mit Platzierung) – die Auflösung prüft der Server am Original. PDFs und andere Dateien: weiter die volle Datei. */
+  const pvOk = m => !!(m && m.kind === "upload" && (m.original === "jpg" || m.original === "png") && m.src && m.place && !m.front && !m.bleedFix);
+  const pvId = id => id + "pv", pxId = id => id + "px";
+  async function previewPdf(m) {
+    if (!pvOk(m)) return null;
+    const hit = await store.fileData(pvId(m.id)).catch(() => null); if (hit) return hit;
+    const px = await store.fileData(pxId(m.src)).catch(() => null); if (!px) return null;
+    const r = await withPdf(() => placeFile(Uint8Array.from(px), "jpg", m.size, +m.bleed || 0, Object.assign({}, m.place, { rotate: +m.place.rotate || 0 }), +m.sides || 1));
+    await store.putFile({ id: pvId(m.id), kind: "preview", of: m.id, createdAt: nowIso(), orderId: null, bytes: r.pdf.length }, r.pdf);
+    return r.pdf;
+  }
   async function keepSrc(buf, type, name) {
     const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "src", name: clip(String(name || "original"), 120), bytes: buf.length, createdAt: nowIso(), original: type, orderId: null };
     await store.putFile(meta, buf); return meta.id;
@@ -2840,7 +2853,7 @@ module.exports = function (D) {
   }
   async function cleanupFiles() {
     const files = await store.listFiles(); let n = 0;
-    for (const f of files) if (!f.orderId && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : 3) * 864e5) { await store.delFile(f.id); n++; }
+    for (const f of files) if (!f.orderId && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : f.kind === "preview" ? 30 : 3) * 864e5) { await store.delFile(f.id); n++; }
     return n;
   }
   let lastDaily = 0, lastFb = 0;
@@ -4596,6 +4609,8 @@ module.exports = function (D) {
       if (m && req.method === "GET") {
         if (!sigOk("file", m[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
         let fm = await store.fileMeta(m[1]); if (!fm) return J(res, 404, { ok: false, error: "not_found" });
+        if (u.searchParams.get("pdf") === "1" && u.searchParams.get("pv") === "1" && pvOk(fm)) { const pv = await previewPdf(fm).catch(e => { log("Vorschau:", e.message); return null; });
+          if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": 'inline; filename="vorschau.pdf"', "Cache-Control": "private, max-age=86400", "X-Robots-Tag": "noindex", "X-Print-Preview": "1" }); }
         if (u.searchParams.get("pdf") === "1") { const buf = await store.fileData(fm.id); return D.send(res, 200, buf, fm.kind === "logo" && fm.original !== "pdf" ? (fm.original === "png" ? "image/png" : "image/jpeg") : "application/pdf", { "Content-Disposition": 'inline; filename="druckdaten.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" }); }
         fm = await preflightPoll(fm);
         return J(res, 200, Object.assign({ ok: true }, fileView(fm)));
@@ -4778,6 +4793,18 @@ module.exports = function (D) {
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !((+fm.pages || 1) >= 2)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const rel = await pdfSlot(); let meta; try { meta = await reorderPages(fm, (b.order || []).map(Number)); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
+      if (p === "/print/api/file/proxy" && req.method === "POST") {   // verkleinerte Bildkopie für die schnelle Vorschau: { fileId, token, img: "data:image/jpeg;base64,…" }
+        if (limited("upload", ip, 300, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const b = await readJson(req, 4e6), id = String(b.fileId || ""); if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
+        const fm = await store.fileMeta(id); if (!pvOk(fm)) return J(res, 400, { ok: false, error: "Für diese Datei nicht nötig" });
+        const mm = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(b.img || "")), buf = mm ? Buffer.from(mm[1], "base64") : null;
+        if (!buf || buf.length < 100 || buf.length > 2.5e6 || sniff(buf) !== "jpg") return J(res, 400, { ok: false, error: "Vorschaubild ungültig" });
+        const dm = imgDims(buf, "jpg"), ar = fm.px && fm.px.w / fm.px.h;
+        if (!dm || !dm.w || !dm.h || Math.max(dm.w, dm.h) > 3000 || (ar && Math.abs(dm.w / dm.h - ar) > ar * 0.02)) return J(res, 400, { ok: false, error: "Vorschaubild passt nicht zur Datei" });
+        await store.putFile({ id: pxId(fm.src), kind: "proxy", of: fm.src, createdAt: nowIso(), orderId: null, bytes: buf.length }, buf);
+        try { await previewPdf(fm); } catch (e) { log("Vorschau:", e.message); }
+        return J(res, 200, { ok: true });
       }
       if (p === "/print/api/file/fit" && req.method === "POST") {   // Anpassen: einpassen/füllen, drehen, skalieren, verschieben – immer vom Original aus (neue Datei)
         if (limited("upload", ip, 300, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
@@ -5185,6 +5212,7 @@ module.exports = function (D) {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
         const fm = await store.fileMeta(o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
+        if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }
         const sm = sid ? await store.fileMeta(sid).catch(() => null) : null, buf = await store.fileData(sid || o.fileId);
         if (!buf || (wantSrc && !sid)) return D.send(res, 404, "Datei nicht gefunden");
         const ext = sid ? ({ jpg: "jpg", jpeg: "jpg", png: "png", pdf: "pdf" }[String((sm && sm.original) || "pdf").toLowerCase().replace(/^image\//, "")] || "pdf") : "pdf";

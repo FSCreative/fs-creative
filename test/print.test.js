@@ -308,6 +308,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=" + hi.j.token + "&pdf=1")).arrayBuffer());
     const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
     assert.strictEqual((await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=falsch")).status, 404);
+    // Schnelle Vorschau: verkleinerte Kopie (JPEG) → kleine Vorschau-PDF mit gleicher Seitengröße; ohne Kopie bzw. bei falschem Seitenverhältnis die volle Datei
+    assert.ok(hi.j.pvk, "Bild-Upload hat einen Vorschau-Schlüssel");
+    const jpg = (w, h) => { const b = Buffer.from("/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=", "base64"), i = b.indexOf(Buffer.from([0xff, 0xc2])); b.writeUInt16BE(h, i + 5); b.writeUInt16BE(w, i + 7); return "data:image/jpeg;base64," + b.toString("base64"); };
+    const pvu = B + "/print/api/file/" + hi.j.fileId + "?t=" + hi.j.token + "&pdf=1&pv=1";
+    assert.ok(!(await fetch(pvu)).headers.get("x-print-preview"), "ohne Kopie: volle Datei");
+    assert.strictEqual((await post("/print/api/file/proxy", { fileId: hi.j.fileId, token: hi.j.token, img: jpg(100, 100) })).status, 400, "falsches Seitenverhältnis");
+    assert.strictEqual((await post("/print/api/file/proxy", { fileId: hi.j.fileId, token: "falsch", img: jpg(106, 70) })).status, 403);
+    const px = await post("/print/api/file/proxy", { fileId: hi.j.fileId, token: hi.j.token, img: jpg(106, 70) }); assert.strictEqual(px.status, 200, JSON.stringify(px.j));
+    const pr = await fetch(pvu); assert.strictEqual(pr.headers.get("x-print-preview"), "1"); const pvb = Buffer.from(await pr.arrayBuffer());
+    const mb2 = mediaBox(pvb); assert.deepStrictEqual([mm(mb2[2]), mm(mb2[3])], [89, 59], "gleiche Seitengröße wie die Druckdatei");
+    const fit = await post("/print/api/file/fit", { fileId: hi.j.fileId, token: hi.j.token, mode: "fit", rotate: 0 }); assert.strictEqual(fit.status, 200, JSON.stringify(fit.j)); assert.strictEqual(fit.j.pvk, hi.j.pvk, "Anpassen: gleiche Kopie");
+    assert.strictEqual((await fetch(B + "/print/api/file/" + fit.j.fileId + "?t=" + fit.j.token + "&pdf=1&pv=1")).headers.get("x-print-preview"), "1", "angepasste Datei: Vorschau aus derselben Kopie");
+    const pdfUp = await upload(await pdfOf(89, 59, 2), "v.pdf", BC); assert.strictEqual(pdfUp.j.pvk, "", "PDF-Upload: keine Kopie, volle Datei");
   });
 
   await t("Upload anpassen: Hochformat-Bild wird gedreht statt abgelehnt, PDF mit passendem Seitenverhältnis wird skaliert, Einpassen/Drehen/Skalieren vom Original", async () => {

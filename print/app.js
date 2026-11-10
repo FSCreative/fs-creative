@@ -2248,12 +2248,12 @@
     if (PFV[key]) { c.innerHTML = PFV[key].html; document.getElementById("psPfvW").innerHTML = PFV[key].warn; return; }
     var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = S.prod.imprint ? 0 : S.prod.safe || 3;
     if (!trim) { c.textContent = ""; return; }
-    pdfjs().then(function (L) { return L.getDocument({ url: "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1", withCredentials: true }).promise; }).then(function (doc) {
+    pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
       var n = Math.min(doc.numPages, 2), jobs = []; for (var i = 1; i <= n; i++) jobs.push(doc.getPage(i));
       return Promise.all(jobs).then(function (pages) { return Promise.all(pages.map(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
         var sc = Math.min(2, 560 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () { return pdfDeep(pg).catch(function () { return {}; }); }).then(function (deep) { return { cv: cv, b: b, mmW: wmm, deep: deep }; }); })); });
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () { return f.pvk ? {} : pdfDeep(pg).catch(function () { return {}; }); }).then(function (deep) { return { cv: cv, b: b, mmW: wmm, deep: deep }; }); })); });
     }).then(function (res) {
       var warns = [], okNotes = [], edgeFree = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
@@ -2346,11 +2346,24 @@
   function pmkHtml() { var sd = pmkSides() ? '<div class="ps-pmk-sd" role="group" aria-label="Seite">' + sideNames().map(function (n, i) { return '<button type="button" data-pmkside="' + i + '" aria-pressed="' + ((S.pmkSide || 0) === i) + '">' + n + "</button>"; }).join("") + "</div>" : "";
     return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div>' + sd + '<div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }
   function fileUrl(f) { return "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1"; }
+  /* Schnelle Vorschau (Simon 10.11.2026): bei Bild-Uploads schickt der Browser eine verkleinerte Kopie (max. 2000 px, ohne EXIF-Drehung – wie der Server),
+     der Server baut daraus mit derselben Platzierung eine kleine Vorschau-PDF (&pv=1). Ohne Kopie liefert der Server die volle Datei. */
+  var PX = {};
+  function pvUrl(f) { return fileUrl(f) + (f.pvk ? "&pv=1" : ""); }
+  function pvWait(f) { var p = f && f.pvk && PX[f.pvk]; return p ? Promise.race([p, new Promise(function (r) { setTimeout(r, 12000); })]) : Promise.resolve(); }
+  function pxMake(file, j) {
+    if (!j || !j.pvk || PX[j.pvk] || !/^image\/(jpeg|png)$/.test(file.type || "") || !window.createImageBitmap) return;
+    PX[j.pvk] = createImageBitmap(file, { imageOrientation: "none" }).then(function (bm) {
+      var f = Math.min(1, 2000 / Math.max(bm.width, bm.height)), cv = document.createElement("canvas"); cv.width = Math.max(1, Math.round(bm.width * f)); cv.height = Math.max(1, Math.round(bm.height * f));
+      var cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(bm, 0, 0, cv.width, cv.height); if (bm.close) bm.close();
+      return api("/print/api/file/proxy", { fileId: j.fileId, token: j.token, img: cv.toDataURL("image/jpeg", 0.85) });
+    }).then(function (r) { return !!(r && r.ok); }).catch(function () { return false; });
+  }
   // PDF-Seiten als Bild (Beschnitt abgeschnitten); transparent für Logos
   /* Seitenansicht im Warenkorb (Simon 09.11.2026): alle Seiten der Druckdatei groß zum Durchklicken – Pfeile, Wischen, Tastatur, Miniaturen; mehrere Motive nacheinander */
   function pagesView(id) {
     var x = S.cart.filter(function (c) { return c.id === id; })[0]; if (!x || !x.fileId) return;
-    var src = (x.motifs && x.motifs.length ? x.motifs : [x]).map(function (m, i, a) { return { url: "/print/api/file/" + encodeURIComponent(m.fileId) + "?t=" + encodeURIComponent(m.fileToken) + "&pdf=1", label: a.length > 1 ? "Motiv " + (i + 1) + " (" + (+m.copies || 0).toLocaleString("de-AT") + " Stk.)" : "" }; });
+    var src = (x.motifs && x.motifs.length ? x.motifs : [x]).map(function (m, i, a) { return { url: "/print/api/file/" + encodeURIComponent(m.fileId) + "?t=" + encodeURIComponent(m.fileToken) + "&pdf=1&pv=1", label: a.length > 1 ? "Motiv " + (i + 1) + " (" + (+m.copies || 0).toLocaleString("de-AT") + " Stk.)" : "" }; });
     var back = document.activeElement, ov = document.createElement("div"); ov.className = "ps-pv"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Seitenansicht " + x.title);
     ov.innerHTML = '<div class="ps-pv-top"><div><b>' + esc(x.title) + '</b><small>' + esc(itemLine(x)) + '</small></div><button type="button" class="ps-pv-x" aria-label="Schließen">✕</button></div><div class="ps-pv-st"><span class="ps-spin"></span> Seiten werden geladen …</div>';
     document.body.appendChild(ov); document.documentElement.classList.add("ps-noscroll");
@@ -2386,7 +2399,7 @@
   function logoImg(l) { var url = fileUrl(l); return new Promise(function (res, rej) { var im = new Image(); im.onload = function () { res(url); }; im.onerror = rej; im.src = url; }).catch(function () { return pdfImgs(url, { transparent: true, px: 600 }).then(function (a) { return a[0]; }); }); }
   function pmkSrc(f, logo) {
     var k = f.fileId + (logo ? ":l" : ""); if (PMK[k]) return PMK[k];
-    PMK[k] = (logo ? logoImg(f).then(function (u) { return [u]; }) : pdfImgs(fileUrl(f), { trim: f.size || sizeOf(), bleed: f.bleed != null ? f.bleed : S.prod.bleed, pages: 2, px: 800 })).catch(function () { delete PMK[k]; return null; });
+    PMK[k] = (logo ? logoImg(f).then(function (u) { return [u]; }) : pvWait(f).then(function () { return pdfImgs(pvUrl(f), { trim: f.size || sizeOf(), bleed: f.bleed != null ? f.bleed : S.prod.bleed, pages: 2, px: 800 }); })).catch(function () { delete PMK[k]; return null; });
     return PMK[k];
   }
   function pmkPaint() {
@@ -2797,7 +2810,7 @@
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
     x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos();
-        if (kind() === "textile" && !j.blocked) logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+        if (kind() === "textile" && !j.blocked) logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
     x.send(f);
   }
@@ -2885,7 +2898,7 @@
       if (k >= n) { var f0 = S.mot.files[start] || {}; S.mot.i = start; S.file = f0.file || null; S.previews = f0.previews || null; S.design = f0.design || null; S.mode = f0.mode || ""; render(); /* nicht motLoad: das würde den leeren Stand über Motiv 1 speichern */ upPop("close"); toast(fails.length ? fails.length + " Datei(en) nicht hochgeladen: " + fails.join(", ") : n + " Motive hochgeladen ✓", !!fails.length); return; }
       var f = files[k], idx = start + k; upPop("up", Math.round(k / n * 100), "Motiv " + (idx + 1) + " von " + S.mot.n + ": " + f.name);
       fetch("/print/api/upload", { method: "POST", credentials: "same-origin", body: f, headers: { "X-Print-Shop": "1", "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(f.name), "X-Print-Config": encodeURIComponent(JSON.stringify(cfgOf())) } })
-        .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "Upload fehlgeschlagen");
+        .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "Upload fehlgeschlagen"); pxMake(f, j);
           return (sameBack() && S.mot.back && j.needBack ? backToMotif(j).catch(function () { return null; }) : Promise.resolve(null)).then(function (b) { S.mot.files[idx] = { file: b || j, previews: null, design: null, mode: "upload" }; done++; }); })
         .catch(function (e) { fails.push(f.name + " (" + e.message + ")"); }).then(function () { one(k + 1); });
     };
