@@ -3608,7 +3608,8 @@ function steuerOp(pl) {
   const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
   if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum;
     if (P.besteuerung === "ist" || P.besteuerung === "soll") o.settings.besteuerung = P.besteuerung;
-    if (/^\d{4}$/.test(String(P.istAb || ""))) o.settings.istAb = String(P.istAb) + "-01-01"; else if (/^\d{4}-(0[1-9]|1[0-2])(-01)?$/.test(String(P.istAb || ""))) o.settings.istAb = String(P.istAb).slice(0, 7) + "-01";   // auch Monats-/Quartalsbeginn (Umstellung mitten im Jahr) if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
+    if (/^\d{4}$/.test(String(P.istAb || ""))) o.settings.istAb = String(P.istAb) + "-01-01"; else if (/^\d{4}-(0[1-9]|1[0-2])(-01)?$/.test(String(P.istAb || ""))) o.settings.istAb = String(P.istAb).slice(0, 7) + "-01";   // auch Monats-/Quartalsbeginn (Umstellung mitten im Jahr)
+    if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
     // Betriebsdaten für die E1a im Datenstrom JAHR_ERKL
     if ("betriebAdr" in P) o.settings.betriebAdr = String(P.betriebAdr || "").slice(0, 60); if ("betriebPlz" in P) o.settings.betriebPlz = String(P.betriebPlz || "").replace(/[^0-9A-Z]/gi, "").slice(0, 10); if ("betriebOrt" in P) o.settings.betriebOrt = String(P.betriebOrt || "").slice(0, 40);
     if ("kleineAnz" in P) o.settings.kleineAnz = P.kleineAnz === true || P.kleineAnz === "1" ? true : undefined;   // Standard: Gesetz (keine Bagatellgrenze)

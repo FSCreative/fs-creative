@@ -518,6 +518,16 @@ function fitFrame(f){
 }
 document.addEventListener("load",function(e){ var f=e.target; if(f&&f.classList&&f.classList.contains("mframe")){ fitFrame(f); setTimeout(function(){ fitFrame(f); },400); setTimeout(function(){ fitFrame(f); },1500); } },true);
 M.frame=frame;
+/* Unzustellbar-Meldung (Simon 10.11.2026): Empfänger + Grund aus dem Zustellbericht (message/delivery-status) oben anzeigen */
+var BOUNCE={};
+function bounceTxt(t){ var rc=[], dg=""; String(t||"").split(/\r?\n/).forEach(function(l){ var a=/^(Final|Original)-Recipient:\s*(?:rfc822;)?\s*(.+)$/i.exec(l); if(a){ var x=a[2].trim(); if(rc.indexOf(x)<0&&/@/.test(x)) rc.push(x); } var d=/^Diagnostic-Code:\s*(?:smtp;)?\s*(.+)$/i.exec(l); if(d&&!dg) dg=d[1].trim(); });
+  var why=/user unknown|does not exist|no such user|mailbox unavailable|recipient.*(rejected|not found)|5\.1\.1|address.*(invalid|not found)/i.test(dg)?"Adresse existiert nicht":/quota|mailbox full|5\.2\.2/i.test(dg)?"Postfach des Empfängers ist voll":/busy|try again|retry timeout|4\.\d\.\d/i.test(dg)?"Empfänger-Server hat nicht angenommen (überlastet), Zustellversuche aufgegeben – bitte erneut senden":/spam|blocked|blacklist|policy|5\.7\./i.test(dg)?"vom Empfänger-Server abgelehnt (Spam-/Sicherheitsregel)":"";
+  return {rc:rc, why:why, dg:dg}; }
+function bounceHtml(m){ var a=((m&&m.attachments)||[]).filter(function(x){ return /delivery-status/i.test(x.contentType||""); })[0]; if(!a) return "";
+  var k=m.id, b=BOUNCE[k];
+  if(!b){ BOUNCE[k]={loading:true}; fetch(M.attHref(m,a),{credentials:"same-origin"}).then(function(r){ return r.ok?r.text():""; }).then(function(t){ BOUNCE[k]=bounceTxt(t); var el=document.querySelector('[data-bounce="'+k+'"]'); if(el) el.outerHTML=bounceHtml(m); }).catch(function(){ BOUNCE[k]={rc:[],why:"",dg:""}; }); b=BOUNCE[k]; }
+  if(b.loading) return '<div class="notice" data-bounce="'+esc(k)+'"><span>Nicht zugestellt – Empfänger wird ermittelt …</span></div>';
+  return '<div class="notice bad" data-bounce="'+esc(k)+'" style="display:block"><b>Nicht zugestellt an: '+(b.rc.length?b.rc.map(function(x){ return '<button type="button" class="raddr" data-act="mmailto:'+esc(x)+'" title="Neue Mail an '+esc(x)+'">'+esc(x)+'</button>'; }).join(", "):"(Empfänger nicht im Bericht)")+'</b>'+(b.why?'<div class="small">Grund: '+esc(b.why)+'</div>':'')+(b.dg?'<div class="small muted" style="word-break:break-word">'+esc(b.dg.slice(0,300))+'</div>':'')+'</div>'; }
 function attachmentsHtml(m){
   var atts=(m&&m.attachments)||[]; if(!atts.length) return "";
   var chips=atts.map(function(a){
@@ -690,7 +700,7 @@ function readerHtml(){
       '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an '+esc(addr)+'">&lt;'+esc(addr)+'&gt;</button>':'')+'</div>'+(toLine?'<div class="rto">'+toLine+'</div>':'')+'</div>'+
       '<div class="rdate">'+esc(m.date?new Date(m.date).toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"")+'<span>'+esc(relTime(m.date))+'</span></div></div>'+
     (trashed||dbox?'':custRow(m))+
-    attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
+    bounceHtml(m)+attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
     (m.body||m.preview?'':'<div class="notice"><span>Kein Textinhalt im Abruf. Die vollständige Nachricht findest du im Webmail.</span><button type="button" class="btn" data-act="mwebmail">In Webmail öffnen</button></div>')+
     qr+
     (!trashed&&!dbox?'<div class="mrbar" role="toolbar" aria-label="Antworten"><button type="button" class="pri" data-act="mx:reply">'+ic("reply")+'<span>Antworten</span></button><button type="button" data-act="mx:replyall" aria-label="Allen antworten">'+ic("replyall")+'<span>Allen</span></button><button type="button" data-act="mx:forward">'+ic("forward")+'<span>Weiterleiten</span></button></div>':'')+
