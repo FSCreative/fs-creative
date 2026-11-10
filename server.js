@@ -3922,6 +3922,21 @@ async function fonDatabox(pin, tage) {
     return o.fon.databox;
   });
 }
+// FinanzOnline-XML (Protokolle) als einfache, lesbare Seite: TEXT groß, übrige Felder als Tabelle
+const FON_XML_LABEL = { ART_IDENTIFIKATIONSBEGRIFF: "Art", IDENTIFIKATIONSBEGRIFF: "Steuernummer", PAKET_NR: "Paket-Nr.", DATUM_ERSTELLUNG: "Datum", UHRZEIT_ERSTELLUNG: "Uhrzeit", ANZAHL_ERKLAERUNGEN: "Anzahl Erklärungen", TEXT: "Ergebnis" };
+function fonXmlHtml(xml, key) {
+  const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const un = t => String(t).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&").trim();
+  const rows = [], texte = []; const re = /<([A-Za-z_][\w.-]*)>([^<]*)<\/\1>/g; let m;
+  while ((m = re.exec(xml))) { const v = un(m[2]); if (!v) continue; if (/^(TEXT|MELDUNG|FEHLER|HINWEIS)/i.test(m[1])) texte.push(v); else rows.push([FON_XML_LABEL[m[1]] || m[1].replace(/_/g, " ").toLowerCase().replace(/^./, c => c.toUpperCase()), v]); }
+  const test = texte.some(t => /TEST-/i.test(t)), fehler = texte.some(t => /fehler|nicht übernommen|abgewiesen/i.test(t));
+  return '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FinanzOnline-Protokoll</title>' +
+    '<style>body{font:15px/1.5 -apple-system,system-ui,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#1d1d1f}h1{font-size:20px}.t{padding:14px 16px;border-radius:12px;background:' + (fehler ? "#fdecec" : test ? "#fff6e0" : "#e9f7ee") + ';margin:16px 0}table{border-collapse:collapse;width:100%}td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top}td:first-child{color:#6e6e73;width:40%}details{margin-top:20px;color:#6e6e73}pre{white-space:pre-wrap;word-break:break-all;font-size:12px}</style>' +
+    '<h1>FinanzOnline-Protokoll</h1>' + (texte.length ? texte.map(t => '<div class="t">' + esc(t) + '</div>').join("") : "") +
+    (test ? '<p><b>Hinweis:</b> Das ist das Protokoll der <b>Test-Übermittlung</b> (Probelauf vor dem Abgeben). Sie gilt nicht als eingereicht. Das Protokoll zur echten Abgabe kommt separat in die Databox.</p>' : "") +
+    '<table>' + rows.map(r => '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>').join("") + '</table>' +
+    '<details><summary>Original (XML)</summary><pre>' + esc(xml) + '</pre></details></html>';
+}
 async function fonDataboxEntry(pin, applkey) {
   if (!/^[\w.:-]{1,80}$/.test(String(applkey || ""))) throw new Error("Ungültiger Eintrag");
   return fonSitzung(pin, async (z, id) => {
@@ -4984,6 +4999,8 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/fon/databox/file" && (req.method === "GET" || req.method === "POST")) {
     try { const pl = req.method === "POST" ? await sevBody(req, 2000) : {}; const key = pl.applkey || u.searchParams.get("applkey"), buf = await fonDataboxEntry(pl.pin, key);
       const isPdf = buf.slice(0, 4).toString() === "%PDF";
+      // XML (z. B. Übermittlungsprotokoll zur UVA) lässt sich am Mac nicht öffnen → als lesbare Seite zeigen (Simon 10.11.2026)
+      if (!isPdf && /^\s*(\uFEFF)?<\?xml|^\s*<[A-Za-z]/.test(buf.slice(0, 200).toString("utf8"))) return send(res, 200, fonXmlHtml(buf.toString("utf8"), key), "text/html; charset=utf-8", { "Cache-Control": "private, no-store" });
       res.writeHead(200, { "Content-Type": isPdf ? "application/pdf" : "application/octet-stream", "Content-Disposition": (isPdf ? "inline" : "attachment") + '; filename="databox-' + String(key).replace(/[^\w.-]/g, "") + (isPdf ? ".pdf" : "") + '"', "Cache-Control": "private, no-store" }); return res.end(buf); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
