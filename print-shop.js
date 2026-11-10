@@ -4281,7 +4281,8 @@ module.exports = function (D) {
   function realOrd() { if (REAL_ORD.p || Date.now() - REAL_ORD.at < 60e3) return; REAL_ORD.p = store.listOrders().then(L => { const since = Date.now() - 7 * 864e5, keys = new Set(); (L || []).forEach(o => { if (o && Date.parse(o.createdAt || 0) > since && ["pending_payment", "payment_failed"].indexOf(o.status) < 0) keys.add(o.groupId || o.id); }); REAL_ORD.n = keys.size; REAL_ORD.at = Date.now(); }).catch(() => {}).then(() => { REAL_ORD.p = null; }); }
   function liveState() {
     const pages = {}, steps = {}, prods = {}, carts = []; let cart = 0, bg = 0;
-    for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) { cart++; carts.push({ step: st, items: v.items || [], n: v.cart }); } }
+    const idle0 = Date.now() - 12 * 3600e3;
+    for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.bg && v.chg && v.chg < idle0 ? "Inaktiv (über 12 h)" : v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) { cart++; carts.push({ step: st, items: v.items || [], n: v.cart }); } }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
     const fun = funSummary(7); realOrd(); if (REAL_ORD.n != null) { fun.ordered = REAL_ORD.n; fun.real = true; }
     return { funnel: fun, at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
@@ -4558,6 +4559,8 @@ module.exports = function (D) {
         const items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(x => ({ t: clip(String((x && x.t) || ""), 60), n: Math.max(0, Math.min(1e6, +(x && x.n) || 0)), u: (x && x.u) === "m" ? "m" : "", g: Math.max(0, Math.min(1e6, Math.round((+(x && x.g) || 0) * 100) / 100)) })).filter(x => x.t);
         if (sid.length >= 8) { const prev = LIVE.get(sid);
           const cur = funSeen(prev || FUN_SEEN.get(sid), { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), items, bg: b.bg === true, ord: b.ord === true, pay: clip(String(b.pay || ""), 20) });
+          // letzte echte Aktivität: Vordergrund oder geänderter Stand (alte Tabs ohne neues app.js landen so nach 12 h unter „Inaktiv“)
+          cur.chg = (!cur.bg || !prev || prev.path !== cur.path || prev.step !== cur.step || prev.prod !== cur.prod || prev.cart !== cur.cart || prev.view !== cur.view) ? Date.now() : (prev.chg || prev.at || Date.now());
           if (cur.cart === 0 && prev && prev.items && prev.items.length && !cur.items.length) cur.items = prev.items;   // Warenkorbwert für die Auswertung behalten
           if (FUN_SEEN.size < 50000 || FUN_SEEN.has(sid)) FUN_SEEN.set(sid, { at: Date.now(), r: cur.r, max: cur.max, ord: cur.ord, left: !!cur.left || !!b.bye });
           if (b.bye) { funLeave(cur); LIVE.delete(sid); } else LIVE.set(sid, cur); }
