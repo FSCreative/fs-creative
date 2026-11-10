@@ -269,7 +269,7 @@ function editDraft(i){
 }
 
 /* ================= Bank ================= */
-function loadBank(force){ load("bank","/admin/api/sev/bank"+(force?"?force=1":""),function(j){ S.bank=j; }); }
+function loadBank(force){ load("bank","/admin/api/sev/bank"+(force?"?force=1":""),function(j){ if(j) j._at=Date.now(); S.bank=j; }); }
 F.action("sdbankreload",function(){ S.bank=null; loadBank(true); F.render(); });
 F.action("sdbkacc",function(k){ F.UI.bkAcc=k; F.render(); });
 function txById(id){ return S.bank&&S.bank.transactions.find(function(t){ return t.id===id; }); }
@@ -324,7 +324,10 @@ F.action("sdbk",function(v){
   var amt=Math.abs(t.amount), warn=Math.abs(amt-(s.open||0))>0.011&&s.open?(amt<s.open?" Achtung: Betrag "+eur(amt)+" ≠ offen "+eur(s.open)+" (wird als Teilzahlung gebucht).":" Achtung: Überzahlung +"+eur(amt-s.open)+" (offen "+eur(s.open)+") – "+(p[1]==="invoice"?"die Rechnung wird bezahlt, das Guthaben von "+eur(amt-s.open)+" bleibt beim Kunden offen.":"der Beleg wird bezahlt, "+eur(amt-s.open)+" mehr als offen.")):"";
   F.confirm(eur(t.amount)+" vom "+deShort(t.date)+" mit „"+s.label+"“ verbuchen?"+warn,"Zuordnen",function(){ bankDo(t.id,body,"Zugeordnet: "+s.label); });
 });
-F.action("sdbkother",function(id){
+/* Zuordnen-Dialog immer mit frischer Liste offener Belege/Rechnungen (Simon 10.11.2026: neu angelegter ÖBB-Beleg fehlte – Liste war vom Laden der Seite) */
+function bankFresh(cb){ if(S.bank&&S.bank.ok&&S.bank._at&&Date.now()-S.bank._at<8000){ cb(); return; } F.toast("Lade offene Belege …"); F.api("/admin/api/sev/bank").then(function(j){ if(j&&j.ok){ j._at=Date.now(); S.bank=j; } cb(); }); }
+F.action("sdbkother",function(id){ bankFresh(function(){ if(!txById(id)){ F.toast("Umsatz ist nicht mehr offen",true); F.render(); return; } sdbkOpen(id); }); });
+function sdbkOpen(id){
   var t=txById(id); if(!t) return; var pos=t.amount>0;
   var items=pos?S.bank.openInvoices.map(function(i){ return {kind:"invoice",id:i.id,label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.open)+" offen · "+deShort(i.date),q:(i.nr+" "+i.contact+" "+i.open).toLowerCase()}; }).concat(S.bank.openVouchers.filter(function(v){return v.cd==="D";}).map(function(v){ return {kind:"voucher",id:v.id,label:(v.supplier||"Einnahme")+(v.desc?" · "+v.desc:""),sub:eur(v.open)+" offen",q:(v.supplier+" "+v.desc+" "+v.open).toLowerCase()}; }))
     :S.bank.openVouchers.filter(function(v){return v.cd==="C";}).map(function(v){ return {kind:"voucher",id:v.id,label:(v.supplier||"Beleg")+(v.desc?" · "+v.desc:""),sub:eur(v.open)+" offen · "+deShort(v.date),q:(v.supplier+" "+v.desc+" "+v.open).toLowerCase()}; });
@@ -334,7 +337,7 @@ F.action("sdbkother",function(id){
     '<input class="f" placeholder="Suchen …" data-sdpickq autofocus><div class="sd-pick" id="sdPick">'+pickList("")+'</div>'+
     (items.length?'':'<p class="muted" style="margin:0">Keine offenen '+(pos?"Rechnungen":"Belege")+'. Lege den Beleg zuerst an oder buche den Umsatz direkt.</p>')+
     '<div class="row-between" style="border-top:1px solid var(--line);padding-top:12px;gap:12px;flex-wrap:wrap"><span class="muted small">Nichts Betriebliches? '+(pos?"Geld von dir privat aufs Geschäftskonto":"Private Ausgabe oder Geld an dich")+' – zählt nicht als Einnahme/Ausgabe, keine Steuer.</span><span class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn" data-act="sdbkpriv:'+esc(t.id)+'">'+(pos?"Als Privateinlage markieren":"Als Privatentnahme markieren")+'</button><button type="button" class="btn primary" data-act="sdbknew:'+esc(t.id)+'">Neue Buchung anlegen</button></span></div></div>',"wide");
-});
+}
 function pickList(q){ var it=S.pick.items.filter(function(x){ return !q||x.q.indexOf(q)>-1; }).slice(0,80); return it.map(function(x){ return '<button type="button" data-act="sdbkpick:'+x.kind+'|'+esc(x.id)+'"><span>'+esc(x.label)+'</span><span class="muted num">'+esc(x.sub)+'</span></button>'; }).join("")||'<div class="sd-empty">Nichts gefunden.</div>'; }
 F.listen("input","[data-sdpickq]",function(el){ var b=document.getElementById("sdPick"); if(b) b.innerHTML=pickList(el.value.toLowerCase()); });
 F.action("sdbkpriv",function(id){ var t=S.pick&&S.pick.tx; F.closeModal(); bankDo(id,{op:"privat"},t&&t.amount>0?"Als Privateinlage markiert":"Als Privatentnahme markiert"); if(F.finTxReset) F.finTxReset(); });
@@ -564,14 +567,20 @@ F.action("sdvop",function(v){
   var p=v.split("|"), txt={open:"Beleg als fertig erfasst markieren (Status offen)?",draft:"Beleg zurück auf Entwurf setzen?",reopen:"Zahlung lösen? Der Beleg ist danach wieder offen; die Bankbuchung wird getrennt."}[p[1]];
   F.confirm(txt,"OK",function(){ post("/admin/api/sev/voucher-op",{op:p[1],id:p[0]}).then(function(j){ if(!j||!j.ok) return fail(j); F.toast("Erledigt"); reloadVouThen(p[0]); }).catch(function(){ fail(); }); });
 });
-F.action("sdvpay",function(id){
+F.action("sdvpay",function(id){ bankFresh(function(){ sdvpayOpen(id); }); });
+/* Zahlung zum Beleg: zuerst passende offene Bankumsätze (gleicher Betrag, richtige Richtung) zum Verbinden, darunter Barzahlung/Kreditkarte ohne Bankumsatz (Simon 10.11.2026) */
+F.action("sdvlink",function(v){ var p=String(v).split("|"); F.closeModal(); bankDo(p[0],{op:"voucher",voucherId:p[1]},"Beleg mit Bankumsatz verbunden"); setTimeout(function(){ reloadVouThen(p[1]); },600); });
+function sdvpayOpen(id){
   var v=vouById(id); if(!v) return; var accs=(F.D.sev&&F.D.sev.accounts)||[], def=(accs.find(function(a){return a.isDefault;})||accs[0]||{}).id;
-  F.modal('<form data-form="sdvpay" data-id="'+esc(id)+'" class="stackf"><h2 style="font-size:20px">Zahlung erfassen</h2><p style="margin:0">'+esc(v.supplier||"Beleg")+' · offen <b>'+eur(v.open)+'</b></p>'+
-    '<p class="muted" style="margin:0">Für Zahlungen ohne Bankumsatz (bar, Kreditkarte, PayPal). Ist der Umsatz auf dem Konto, ordne ihn lieber unter „Bank“ zu.</p>'+
+  var txs=(S.bank&&S.bank.ok?S.bank.transactions:[]).filter(function(t){ return (v.cd==="D"?t.amount>0:t.amount<0); }).map(function(t){ var sg=(t.suggestions||[]).find(function(x){ return x.kind==="voucher"&&String(x.id)===String(id); }); return {t:t,hit:Math.abs(Math.abs(t.amount)-v.open)<0.011,sg:sg}; })
+    .filter(function(x){ return x.hit||x.sg; }).sort(function(a,b){ return (b.sg?b.sg.score:0)-(a.sg?a.sg.score:0)||Math.abs(Date.parse(a.t.date)-Date.parse(v.date||a.t.date))-Math.abs(Date.parse(b.t.date)-Date.parse(v.date||b.t.date)); }).slice(0,6);
+  var lst=txs.length?'<div class="sec-t">Passender Bankumsatz</div><div class="sd-pick">'+txs.map(function(x){ return '<button type="button" data-act="sdvlink:'+esc(x.t.id)+'|'+esc(id)+'"><span>'+esc(deShort(x.t.date)+" · "+(x.t.name||"")+" "+(x.t.purpose||"")).slice(0,110)+'</span><span class="num"><b>'+eur(x.t.amount)+'</b> · Verbinden</span></button>'; }).join("")+'</div>':'<p class="muted small" style="margin:0">Kein offener Bankumsatz mit '+eur(v.open)+' gefunden.</p>';
+  F.modal('<form data-form="sdvpay" data-id="'+esc(id)+'" class="stackf"><h2 style="font-size:20px">Zahlung erfassen</h2><p style="margin:0">'+esc(v.supplier||"Beleg")+' · offen <b>'+eur(v.open)+'</b></p>'+lst+'<div class="sec-t" style="margin-top:6px">Ohne Bankumsatz</div>'+
+    '<p class="muted" style="margin:0">Für Zahlungen ohne Bankumsatz (bar, Kreditkarte, PayPal).</p>'+
     '<div class="grid2"><label class="fl">Betrag<input class="f num" name="amount" type="number" step="0.01" min="0.01" value="'+v.open.toFixed(2)+'" required></label><label class="fl">Datum<input class="f" name="date" type="date" value="'+F.D.today+'"></label></div>'+
     '<label class="fl">Konto<select class="f" name="account">'+accs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===def?" selected":"")+'>'+esc(a.name)+'</option>'; }).join("")+'</select></label>'+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Buchen</button></span></div><div class="err" id="vpErr"></div></form>',"narrow");
-});
+}
 F.form("sdvpay",function(f){
   var id=f.getAttribute("data-id"), err=document.getElementById("vpErr"); err.textContent="Buche …";
   post("/admin/api/sev/voucher-op",{op:"pay",id:id,amount:f.amount.value,date:f.date.value,accountId:f.account.value}).then(function(j){ if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; } F.closeModal(); F.toast("Zahlung gebucht"); reloadVouThen(id); }).catch(function(){ err.textContent="Keine Verbindung."; });
@@ -678,9 +687,9 @@ F.form("sdpt",function(f){
 });
 
 /* ================= Registrierung ================= */
-F.geldTab({id:"rechnungen",label:"Rechnungen",order:12,sub:"Alle Rechnungen: senden, Zahlungseingang erfassen, mahnen, stornieren. Klick auf eine Rechnung öffnet die Details mit PDF.",render:renderRechnungen});
-F.geldTab({id:"bank",label:"Bank",order:14,sub:"Offene Bankumsätze mit passenden Rechnungen und Belegen zuordnen – meistens mit einem Klick.",render:renderBank});
-F.geldTab({id:"belege",label:"Belege",order:16,sub:"Ausgaben und Einnahme-Belege des Jahres: ansehen, korrigieren, Zahlung erfassen.",render:renderBelege});
+/* alte Ansicht „rechnungen“ entfernt (Simon 10.11.2026) – neue Finanzen (zfin.js) übernehmen; alte Sprungziele leitet zfin.js um */
+/* alte Ansicht „bank“ entfernt (Simon 10.11.2026) – neue Finanzen (zfin.js) übernehmen; alte Sprungziele leitet zfin.js um */
+/* alte Ansicht „belege“ entfernt (Simon 10.11.2026) – neue Finanzen (zfin.js) übernehmen; alte Sprungziele leitet zfin.js um */
 F.geldTab({id:"stamm",label:"Kontakte & Artikel",order:18,sub:"Kunden, Lieferanten und deine Standard-Leistungen.",render:renderStamm});
 F.action("sdtab",function(v){ var p=v.split("|"); F.UI.geldTab=p[0]; if(p[0]==="rechnungen"&&p[1]) F.UI.rgF=p[1]; if(p[0]==="belege"&&p[1]) F.UI.vF=p[1]; F.go("geld"); });
 F.onData(function(){ var y=vouYear(); if(S.vou[y]&&Date.now()-Date.parse(S.vou[y].fetchedAt||0)>5*60000) delete S.vou[y]; });

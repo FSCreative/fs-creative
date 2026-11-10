@@ -12,7 +12,7 @@ module.exports = function (D) {
   const first = j => { const o = j && j.objects; return Array.isArray(o) ? (o[0] || {}) : (o || {}); };
   const MAILCARD = require("./mail-card.js");
   const plainHtml = t => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br>");
-  const norm = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|und|&)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const norm = s => String(s || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|und|&)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
   function nameScore(a, b) {   // 0..1: gemeinsame Wörter (≥3 Zeichen)
     const A = norm(a).split(" ").filter(w => w.length >= 3), B = new Set(norm(b).split(" ").filter(w => w.length >= 3));
     if (!A.length || !B.size) return 0;

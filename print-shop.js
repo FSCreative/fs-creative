@@ -5221,7 +5221,10 @@ module.exports = function (D) {
         LIVE_SUBS.add(res); if (LIVE_SUBS.size > 50) { const f = LIVE_SUBS.values().next().value; LIVE_SUBS.delete(f); try { f.end(); } catch (e) {} }
         req.on("close", () => LIVE_SUBS.delete(res)); return;
       }
-      if (p === "/admin/api/print/live" && req.method === "GET") { await visitsLoad().catch(() => null); liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
+      if (p === "/admin/api/print/live" && req.method === "GET") { await visitsLoad().catch(() => null); liveGc(); const ls = liveState();
+        // „Bestellt“ = echte Bestellungen (je Warenkorb einmal, bezahlt bzw. auf Rechnung) statt gezählter Browser-Tabs (Simon 10.11.2026: 61 statt ~31)
+        if (ls.funnel) { const since = Date.now() - (ls.funnel.days || 7) * 864e5, keys = new Set(); (await store.listOrders().catch(() => [])).forEach(o => { if (o && Date.parse(o.createdAt || 0) > since && ["pending_payment", "payment_failed"].indexOf(o.status) < 0) keys.add(o.groupId || o.id); }); ls.funnel.ordered = keys.size; ls.funnel.real = true; }
+        return J(res, 200, Object.assign({ ok: true }, ls)); }
       if (p === "/admin/api/print/short" && req.method === "POST") { try { const sb = await readJson(req, 20000); return J(res, 200, { ok: true, url: await shortMake(sb.url) }); } catch (e) { return J(res, 400, { ok: false, error: e.message }); } }
       if (p === "/admin/api/print/staffel") {   // Staffel-Prüfung: GET = Stand, POST {op:"run"} = neu prüfen (Hintergrund, ca. 2 s je Menge)
         const sb = req.method === "POST" ? await readJson(req, 1000) : {};
