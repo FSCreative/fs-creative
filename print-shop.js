@@ -5278,7 +5278,7 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, dv = async (fid, label, motif) => { const m = await store.fileMeta(fid).catch(() => null) || {};
           const hs = (o.fileHistory || []).filter(h => (mot ? h.motif === motif : (h.motif == null || h.motif === -1)) && h.new === fid).pop();
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!(m.src && m.size && (m.kind === "upload" || m.kind === "replace")), place: m.place || null, pv: pvOk(m),
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
         return J(res, 200, { ok: true, docs, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
@@ -5371,6 +5371,31 @@ module.exports = function (D) {
         hist(o, "Druckdaten im Cockpit: Beschnitt ergänzt (" + (mode === "zoom" ? "Motiv leicht vergrößert" : "Rand gespiegelt") + ")" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
+      if (p === "/admin/api/print/pagefrom" && req.method === "POST") {   // Seite aus einer anderen Version/Datei dieses Auftrags übernehmen (Dateien-Ablage im Studio, Drag & Drop)
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
+        const allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new)).filter(Boolean), sfid = String(b.srcFileId || "");
+        if (allowed.indexOf(sfid) < 0) return J(res, 400, { ok: false, error: "Datei gehört nicht zu diesem Auftrag" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1;
+        const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId), pg = parseInt(b.page, 10), sp = Math.max(1, parseInt(b.srcPage, 10) || 1);
+        if (!fm || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const sbuf = await store.fileData(sfid); if (!sbuf) return J(res, 404, { ok: false, error: "Quelldatei nicht mehr vorhanden" });
+        let meta; try { const { PDFDocument } = require("pdf-lib"); const src = await PDFDocument.load(sbuf), n = src.getPageCount(); if (sp > n) return J(res, 400, { ok: false, error: "Diese Seite gibt es in der Quelldatei nicht" });
+          const one = await PDFDocument.create(); const [cp] = await one.copyPages(src, [sp - 1]); one.addPage(cp); const buf = Buffer.from(await one.save({ useObjectStreams: false }));
+          const pages = +fm.pages || 1; if (!(pg >= 1 && pg <= pages + 1)) return J(res, 400, { ok: false, error: "Diese Seite gibt es nicht" });
+          meta = await withPdf(() => pg === pages + 1 ? addBackSide(fm, buf, "Seite " + sp) : replacePage(fm, pg - 1, buf, "Seite " + sp)); } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Seite konnte nicht übernommen werden" }); }
+        meta.orderId = o.id; await store.putFile(meta);
+        await prSwap(o, motif, curId, meta, "Cockpit (Seite " + pg + " aus Ablage)");
+        hist(o, "Druckdaten im Cockpit: Seite " + pg + (motif > -1 ? " von Motiv " + (motif + 1) : "") + " aus anderer Version übernommen"); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o, checks: meta.checks || [] });
+      }
+      if (p === "/admin/api/print/docok" && req.method === "POST") {   // Entwurf als kontrolliert markieren (gilt für genau diese Datei – nach einer Änderung wieder „zu kontrollieren“)
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, keys = b.motif === "all" ? (mot ? o.motifs.map((m, i) => ["m" + i, m.fileId]) : [["f", o.fileId]]) : mot ? [["m" + Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)), o.motifs[Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0))].fileId]] : [["f", o.fileId]];
+        o.docOk = o.docOk || {}; keys.forEach(([k, fid]) => { if (b.ok === false) delete o.docOk[k]; else o.docOk[k] = { at: nowIso(), fid }; });
+        hist(o, (b.ok === false ? "Kontrolle zurückgenommen" : "Druckdaten kontrolliert und freigegeben") + (b.motif === "all" ? " (alle)" : mot ? " · Motiv " + (parseInt(b.motif, 10) + 1) : "")); stamp(o); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
       if (p === "/admin/api/print/restore" && req.method === "POST") {
         const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
@@ -5386,13 +5411,16 @@ module.exports = function (D) {
         if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Anpassen nicht mehr möglich" });
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1;
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId);
-        if (!fm || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich (kein Original gespeichert)" });
-        const sm = await store.fileMeta(fm.src), data = sm && await store.fileData(fm.src); if (!data) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden" });
-        const pl0 = fm.place || {}, opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.25, +b.scale)) : (+pl0.scale || 1) };
+        if (!fm || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        // Ausgangsbasis: Original des Kunden (src) – fehlt es (z. B. nach Seiten-Tausch oder Beschnitt), wird die aktuelle Datei zur Basis (Änderungen schaukeln sich nicht auf)
+        let srcId = fm.src, sm = srcId ? await store.fileMeta(srcId) : null, data = sm ? await store.fileData(srcId) : null, isBase = false;
+        if (!data) { srcId = fm.id; sm = { original: "pdf" }; data = await store.fileData(fm.id); isBase = true; } if (!data) return J(res, 400, { ok: false, error: "Datei nicht mehr vorhanden" });
+        const pl0 = isBase ? { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 } : (fm.place || {}), opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.25, +b.scale)) : (+pl0.scale || 1),
+          dx: b.dx != null && isFinite(+b.dx) ? Math.max(-500, Math.min(500, +b.dx)) : (+pl0.dx || 0), dy: b.dy != null && isFinite(+b.dy) ? Math.max(-500, Math.min(500, +b.dy)) : (+pl0.dy || 0) };
         let r; try { r = await withPdf(() => placeFile(data, sm.original || "pdf", fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
-        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? " · " + Math.round(opt.scale * 100) + " %" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
-        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
+        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? " · " + Math.round(opt.scale * 100) + " %" : "") + (opt.dx || opt.dy ? " · verschoben (" + fmtMm(opt.dx) + " / " + fmtMm(opt.dy) + " mm)" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: isBase ? "pdf" : fm.original, src: srcId, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileChecks = checks; }
         o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: curId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Cockpit (angepasst)" }]).slice(-30);
         if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
