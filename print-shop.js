@@ -4242,11 +4242,15 @@ module.exports = function (D) {
   let livePing = 0;
   const liveTimer = setInterval(() => { if (!LIVE_SUBS.size) return; livePush(); if (++livePing % 4 === 0) for (const r of LIVE_SUBS) { try { r.write(": ping\n\n"); } catch (e) { LIVE_SUBS.delete(r); } } }, 5000);   // abgelaufene Besucher rausnehmen, Verbindung offen halten
   if (liveTimer.unref) liveTimer.unref();
+  // „Bestellt (7 Tage)“ = echte Bestellungen (je Warenkorb einmal, bezahlt bzw. auf Rechnung) – alle 60 s aus dem Speicher, für /live und den Live-Stream
+  const REAL_ORD = { at: 0, n: null, p: null };
+  function realOrd() { if (REAL_ORD.p || Date.now() - REAL_ORD.at < 60e3) return; REAL_ORD.p = store.listOrders().then(L => { const since = Date.now() - 7 * 864e5, keys = new Set(); (L || []).forEach(o => { if (o && Date.parse(o.createdAt || 0) > since && ["pending_payment", "payment_failed"].indexOf(o.status) < 0) keys.add(o.groupId || o.id); }); REAL_ORD.n = keys.size; REAL_ORD.at = Date.now(); }).catch(() => {}).then(() => { REAL_ORD.p = null; }); }
   function liveState() {
     const pages = {}, steps = {}, prods = {}, carts = []; let cart = 0, bg = 0;
     for (const v of LIVE.values()) { if (v.bg) bg++; pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) { cart++; carts.push({ step: st, items: v.items || [], n: v.cart }); } }
     const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
-    return { funnel: funSummary(7), at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+    const fun = funSummary(7); realOrd(); if (REAL_ORD.n != null) { fun.ordered = REAL_ORD.n; fun.real = true; }
+    return { funnel: fun, at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };
@@ -5223,7 +5227,7 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/print/live" && req.method === "GET") { await visitsLoad().catch(() => null); liveGc(); const ls = liveState();
         // „Bestellt“ = echte Bestellungen (je Warenkorb einmal, bezahlt bzw. auf Rechnung) statt gezählter Browser-Tabs (Simon 10.11.2026: 61 statt ~31)
-        if (ls.funnel) { const since = Date.now() - (ls.funnel.days || 7) * 864e5, keys = new Set(); (await store.listOrders().catch(() => [])).forEach(o => { if (o && Date.parse(o.createdAt || 0) > since && ["pending_payment", "payment_failed"].indexOf(o.status) < 0) keys.add(o.groupId || o.id); }); ls.funnel.ordered = keys.size; ls.funnel.real = true; }
+        if (ls.funnel && !ls.funnel.real) { REAL_ORD.at = 0; realOrd(); if (REAL_ORD.p) await REAL_ORD.p; if (REAL_ORD.n != null) { ls.funnel.ordered = REAL_ORD.n; ls.funnel.real = true; } }
         return J(res, 200, Object.assign({ ok: true }, ls)); }
       if (p === "/admin/api/print/short" && req.method === "POST") { try { const sb = await readJson(req, 20000); return J(res, 200, { ok: true, url: await shortMake(sb.url) }); } catch (e) { return J(res, 400, { ok: false, error: e.message }); } }
       if (p === "/admin/api/print/staffel") {   // Staffel-Prüfung: GET = Stand, POST {op:"run"} = neu prüfen (Hintergrund, ca. 2 s je Menge)
