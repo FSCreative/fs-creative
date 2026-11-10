@@ -917,6 +917,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pl2 = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.strictEqual(pl2.ok, true, JSON.stringify(pl2));
     assert.strictEqual((await ru(await pdfOf(89, 59, 2), "spaet.pdf")).status, 409, "nach dem Bestellen kein Upload mehr");
   });
+  await t("Zahlungsnachweis: Überweisung unterwegs → in Arbeit; Geld kommt später an → keine zweite Bestätigung/Rechnung", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "ueberweisung@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
+    const u1 = await upload(await pdfOf(89, 59, 2), "t1.pdf", BC);
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const id = r.j.orderId, pid = r.j.checkoutUrl.split("/").pop(), inv0 = sevMock.state.invoices.length;
+    const ok = await admin("/admin/api/print/op", { op: "transferok", id, note: "Beleg per Mail", confirm: true }); assert.strictEqual(ok.ok, true, JSON.stringify(ok));
+    let od = (await admin("/admin/api/print/order?id=" + id)).order; assert.strictEqual(od.status, "paid"); assert.ok(od.payment.transferOk);
+    const conf = () => M.mails.filter(m => m.to === "ueberweisung@example.com" && /^Bestellbestätigung/.test(m.subject || "")).length;
+    assert.strictEqual(conf(), 1, "Bestätigung nach Zahlungsnachweis"); assert.strictEqual(sevMock.state.invoices.length, inv0 + 1, "Rechnungsentwurf angelegt");
+    M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    od = (await admin("/admin/api/print/order?id=" + id)).order; assert.strictEqual(od.payment.status, "paid"); assert.strictEqual(conf(), 1, "keine zweite Bestätigung"); assert.strictEqual(sevMock.state.invoices.length, inv0 + 1, "keine zweite Rechnung");
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "transferok", id, confirm: true })).ok, false, "nur bei offenen Zahlungen");
+  });
   await t("Datencheck mit Grafikaufbereitung (+20 €): Druckdaten austauschen, zur Freigabe senden, Kunde gibt frei bzw. wünscht Änderung, erst dann bestellen", async () => {
     const base = { customer: Object.assign({}, cust, { email: "grafik@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     const u1 = await upload(await pdfOf(89, 59, 2), "g1.pdf", BC);

@@ -2718,6 +2718,21 @@ module.exports = function (D) {
       [], ["Melde dich gern, dann finden wir gemeinsam eine Lösung."], D.notifyTo);
     return o;
   }
+  // Zahlungsnachweis (Simon 10.11.2026): Banküberweisung über Mollie nachweislich unterwegs (z. B. Beleg des Kunden) → Auftrag schon vorher in Arbeit.
+  // Kommt das Geld später, wird nur die Zahlung vermerkt (keine zweite Bestätigung/Rechnung); läuft die Mollie-Zahlung ab, ohne dass Geld kam → Mitteilung an Simon.
+  async function transferMissing(o, st) {
+    if (o.payment.transferMissing) return; o.payment.transferMissing = nowIso(); hist(o, "Achtung: Mollie meldet „" + st + "“ – die nachgewiesene Überweisung ist bei Mollie nicht eingegangen. Bitte Zahlung prüfen."); await store.putOrder(o);
+    if (D.push) D.push("lead", { title: "Überweisung fehlt: " + o.nr, body: (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ")) + " · " + eur(o.price.gross) + " – Auftrag ist schon in Arbeit, Zahlung bei Mollie " + st, url: "/admin#print", tag: "trmiss-" + o.id }).catch(() => {});
+  }
+  async function transferOk(id, note) {
+    const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
+    if (!(o0.payment && o0.payment.method === "mollie" && ["pending_payment", "payment_failed"].indexOf(o0.status) > -1)) throw new Error("Nur bei offenen Online-Zahlungen möglich");
+    const L = o0.groupId ? (await store.listOrders().catch(() => [])).filter(x => x && x.groupId === o0.groupId && ["pending_payment", "payment_failed"].indexOf(x.status) > -1) : [o0];
+    for (const o of L) { o.payment.transferOk = { at: nowIso(), note: clip(String(note || "").trim(), 300) }; o.payment.status = "transfer_ok"; o.status = "paid"; stamp(o);
+      hist(o, "Zahlung nachgewiesen (Überweisung unterwegs) – Auftrag in Arbeit genommen" + (o.payment.transferOk.note ? ": " + o.payment.transferOk.note : "")); await briefDone(o); await store.putOrder(o); }
+    for (const o of L) await submitted(o);
+    return await store.getOrder(id);
+  }
   // Mollie-Webhook: nie dem Inhalt trauen, sondern die Zahlung bei Mollie abrufen
   async function mollieWebhook(paymentId) {
     if (!/^tr_[A-Za-z0-9]{4,40}$/.test(paymentId)) return;
@@ -2731,9 +2746,11 @@ module.exports = function (D) {
       for (const x of orders) {
         if (st === "paid" && x.payment.status !== "paid") {
           if (!(Math.abs(amt - sum) < 0.005) || (pay.amount && pay.amount.currency !== "EUR")) { x.payment.status = "mismatch"; hist(x, "Zahlung " + paymentId + " mit falschem Betrag " + (pay.amount && pay.amount.value)); await store.putOrder(x); continue; }
+          const was = !!x.payment.transferOk;
           x.payment.status = "paid"; x.payment.mollieId = paymentId; x.payment.paidAt = String(pay.paidAt || nowIso()); x.payment.methodDetail = clip(pay.method, 40);
           if (x.status === "pending_payment" || x.status === "payment_failed") x.status = "paid";
-          hist(x, "Zahlung eingegangen (Mollie " + paymentId + ", Warenkorb " + md.groupId + ")"); await briefDone(x); await store.putOrder(x); await submitted(x);
+          hist(x, "Zahlung eingegangen (Mollie " + paymentId + ", Warenkorb " + md.groupId + ")" + (was ? " – war schon nach Zahlungsnachweis in Arbeit" : "")); await briefDone(x); await store.putOrder(x); if (!was) await submitted(x);
+        } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.transferOk && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { await transferMissing(x, st);
         } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { x.payment.status = st; if (x.status === "pending_payment") x.status = "payment_failed"; hist(x, "Zahlung " + st); await briefUndo(x); await store.putOrder(x); }
       }
       return;
@@ -2744,10 +2761,12 @@ module.exports = function (D) {
     if (st === "paid" && o.payment.status !== "paid") {
       const amt = pay.amount && parseFloat(pay.amount.value);
       if (!(Math.abs(amt - o.price.gross) < 0.005) || (pay.amount && pay.amount.currency !== "EUR")) { o.payment.status = "mismatch"; hist(o, "Zahlung " + paymentId + " mit falschem Betrag " + (pay.amount && pay.amount.value)); await store.putOrder(o); return; }
+      const was = !!o.payment.transferOk;
       o.payment.status = "paid"; o.payment.mollieId = paymentId; o.payment.paidAt = String(pay.paidAt || nowIso()); o.payment.methodDetail = clip(pay.method, 40);
       if (o.status === "pending_payment" || o.status === "payment_failed") o.status = "paid";
-      hist(o, "Zahlung eingegangen (Mollie " + paymentId + ")"); await briefDone(o); await store.putOrder(o);
-      await submitted(o);
+      hist(o, "Zahlung eingegangen (Mollie " + paymentId + ")" + (was ? " – war schon nach Zahlungsnachweis in Arbeit" : "")); await briefDone(o); await store.putOrder(o);
+      if (!was) await submitted(o);
+    } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && o.payment.transferOk && o.payment.status !== "paid" && paymentId === o.payment.mollieId) { await transferMissing(o, st);
     } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && o.payment.status !== "paid" && paymentId === o.payment.mollieId) {
       o.payment.status = st; if (o.status === "pending_payment") o.status = "payment_failed"; hist(o, "Zahlung " + st); await briefUndo(o); await store.putOrder(o);
     } else if (pay.amountRefunded && parseFloat(pay.amountRefunded.value) > 0 && o.payment.refund && o.payment.refund.status !== "refunded") { o.payment.refund.status = "refunded"; await store.putOrder(o); }
@@ -5278,8 +5297,9 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, dv = async (fid, label, motif) => { const m = await store.fileMeta(fid).catch(() => null) || {};
           const hs = (o.fileHistory || []).filter(h => (mot ? h.motif === motif : (h.motif == null || h.motif === -1)) && h.new === fid).pop();
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
+        const prodX = await findProduct(o.product.key).catch(() => null), safeMm = prodX ? (prodX.imprint ? 0 : +prodX.safe || 3) : 3;   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
         return J(res, 200, { ok: true, docs, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
       }
@@ -5515,6 +5535,7 @@ module.exports = function (D) {
         if (op === "place") { const o0 = await store.getOrder(id);
           if (o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" });
           const o = await placeOrder(id, "Cockpit" + (b.force === true && o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
+        if (op === "transferok") { const o = await transferOk(id, b.note); return J(res, 200, { ok: true, order: o }); }
         if (op === "redo") {   // Druckdaten ablehnen: { reason, send } – ohne send nur Vorschau der Kundenmail
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!REVIEW[o.status] && !(o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) throw new Error("Schon bei Print.com bestellt");
