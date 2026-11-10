@@ -930,6 +930,20 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     od = (await admin("/admin/api/print/order?id=" + id)).order; assert.strictEqual(od.payment.status, "paid"); assert.strictEqual(conf(), 1, "keine zweite Bestätigung"); assert.strictEqual(sevMock.state.invoices.length, inv0 + 1, "keine zweite Rechnung");
     assert.strictEqual((await admin("/admin/api/print/op", { op: "transferok", id, confirm: true })).ok, false, "nur bei offenen Zahlungen");
   });
+  await t("Studio im Cockpit: Rand spiegeln, Größe/Verschieben, Seite löschen, Ablage – neue Versionen, Hinweise aktuell", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "studio@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
+    const u1 = await upload(await pdfOf(85, 55, 2), "ohne.pdf", BC); assert.ok(u1.j.checks.some(c => /keinen Beschnitt/.test(c.text)));
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const id = r.j.orderId, pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    const bl = await admin("/admin/api/print/bleed", { id, mode: "mirror" }); assert.strictEqual(bl.ok, true, JSON.stringify(bl));
+    let d = await admin("/admin/api/print/order?id=" + id); assert.ok(!d.docs[0].checks.some(c => /Beschnitt/.test(c.text) && c.level !== "ok"), JSON.stringify(d.docs[0].checks)); assert.strictEqual(d.docs[0].prev && d.docs[0].prev.by, "Cockpit (Beschnitt gespiegelt)");
+    const ft = await admin("/admin/api/print/fit", { id, scale: 1.1, dx: 2 }); assert.strictEqual(ft.ok, true, JSON.stringify(ft));
+    d = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(d.docs[0].place.scale, 1.1); assert.strictEqual(d.docs[0].place.dx, 2); assert.strictEqual(d.docs[0].pages, 2);
+    const del = await admin("/admin/api/print/pagedel", { id, page: 2 }); assert.strictEqual(del.ok, true, JSON.stringify(del));
+    d = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(d.docs[0].pages, 1); assert.ok(d.docs[0].checks.some(c => /werden 2 benötigt/.test(c.text)), "Rückseite fehlt jetzt");
+    const pf = await admin("/admin/api/print/pagefrom", { id, page: 2, srcFileId: u1.j.fileId, srcPage: 2 }); assert.strictEqual(pf.ok, true, JSON.stringify(pf));
+    d = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(d.docs[0].pages, 2, "Rückseite aus der Ablage ergänzt"); assert.ok(d.pagesOf[u1.j.fileId] === 2);
+  });
   await t("Datencheck mit Grafikaufbereitung (+20 €): Druckdaten austauschen, zur Freigabe senden, Kunde gibt frei bzw. wünscht Änderung, erst dann bestellen", async () => {
     const base = { customer: Object.assign({}, cust, { email: "grafik@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     const u1 = await upload(await pdfOf(89, 59, 2), "g1.pdf", BC);

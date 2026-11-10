@@ -5301,7 +5301,9 @@ module.exports = function (D) {
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = prodX ? (prodX.imprint ? 0 : +prodX.safe || 3) : 3;   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
-        return J(res, 200, { ok: true, docs, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
+        const allF = Array.from(new Set([o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean))).slice(0, 60), pagesOf = {};
+        for (const f of allF) { const mm = await store.fileMeta(f).catch(() => null); if (mm) pagesOf[f] = +mm.pages || 1; }
+        return J(res, 200, { ok: true, docs, pagesOf, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
       }
       // Print.com-Sortiment (nur lesend): alle Produkte bzw. ein Produkt mit Eigenschaften – zum Auswählen fürs Shop-Sortiment
       if (p === "/admin/api/print/pcproducts" && req.method === "GET") {
@@ -5435,11 +5437,23 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId), pg = parseInt(b.page, 10);
         const data = fm && await store.fileData(curId); if (!data) return J(res, 400, { ok: false, error: "Datei nicht vorhanden" });
         let meta; try { const { PDFDocument } = require("pdf-lib"); const doc = await PDFDocument.load(data), n = doc.getPageCount(); if (n < 2) return J(res, 400, { ok: false, error: "Die einzige Seite kann nicht gelöscht werden – Seite ersetzen oder Datei hochladen" }); if (!(pg >= 1 && pg <= n)) return J(res, 400, { ok: false, error: "Diese Seite gibt es nicht" });
-          doc.removePage(pg - 1); const pdf = Buffer.from(await doc.save({ useObjectStreams: false })), info = await pdfInfoX(pdf);
+          const out = await PDFDocument.create(), keep = doc.getPageIndices().filter(i => i !== pg - 1); (await out.copyPages(doc, keep)).forEach(x => out.addPage(x));   // neu aufbauen (removePage ließe die Seite als Objekt in der Datei)
+          const pdf = Buffer.from(await out.save({ useObjectStreams: false })), info = await pdfInfoX(pdf);
           meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (Seite " + pg + " entfernt).pdf", pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: info.pages || n - 1 }, checkPdf(info, fm.size, +fm.bleed || 0, +fm.sides || 1, (+fm.sides || 1) > 2), { original: "pdf", from: fm.id, orderId: o.id });
         } catch (e) { return J(res, 400, { ok: false, error: "Seite konnte nicht entfernt werden" }); }
         await prSwap(o, motif, curId, meta, "Cockpit (Seite " + pg + " gelöscht)"); hist(o, "Druckdaten im Cockpit: Seite " + pg + (motif > -1 ? " von Motiv " + (motif + 1) : "") + " gelöscht"); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
+      }
+      // kleine Vorschaubilder je Seite fürs Studio (einmal im Browser gerendert, dann nur noch das Bild laden – spart Speicher und Zeit)
+      if (p === "/admin/api/print/thumb") {
+        const q = req.method === "POST" ? await readJson(req, 600000) : { id: u.searchParams.get("id"), fid: u.searchParams.get("fid"), p: u.searchParams.get("p") };
+        const o = await store.getOrder(String(q.id || "")); if (!o) return J(res, 404, { ok: false });
+        const fid = String(q.fid || ""), pg = Math.max(1, Math.min(200, parseInt(q.p, 10) || 1)), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean);
+        if (allowed.indexOf(fid) < 0) return J(res, 404, { ok: false }); const tid = fid + "t" + pg;
+        if (req.method === "GET") { const b = await store.fileData(tid).catch(() => null); if (!b) return D.send(res, 404, "kein Vorschaubild"); return D.send(res, 200, b, "image/jpeg", { "Cache-Control": "private, max-age=604800" }); }
+        const mm = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(q.img || "")), buf = mm ? Buffer.from(mm[1], "base64") : null;
+        if (!buf || buf.length < 100 || buf.length > 450000 || sniff(buf) !== "jpg") return J(res, 400, { ok: false });
+        await store.putFile({ id: tid, kind: "thumb", of: fid, createdAt: nowIso(), orderId: o.id, bytes: buf.length }, buf); return J(res, 200, { ok: true });
       }
       if (p === "/admin/api/print/docok" && req.method === "POST") {   // Entwurf als kontrolliert markieren (gilt für genau diese Datei – nach einer Änderung wieder „zu kontrollieren“)
         const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
