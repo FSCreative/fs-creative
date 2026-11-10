@@ -162,7 +162,7 @@ const PUB_MORE = [
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const TEX_AREAS = (() => { try { return JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "print-tex-areas.json"), "utf8")); } catch (e) { return {}; } })();
-const CUR_V = require("crypto").createHash("sha1").update("26" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("27" + JSON.stringify(TEX_AREAS) + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 400]], ["positions_back", "Rücken", [280, 400]], ["positions_sleeve_left", "Ärmel links", [100, 100]], ["positions_sleeve_right", "Ärmel rechts", [100, 100]]];
 // Druckflächen laut Print.com (Produktseite Stanley/Stella Hoodies, geprüft 04.11.2026): vorne 280 × 220 mm (Hoodie: Bauchtasche), Rücken 280 × 400 mm,
@@ -1116,6 +1116,8 @@ module.exports = function (D) {
       if (copies > prod.maxCopies) throw bad("Maximal " + prod.maxCopies + " Stück pro Bestellung");
       const mq = m.pm && (prod.qty || []).find(r => r.pm === m.pm), mMax = mq && (mq.ranges || []).length ? Math.max.apply(null, mq.ranges.map(x => +x.max || 0)) : 0;
       if (mMax && copies > mMax) throw bad(m.label.replace(/ \(.*$/, "") + " ist bis " + mMax.toLocaleString("de-AT") + " Stück möglich – für mehr bitte eine andere Druckart wählen");
+      const mr = mq && (mq.ranges || []).find(x => copies >= +x.min && copies <= +x.max), st = mr && +mr.step > 1 ? +mr.step : 0;   // z. B. Transferdruck ab 100 Stück nur in 5er-Schritten
+      if (st && (copies - +mr.min) % st) { const lo = copies - (copies - +mr.min) % st, hi = Math.min(+mr.max, lo + st); throw bad(m.label.replace(/ \(.*$/, "") + ": ab " + (+mr.min).toLocaleString("de-AT") + " Stück nur in " + st + "er-Schritten – z. B. " + lo.toLocaleString("de-AT") + " oder " + hi.toLocaleString("de-AT") + " Stück (Größen bitte so verteilen)"); }
       if (m.pm) extra.printingmethod = m.pm; positions.forEach(p => { extra[p.slug] = m.val; }); extra.textile_sizes = list[0].slug;   // Preis hängt nicht von der Größe ab
       sel.druck = m.key; sel.positionen = positions.map(p => p.slug); sel.groessen = list.map(x => x.slug + ":" + x.n).join(",");
       fileSel = { pos: positions.map(p => p.slug) };
