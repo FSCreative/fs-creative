@@ -199,6 +199,8 @@ function bleedOkChecks(l) { l = Array.isArray(l) ? l : []; return l.some(c => BL
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
   ordered: "Bei Print.com bestellt", in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", rejected: "Abgelehnt", problem: "Problem bei Print.com" };
 const REVIEW = { paid: 1, invoice_requested: 1 };
+// „Zur Prüfung“ (Liste, Zähler, Vorschlag): nicht solange Druckdaten abgelehnt sind und die neue Datei des Kunden fehlt (Simon 10.11.2026)
+const needsReview = o => !!(o && REVIEW[o.status] && !(o.redo && o.redo.status === "open"));
 // Für Kund:innen: nie den Produktionspartner nennen
 const STATUS_PUB = Object.assign({}, STATUS_DE, { ordered: "In Produktion gegeben", problem: "In Klärung – wir melden uns" });
 // Texte aus dem Print.com-CMS für den Shop: fremde E-Mail-Adressen → simon@fs-creative.at, Links/Nennungen von Print.com entfernen
@@ -2537,7 +2539,7 @@ module.exports = function (D) {
     } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Sammelrechnung senden fehlgeschlagen: " + e.message); await store.putOrder(o); }
   }
   async function submittedRest(o) {
-    if (D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
+    if (false && D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
       detail: o.product.title + " · " + o.copies + " Stk. · " + (o.payment.method === "invoice" ? "Rechnung (Freigabe nötig)" : "bezahlt") + " · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
     if (D.push) D.push("lead", { title: "Druckauftrag: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: o.nr + " · " + o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck – bitte persönlich prüfen" : o.check === "graphic" ? " · Grafikaufbereitung – Grafik druckfertig machen und zur Freigabe senden" : "") + "\n" + (o.payment.method === "invoice" ? "Auf Rechnung – Freigabe nötig" : "Bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
     if (isGroup(o) && !(o.invoice && o.invoice.id)) {
@@ -4081,19 +4083,21 @@ module.exports = function (D) {
   const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
   // Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): nur im Speicher, aktiv = Lebenszeichen in den letzten 70 s; nichts Persönliches, nichts gespeichert
   const LIVE = new Map(), LIVE_MS = 70e3;
-  const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) { funLeave(v); LIVE.delete(k); } };
+  // Trichter je Tab nur einmal zählen (Simon 10.11.2026: „Bestellt 57“ bei 44 Aufträgen): Tabs, die nach Pause/Hintergrund wieder pingen, wurden neu gezählt – Stand je Tab 24 h merken
+  const FUN_SEEN = new Map();
+  const liveGc = () => { const n = Date.now(); for (const [k, v] of LIVE) if (v.at < n - (v.bg ? 150e3 : LIVE_MS)) { funLeave(v); LIVE.delete(k); const fs0 = FUN_SEEN.get(k); if (fs0) fs0.left = true; } for (const [k, v] of FUN_SEEN) if (v.at < n - 864e5) FUN_SEEN.delete(k); };
   // Kassen-Trichter (Wunsch Simon 06.11.2026: „Abbrüche messen statt raten“) – anonym je Tag: wie viele Tabs Warenkorb/Lieferung/Bezahlen erreicht haben,
   // wie viele bestellt haben und bei welchem Schritt die anderen gegangen sind (mit Warenkorbwert und gewählter Zahlart); keine Personendaten, 60 Tage
   const FUN_STEPS = { 4: "Warenkorb", 5: "Lieferung", 6: "Bezahlen" };
   let FUN = null, funDirty = false;
   store.getMeta("print_funnel").then(m => { const d = (m && m.days) || {}; FUN = { days: Object.assign(d, (FUN && FUN.days) || {}) }; }).catch(() => { FUN = FUN || { days: {} }; });
   function funDay() { if (!FUN) FUN = { days: {} }; const d = today(); return FUN.days[d] = FUN.days[d] || { reach: {}, left: {}, leftSum: {}, pay: {}, ordered: 0 }; }
-  function funLeave(v) { if (!v || v.ord || !(v.max >= 4)) return; const st = FUN_STEPS[v.step >= 4 ? v.step : v.max] || "Warenkorb", d = funDay(), sum = (v.items || []).reduce((a, x) => a + (+x.g || 0), 0);
+  function funLeave(v) { if (!v || v.ord || v.left || !(v.max >= 4)) return; const st = FUN_STEPS[v.step >= 4 ? v.step : v.max] || "Warenkorb", d = funDay(), sum = (v.items || []).reduce((a, x) => a + (+x.g || 0), 0);
     d.left[st] = (d.left[st] || 0) + 1; d.leftSum[st] = Math.round(((d.leftSum[st] || 0) + sum) * 100) / 100; if (st === "Bezahlen" && v.pay) d.pay[v.pay] = (d.pay[v.pay] || 0) + 1; funDirty = true; }
   function funSeen(prev, cur) { const r = Object.assign({}, (prev && prev.r) || {}), d = funDay();
     if (FUN_STEPS[cur.step] && !r[cur.step]) { r[cur.step] = 1; d.reach[FUN_STEPS[cur.step]] = (d.reach[FUN_STEPS[cur.step]] || 0) + 1; funDirty = true; }
     if (cur.ord && !(prev && prev.ord)) { d.ordered++; funDirty = true; }
-    cur.r = r; cur.max = Math.max((prev && prev.max) || 0, cur.step); cur.ord = !!(cur.ord || (prev && prev.ord)); return cur; }
+    cur.r = r; cur.max = Math.max((prev && prev.max) || 0, cur.step); cur.ord = !!(cur.ord || (prev && prev.ord)); cur.left = !!(prev && prev.left); return cur; }
   function funSummary(days) { const out = { days, reach: {}, left: {}, leftSum: {}, pay: {}, ordered: 0 }; if (!FUN) return out;
     const from = new Date(Date.now() - (days - 1) * 864e5).toISOString().slice(0, 10);
     for (const k of Object.keys(FUN.days)) { const d = FUN.days[k]; if (k < from || !d) continue;
@@ -4493,8 +4497,9 @@ module.exports = function (D) {
         // Warenkorb-Inhalt nur anonym fürs Cockpit (Produkt, Menge, Preis – keine Namen/Adressen), höchstens 8 Positionen
         const items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(x => ({ t: clip(String((x && x.t) || ""), 60), n: Math.max(0, Math.min(1e6, +(x && x.n) || 0)), u: (x && x.u) === "m" ? "m" : "", g: Math.max(0, Math.min(1e6, Math.round((+(x && x.g) || 0) * 100) / 100)) })).filter(x => x.t);
         if (sid.length >= 8) { const prev = LIVE.get(sid);
-          const cur = funSeen(prev, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), items, bg: b.bg === true, ord: b.ord === true, pay: clip(String(b.pay || ""), 20) });
+          const cur = funSeen(prev || FUN_SEEN.get(sid), { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)), items, bg: b.bg === true, ord: b.ord === true, pay: clip(String(b.pay || ""), 20) });
           if (cur.cart === 0 && prev && prev.items && prev.items.length && !cur.items.length) cur.items = prev.items;   // Warenkorbwert für die Auswertung behalten
+          if (FUN_SEEN.size < 50000 || FUN_SEEN.has(sid)) FUN_SEEN.set(sid, { at: Date.now(), r: cur.r, max: cur.max, ord: cur.ord, left: !!cur.left || !!b.bye });
           if (b.bye) { funLeave(cur); LIVE.delete(sid); } else LIVE.set(sid, cur); }
         if (LIVE.size > 5000) liveGc();
         if (sid.length >= 8 && !b.bye) visitCount(ip, req.headers["user-agent"]);
@@ -4659,6 +4664,7 @@ module.exports = function (D) {
         hist(o, "Neue Druckdaten vom Kunden" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + meta.name); stamp(o); await store.putOrder(o);
         const who = o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ");
         if (allNew) {
+          if (false && D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: "Neue Druckdaten prüfen und bei Print.com bestellen: " + o.nr + " · " + (who || ""), detail: o.product.title + " · " + o.copies + " Stk. · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
           if (D.push) D.push("lead", { title: "Neue Druckdaten: " + (who || o.nr), body: o.nr + " · " + o.product.title + "\nBitte prüfen und bei Print.com bestellen", url: "/admin#print", tag: "redo-" + o.id }).catch(() => {});
           if (D.notifyTo) await mail(D.notifyTo, "Druckshop: neue Druckdaten " + o.nr, "Kunde hat neue Druckdaten hochgeladen", ["Bitte im Cockpit unter „Druck“ prüfen und dann bei Print.com bestellen."], orderRows(o).concat([["Datei", meta.name]]), [], o.customer.email).catch(() => {});
         }
@@ -4928,7 +4934,7 @@ module.exports = function (D) {
 
   // ───────────────────────── HTTP: Cockpit (/admin/api/print/…) ─────────────────────────
   function orderSummary(o) {
-    return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
+    return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: o.customer.zip || "", city: o.customer.city || "", region: regionOf(o.customer.country, o.customer.zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
@@ -5137,7 +5143,7 @@ module.exports = function (D) {
     const briefsNew = (await briefsGet().catch(() => [])).filter(x => x.status === "neu").length;
     return { ok: true, briefsNew, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: SETTINGS && SETTINGS.markupPct != null ? SETTINGS.markupPct : c.markup, minMarginEur: SETTINGS && SETTINGS.minMarginEur != null ? SETTINGS.minMarginEur : c.minMargin, envMarkupPct: c.markup, envMinMarginEur: c.minMargin },
       settings: s, groups: mainsList().map(m => ({ slug: m.slug, name: m.name })), catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
-      curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary), margins: marginStats(orders) };
+      curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(needsReview).length, orders: orders.slice(0, 300).map(orderSummary), margins: marginStats(orders) };
   }
   // Marge des Druckshops (Kachel „Für dich, jetzt“): bestätigte Bestellungen (wie Treuebonus: bezahlt bis zugestellt) – dieser Monat, dieses Jahr, gesamt
   function marginStats(orders) {
@@ -5427,7 +5433,8 @@ module.exports = function (D) {
       if (!REVIEW[o.status] && Date.now() - Date.parse(o.updatedAt || o.createdAt) > 90 * 864e5) continue; toTask(o); n++; }
     return n; }
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
-  async function proposalValid(orderId) { const o = await store.getOrder(orderId); return !!o && !!REVIEW[o.status]; }
+  // Druckaufträge nicht mehr unter Finanzen → Zur Prüfung (Simon 10.11.2026: gehört nur unter „Druck“) – alte Vorschläge fallen damit weg
+  async function proposalValid() { return false; }
 
   // Marketing (mkt-posts.js): Produktfotos der freigeschalteten Produkte – Bestseller zuerst, dann nach Beliebtheit; JPG (satori kann kein WebP)
   async function marketingProducts(n) {
