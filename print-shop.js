@@ -5459,6 +5459,10 @@ module.exports = function (D) {
           if (b.op === "accstate") { await accLoad(); return J(res, 200, { ok: true, at: ACC_MAP.at, products: Object.keys(ACC_MAP.map || {}).length, withAcc: Object.values(ACC_MAP.map || {}).filter(l => l.length).length, accSkus: ACC_ON.size, busy: accBusy }); }
           if (b.op === "prod") return J(res, 200, { ok: true, raw: await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller") });   // Rohdaten eines Produkts (Optionen prüfen)
           if (b.op === "acc") return J(res, 200, { ok: true, raw: await pcApi("GET", "/accessories/" + encodeURIComponent(sku)) });
+          // Gemeinsamer Versand (Simon 10.11.2026): Rohdaten ansehen – Versandmöglichkeiten, Rabatt-Berechnung, bestehende Print.com-Bestellung (nur lesen)
+          if (b.op === "ship") return J(res, 200, { ok: true, raw: await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku, options: b.options || {}, deliveryPromise: 0 }, address: { country: b.country || "AT", postcode: b.postcode || "6793" }, numberOfDays: 21 }) });
+          if (b.op === "combo") return J(res, 200, { ok: true, raw: await pcApi("POST", "/shipping/combined-shipment", { requestItems: Array.isArray(b.requestItems) ? b.requestItems.slice(0, 20) : [] }) });
+          if (b.op === "pcorder") { const nr = String(b.nr || ""); if (!/^\d{6,14}$/.test(nr)) return J(res, 400, { ok: false, error: "nr" }); return J(res, 200, { ok: true, raw: await pcApi("GET", "/orders/" + nr) }); }
           if (b.op === "wf") return J(res, 200, { ok: true, raw: await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/workfile", { options: b.options || {} }) });
           if (b.op === "tpl") return J(res, 200, { ok: true, raw: await pcApi("POST", "/printjobs/templates", { sku, options: b.options || {} }, { base: "https://platform.print.com" }) });
           return J(res, 400, { ok: false, error: "op" });
