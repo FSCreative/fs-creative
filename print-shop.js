@@ -5316,7 +5316,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
-        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new)).filter(Boolean);
+        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean);
         if (fidQ && allowed.indexOf(fidQ) < 0) return D.send(res, 404, "Datei nicht gefunden");
         const fm = await store.fileMeta(fidQ || o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
         if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }
@@ -5394,7 +5394,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/pagefrom" && req.method === "POST") {   // Seite aus einer anderen Version/Datei dieses Auftrags übernehmen (Dateien-Ablage im Studio, Drag & Drop)
         const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
-        const allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new)).filter(Boolean), sfid = String(b.srcFileId || "");
+        const allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean), sfid = String(b.srcFileId || "");
         if (allowed.indexOf(sfid) < 0) return J(res, 400, { ok: false, error: "Datei gehört nicht zu diesem Auftrag" });
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1;
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId), pg = parseInt(b.page, 10), sp = Math.max(1, parseInt(b.srcPage, 10) || 1);
@@ -5408,6 +5408,38 @@ module.exports = function (D) {
         await prSwap(o, motif, curId, meta, "Cockpit (Seite " + pg + " aus Ablage)");
         hist(o, "Druckdaten im Cockpit: Seite " + pg + (motif > -1 ? " von Motiv " + (motif + 1) : "") + " aus anderer Version übernommen"); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o, checks: meta.checks || [] });
+      }
+      // Dateien-Ablage im Studio (Simon 10.11.2026): Datei nur ablegen (ohne zu ersetzen), aus der Ablage nehmen, Seite aus der Druckdatei löschen
+      if (p === "/admin/api/print/pool" && req.method === "POST") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) { req.resume(); return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" }); }
+        if (!prCan(o)) { req.resume(); return J(res, 409, { ok: false, error: "Schon in Produktion" }); }
+        const ref = await store.fileMeta(Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs[0].fileId : o.fileId); if (!ref || !ref.size) { req.resume(); return J(res, 400, { ok: false, error: "Für diesen Auftrag nicht möglich" }); }
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "datei")), 120).replace(/[\\/:*?"<>|]/g, "_");
+        const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
+        try { const buf = await readBody(req, MAX_UPLOAD), type = sniff(buf); if (!type) return J(res, 415, { ok: false, error: "Nur PDF, JPG oder PNG" });
+          let pdf = buf; if (type !== "pdf") pdf = (await withPdf(() => placeFile(buf, type, ref.size, +ref.bleed || 0, { mode: "fill" }, 1))).pdf; else { const info = await pdfInfoX(buf); if (info.encrypted) return J(res, 400, { ok: false, error: "Die PDF ist geschützt" }); }
+          const info2 = await pdfInfoX(pdf); meta = await newFile("pool", name.replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, { product: ref.product, sel: ref.sel, size: ref.size, bleed: ref.bleed, sides: ref.sides, pages: info2.pages || 1 }, [], { orderId: o.id });
+        } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht abgelegt werden" }); } finally { rel(); }
+        o.pool = (o.pool || []).concat([{ fid: meta.id, name: meta.name, at: nowIso(), pages: meta.pages || 1 }]).slice(-40); hist(o, "Datei in die Studio-Ablage gelegt: " + meta.name); stamp(o); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
+      if (p === "/admin/api/print/poolhide" && req.method === "POST") {
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const fid = String(b.fid || ""), cur = [o.fileId].concat((o.motifs || []).map(m => m.fileId)); if (cur.indexOf(fid) > -1) return J(res, 400, { ok: false, error: "Die aktuelle Druckdatei kann nicht weggelegt werden – einzelne Seiten in den Papierkorb ziehen" });
+        o.poolHidden = Array.from(new Set((o.poolHidden || []).concat([fid]))).slice(-200); o.pool = (o.pool || []).filter(x => x.fid !== fid); stamp(o); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
+      if (p === "/admin/api/print/pagedel" && req.method === "POST") {
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon in Produktion" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId), pg = parseInt(b.page, 10);
+        const data = fm && await store.fileData(curId); if (!data) return J(res, 400, { ok: false, error: "Datei nicht vorhanden" });
+        let meta; try { const { PDFDocument } = require("pdf-lib"); const doc = await PDFDocument.load(data), n = doc.getPageCount(); if (n < 2) return J(res, 400, { ok: false, error: "Die einzige Seite kann nicht gelöscht werden – Seite ersetzen oder Datei hochladen" }); if (!(pg >= 1 && pg <= n)) return J(res, 400, { ok: false, error: "Diese Seite gibt es nicht" });
+          doc.removePage(pg - 1); const pdf = Buffer.from(await doc.save({ useObjectStreams: false })), info = await pdfInfoX(pdf);
+          meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (Seite " + pg + " entfernt).pdf", pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: info.pages || n - 1 }, checkPdf(info, fm.size, +fm.bleed || 0, +fm.sides || 1, (+fm.sides || 1) > 2), { original: "pdf", from: fm.id, orderId: o.id });
+        } catch (e) { return J(res, 400, { ok: false, error: "Seite konnte nicht entfernt werden" }); }
+        await prSwap(o, motif, curId, meta, "Cockpit (Seite " + pg + " gelöscht)"); hist(o, "Druckdaten im Cockpit: Seite " + pg + (motif > -1 ? " von Motiv " + (motif + 1) : "") + " gelöscht"); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/docok" && req.method === "POST") {   // Entwurf als kontrolliert markieren (gilt für genau diese Datei – nach einer Änderung wieder „zu kontrollieren“)
         const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
