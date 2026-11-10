@@ -828,7 +828,7 @@
   // Format aus einem Link (?format=…, Google-Shopping-Einträge je Format): nur angebotene Formate, übrige Auswahl wie die Startausführung
   function setFormat(v) { var pr = S.prod && (S.prod.props || []).filter(function (x) { return x.slug === "size"; })[0]; if (!v || !pr || S.sel.size === v || !pr.options.some(function (o) { return o.slug === v; })) return; S.sel.size = String(v); fixSel("size"); loadPrice(); }
   // Auflage aus einem Link (?menge=…, Weihnachtsseite data-copies): nur angebotene Mengen
-  function setCopies(v) { var n = parseInt(v, 10); if (!S.prod || !(n > 0) || kind() === "textile" || (S.prod.tiers || []).indexOf(n) < 0 || n === S.copies) return; S.copies = n; motBalance(); loadPrice(); }
+  function setCopies(v) { if (/^sample_/.test(String((S.sel || {}).sample || ""))) { toast("Ein Probedruck ist immer 1 Stück – für eine größere Auflage „Kein Probedruck“ wählen."); render(); return; } var n = parseInt(v, 10); if (!S.prod || !(n > 0) || kind() === "textile" || (S.prod.tiers || []).indexOf(n) < 0 || n === S.copies) return; S.copies = n; motBalance(); loadPrice(); }
   var FOLD_RX = /^(single|singlehorizontal|wikkel|zigzag|luik|cross)_\d+$/;
   function sizeOf() {
     if (S.sel.fold && FOLD_RX.test(S.sel.fold)) return S.price && S.price.folds && S.price.size ? S.price.size : null;   // Folder: Größe = gefalzt, Datei = offenes Format (vom Server)
@@ -2781,6 +2781,8 @@
     var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : ""; S.wish = null; wishSeq++;
     S.undo = S.good && S.good.key === S.prod.key ? { sel: JSON.parse(JSON.stringify(S.good.sel)), slug: slug, val: val } : null;   // zurück zur letzten Auswahl mit gültigem Preis
     S.sel[slug] = val; fixSel(slug);
+    // Probedruck/Muster (z. B. Kartenset): gibt es nur als 1 Stück – Auflage auf 1, beim Zurückwechseln die vorige Auflage wieder (Simon 10.11.2026)
+    if (slug === "sample") { if (/^sample_/.test(String(val))) { if (+S.copies !== 1) S.copiesNoSample = S.copies; S.copies = 1; } else if (S.copiesNoSample) { S.copies = S.copiesNoSample; S.copiesNoSample = null; } }
     if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
     if (isLogo() && kind() === "promo" && lk !== logoKey()) { S.logos = {}; S.file = null; }
     render(); loadPrice();
