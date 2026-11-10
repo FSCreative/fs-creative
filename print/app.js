@@ -592,6 +592,13 @@
     var list = cust ? items.filter(function (x) { return x.val !== "custom"; }) : items, groups = [], gi = {};
     list.forEach(function (x) { var g = x.fold || x.group || ""; if (!(g in gi)) { gi[g] = groups.length; groups.push({ n: g, l: [] }); } groups[gi[g]].l.push(x); });
     var named = groups.length > 1 && groups.some(function (g) { return g.n; });
+    // Viele Zahlenwerte (z. B. Kartenset: 160 „Karten pro Set“, Seitenzahlen): kompakte Zahlenauswahl statt Kacheln (Simon 10.11.2026)
+    var nums = list.length > 24 && list.every(function (x) { return /^\s*\d+/.test(String(x.name)); }) ? list.map(function (x) { return { v: x.val, n: parseInt(String(x.name), 10), name: x.name, off: x.off }; }).filter(function (x) { return !x.off; }).sort(function (a, b) { return a.n - b.n; }) : null;
+    if (nums && nums.length) { var ci = -1; nums.forEach(function (x, i) { if (String(x.v) === String(cur)) ci = i; });
+      var prev = nums[Math.max(0, ci - 1)], next = nums[Math.min(nums.length - 1, ci + 1)], QS = [2, 4, 5, 6, 8, 10, 12, 15, 16, 20, 24, 25, 30, 32, 40, 48, 50, 60, 64, 75, 100, 150, 200];
+      var quick = nums.filter(function (x) { return QS.indexOf(x.n) > -1; }).slice(0, 16);
+      return '<div class="ps-op ps-opnum"><div class="ps-num"><button type="button" class="ps-numb" data-ddpick="' + esc(key) + "|" + esc(prev.v) + '"' + (ci <= 0 ? " disabled" : "") + ' aria-label="weniger">−</button><input type="number" inputmode="numeric" min="' + nums[0].n + '" max="' + nums[nums.length - 1].n + '" value="' + (ci > -1 ? nums[ci].n : "") + '" data-numpick="' + esc(key) + '" aria-label="' + esc(title) + '"><button type="button" class="ps-numb" data-ddpick="' + esc(key) + "|" + esc(next.v) + '"' + (ci >= nums.length - 1 ? " disabled" : "") + ' aria-label="mehr">+</button><span class="ps-numr">' + nums[0].n + "–" + nums[nums.length - 1].n + " möglich</span></div>" +
+        (quick.length ? '<div class="ps-numq">' + quick.map(function (x) { return '<button type="button" class="ps-numc' + (String(x.v) === String(cur) ? " on" : "") + '" data-ddpick="' + esc(key) + "|" + esc(x.v) + '">' + x.n + "</button>"; }).join("") + "</div>" : "") + "</div>"; }
     return '<div class="ps-op">' + (list.length > 12 ? '<input type="search" class="ps-ddq ps-opq" placeholder="' + esc(title) + ' suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") +
       groups.map(function (g) { return (named && g.n ? '<div class="ps-opg">' + esc(g.n) + "</div>" : "") + '<div class="ps-opgrid">' + g.l.map(function (x) { return optCard(key, x, cur); }).join("") + "</div>"; }).join("") +
       (cust ? '<div class="ps-opc"><div class="ps-opg">Eigenes Format' + (isCustom() ? ' <span class="ps-oc-ok">✓ gewählt</span>' : "") + "</div>" + customHtml(true) + "</div>" : "") + "</div>";
@@ -2744,6 +2751,9 @@
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
     if (t.id === "psPfvT") { S.pfvOff = !t.checked; pfvRender(); return; }
+    if (t.hasAttribute && t.hasAttribute("data-numpick")) { var nk = t.getAttribute("data-numpick"), its = (DDI[nk] || []).filter(function (x) { return !x.off && /^\s*\d+/.test(String(x.name)); }), want = parseInt(t.value, 10); if (!its.length || !(want > 0)) return;
+      var best = its.reduce(function (a, x) { var n = parseInt(String(x.name), 10); return !a || Math.abs(n - want) < Math.abs(a.n - want) ? { v: x.val, n: n } : a; }, null); if (best.n !== want) toast("Nächster möglicher Wert: " + best.n);
+      if (nk.indexOf("prop:") === 0) { S.dd = ""; setProp(nk.slice(5), best.v); } return; }
     if (t.name === "check") { S.check = ckNorm(t.value); S.cart.forEach(function (x) { delete x.check; }); cartSave(true); render(); return; }
     if (t.name === "icheck") { var cx = S.cart.filter(function (x) { return x.id === t.getAttribute("data-id"); })[0]; if (cx) { cx.check = ckNorm(t.value); if (S.cart.every(function (x) { return itemCheck(x) === cx.check; })) { S.check = cx.check; S.cart.forEach(function (x) { delete x.check; }); } cartSave(true); render(); } return; }
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
