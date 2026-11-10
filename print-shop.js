@@ -648,7 +648,9 @@ module.exports = function (D) {
       methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);
       // Mützen, Schals, Schürzen, Socken & Co.: keine Druckpositionen/Größen wie bei Shirts → als Werbeartikel (Logo auf der Druckfläche) anbieten statt gar nicht
       if (!sizes.length || !methods.length) { if (c.generic && !c.kind && !c.__asPromo) return parseProduct(Object.assign({}, c, { kind: "promo", __asPromo: true }), sku, pd); throw new Error("Textil-Eigenschaften (Größen/Druckpositionen) fehlen"); }
-      maxCopies = avail.length ? avail[avail.length - 1] : 2500;
+      // Höchstmenge aus den echten Mengenbereichen je Druckverfahren (Simon 10.11.2026: Shirts waren auf 100 begrenzt, weil die Vorschlagsliste 5–100 genommen wurde)
+      const rmax = [].concat.apply([], qty.map(r => (r.ranges || []).map(x => +x.max || 0)));
+      maxCopies = rmax.length && Math.max.apply(null, rmax) > 0 ? Math.max.apply(null, rmax) : avail.length ? avail[avail.length - 1] : 2500;
     }
     // Technische Daten: von Print.com fest vorgegebene Eigenschaften (genau eine Option bzw. kuratiert fix) – sonst für Kunden unsichtbar (z. B. Vliesbanner: Ösen oben/unten, Druckverfahren)
     const SPEC_SKIP = /^(copies|urgency|bundle|sheet_size|special_size|pallet_delivery|packaging_extras|cross_bundle|delivery|box_delivery|standard_bundling|provide_label|designs|sealed|all_sides_equal_finish|flexibleprintingmethod|personalize|customer_packing_option|plano_delivery|summary_.*)$/;
@@ -1112,6 +1114,8 @@ module.exports = function (D) {
       if (!copies) throw bad("Bitte die Stückzahl je Größe eingeben");
       if (copies < m.min) throw bad(m.label.replace(/ \(.*$/, "") + " ist ab " + m.min + " Stück möglich");
       if (copies > prod.maxCopies) throw bad("Maximal " + prod.maxCopies + " Stück pro Bestellung");
+      const mq = m.pm && (prod.qty || []).find(r => r.pm === m.pm), mMax = mq && (mq.ranges || []).length ? Math.max.apply(null, mq.ranges.map(x => +x.max || 0)) : 0;
+      if (mMax && copies > mMax) throw bad(m.label.replace(/ \(.*$/, "") + " ist bis " + mMax.toLocaleString("de-AT") + " Stück möglich – für mehr bitte eine andere Druckart wählen");
       if (m.pm) extra.printingmethod = m.pm; positions.forEach(p => { extra[p.slug] = m.val; }); extra.textile_sizes = list[0].slug;   // Preis hängt nicht von der Größe ab
       sel.druck = m.key; sel.positionen = positions.map(p => p.slug); sel.groessen = list.map(x => x.slug + ":" + x.n).join(",");
       fileSel = { pos: positions.map(p => p.slug) };
