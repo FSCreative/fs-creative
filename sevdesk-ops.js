@@ -216,6 +216,20 @@ module.exports = function (D) {
     const amount = sevNum(t.amount), day = sevDay(t.valueDate || t.entryDate) || viennaToday(), accountId = t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "";
     const op = String(pl.op || "");
     const bookBody = (amt) => ({ amount: r2(Math.abs(amt)), date: unix(day), type: "N", checkAccount: { id: Number(accountId), objectName: "CheckAccount" }, checkAccountTransaction: { id: Number(txId), objectName: "CheckAccountTransaction" }, createFeed: true });
+    /* Kleine Differenz bei Ausgaben (Simon 10.11.2026): Abbuchung höher als der/die Beleg(e) → Rest als Mahngebühren (79) oder Zahlungsverkehrskosten (74),
+       eigener Beleg ohne Datei („Differenz laut Bankabbuchung“), 0 % USt, gleich mit dem Umsatz verbucht. Nur bis DIFF_MAX €. */
+    const DIFF_MAX = 10, DIFF_AT = { dunning: ["79", "Mahngebühren"], fees: ["74", "Zahlungsverkehrskosten"] };
+    const diffOf = open => r2(Math.abs(amount) - open);
+    async function bookDiff(d, supplier) {
+      const k = pl.diff && DIFF_AT[pl.diff.kind]; if (!k) throw new Error("Differenz " + d.toFixed(2).replace(".", ",") + " € – bitte wählen: Mahngebühren oder Zahlungsverkehrskosten");
+      if (!(d > 0.004 && d <= DIFF_MAX)) throw new Error("Differenz zu groß für eine automatische Buchung");
+      const body = { voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(day), supplierName: String(supplier || t.payeePayerName || "").slice(0, 200), description: (k[1] + " – Differenz laut Bankabbuchung " + sevDateDE(day) + (t.paymtPurpose ? " (" + String(t.paymtPurpose).slice(0, 80) + ")" : "")).slice(0, 250),
+          status: 100, taxType: "default", creditDebit: "C", voucherType: "VOU", currency: "EUR" },
+        voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: k[0], objectName: "AccountingType" }, taxRate: 0, net: false, sumGross: d, sumNet: d, comment: k[1] }], voucherPosDelete: null };
+      const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 }); const v = j && j.objects && (j.objects.voucher || j.objects) || {};
+      if (!v.id) throw new Error("Differenz-Beleg konnte nicht angelegt werden");
+      await sev("PUT", "/Voucher/" + v.id + "/bookAmount", { body: bookBody(-d) }); return v.id;
+    }
     if (op === "invoice") {
       const id = idOf(pl.invoiceId); if (!id) throw new Error("keine_rechnung");
       if (!(amount > 0)) throw new Error("Rechnungen passen nur zu Zahlungseingängen.");
@@ -223,12 +237,18 @@ module.exports = function (D) {
       await sevBook(Object.assign({ id, amount: Math.abs(amount), date: day, transactionId: txId, accountId }, pl.extra && typeof pl.extra === "object" && pl.extra.kind ? { extra: pl.extra } : {}));
     } else if (op === "voucher") {
       const id = idOf(pl.voucherId); if (!id) throw new Error("kein_beleg");
-      await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(amount) });
+      if (amount < 0 && pl.diff) {   // Abbuchung > offener Betrag: Beleg voll, Rest als gewählte Gebühr
+        const v = first(await sev("GET", "/Voucher/" + id)); const open = r2(Math.abs(sevNum(v.sumGross)) - sevNum(v.paidAmount)), d = diffOf(open);
+        if (!(d > 0.004)) throw new Error("Keine Differenz");
+        await bookDiff(d, v.supplierName); await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(-open) });
+      } else await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(amount) });
     } else if (op === "vouchers") {
       // Sammelabbuchung (z. B. Print.com zieht mehrere Wochenrechnungen auf einmal ein): Umsatz auf mehrere Belege aufteilen – Summe der offenen Beträge muss passen
       const ids = [...new Set((Array.isArray(pl.voucherIds) ? pl.voucherIds : []).map(idOf).filter(Boolean))].slice(0, 30); if (ids.length < 2) throw new Error("Mindestens zwei Belege angeben.");
       const parts = []; for (const vid of ids) { const v = first(await sev("GET", "/Voucher/" + vid)); if (!v.id) throw new Error("Beleg " + vid + " nicht gefunden"); parts.push([vid, r2(Math.abs(sevNum(v.sumGross)) - sevNum(v.paidAmount))]); }
-      const sum = r2(parts.reduce((a, x) => a + x[1], 0)); if (Math.abs(sum - Math.abs(amount)) > 0.02) throw new Error("Offene Summe der Belege (" + sum.toFixed(2) + " €) passt nicht zum Umsatz (" + Math.abs(amount).toFixed(2) + " €).");
+      const sum = r2(parts.reduce((a, x) => a + x[1], 0)), dd = diffOf(sum);
+      if (amount < 0 && pl.diff && dd > 0.02 && dd <= DIFF_MAX) { await bookDiff(dd, ""); }
+      else if (Math.abs(sum - Math.abs(amount)) > 0.02) throw new Error("Offene Summe der Belege (" + sum.toFixed(2) + " €) passt nicht zum Umsatz (" + Math.abs(amount).toFixed(2) + " €)." + (amount < 0 && dd > 0 && dd <= DIFF_MAX ? " Differenz als Mahngebühren oder Zahlungsverkehrskosten buchen?" : ""));
       for (const [vid, open] of parts) if (open > 0.004) await sev("PUT", "/Voucher/" + vid + "/bookAmount", { body: bookBody(open) });
     } else if (op === "settled") {
       // schon anderweitig verbucht (z. B. Mollie-Zahlung, deren Auszahlung in sevDesk direkt der Rechnung zugeordnet wurde): nur als erledigt markieren, keine Buchung
