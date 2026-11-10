@@ -1149,6 +1149,29 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.ok(g2.invoice.sentAt); assert.ok(JSON.parse(fs.readFileSync(path.join(od, "PUNIT11.json"), "utf8")).invoice.sentAt, "sentAt auch an der ersten Position");
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
   });
+  await t("Warenkorb-Erinnerung: 1 Tag, 5 Tage, nach 10 Tagen „wird gelöscht“ mit Nicht-löschen; nach 14 Tagen weg, behalten bis 3 Monate; Druckdaten bleiben solange", async () => {
+    const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-cr-")), env0 = {};
+    ["PRINT_ANCHORS_FILE", "DATABASE_URL"].forEach(k => { env0[k] = process.env[k]; }); process.env.PRINT_ANCHORS_FILE = "off"; delete process.env.DATABASE_URL;
+    try {
+      const sent = [], PS = require(path.join(dir, "print-shop.js"))({ DATA_DIR: ddir, mailSend: async m => { sent.push(m); } });
+      const d = path.join(ddir, "print-shop"); fs.mkdirSync(path.join(d, "orders"), { recursive: true }); fs.mkdirSync(path.join(d, "files"), { recursive: true });
+      const DAY = 864e5, ago = n => new Date(Date.now() - n * DAY).toISOString(), it = fid => [{ product: "flyer", title: "Flyer", copies: 500, fileId: fid, fileToken: "x", price: { gross: 40 } }];
+      const E = [{ v: 2, id: "c1", at: ago(1.1), email: "a@example.com", items: it("fcartA") }, { v: 2, id: "c2", at: ago(5.2), email: "b@example.com", items: it("fcartB"), m1: ago(4) },
+        { v: 2, id: "c3", at: ago(10.2), email: "c@example.com", items: it("fcartC"), m1: ago(9), m2: ago(5) }, { v: 2, id: "c4", at: ago(15), email: "d@example.com", items: it("fcartD"), m1: ago(14), m2: ago(10), m3: ago(5) },
+        { v: 2, id: "c5", at: ago(40), email: "e@example.com", items: it("fcartE"), m1: ago(39), m2: ago(35), keep: ago(30) }, { v: 2, id: "c6", at: ago(1.5), email: "f@example.com", items: it("fcartF"), stop: ago(1) }];
+      fs.writeFileSync(path.join(d, "print_cartrem.json"), JSON.stringify(E));
+      ["fcartA", "fcartC", "fcartD", "fcartE", "fcartX"].forEach(id => { fs.writeFileSync(path.join(d, "files", id + ".json"), JSON.stringify({ id, kind: "upload", createdAt: ago(20), orderId: null })); fs.writeFileSync(path.join(d, "files", id + ".pdf"), "x"); });
+      await PS._test.cartRemindDue();
+      const by = em => sent.filter(m => m.to === em);
+      assert.ok(/wartet noch/.test(by("a@example.com")[0].subject)); assert.ok(/Vergiss mich nicht/.test(by("b@example.com")[0].subject));
+      const m3 = by("c@example.com")[0]; assert.ok(/wird am .* gelöscht/.test(m3.subject)); assert.ok(/wkop=keep/.test(m3.html) && /wkop=stop/.test(m3.html));
+      assert.strictEqual(by("d@example.com").length + by("e@example.com").length + by("f@example.com").length, 0, "keine Mail: gelöscht, behalten (keine Lösch-Mail), abbestellt");
+      const left = (await PS._test.crGet()).map(r => r.id).sort(); assert.deepStrictEqual(left, ["c1", "c2", "c3", "c5", "c6"], "nach 14 Tagen gelöscht, behaltener bleibt");
+      await PS._test.cartRemindDue(); assert.strictEqual(sent.length, 3, "jede Stufe nur einmal");
+      await PS._test.cleanupFiles(); const fl = fs.readdirSync(path.join(d, "files")).filter(f => /\.json$/.test(f)).map(f => f.slice(0, -5)).sort();
+      assert.deepStrictEqual(fl, ["fcartA", "fcartC", "fcartE"], "Druckdaten gespeicherter Warenkörbe bleiben, andere alte Dateien weg");
+    } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
+  });
   // ── 4) Bestellstatus im Kundenbereich: Schrittdaten, Bewertungsmail nach der Zustellung, Texte der Bestellseite ──
   await t("Bewertungsmail: 2 Tage nach der Zustellung (nicht früher), nur mit Zustimmung, nur einmal, nur tagsüber; ohne Zustellmeldung 5 Tage nach dem Versand", async () => {
     const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-fb-")), env0 = {};

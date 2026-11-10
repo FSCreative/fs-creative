@@ -2856,7 +2856,10 @@ module.exports = function (D) {
   }
   async function cleanupFiles() {
     const files = await store.listFiles(); let n = 0;
-    for (const f of files) if (!f.orderId && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : f.kind === "preview" ? 30 : 3) * 864e5) { await store.delFile(f.id); n++; }
+    // Druckdaten gespeicherter Warenkörbe (Erinnerung) nicht löschen, solange der Warenkorb gespeichert ist – inkl. Original (src) und Vorschau-Kopie
+    const keep = new Set(); (await crGet().catch(() => [])).forEach(r => (r.items || []).forEach(x => { [x.fileId].concat((x.motifs || []).map(m => m.fileId)).filter(Boolean).forEach(id => keep.add(String(id))); }));
+    files.forEach(f => { if (keep.has(f.id) && f.src) keep.add(f.src); });
+    for (const f of files) if (!f.orderId && !keep.has(f.id) && !(f.of && keep.has(f.of)) && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : f.kind === "preview" ? 30 : 3) * 864e5) { await store.delFile(f.id); n++; }
     return n;
   }
   let lastDaily = 0, lastFb = 0;
@@ -4174,21 +4177,36 @@ module.exports = function (D) {
   // EINE Mail mit Link, der den Warenkorb wiederherstellt (ohne Rabatt). Gespeichert ohne Vorschaubilder, nach 14 Tagen gelöscht (Datenschutz).
   const CR_EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
   async function crGet() { const a = await store.getMeta("print_cartrem").catch(() => null); return Array.isArray(a) ? a : []; }
-  async function crSet(all) { await store.setMeta("print_cartrem", all.filter(r => Date.now() - Date.parse(r.at) < 14 * 864e5).slice(-2000)); }
+  // Ablauf (Simon 10.11.2026): 1 Tag und 5 Tage nach der letzten Änderung je eine Erinnerung, nach 10 Tagen Hinweis „wird gelöscht“ → nach 14 Tagen gelöscht,
+  // außer der Kunde klickt „Nicht löschen“: dann bis 3 Monate nach der letzten Änderung gespeichert. Jede Mail mit „Keine Erinnerungen mehr“.
+  const CR_DEL = 14, CR_KEEP = 90;
+  const crUntil = r => Date.parse(r.at) + (r.keep ? CR_KEEP : CR_DEL) * 864e5;
+  async function crSet(all) { await store.setMeta("print_cartrem", all.filter(r => Date.now() < crUntil(r)).slice(-2000)); }
   async function crDone(email) { const em = String(email || "").toLowerCase(), all = await crGet(); let ch = false; all.forEach(r => { if (r.email === em && !r.done) { r.done = nowIso(); ch = true; } }); if (ch) await crSet(all); }
   async function cartRemindDue() {
-    const all = await crGet(), now = Date.now(); let ch = false;
+    const all = await crGet(), now = Date.now(); let ch = false, orders = null;
     for (const r of all) {
-      if (r.done || r.sent || now - Date.parse(r.at) < 3 * 3600e3) continue;
-      r.sent = nowIso(); ch = true; if (now - Date.parse(r.at) > 48 * 3600e3) continue;   // zu alt (z. B. nach Pause): nicht mehr nachfassen
-      const ordered = (await store.listOrders().catch(() => [])).some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at) - 600e3);
-      if (ordered) { r.done = r.sent; continue; }
-      const link = cfg().publicUrl + "/print?wk=" + encodeURIComponent(r.id) + "&t=" + encodeURIComponent(sig("cartrem", r.id)), sum = r.items.reduce((a, x) => a + (+(x.price && x.price.gross) || 0), 0);
-      await mail(r.email, "Dein Warenkorb bei FS Creative wartet noch", "Dein Warenkorb ist gespeichert", ["Hallo " + (r.firstName || "") + ",", "du hast deine Bestellung vorhin nicht abgeschlossen – kein Problem, dein Warenkorb ist gespeichert. Mit einem Klick ist er wieder da, inklusive deiner Druckdaten."],
-        r.items.slice(0, 8).map(x => [clip(x.title || "Drucksache", 80), (+x.copies || +x.n || 0).toLocaleString("de-AT") + " " + (x.unit === "m" ? "m" : "Stk.") + (x.price && x.price.gross ? " · " + eurDe(+x.price.gross) : "")]).concat(sum ? [["Summe inkl. USt & Versand", eurDe(sum) + " (Preis wird beim Öffnen aktualisiert)"]] : [], [["Warenkorb öffnen", link, "button"]]),
-        ["Das ist die einzige Erinnerung – du hast sie an der Kasse gewünscht. Fragen? Antworte einfach auf diese Mail."]);
+      if (r.done || r.stop || !r.v) continue;   // !r.v: alte Einträge – damals Zustimmung zu nur EINER Mail (schon gesendet)
+      const age = now - Date.parse(r.at), D1 = 864e5;
+      const step = !r.m1 && !r.sent && age >= D1 ? 1 : !r.m2 && age >= 5 * D1 ? 2 : !r.m3 && !r.keep && age >= 10 * D1 ? 3 : 0;
+      if (!step) continue;
+      if (!orders) orders = await store.listOrders().catch(() => []);
+      if (orders.some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at) - 600e3)) { r.done = nowIso(); ch = true; continue; }
+      r["m" + step] = nowIso(); ch = true;
+      if (step === 1 && age > 4 * D1) continue;   // verpasst (z. B. nach Pause): diese Stufe auslassen
+      if (step === 2 && age > 9 * D1) continue;
+      const tk = sig("cartrem", r.id), base = cfg().publicUrl + "/print?wk=" + encodeURIComponent(r.id) + "&t=" + encodeURIComponent(tk), sum = r.items.reduce((a, x) => a + (+(x.price && x.price.gross) || 0), 0);
+      const rows = r.items.slice(0, 8).map(x => [clip(x.title || "Drucksache", 80), (+x.copies || +x.n || 0).toLocaleString("de-AT") + " " + (x.unit === "m" ? "m" : "Stk.") + (x.price && x.price.gross ? " · " + eurDe(+x.price.gross) : "")]).concat(sum ? [["Summe inkl. USt & Versand", eurDe(sum) + " (Preis wird beim Öffnen aktualisiert)"]] : []);
+      const del = deDate(new Date(Date.parse(r.at) + CR_DEL * D1).toISOString().slice(0, 10)), stop = "Keine Erinnerungen mehr? Hier abbestellen: " + base + "&wkop=stop";
+      const hi = "Hallo" + (r.firstName ? " " + r.firstName : "") + ",";
+      if (step === 1) await mail(r.email, "Dein Warenkorb bei FS Creative wartet noch", "Dein Warenkorb ist gespeichert", [hi, "du hast deine Bestellung noch nicht abgeschlossen – kein Problem, dein Warenkorb ist gespeichert. Mit einem Klick ist er wieder da, inklusive deiner Druckdaten."],
+        rows.concat([["Warenkorb öffnen", base, "button"]]), ["Du hast die Erinnerung an der Kasse gewünscht. Fragen? Antworte einfach auf diese Mail.", stop]);
+      else if (step === 2) await mail(r.email, "Vergiss mich nicht – dein Warenkorb bei FS Creative", "Vergiss mich nicht!", [hi, "deine Drucksachen liegen noch im Warenkorb und warten auf dich. Druckdaten und Ausführung sind gespeichert – ein Klick und du kannst bestellen."],
+        rows.concat([["Warenkorb öffnen", base, "button"]]), ["Fragen zu Papier, Format oder Druckdaten? Antworte einfach auf diese Mail – wir helfen gern.", stop]);
+      else await mail(r.email, "Dein Warenkorb wird am " + del + " gelöscht", "Dein Warenkorb wird bald gelöscht", [hi, "dein Warenkorb mit deinen Druckdaten ist seit 10 Tagen gespeichert. Wenn du nichts tust, löschen wir ihn am " + del + " – auch deine hochgeladenen Dateien.", "Möchtest du ihn behalten? Dann klick auf „Nicht löschen“ – wir heben ihn bis zu 3 Monate auf."],
+        rows.concat([["Nicht löschen – Warenkorb behalten", base + "&wkop=keep", "button"], ["Warenkorb öffnen", base, "button"]]), ["Das ist die letzte Mail zu diesem Warenkorb.", stop]);
     }
-    if (ch) await crSet(all);
+    if (ch) await crSet(all); else if (all.some(r => now >= crUntil(r))) await crSet(all);
   }
   // Kurzlinks: id → { u: Shop-Adresse, at } (nur Adressen unter /print, gleiche Adresse = gleicher Kurzlink)
   async function shortGet() { const m = await store.getMeta("print_short").catch(() => null); return m && typeof m === "object" ? m : {}; }
@@ -4464,16 +4482,20 @@ module.exports = function (D) {
       if (p === "/print/api/cartremind") {   // Warenkorb-Erinnerung: POST = merken/abbestellen (Häkchen an der Kasse), GET ?id&t = Warenkorb aus dem Mail-Link
         if (req.method === "GET") { const id = String(u.searchParams.get("id") || ""), t = String(u.searchParams.get("t") || "");
           if (!id || t !== sig("cartrem", id)) return J(res, 403, { ok: false, error: "Link ungültig" });
-          const r = (await crGet()).find(x => x.id === id); if (!r) return J(res, 404, { ok: false, error: "Dieser Warenkorb ist nicht mehr gespeichert" });
-          return J(res, 200, { ok: true, items: r.items, email: r.email }); }
+          const all = await crGet(), r = all.find(x => x.id === id); if (!r) return J(res, 404, { ok: false, error: "Dieser Warenkorb ist nicht mehr gespeichert" });
+          const op = u.searchParams.get("op");
+          if (op === "keep" && !r.keep) { r.keep = nowIso(); await crSet(all); }
+          if (op === "stop" && !r.stop) { r.stop = nowIso(); await crSet(all); }
+          return J(res, 200, { ok: true, items: r.items, email: r.email, keep: !!r.keep, until: r.keep ? new Date(crUntil(r)).toISOString().slice(0, 10) : "", stop: !!r.stop }); }
         if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
         if (limited("cartremind", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen" });
         const b = await readJson(req, 200000).catch(() => ({})), email = clip(b.email, 160).trim().toLowerCase();
         if (!CR_EMAIL.test(email)) return J(res, 400, { ok: false, error: "E-Mail ungültig" });
-        const all = (await crGet()).filter(x => !(x.email === email && !x.sent && !x.done));   // offener Eintrag dieser Adresse wird ersetzt bzw. gelöscht
+        const all0 = await crGet(), kept = all0.some(x => x.email === email && !x.done && x.keep);
+        const all = all0.filter(x => !(x.email === email && !x.done));   // offener Eintrag dieser Adresse wird ersetzt (Änderung = Ablauf neu ab jetzt) bzw. gelöscht
         if (b.on === true) { const items = (Array.isArray(b.items) ? b.items : []).slice(0, 20).filter(x => x && typeof x.product === "string" && typeof x.fileId === "string" && typeof x.fileToken === "string");
-          if (items.length) all.push({ id: "c" + crypto.randomBytes(9).toString("hex"), at: nowIso(), email, firstName: clip(b.firstName, 60), items }); }
+          if (items.length) all.push(Object.assign({ id: "c" + crypto.randomBytes(9).toString("hex"), v: 2, at: nowIso(), email, firstName: clip(b.firstName, 60), items }, kept ? { keep: nowIso() } : {})); }
         await crSet(all); return J(res, 200, { ok: true });
       }
       if (p === "/print/api/remember" && req.method === "POST") {   // „Angebot per Mail schicken“
@@ -5442,6 +5464,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

@@ -80,7 +80,7 @@
     S.cat = c; window.PrintShop.ai = !!c.ai; gtInit(); fixLabels(c.products); if (XM_HTML) S.view = "xmas";
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
-    if (q.get("wk") && q.get("t")) return cartRestore(q.get("wk"), q.get("t"));
+    if (q.get("wk") && q.get("t")) return cartRestore(q.get("wk"), q.get("t"), q.get("wkop"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.has("themen") || q.get("thema") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.theme = q.has("themen") ? "*" : q.get("thema") || ""; if (S.theme) S.page = "produkte"; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; S.cg = (function (v) { var m = String(v || "").match(/^(type|brand)-(.+)$/); return m ? m[1] + ":" + m[2] : ""; })(q.get("auswahl")); }
     var pm = location.pathname.match(/^\/print\/([a-z0-9-]+)\/?$/), pk = q.get("produkt") || (pm && (c.products.filter(function (p) { return p.slug === pm[1]; })[0] || {}).key);   // sprechende Adresse /print/<slug>
     if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { if (!q.get("angebot")) toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); if (q.get("angebot")) offerLoad(q.get("angebot"));
@@ -201,16 +201,19 @@
     ["net", "vat", "gross"].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; }); return t; }
   var rqSeq = 0;
   /* Warenkorb-Erinnerung (Wunsch Simon 06.11.2026, nur mit Häkchen): Warenkorb ohne Vorschaubilder auf dem Server merken – kommt keine Bestellung,
-     schickt der Server nach 3 Stunden EINE Mail mit Link (/print?wk=…&t=…), der den Warenkorb wiederherstellt */
+     schickt der Server nach 1 und 5 Tagen eine Erinnerung und nach 10 Tagen den Hinweis „wird gelöscht“ mit „Nicht löschen“ (Simon 10.11.2026) – Link /print?wk=…&t=… stellt den Warenkorb wieder her */
   function cartRemind() {
     if (!S.cart.length || !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(S.customer.email || "")) return;
     var items = S.cart.map(function (x) { var y = JSON.parse(JSON.stringify(x)); delete y.preview; if (y.motifs) y.motifs.forEach(function (m) { delete m.preview; }); return y; });
     api("/print/api/cartremind", { email: S.customer.email, firstName: S.customer.firstName || "", on: !!S.crOpt, items: items }).catch(function () {});
   }
-  function cartRestore(id, t) {
-    api("/print/api/cartremind?id=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(t), null, "GET").then(function (j) {
+  function cartRestore(id, t, op) {
+    op = op === "keep" || op === "stop" ? op : "";
+    api("/print/api/cartremind?id=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(t) + (op ? "&op=" + op : ""), null, "GET").then(function (j) {
       try { history.replaceState(null, "", "/print?warenkorb"); } catch (e) {}
       if (!j.ok || !Array.isArray(j.items)) { toast(j.error || "Warenkorb nicht mehr verfügbar", true); go(4, true); return; }
+      if (op === "stop") { toast("Erledigt – wir schicken dir zu diesem Warenkorb keine Erinnerungen mehr."); }
+      if (op === "keep") { setTimeout(function () { toast("Dein Warenkorb bleibt gespeichert" + (j.until ? " – bis " + new Date(j.until + "T12:00:00").toLocaleDateString("de-AT") : "") + "."); }, 1800); }
       var have = {}; S.cart.forEach(function (x) { have[x.fileId + "|" + x.product + "|" + x.copies] = 1; });
       var add = viaUs(j.items).filter(function (x) { return x && x.product && x.fileId && !have[x.fileId + "|" + x.product + "|" + x.copies] && prodByKey(x.product); });
       S.cart = S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
@@ -2494,7 +2497,7 @@
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
-      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psCrOpt"' + (S.crOpt ? " checked" : "") + '><span>Falls ich heute nicht fertig bestelle: Erinnert mich einmal per E-Mail an meinen Warenkorb (freiwillig, nur diese eine Mail).</span></label>' +
+      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psCrOpt"' + (S.crOpt ? " checked" : "") + '><span>Falls ich nicht fertig bestelle: Erinnert mich per E-Mail an meinen Warenkorb (freiwillig – nach 1 und 5 Tagen und vor dem Löschen, jederzeit abbestellbar).</span></label>' +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psFbOpt"' + (S.fbOpt ? " checked" : "") + '><span>Nach der Lieferung darf ich einmal per E-Mail um eine kurze Bewertung gebeten werden (freiwillig).</span></label>' +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
   }
