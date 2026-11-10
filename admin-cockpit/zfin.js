@@ -1444,9 +1444,6 @@ F.css('.fsd .fsd-head h1{font-size:26px;font-weight:600;letter-spacing:-.5px}.fs
 F.css('body.priv .k-bal,body.priv .k-st,body.priv .kl-a b,body.priv .kl-day b,body.priv .k-net,body.priv .k-io b,body.priv .k-bar b,body.priv .fsm-r b,body.priv .fsm-sacc b,body.priv .fsm-chip b,body.priv .fsm-mh b,body.priv .fsm-dh b,'+
   'body.priv .fa-k b,body.priv .fa-qz,body.priv .fa-qd,body.priv .fa-p b,body.priv .mo-line b.num,body.priv .mo-k b,body.priv .mo-acc b.num,body.priv .fin-auto .amt,body.priv .k-conn .num,'+
   'body.priv .pr-kpi:nth-child(3) b,body.priv .pr-kpi:nth-child(4) b,body.priv .prlv-t.warn b,body.priv .pr-row .num b,body.priv .pr-row .num .muted,body.priv .prlv-fr small{filter:blur(7px)}');
-})();
-
-
 /* Vorschlag direkt am offenen Umsatz (Simon 10.11.2026: „kommt nirgends als Vorschlag“): bester Treffer des Servers (gleicher Betrag/Name) mit „Verbinden“ */
 function txSugEnsure(){ var st=F.sevState; if(!st||C.busy.txsug) return; if(st.bank&&st.bank.ok&&st.bank._at&&Date.now()-st.bank._at<90000) return;
   C.busy.txsug=1; F.api("/admin/api/sev/bank").then(function(j){ C.busy.txsug=0; if(j&&j.ok){ j._at=Date.now(); st.bank=j; F.render(); } }).catch(function(){ C.busy.txsug=0; }); }
@@ -1454,3 +1451,4 @@ function txSug(t){ var st=F.sevState, b=st&&st.bank; if(t.status!==100||!b||!b.o
   return '<div class="kl-sug"><span>'+ic("link")+'Vorschlag: <b>'+esc(s.label.length>70?s.label.slice(0,70)+"…":s.label)+'</b> <span class="muted">'+esc(s.sub||"")+'</span></span><button type="button" class="btn sm primary" data-act="ftxsug:'+esc(t.id)+'|'+esc(s.kind)+'|'+esc(s.id)+'">Verbinden</button></div>'; }
 F.action("ftxsug",function(v){ var p=String(v).split("|"); F.api("/admin/api/sev/bank-op",{body:p[1]==="invoice"?{op:"invoice",invoiceId:p[2],txId:p[0]}:{op:"voucher",voucherId:p[2],txId:p[0]}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Verbinden fehlgeschlagen",true); return; }
   var st=F.sevState; if(st&&st.bank) st.bank.transactions=st.bank.transactions.filter(function(t){ return t.id!==p[0]; }); if(F.finAfterBook) F.finAfterBook(); F.toast("Verbunden"); F.load(true); F.render(); }); });
+})();
