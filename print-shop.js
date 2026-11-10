@@ -5267,7 +5267,14 @@ module.exports = function (D) {
       if (p === "/admin/api/print/order" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fm = await store.fileMeta(o.fileId);
-        return J(res, 200, { ok: true, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
+        // Druckdaten je Motiv (bzw. eine Datei) + ersetzte Versionen fürs Cockpit (Vorschau mit Rändern, alt ↔ neu, Anpassen)
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, dv = async (fid, label, motif) => { const m = await store.fileMeta(fid).catch(() => null) || {};
+          const hs = (o.fileHistory || []).filter(h => (mot ? h.motif === motif : (h.motif == null || h.motif === -1)) && h.new === fid).pop();
+          const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: m.checks || [], adj: !!(m.src && m.size && (m.kind === "upload" || m.kind === "replace")), place: m.place || null, pv: pvOk(m),
+            prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
+        const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
+        return J(res, 200, { ok: true, docs, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
       }
       // Print.com-Sortiment (nur lesend): alle Produkte bzw. ein Produkt mit Eigenschaften – zum Auswählen fürs Shop-Sortiment
       if (p === "/admin/api/print/pcproducts" && req.method === "GET") {
@@ -5282,9 +5289,11 @@ module.exports = function (D) {
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
-        const fm = await store.fileMeta(o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
+        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new)).filter(Boolean);
+        if (fidQ && allowed.indexOf(fidQ) < 0) return D.send(res, 404, "Datei nicht gefunden");
+        const fm = await store.fileMeta(fidQ || o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
         if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }
-        const sm = sid ? await store.fileMeta(sid).catch(() => null) : null, buf = await store.fileData(sid || o.fileId);
+        const sm = sid ? await store.fileMeta(sid).catch(() => null) : null, buf = await store.fileData(sid || fidQ || o.fileId);
         if (!buf || (wantSrc && !sid)) return D.send(res, 404, "Datei nicht gefunden");
         const ext = sid ? ({ jpg: "jpg", jpeg: "jpg", png: "png", pdf: "pdf" }[String((sm && sm.original) || "pdf").toLowerCase().replace(/^image\//, "")] || "pdf") : "pdf";
         const ct = ext === "jpg" ? "image/jpeg" : ext === "png" ? "image/png" : "application/pdf";
@@ -5318,6 +5327,24 @@ module.exports = function (D) {
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       // Druckdaten austauschen (Profi-Datencheck / Grafikaufbereitung): Body = PDF, ?id=Bestellung[&motif=Index] – geprüft wie beim Kunden, alte Datei bleibt im Verlauf
+      if (p === "/admin/api/print/fit" && req.method === "POST") {   // Druckdaten im Cockpit anpassen (einpassen/füllen/drehen) – vom Original aus, neue Datei, alte bleibt im Verlauf
+        const b = await readJson(req, 4000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Anpassen nicht mehr möglich" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1;
+        const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId);
+        if (!fm || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich (kein Original gespeichert)" });
+        const sm = await store.fileMeta(fm.src), data = sm && await store.fileData(fm.src); if (!data) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden" });
+        const pl0 = fm.place || {}, opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: 1 };
+        let r; try { r = await withPdf(() => placeFile(data, sm.original || "pdf", fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
+        const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
+        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
+        if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileChecks = checks; }
+        o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: curId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Cockpit (angepasst)" }]).slice(-30);
+        if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
+        hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + (opt.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt.rotate ? ", " + opt.rotate + "° gedreht" : "")); stamp(o); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
       if (p === "/admin/api/print/replace" && req.method === "POST") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) { req.resume(); return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" }); }
         if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) { req.resume(); return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Austausch nicht mehr möglich" }); }
