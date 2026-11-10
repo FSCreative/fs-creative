@@ -1961,7 +1961,10 @@
     if (!p || p.kind === "textile") return ""; var a = ACC[p.key];
     if (a === undefined) { ACC[p.key] = null; api("/print/api/accessories?product=" + encodeURIComponent(p.key), null, "GET").then(function (j) { ACC[p.key] = (j && j.items) || []; if (S.prod && S.prod.key === p.key && ACC[p.key].length) render(); }).catch(function () { ACC[p.key] = []; }); }
     if (!a || !a.length) return "";
-    return '<section class="ps-acc"><h3>Passendes Zubehör</h3><div class="ps-acc-l">' + a.map(function (x) { var href = (x.slug ? "/print/" + x.slug + "?c=" : "/print?produkt=" + encodeURIComponent(x.key) + "&c=") + b64e(JSON.stringify({ s: x.sel, q: 1 }));
+    // gleiches Zubehör (z. B. „Briefumschläge farbig“ in 200 Format-/Farbvarianten) als EINE Kachel – Variante wählt man auf der Produktseite (Simon 10.11.2026)
+    var grp = {}, order = []; a.forEach(function (x) { var k = x.key || x.title; if (!grp[k]) { grp[k] = []; order.push(k); } grp[k].push(x); });
+    a = order.map(function (k) { var l = grp[k], x = l[0]; return l.length === 1 ? x : Object.assign({}, x, { variant: l.length + " Varianten – Format und Farbe auf der Produktseite wählen", many: l.length }); });
+    return '<section class="ps-acc"><h3>Passendes Zubehör</h3><div class="ps-acc-l">' + a.map(function (x) { var href = x.many ? (x.slug ? "/print/" + x.slug : "/print?produkt=" + encodeURIComponent(x.key)) : (x.slug ? "/print/" + x.slug + "?c=" : "/print?produkt=" + encodeURIComponent(x.key) + "&c=") + b64e(JSON.stringify({ s: x.sel, q: 1 }));
       return '<a class="ps-acc-i" href="' + esc(href) + '">' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : '<span class="ph" aria-hidden="true">🧩</span>') + "<span><b>" + esc(x.title) + "</b>" + (x.variant ? "<small>" + esc(x.variant) + "</small>" : "") + '</span><span class="go" aria-hidden="true">→</span></a>'; }).join("") + '</div><p class="ps-help">Zubehör bestellst du als eigene Position – einfach öffnen, prüfen und in den Warenkorb legen.</p></section>';
   }
   function tplBtn(cls) {
