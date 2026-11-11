@@ -97,7 +97,7 @@ function offerRow(o){
     '<td class="r"><span class="row" style="justify-content:flex-end;gap:4px;flex-wrap:wrap">'+(o.status===100?'<button class="btn" data-act="offedit:'+esc(o.id)+'" title="Entwurf ändern – Nummer bleibt gleich">Bearbeiten</button>':'')+(o.status===100&&F.offerDeliver?'<button class="btn" data-act="offmail:'+esc(o.id)+'" title="Mail mit PDF zum Prüfen öffnen – gesendet wird erst mit „Senden“">Per Mail senden</button><button class="btn" data-act="offprint:'+esc(o.id)+'" title="Drucken und persönlich übergeben – keine Mail">Drucken</button>':'')+'<button class="btn" data-act="offpdf:'+esc(o.id)+'">PDF</button>'+(canInv?'<button class="btn" data-act="offar:'+esc(o.id)+'" title="Abschlagsrechnung (Anzahlung) erstellen">Abschlag</button>':'')+(o.status===750?'<button class="btn" data-act="offer:'+esc(o.id)+'" title="Schlussrechnung abzüglich der bezahlten Abschläge">Schlussrechnung</button>':'')+
       (o.status<750?'<button class="btn" data-act="offstat:'+esc(o.id)+'">Status</button>':'')+(canInv?'<button class="btn" data-act="offinv:'+esc(o.id)+'">In Rechnung</button>':'')+'</span></td></tr>';
 }
-F.offersPanelHtml=function(){ if(!OFF.list&&!OFF.busy&&!OFF.err) F.offersLoad(false); return offersPanel(); };
+F.offersPanelHtml=function(){ if(!OFF.busy&&((!OFF.list&&!OFF.err)||!OFF.at||Date.now()-OFF.at>30000)) F.offersLoad(!!OFF.list); return offersPanel(); };   /* beim Öffnen frisch laden – sonst fehlen neu angelegte Angebote */
 function offersPanel(){
   var f=F.UI.offF||"open", all=OFF.list||[];
   var flt={open:offOpen,acc:function(o){ return o.status>=500; },rej:function(o){ return o.status===300; },all:function(){ return true; }};
