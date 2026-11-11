@@ -2494,7 +2494,7 @@ function w4yDefault(name) { const m = W4Y_DEFAULTS.find(d => d[0].test(String(na
 const W4Y_RABATT = { domain: 0.05, mail: 0.10 };
 function w4yYear(c) { return round2((c.w4y || []).reduce((a, k) => { const mail = /^exchange|^mail/.test(k); return a + (W4Y_PKG[k] || 0) * (mail ? (c.w4yQty || 1) * (1 - W4Y_RABATT.mail) : 1); }, 0) * 12); }
 const W4Y = { "at": 36, "co.at": 36, "or.at": 36, "com": 24, "ch": 14.04, "net": 24, "org": 17.04, "eu": 19.92 };
-const LEAD_STAGES = ["anfrage", "entwurf", "angebot", "auftrag", "live", "verloren"];
+const LEAD_STAGES = ["anfrage", "entwurf", "angebot", "auftrag", "erledigt", "verloren"];   // „live“ heißt seit 11.11.2026 „erledigt“ (Wunsch Simon)
 function withTimeout(p, ms, fallback) { return Promise.race([Promise.resolve(p).catch(() => fallback), new Promise(r => setTimeout(() => r(fallback), ms))]); }
 function round2(n) { return Math.round((+n || 0) * 100) / 100; }
 function ymdAdd(iso, days) { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
@@ -3479,6 +3479,7 @@ function leadOp(pl) {
   } else if (pl.op === "update") {
     const l = leads.find(x => x.id === pl.id); if (!l) throw new Error("lead_unbekannt");
     const P = pl.patch || {};
+    if (P.stage === "live") P.stage = "erledigt";
     if ("stage" in P) { if (LEAD_STAGES.indexOf(P.stage) < 0) throw new Error("bad_stage"); l.stage = P.stage; l.history = (l.history || []).concat([{ at: new Date().toISOString(), stage: P.stage }]).slice(-30); }
     if ("value" in P) { const n = parseFloat(P.value); l.value = isFinite(n) && n >= 0 ? round2(n) : 0; }
     if ("notes" in P) l.notes = clip(P.notes, 5000);
@@ -3486,6 +3487,10 @@ function leadOp(pl) {
     // Buchhaltungs-Kontakt merken (nur die ID; "" löst die Verknüpfung)
     if ("contactId" in P) { const cid = String(P.contactId == null ? "" : P.contactId).trim(); if (!/^\d{0,12}$/.test(cid)) throw new Error("bad_contact"); if (cid) l.contactId = cid; else delete l.contactId; }
     l.updated = new Date().toISOString();
+  } else if (pl.op === "delete") {   // Lead löschen (nur mit Bestätigung aus dem Dialog); Rechnungen/Angebote in der Buchhaltung bleiben unberührt
+    if (pl.confirm !== true) throw new Error("Bestätigung fehlt");
+    const i = leads.findIndex(x => x.id === pl.id); if (i < 0) throw new Error("lead_unbekannt");
+    leads.splice(i, 1);
   } else throw new Error("bad_op");
   fs.writeFileSync(LEADS_FILE, JSON.stringify(leads));
   COCKPIT_MEMO.at = 0;
@@ -5322,7 +5327,7 @@ const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 const LEAD_TO = process.env.LEAD_MAIL_TO || "simon@fs-creative.at";
 const LEAD_TOPICS = ["Website", "Online-Shop", "Buchungssystem / Plattform", "SEO & Sichtbarkeit", "Grafik & Branding", "Druck", "Fotobox / Event", "Betreuung & Hosting", "Etwas anderes"];
 const LEAD_HITS = hitCounter(5000);
-function readLeads() { try { const a = JSON.parse(fs.readFileSync(LEADS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function readLeads() { try { const a = JSON.parse(fs.readFileSync(LEADS_FILE, "utf8")); if (!Array.isArray(a)) return []; a.forEach(l => { if (l && l.stage === "live") l.stage = "erledigt"; }); return a; } catch (e) { return []; } }
 const leadRateLimited = ip => LEAD_HITS.hit(ip, 5, 3600000);   // max. 5 Anfragen pro Stunde und IP
 function clip(v, n) { return String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n); }
 // Lead-Struktur wie beim Kontaktformular (auch für den Website-Chat, chat.js)

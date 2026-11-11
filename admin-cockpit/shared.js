@@ -232,7 +232,7 @@ function saveOffer(form,items,contact,err,btn){
     if(!body.contactId) META=null;
     if(anr&&j.id) F.anrede("offer",j.id,anr);
     var lid=ctx.after&&ctx.after.leadId, l=lid&&F.D&&(F.D.leads||[]).find(function(x){ return x.id===lid; });
-    var order=["anfrage","entwurf","angebot","auftrag","live"], move=l&&order.indexOf(l.stage||"anfrage")<order.indexOf("angebot");
+    var order=["anfrage","entwurf","angebot","auftrag","erledigt"], move=l&&order.indexOf(l.stage||"anfrage")<order.indexOf("angebot");
     var patch=move?{stage:"angebot"}:null;
     if(l&&!(+l.value>0)){ var net=items.reduce(function(s,i){ return s+i.qty*i.priceGross/(1+(i.taxRate||0)/100); },0); patch=Object.assign(patch||{},{value:Math.round(net)}); }
     var cid=l&&linkCid(l,j,contact); if(cid) patch=Object.assign(patch||{},{contactId:cid});   /* Lead merkt sich den Buchhaltungs-Kontakt */
@@ -252,7 +252,7 @@ function saveOffer(form,items,contact,err,btn){
 }
 /* Kontext nach dem Anlegen (after.leadId, after.project): nur Cockpit-Daten (leads.json, auftraege.json), nie der Beleg selbst.
    Lead-Kontakt nur bei eindeutigem Bezug: Name im Dialog = Firma/Name des Leads oder genau ein Kontakt mit der E-Mail des Leads. */
-var STAGE_ORDER=["anfrage","entwurf","angebot","auftrag","live"];
+var STAGE_ORDER=["anfrage","entwurf","angebot","auftrag","erledigt"];
 function linkCid(l,j,contact){ var cid=j&&j.contactId!=null?String(j.contactId):"";
   if(!l||l.contactId||!/^\d{1,12}$/.test(cid)) return "";
   var n=F.normName(contact), em=F.normMail(l.email), m=F.metaCached(), hits=em&&m?m.contacts.filter(function(c){ return F.normMail(c.email)===em; }):[];

@@ -2,7 +2,7 @@
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, deShort=F.deShort;
-var STAGES=F.STAGES=[["anfrage","Anfrage"],["entwurf","Entwurf"],["angebot","Angebot"],["auftrag","Auftrag"],["live","Live"]];
+var STAGES=F.STAGES=[["anfrage","Anfrage"],["entwurf","Entwurf"],["angebot","Angebot"],["auftrag","Auftrag"],["erledigt","Erledigt"]];   /* „Live“ heißt seit 11.11.2026 „Erledigt“ */
 function val(l){ return +l.value||0; }
 var GL=':root[data-theme="glas"] ';
 
@@ -135,7 +135,7 @@ F.action("offdelgo",function(id){ var o=offById(id); F.closeModal(); offPost("/a
 F.action("offsetstat",function(v){
   var p=v.split("|"), id=p[0], st=+p[1], o=offById(id); F.closeModal();
   offPost("/admin/api/sevdesk/offer-status",{id:id,status:st},"Angebot "+((o&&o.nr)||"")+": "+(OSTAT[st]||[st])[0]).then(function(j){
-    if(!j||st!==500) return; var l=o&&offerLead(o), order=["anfrage","entwurf","angebot","auftrag","live"];
+    if(!j||st!==500) return; var l=o&&offerLead(o), order=["anfrage","entwurf","angebot","auftrag","erledigt"];
     if(l&&order.indexOf(l.stage||"anfrage")<order.indexOf("auftrag")) F.toast("Angebot angenommen",false,"Lead → Auftrag",function(){ leadPost({op:"update",id:l.id,patch:{stage:"auftrag"}}).then(function(r){ if(r){ F.toast((l.company||l.name)+" ist jetzt in „Auftrag“"); F.render(); } }); });
   });
 });
@@ -210,7 +210,7 @@ function openLead(id){
   if(mob()){ F.openDrawer(leadSheet(l,st,mails,invs,offs),refresh); formRestore(keep); return; }
   F.openDrawer('<div class="row-between" style="align-items:flex-start"><div style="min-width:0"><div class="sec-t">Kundenakte</div><h2 style="overflow-wrap:anywhere;hyphens:auto">'+esc(l.company||l.name)+'</h2><div class="muted">'+esc(l.topic||"")+' · seit '+de(l.created)+'</div></div><button class="btn icon" data-close aria-label="Schließen">'+F.svg("close")+'</button></div>'+acctHtml(l)+
     '<div><div class="sec-t">Phase</div><div class="stages">'+STAGES.map(function(s){ return '<button data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div><div style="margin-top:6px"><button class="link" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></div></div>'+
-    '<div class="row wrap"><button class="btn primary" data-act="replylead:'+esc(l.id)+'"'+(l.email?'':' disabled')+'>Mail schreiben</button><button class="btn" data-act="leadoffer:'+esc(l.id)+'">Angebot erstellen</button><button class="btn" data-act="leadinvoice:'+esc(l.id)+'">Rechnung erstellen</button><button class="btn" data-act="tkprojfromlead:'+esc(l.id)+'">Auftrag anlegen</button>'+(l.phone?'<a class="btn" href="tel:'+esc(l.phone.replace(/\s+/g,""))+'">Anrufen</a>':'')+'<button class="btn" data-act="leadtodo:'+esc(l.id)+'">Als Aufgabe</button></div>'+
+    '<div class="row wrap"><button class="btn primary" data-act="replylead:'+esc(l.id)+'"'+(l.email?'':' disabled')+'>Mail schreiben</button><button class="btn" data-act="leadoffer:'+esc(l.id)+'">Angebot erstellen</button><button class="btn" data-act="leadinvoice:'+esc(l.id)+'">Rechnung erstellen</button><button class="btn" data-act="tkprojfromlead:'+esc(l.id)+'">Auftrag anlegen</button>'+(l.phone?'<a class="btn" href="tel:'+esc(l.phone.replace(/\s+/g,""))+'">Anrufen</a>':'')+'<button class="btn" data-act="leadtodo:'+esc(l.id)+'">Als Aufgabe</button><button class="btn danger" data-act="leaddel:'+esc(l.id)+'">Löschen</button></div>'+
     (F.tkLeadHtml?F.tkLeadHtml(l):'')+(F.kiLeadHtml?F.kiLeadHtml(l):'')+'<form data-form="leadedit" class="stackf"><div class="grid2"><label class="fl">Name<input class="f" name="name" value="'+esc(l.name||"")+'"></label><label class="fl">Firma / Verein<input class="f" name="company" value="'+esc(l.company||"")+'"></label><label class="fl">E-Mail<input class="f" name="email" type="email" value="'+esc(l.email||"")+'"></label><label class="fl">Telefon<input class="f" name="phone" value="'+esc(l.phone||"")+'"></label><label class="fl">Thema<input class="f" name="topic" value="'+esc(l.topic||"")+'"></label><label class="fl">Projektwert (€)<input class="f num" name="value" type="number" min="0" step="50" value="'+(l.value||"")+'"></label></div>'+
     '<label class="fl">Notizen<textarea class="f" name="notes" rows="4" placeholder="Was wurde besprochen, was ist der nächste Schritt?">'+esc(l.notes||"")+'</textarea></label><div><button class="btn primary" type="submit">Speichern</button></div></form>'+
     '<dl class="kv"><dt>Gekommen über</dt><dd>'+esc(l.source||"—")+'</dd><dt>Gratis-Entwurf</dt><dd>'+(l.entwurf?"Ja, gewünscht":"Nein")+'</dd></dl>'+
@@ -351,7 +351,7 @@ function leadSheet(l,st,mails,invs,offs){
       '<button type="button" class="lm-a" data-act="leadinvoice:'+esc(l.id)+'">'+mxIc("inv")+'<span>Rechnung</span></button>'+
       (F.actions.tkprojfromlead?'<button type="button" class="lm-a" data-act="tkprojfromlead:'+esc(l.id)+'">'+F.svg("board")+'<span>Auftrag</span></button>':'')+'</div>'+(F.tkLeadHtml?F.tkLeadHtml(l):'')+
     '<section class="mx-card"><div class="mx-h"><h3>Phase</h3><button type="button" class="mx-link" data-act="leadtodo:'+esc(l.id)+'">Als Aufgabe</button></div><div class="lm-stages">'+STAGES.map(function(s){ return '<button type="button" data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div>'+
-      '<button type="button" class="lm-lost" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></section>'+
+      '<button type="button" class="lm-lost" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button><button type="button" class="lm-lost" data-act="leaddel:'+esc(l.id)+'" style="color:var(--bad)">Kunde löschen</button></section>'+
     '<section class="mx-card flush"><div class="mx-h"><h3>Kontakt</h3></div>'+
       (l.email?(F.actions.mmailto?'<button type="button" class="mx-row" data-act="mmailto:'+esc(l.email)+'">':'<a class="mx-row" href="mailto:'+esc(l.email)+'">')+'<span class="mx-l"><span>E-Mail</span><b>'+esc(l.email)+'</b></span><span class="mx-r">'+mxIc("chev")+'</span>'+(F.actions.mmailto?'</button>':'</a>'):'')+
       mAcct(l)+
@@ -428,8 +428,26 @@ GL+'.view-kunden .pipe .card{background:var(--sunk);box-shadow:none}'+GL+'.view-
 '@media (prefers-reduced-motion:reduce){.lm-a:active{transform:none}}'+
 /* Rechnungszeile (Nummer → Rechnung, Symbol → PDF) und Buchhaltungs-Zeile im Kopf der Kundenakte */
 '.invl .link{padding:0;font-size:inherit}.invl-pdf{display:inline-flex;vertical-align:-2px;margin-left:2px;color:var(--ink-3)}.invl-pdf:hover{color:var(--ink)}.invl-pdf svg{width:14px;height:14px}'+
+'.view-kunden .pipe .card[draggable=true]{cursor:grab}.view-kunden .pipe .card.dragging{opacity:.45}.view-kunden .pipe .col.ldrop{outline:2px dashed var(--glow);outline-offset:-2px;background:var(--glow-soft)}'+
 '.lk-acct{gap:6px 10px;align-items:center;font-size:13.5px;min-width:0}.lk-acct .link{padding:0;font-size:inherit;overflow-wrap:anywhere;text-align:left}'
 );
+function stageOf(l){ var st=l.stage||"anfrage"; return st==="live"?"erledigt":st; }
+F.action("leaddoneall",function(){ F.UI.doneAll=!F.UI.doneAll; F.render(); });
+/* Lead löschen: mit Bestätigung; Rechnungen und Angebote in der Buchhaltung bleiben */
+F.action("leaddel",function(id){ var l=(F.D.leads||[]).find(function(x){ return x.id===id; }); if(!l) return;
+  F.confirm("„"+(l.company||l.name)+"“ aus Kunden & Leads löschen? Rechnungen und Angebote in der Buchhaltung bleiben erhalten. Das lässt sich nicht rückgängig machen.","Löschen",function(){
+    leadPost({op:"delete",id:id,confirm:true}).then(function(j){ if(!j) return; if(F.UI.leadSel===id){ F.UI.leadSel=null; if(F.closeDrawer) F.closeDrawer(); } F.toast("Gelöscht"); F.render(); }); },true); });
+/* Drag & Drop: Karte in eine andere Spalte ziehen → Phase ändern */
+var LDRAG=null;
+F.listen("dragstart",".view-kunden .pipe .card[data-lid]",function(el,e){ LDRAG=el.getAttribute("data-lid"); el.classList.add("dragging"); try{ e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",LDRAG); }catch(x){} });
+document.addEventListener("dragend",function(){ if(!LDRAG) return; LDRAG=null; document.querySelectorAll(".pipe .ldrop,.pipe .dragging").forEach(function(b){ b.classList.remove("ldrop","dragging"); }); });
+F.listen("dragover","[data-ldrop]",function(el,e){ if(!LDRAG) return; e.preventDefault(); try{ e.dataTransfer.dropEffect="move"; }catch(x){} document.querySelectorAll(".pipe .ldrop").forEach(function(b){ if(b!==el) b.classList.remove("ldrop"); }); el.classList.add("ldrop"); });
+F.listen("drop","[data-ldrop]",function(el,e){ if(!LDRAG) return; e.preventDefault(); var id=LDRAG, st=el.getAttribute("data-ldrop"); LDRAG=null; el.classList.remove("ldrop");
+  var l=(F.D.leads||[]).find(function(x){ return x.id===id; }); if(!l||stageOf(l)===st) { F.render(); return; }
+  l.stage=st; l.updated=new Date().toISOString(); F.render();   /* sofort umsetzen, Server bestätigt */
+  leadPost({op:"update",id:id,patch:{stage:st}}).then(function(j){ F.render(); if(!j) return;
+    var nm=(l.company||l.name)+" → "+((STAGES.find(function(s){ return s[0]===st; })||[0,st])[1]);
+    if(st==="auftrag"&&F.actions.tkprojfromlead&&!(F.tkLeadProjects&&F.tkLeadProjects(id).length)) F.toast(nm,false,"Auftrag anlegen",function(){ F.actions.tkprojfromlead(id); }); else F.toast(nm); }); });
 F.view({id:"kunden",label:"Kunden & Leads",short:"Kunden",icon:"kunden",order:20,mobile:true,
   count:function(){ return F.newLeads().length; },
   after:function(){ if(F.D.sevConfigured!==false&&!OFF.busy&&(!OFF.at||Date.now()-OFF.at>120000)) F.offersLoad(false);
@@ -438,16 +456,19 @@ F.view({id:"kunden",label:"Kunden & Leads",short:"Kunden",icon:"kunden",order:20
     if(mob()) return mobileKunden();
     var D=F.D;
     var cols=STAGES.map(function(s){
-      var ls=D.leads.filter(function(l){ return (l.stage||"anfrage")===s[0]; });
+      var ls=D.leads.filter(function(l){ return stageOf(l)===s[0]; }), all=ls.length, done=s[0]==="erledigt";
+      /* Erledigt: nur die letzten 5 (zuletzt geändert zuerst), der Rest auf Klick */
+      if(done){ ls=ls.slice().sort(function(a,b){ return String(b.updated||b.created||"").localeCompare(String(a.updated||a.created||"")); }); if(!F.UI.doneAll) ls=ls.slice(0,5); }
       var oo=s[0]==="angebot"&&OFF.list?OFF.list.filter(offOpen):[];
-      return '<div class="col"><div class="col-h"><span>'+s[1]+'</span><span class="num">'+ls.length+(ls.some(val)?' · '+eur0(ls.reduce(function(a,l){return a+val(l);},0)):'')+'</span></div>'+
+      return '<div class="col" data-ldrop="'+s[0]+'"><div class="col-h"><span>'+s[1]+'</span><span class="num">'+all+(!done&&ls.some(val)?' · '+eur0(ls.reduce(function(a,l){return a+val(l);},0)):'')+'</span></div>'+
         (oo.length?'<button class="link small" data-act="offf:open" style="padding:0 6px 4px;text-align:left">'+oo.length+' offene Angebote · '+eur0(oo.reduce(function(a,o){return a+o.gross;},0))+'</button>':'')+
-        (ls.map(function(l){ return '<button class="card" data-act="lead:'+esc(l.id)+'" title="'+esc((l.company||l.name||"")+(l.topic?" · "+l.topic:""))+'"><span class="n">'+esc(l.company||l.name)+'</span><span class="m"><span>'+esc(l.topic||"")+'</span>'+(val(l)?'<span class="num">'+eur0(l.value)+'</span>':'')+'</span><span class="x">'+esc((l.company?l.name+" · ":"")+F.ago(l.updated||l.created))+(l.entwurf&&s[0]==="anfrage"?" · Gratis-Entwurf":"")+'</span>'+(function(){ var lo=leadOffers(l).filter(offOpen)[0]; return lo?'<span class="x">'+esc(lo.nr||"Angebot")+' · '+eur0(lo.gross)+(lo.overdue?' · abgelaufen':'')+'</span>':''; })()+'</button>'; }).join("")||'<span class="muted" style="padding:6px">Keine</span>')+'</div>';
+        (ls.map(function(l){ return '<button class="card" draggable="true" data-lid="'+esc(l.id)+'" data-act="lead:'+esc(l.id)+'" title="'+esc((l.company||l.name||"")+(l.topic?" · "+l.topic:""))+'"><span class="n">'+esc(l.company||l.name)+'</span><span class="m"><span>'+esc(l.topic||"")+'</span>'+(val(l)?'<span class="num">'+eur0(l.value)+'</span>':'')+'</span><span class="x">'+esc((l.company?l.name+" · ":"")+F.ago(l.updated||l.created))+(l.entwurf&&s[0]==="anfrage"?" · Gratis-Entwurf":"")+'</span>'+(function(){ var lo=leadOffers(l).filter(offOpen)[0]; return lo?'<span class="x">'+esc(lo.nr||"Angebot")+' · '+eur0(lo.gross)+(lo.overdue?' · abgelaufen':'')+'</span>':''; })()+'</button>'; }).join("")||'<span class="muted" style="padding:6px">Keine</span>')+
+        (done&&all>5?'<button type="button" class="link small" data-act="leaddoneall" style="padding:4px 6px;text-align:left">'+(F.UI.doneAll?'Nur die letzten 5':'Alle '+all+' erledigten anzeigen')+'</button>':'')+'</div>';
     }).join("");
     var lost=D.leads.filter(function(l){return l.stage==="verloren";});
     var bySrc={}; D.leads.forEach(function(l){ var k=l.source||"unbekannt"; bySrc[k]=(bySrc[k]||0)+1; });
     var rows=Object.keys(bySrc).sort(function(a,b){return bySrc[b]-bySrc[a];}).slice(0,8), mx=rows.length?bySrc[rows[0]]:1;
-    return F.head("Kunden & Leads","Anfragen über das Website-Formular landen automatisch in „Anfrage“. Ein Klick öffnet die Kundenakte.",'<button class="btn" data-act="newoffer">Neues Angebot</button><button class="btn primary" data-act="newlead">Neuer Lead</button>')+
+    return F.head("Kunden & Leads","Anfragen landen in „Anfrage“, versendete Angebote in „Angebot“. Karten mit der Maus in eine andere Spalte ziehen, ein Klick öffnet die Kundenakte.",'<button class="btn" data-act="newoffer">Neues Angebot</button><button class="btn primary" data-act="newlead">Neuer Lead</button>')+
       (D.leads.length?'<div class="pipe">'+cols+'</div>':'<section class="panel"><div class="empty">Noch keine Anfragen. Sobald jemand das Formular auf fs-creative.at/kontakt ausfüllt, erscheint er hier.</div></section>')+
       (D.sevConfigured===false?'':offersPanel())+
       (lost.length?'<p class="muted">Verloren: '+lost.map(function(l){ return '<button class="link" data-act="lead:'+esc(l.id)+'">'+esc(l.company||l.name)+'</button>'; }).join(", ")+'</p>':'')+

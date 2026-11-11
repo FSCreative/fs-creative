@@ -142,6 +142,13 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
     const L2 = (await json("/admin/api/leads")).j.leads.filter((l) => l.contactId === "12"); assert.strictEqual(L2.length, 1); assert.strictEqual(L2[0].email, "obmann@verein-test.at");
     assert.strictEqual((await post("/admin/api/sevdesk/offer-lead", { id: "502" })).j.ok, false, "ohne confirm nichts");
   });
+  await t("Leads: Phase „erledigt“ (früher „live“), Löschen nur mit Bestätigung", async () => {
+    const id = (await json("/admin/api/leads")).j.leads.find((l) => l.contactId === "12").id;
+    const u = await post("/admin/api/leads", { op: "update", id, patch: { stage: "live" } }); assert.strictEqual(u.j.ok, true, JSON.stringify(u.j));
+    assert.strictEqual(u.j.leads.find((l) => l.id === id).stage, "erledigt", "live → erledigt");
+    assert.strictEqual((await post("/admin/api/leads", { op: "delete", id })).j.ok, false, "ohne confirm nichts");
+    const d = await post("/admin/api/leads", { op: "delete", id, confirm: true }); assert.strictEqual(d.j.ok, true); assert.ok(!d.j.leads.some((l) => l.id === id));
+  });
   await t("Status: Versandart beim Markieren – VPR (gedruckt übergeben), VM (per Mail), sonst VPDF", async () => {
     await json("/admin/api/sevdesk/offers?force=1");
     const n = mock.state.puts.length;
@@ -250,6 +257,19 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
         // Status-Dialog öffnet
         await page.evaluate(() => window.FSC.go("kunden")); await page.waitForSelector('[data-act="offstat:502"]');
         await page.click('[data-act="offstat:502"]'); assert.ok(/Status von AN-1002/.test(await page.textContent("#modalHost")));
+        // Drag & Drop in „Erledigt“, danach Löschen mit Bestätigung (Wunsch Simon 11.11.2026)
+        await page.evaluate(() => window.FSC.closeModal()); await page.evaluate(() => window.FSC.go("kunden"));
+        await page.waitForSelector('.pipe .card[data-lid="' + lid + '"]');
+        assert.deepStrictEqual(await page.$$eval(".pipe .col-h>span:first-child", (els) => els.map((e) => e.textContent)), ["Anfrage", "Entwurf", "Angebot", "Auftrag", "Erledigt"]);
+        await page.dragAndDrop('.pipe .card[data-lid="' + lid + '"]', '.pipe [data-ldrop="erledigt"]');
+        await page.waitForFunction((id) => { const c = document.querySelector('.pipe [data-ldrop="erledigt"] .card[data-lid="' + id + '"]'); return !!c; }, lid, { timeout: 10000 });
+        await new Promise((r) => setTimeout(r, 500));
+        assert.strictEqual((await json("/admin/api/leads")).j.leads.find((x) => x.id === lid).stage, "erledigt", "per Drag & Drop gespeichert");
+        await page.click('.pipe .card[data-lid="' + lid + '"]'); await page.waitForSelector('#drawer.on [data-act="leaddel:' + lid + '"]');
+        await page.click('#drawer [data-act="leaddel:' + lid + '"]'); await page.click("#cfOk");
+        await page.waitForFunction((id) => !document.querySelector('.pipe .card[data-lid="' + id + '"]'), lid, { timeout: 10000 });
+        assert.ok(!(await json("/admin/api/leads")).j.leads.some((x) => x.id === lid), "gelöscht");
+        assert.strictEqual(await page.evaluate(() => [document.getElementById("drawer").classList.contains("on"), window.FSC.UI.leadSel].join("|")), "false|", "Kundenakte geschlossen");
         if (process.env.OFFERS_SHOT) { await page.evaluate(() => window.FSC.closeModal()); await page.screenshot({ path: process.env.OFFERS_SHOT, fullPage: true }); }
       } finally { await browser.close(); }
       assert.deepStrictEqual(errors, []);
