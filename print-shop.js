@@ -1783,10 +1783,11 @@ module.exports = function (D) {
     return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] && !items[0].blank ? items[0].usedRot : 0, mode };
   }
   // Fehlender Beschnitt: automatisch ergänzen – „mirror“ = Randbereiche spiegeln (Motiv bleibt 1:1), „zoom“ = Motiv minimal vergrößern (Ränder werden angeschnitten)
-  async function addBleed(buf, size, bleed, mode) {
+  async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
-    for (const sp of src.getPages()) {
+    let pi = -1;
+    for (const sp of src.getPages()) { pi++;
       if (!sp.node.Contents()) { out.addPage([W + 2 * b, H + 2 * b]).setTrimBox(b, b, W, H); continue; }   // leere Seite (z. B. weiße Rückseite): bleibt leer, nur im Beschnitt-Format
       if ((sp.getRotation().angle || 0) % 360) throw bad("Gedrehte PDF-Seiten können nicht automatisch ergänzt werden");
       // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
@@ -1794,14 +1795,19 @@ module.exports = function (D) {
       const emb = hasB ? await out.embedPage(sp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
       if (mode === "zoom") { const f = Math.max((W + 2 * b) / pw, (H + 2 * b) / ph); pg.drawPage(emb, { x: (W + 2 * b - pw * f) / 2, y: (H + 2 * b - ph * f) / 2, xScale: f, yScale: f }); }
       else {   // 8 gespiegelte Kopien rundum, leicht überlappend (keine Nahtlinien), Mitte zuletzt obenauf
-        const sx = W / pw, sy = H / ph, e = 1.5;
+        // Weiße Streifen am Rand der Datei (vom Cockpit gemessen, Simon 11.11.2026): ab der echten Motivkante spiegeln, sonst wird Weiß in den Beschnitt gespiegelt
+        const sx = W / pw, sy = H / ph, e = 1.5, ins = (Array.isArray(insets) ? insets[pi] : insets) || {}, lim = v => Math.max(0, Math.min(6 * MM_PT, (+v || 0) * MM_PT));
+        const L = Math.min(lim(ins.l), W * 0.1), R = Math.min(lim(ins.r), W * 0.1), T = Math.min(lim(ins.t), H * 0.1), Bo = Math.min(lim(ins.b), H * 0.1), any = L + R + T + Bo > 0;
+        const xa = [b + L, b + W - R], ya = [b + Bo, b + H - T];   // Spiegelachsen = Motivkanten
         for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
-          const cx = dx < 0 ? 0 : dx === 0 ? b : b + W, cw = dx === 0 ? W : b, cy = dy < 0 ? 0 : dy === 0 ? b : b + H, ch = dy === 0 ? H : b;
+          const cx = dx < 0 ? 0 : dx === 0 ? xa[0] : xa[1], cw = dx < 0 ? xa[0] : dx === 0 ? xa[1] - xa[0] : W + 2 * b - xa[1], cy = dy < 0 ? 0 : dy === 0 ? ya[0] : ya[1], ch = dy < 0 ? ya[0] : dy === 0 ? ya[1] - ya[0] : H + 2 * b - ya[1];
           pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
-          pg.drawPage(emb, { x: dx === 0 ? b : dx < 0 ? b + e : b + 2 * W - e, y: dy === 0 ? b : dy < 0 ? b + e : b + 2 * H - e, xScale: dx === 0 ? sx : -sx, yScale: dy === 0 ? sy : -sy });
+          pg.drawPage(emb, { x: dx === 0 ? b : dx < 0 ? 2 * xa[0] - b + e : 2 * xa[1] - b - e, y: dy === 0 ? b : dy < 0 ? 2 * ya[0] - b + e : 2 * ya[1] - b - e, xScale: dx === 0 ? sx : -sx, yScale: dy === 0 ? sy : -sy });
           pg.pushOperators(popGraphicsState());
         }
+        if (any) pg.pushOperators(pushGraphicsState(), rectangle(xa[0], ya[0], xa[1] - xa[0], ya[1] - ya[0]), clip(), endPath());
         pg.drawPage(emb, { x: b, y: b, xScale: sx, yScale: sy });
+        if (any) pg.pushOperators(popGraphicsState());
       }
       pg.setTrimBox(b, b, W, H); pg.setBleedBox(0, 0, W + 2 * b, H + 2 * b);
     }
@@ -5416,7 +5422,8 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, mode = b.mode === "zoom" ? "zoom" : "mirror";
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId); if (!fm || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(curId), info = data && await pdfInfoX(data); if (!info || info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
-        let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
+        const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0 })) : null;
+        let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randbereiche gespiegelt – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
         await prSwap(o, motif, curId, meta, "Cockpit (Beschnitt " + (mode === "zoom" ? "vergrößert" : "gespiegelt") + ")");
@@ -5678,6 +5685,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { addBleed, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

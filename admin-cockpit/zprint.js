@@ -362,7 +362,24 @@ document.addEventListener("pointerup",sdMEnd); document.addEventListener("pointe
 document.addEventListener("wheel",function(e){ if(!(e.metaKey||e.ctrlKey)) return; var box=e.target&&e.target.closest&&e.target.closest("#sdStudio .stu-cv"); if(!box||!SD.j||!sdCan()) return; var d=sdDoc(); if(!d||!d.adj) return; e.preventDefault();
   var pl=sdPl(), sc=Math.min(4,Math.max(0.05,Math.round((+pl.scale||1)*(e.deltaY<0?1.03:1/1.03)*100)/100)); sdQueue({id:SD.j.order.id,motif:d.motif==null?undefined:d.motif,scale:sc}); sdPosShow(); },{passive:false});
 function sdPosShow(){ sdToolsSync(sdPl()); }
-F.action("prbleed",function(v){ var p=String(v).split("|"); F.toast("Ergänze Beschnitt …"); F.api("/admin/api/print/bleed",{body:{id:p[0],motif:p[1]===""?undefined:+p[1],mode:p[2]}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Beschnitt ergänzt – neue Version, alte bleibt im Verlauf"); if(document.getElementById("sdStudio")) sdReload(); else { load(true); openOrder(p[0]); } }); });
+/* Weiße Streifen am Rand der Datei messen (Simon 11.11.2026: „Rand spiegeln“ spiegelte einen weißen Rand mit): je Seite und Kante, in mm ab dem Endformat.
+   Nur echte Streifen (0,2 mm bis 6 mm) – ist der Rand breiter weiß, ist das Motiv wohl bewusst weiß hinterlegt → nichts ändern. */
+function prInsets(oid,fid,size,bleed){ return prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(oid,fid,false),withCredentials:true}).promise; }).then(function(doc){ var out=[], n=Math.min(doc.numPages,8);
+  var one=function(i){ if(i>n) return Promise.resolve(out); return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(6,1400/v0.width), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height); var x=cv.getContext("2d",{willReadFrequently:true}); x.fillStyle="#fff"; x.fillRect(0,0,cv.width,cv.height);
+    return pg.render({canvasContext:x,viewport:vp}).promise.then(function(){ var W=cv.width, H=cv.height, wmm=v0.width/72*25.4, hmm=v0.height/72*25.4, pxmm=W/wmm, d=x.getImageData(0,0,W,H).data;
+      var bl=size&&bleed&&((Math.abs(wmm-(size.w+2*bleed))<2&&Math.abs(hmm-(size.h+2*bleed))<2)||(Math.abs(wmm-(size.h+2*bleed))<2&&Math.abs(hmm-(size.w+2*bleed))<2))?bleed:0;
+      var x0=Math.round(bl*pxmm), y0=x0, x1=W-x0, y1=H-y0, max=Math.round(Math.min(6*pxmm,(x1-x0)*0.1)), maxY=Math.round(Math.min(6*pxmm,(y1-y0)*0.1));
+      var white=function(a,b2,horiz,fixed){ var nW=0, tot=0; for(var k=a;k<b2;k+=2){ var px=horiz?k:fixed, py=horiz?fixed:k, o=(py*W+px)*4; tot++; if(d[o]>=244&&d[o+1]>=244&&d[o+2]>=244) nW++; } return tot&&nW/tot>=0.985; };
+      var run=function(start,step,lim,horiz){ var c=0; for(var k=0;k<lim;k++){ var pos=start+step*k; if(!(horiz?white(x0,x1,true,pos):white(y0,y1,false,pos))) break; c++; } return c>=lim?0:c; };
+      var mm=function(c){ var v=c/pxmm; return v>=0.2?Math.round((v+0.15)*10)/10:0; };
+      out.push({l:mm(run(x0+1,1,max,false)),r:mm(run(x1-2,-1,max,false)),t:mm(run(y0+1,1,maxY,true)),b:mm(run(y1-2,-1,maxY,true))}); return one(i+1); }); }); };
+  return one(1); }).catch(function(){ return null; }); }
+F.action("prbleed",function(v){ var p=String(v).split("|"), mi=p[1]===""?undefined:+p[1];
+  var send=function(ins){ F.api("/admin/api/print/bleed",{body:{id:p[0],motif:mi,mode:p[2],insets:ins||undefined}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } var w=(ins||[]).some(function(x){ return x.l||x.r||x.t||x.b; });
+    F.toast("Beschnitt ergänzt"+(w?" – weißer Rand in der Datei mit überdeckt":"")+" – neue Version, alte bleibt im Verlauf"); if(document.getElementById("sdStudio")) sdReload(); else { load(true); openOrder(p[0]); } }); };
+  F.toast("Ergänze Beschnitt …"); if(p[2]!=="mirror"){ send(null); return; }
+  F.api("/admin/api/print/order?id="+encodeURIComponent(p[0])).then(function(j){ var docs=(j&&j.docs)||[], d=docs.find(function(x){ return (x.motif==null?undefined:x.motif)===mi; })||docs[0]; if(!d){ send(null); return; }
+    prInsets(p[0],d.fileId,d.size,d.bleed).then(function(ins){ send(ins); }); }); });
 F.action("prfit",function(v){ var p=String(v).split("|"), b={id:p[0],motif:p[1]===""?undefined:+p[1]}; if(p[2]) b.mode=p[2]; if(p[3]!==""&&p[3]!=null) b.rotate=+p[3]; if(p[4]!==""&&p[4]!=null) b.scale=+p[4];
   if(document.getElementById("sdStudio")&&sdDoc()){ var q=sdPl();
     if(p[4]==="+"||p[4]==="-"){ b.scale=Math.min(4,Math.max(0.05,Math.round(((+q.scale||1)+(p[4]==="+"?0.01:-0.01))*100)/100)); }   /* Richtung statt Zielwert – sonst rechnet der Knopf nach stillem Speichern mit altem Wert (Plus wurde kleiner) */
