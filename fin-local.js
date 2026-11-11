@@ -872,7 +872,7 @@ module.exports = function (D) {
       if (/^\d+$/.test(nr) || all("Order").some(x => String(x.orderNumber || "") === nr)) o.orderNumber = await nextNumber("Order", ty, "orderNumber", ty + "-");
       else if (m && seq && +m[2] >= (+seq.nextSequence || 0)) { seq.nextSequence = String(+m[2] + 1); await save("SevSequence", seq); }
     }
-    (body.orderPosDelete || []).forEach(p => { if (p && p.id && C.OrderPos) C.OrderPos.delete(String(p.id)); });
+    for (const p of (body.orderPosDelete || [])) if (p && p.id && get("OrderPos", p.id)) await del("OrderPos", String(p.id));   // dauerhaft löschen (vorher nur im Speicher – nach Neustart wieder da)
     for (const p of (body.orderPosSave || [])) { const x = Object.assign(p.id ? (get("OrderPos", p.id) || {}) : { id: newId("OrderPos") }, stripMeta(p), { order: ref("Order", o.id) }); posSums(x); await save("OrderPos", x); }
     docSums(o, positionsOf("Order", o.id)); await save("Order", o);
     return { objects: { order: o } };
@@ -978,7 +978,7 @@ module.exports = function (D) {
       return { objects: s2(bal) };
     }
     if (method === "GET" && (act === "getPdf") && (T === "Invoice" || T === "Order" || T === "CreditNote")) { const f = await pdfOf(T, id); return opts.binary ? { buf: f.buf, type: f.type, disposition: 'inline; filename="' + f.name + '"' } : { objects: { filename: f.name, mimeType: f.type, base64encoded: true, content: f.buf.toString("base64") } }; }
-    if (method === "GET" && act === "getPositions" && T === "Invoice") { const arr = positionsOf("Invoice", id); return { objects: page(arr, q) }; }
+    if (method === "GET" && act === "getPositions" && (T === "Invoice" || T === "Order")) { const arr = positionsOf(T, id); return { objects: page(arr, q) }; }
     if (method === "GET" && (T === "Document" || (T === "Voucher" && act === "getDocument"))) {
       const vid = T === "Voucher" ? id : (all("Voucher").find(v => v.document && String(v.document.id) === id) || {}).id;
       const f = vid ? await fin.getFile("doc", "Voucher", vid) : null; if (!f) throw err(404, "Datei nicht vorhanden");

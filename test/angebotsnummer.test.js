@@ -82,6 +82,20 @@ const SEED = [["SevSequence", seq],
     const nrs = L.all("Order").map(o => o.orderNumber); assert.strictEqual(new Set(nrs).size, nrs.length, nrs.join(","));
   });
 
+  await t("Entwurf bearbeiten: gleiche Nummer, alte Positionen dauerhaft weg, neue mit Fotos; getPositions für Angebote", async () => {
+    const pos = (n, img) => ({ objectName: "OrderPos", mapAll: true, quantity: 1, price: 10, priceGross: 12, taxRate: 20, name: n, unity: { id: 1, objectName: "Unity" }, images: img ? [img] : undefined });
+    const a = await L.request("POST", "/Order/Factory/saveOrder", { body: { order: { objectName: "Order", orderType: "AN", orderDate: "11.11.2026", header: "Angebot Test", contact: { id: "1", objectName: "Contact" } }, orderPosSave: [pos("Alt 1"), pos("Alt 2")] } });
+    const id = a.objects.order.id, nr = a.objects.order.orderNumber;
+    const before = (await L.request("GET", "/Order/" + id + "/getPositions", { query: {} })).objects; assert.strictEqual(before.length, 2);
+    const b = await L.request("POST", "/Order/Factory/saveOrder", { body: { order: { objectName: "Order", id: Number(id), orderNumber: nr, orderType: "AN", header: "Angebot Test neu", contact: { id: "1", objectName: "Contact" } },
+      orderPosSave: [pos("Neu", "https://images.ctfassets.net/x/y.jpg")], orderPosDelete: before.map(x => ({ id: Number(x.id), objectName: "OrderPos" })) } });
+    assert.strictEqual(b.objects.order.orderNumber, nr); assert.strictEqual(String(b.objects.order.id), String(id));
+    const after = (await L.request("GET", "/Order/" + id + "/getPositions", { query: {} })).objects;
+    assert.deepStrictEqual(after.map(x => x.name), ["Neu"]); assert.deepStrictEqual(after[0].images, ["https://images.ctfassets.net/x/y.jpg"]);
+    before.forEach(x => { const st = fin.stored("OrderPos", x.id); assert.ok(!st || !/^Alt/.test(st.name), "alte Position dauerhaft gelöscht " + x.id); });
+    assert.strictEqual(L.all("Order").filter(o => o.orderNumber === nr).length, 1, "keine Kopie");
+  });
+
   fs.rmSync(TMP, { recursive: true, force: true });
   if (fails.length) console.log(fails.join("\n\n"));
   console.log("angebotsnummer: " + pass + " bestanden, " + fail + " fehlgeschlagen");

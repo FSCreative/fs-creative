@@ -2009,6 +2009,15 @@ async function sevNextOfferNumber() {
   return "AN-" + viennaToday().replace(/-/g, "") + "-" + String(Date.now()).slice(-4);
 }
 async function sevCreateOffer(pl) {
+  // Bearbeiten (Simon 11.11.2026): mit id wird derselbe Entwurf überschrieben – Nummer bleibt, Positionen werden ersetzt; nur Entwürfe
+  const editId = String(pl.id || "").replace(/\D/g, ""); let prev = null, prevPos = [];
+  if (editId) {
+    const oj = await sev("GET", "/Order/" + editId); prev = oj && oj.objects && (Array.isArray(oj.objects) ? oj.objects[0] : oj.objects);
+    if (!prev || prev.orderType !== "AN") throw new Error("Angebot nicht gefunden");
+    if (String(prev.status) !== "100") throw new Error("Nur Entwürfe können bearbeitet werden – versendete Angebote bitte neu anlegen");
+    const pj = await sev("GET", "/Order/" + editId + "/getPositions", { query: { limit: 100 } }).catch(() => ({ objects: [] })); prevPos = (pj && pj.objects) || [];
+    pl.orderNumber = prev.orderNumber;
+  }
   const items = (Array.isArray(pl.items) ? pl.items : []).filter(i => i && String(i.name || "").trim() && isFinite(parseFloat(i.priceGross)));
   if (!items.length) throw new Error("keine_positionen");
   const name = String(pl.contactName || "").trim(); if (!name && !pl.contactId) throw new Error("kein_kunde");
@@ -2021,7 +2030,7 @@ async function sevCreateOffer(pl) {
   if (!offerValidFromText(foot)) foot = "Dieses Angebot ist gültig bis " + sevDateDE(valid) + "." + (foot ? "\n" + foot : "");
   const nr = String(pl.orderNumber || "").trim().slice(0, 60) || await sevNextOfferNumber();
   const body = {
-    order: { objectName: "Order", mapAll: true, orderNumber: nr, orderDate: sevDateDE(date), status: 100, orderType: "AN", version: 0,
+    order: { objectName: "Order", mapAll: true, ...(editId ? { id: Number(editId) } : {}), orderNumber: nr, orderDate: sevDateDE(date), status: 100, orderType: "AN", version: 0,
       header: String(pl.header || ("Angebot " + nr)).slice(0, 200), headText: String(pl.headText || ""), footText: foot,
       address: sevAddressText(pl, name), addressCountry: { id: countryId, objectName: "StaticCountry" },
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
@@ -2031,7 +2040,7 @@ async function sevCreateOffer(pl) {
       // Produktfotos je Position (bis 3; nur Produktbilder aus dem Druckshop-CMS bzw. unserem Bild-Proxy) – das PDF zeigt sie groß unter der Position
       const imgs = (Array.isArray(i.images) ? i.images : []).map(String).filter(u => /^https:\/\/images\.ctfassets\.net\/|^https:\/\/www\.fs-creative\.at\/print\/bild\/|^https:\/\/www\.fs-creative\.at\/logos\/angebote\/[\w.-]+\.(jpe?g|png)$/.test(u)).slice(0, 3);   // logos/angebote: eigene Produktfotos (z. B. Farbvarianten, die Print.com nicht liefert)
       return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: parseInt(i.unity, 10) > 0 ? parseInt(i.unity, 10) : 1, objectName: "Unity" }, taxRate: r }, imgs.length ? { images: imgs } : {}); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
-    orderPosDelete: null,
+    orderPosDelete: editId && prevPos.length ? prevPos.map(x => ({ id: Number(x.id), objectName: "OrderPos" })) : null,
   };
   const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
   if (rule) { body.order.taxRule = { id: rule, objectName: "TaxRule" }; delete body.order.taxType; }
@@ -4335,6 +4344,15 @@ async function handleAdmin(req, res, u, p) {
   }
   if ((p === "/admin/api/sevdesk/offer" || p === "/admin/api/sevdesk/offer-status" || p === "/admin/api/sevdesk/offer-invoice") && req.method === "POST") {
     try { const pl = await sevBody(req); const r = p.endsWith("/offer") ? await sevCreateOffer(pl) : p.endsWith("status") ? await sevOfferStatus(pl) : await sevOfferToInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/sevdesk/offer-detail" && req.method === "GET") {   // Entwurf zum Bearbeiten: Kopf + Positionen (inkl. Produktfotos)
+    try { const id = String(u.searchParams.get("id") || "").replace(/\D/g, ""); if (!id) throw new Error("kein_angebot");
+      const oj = await sev("GET", "/Order/" + id, { query: { embed: "contact" } }); const o = oj && oj.objects && (Array.isArray(oj.objects) ? oj.objects[0] : oj.objects); if (!o) throw new Error("Angebot nicht gefunden");
+      const pj = await sev("GET", "/Order/" + id + "/getPositions", { query: { limit: 100 } }).catch(() => ({ objects: [] }));
+      const items = ((pj && pj.objects) || []).sort((a, b) => (+a.positionNumber || 0) - (+b.positionNumber || 0)).map(x => ({ name: x.name || "", text: x.text || "", qty: sevNum(x.quantity) || 1, priceGross: sevNum(x.priceGross), priceNet: x.price != null ? sevNum(x.price) : undefined, taxRate: sevNum(x.taxRate), unity: x.unity && x.unity.id ? String(x.unity.id) : "", discount: sevNum(x.discount) || 0, images: Array.isArray(x.images) ? x.images : [] }));
+      const adr = String(o.address || "").split("\n");
+      return send(res, 200, JSON.stringify({ ok: true, offer: { id, nr: o.orderNumber || "", status: +o.status || 0, header: o.header || "", headText: o.headText || "", footText: o.footText || "", orderDate: String(o.orderDate || "").slice(0, 10), alternatives: !!o.alternatives, contactId: o.contact && o.contact.id ? String(o.contact.id) : "", contactName: adr[0] || "", address: o.address || "", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", reference: o.customerInternalNote || "" }, items }), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/sevdesk/offer-delete" && req.method === "POST") {   // Angebots-Entwurf löschen (versendete/angenommene bleiben – dort Status „Abgelehnt“)
