@@ -348,6 +348,7 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     startFixLoad().catch(() => {});   // ersetzte Startausführungen aus der Sortiments-Prüfung
+    newSeenLoad().catch(() => {});
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
     SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, anchorGapSmall: s.anchorGapSmall != null && isFinite(+s.anchorGapSmall) ? +s.anchorGapSmall : 0.05, anchorSmallBelow: s.anchorSmallBelow != null && isFinite(+s.anchorSmallBelow) ? +s.anchorSmallBelow : 100, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin), auditHid: objOf(s.auditHid) };
     SETTINGS.gtagId = GTAG_RX.test(String(s.gtagId || "")) ? String(s.gtagId) : ""; SETTINGS.gtagLabel = /^[\w-]{4,40}$/.test(String(s.gtagLabel || "")) ? String(s.gtagLabel) : "";   // Google-Tag (Merchant Center/Ads Conversion-Tracking), nur mit Einwilligung „Marketing“
@@ -936,8 +937,11 @@ module.exports = function (D) {
     Object.keys(x).forEach(k => { if (LITE_DROP.indexOf(k) < 0) o[k] = x[k]; }); return o; };
   // Vorlage Pflicht (Wunsch Simon 06.11.2026): Produkte mit vorgegebenen Pflichtangaben auf dem Druck (z. B. Inhaltsangaben auf der Dose)
   const MUST_TPL = { "energy-drink-250ml": "Bitte unbedingt die Vorlage verwenden: Auf der Dose sind Inhaltsangaben, Nährwerte und gesetzliche Pflichthinweise fest vorgegeben. Diese Bereiche dürfen nicht verändert, verschoben oder überdeckt werden – dein Design kommt nur in die freien Flächen der Vorlage. Dateien ohne Vorlage können nicht gedruckt werden." };
+  // „Neu“-Datum: Aufnahme bei Print.com (CMS) – oder, wenn später, der Tag, an dem unser Abgleich das Produkt neu gefunden hat (print_new_skus)
+  let NEW_SEEN = {}; const newSeenLoad = () => store.getMeta("print_new_skus").then(m => { const o = {}; ((m && m.items) || []).forEach(x => { if (x && x.sku && x.at && !o[x.sku]) o[x.sku] = String(x.at).slice(0, 10); }); NEW_SEEN = o; return o; }, () => NEW_SEEN);
+  const addedOf = (sku, cp) => { const a = (cp && cp.da) || "", b = NEW_SEEN[sku] || ""; return b > a ? b : a; };
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
-    return { key: p.key, mustTpl: MUST_TPL[p.sku] || MUST_TPL[p.key] || "", title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
+    return { key: p.key, mustTpl: MUST_TPL[p.sku] || MUST_TPL[p.key] || "", title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: addedOf(p.sku, cp), icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g), bleed: p.bleed, safe: p.safe, imprint: !!p.imprint, generic: !!p.generic, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : x[1], x[2]].concat(x[3] ? [x[3]] : [])), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
@@ -960,7 +964,7 @@ module.exports = function (D) {
     const cur = ((cat && cat.products) || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(pubProd);
     const skuSet = new Set(((cat && cat.products) || []).map(p => p.sku));
     const gen = ((all && all.items) || []).filter(it => !skuSet.has(it.sku) && !isInternal(it.sku, it.title)).map(it => [it, catOf(it.sku, s, it.auto)]).filter(x => shown(s, x[0].sku, x[0].sku, x[1]))
-      .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: NAME_FIX[x[0].sku] || (cp && cp.n) || x[0].title, added: (cp && cp.da) || "", icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", pop: (cp && cp.pp) || 0, lazy: true }; });
+      .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: NAME_FIX[x[0].sku] || (cp && cp.n) || x[0].title, added: addedOf(x[0].sku, cp), icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", pop: (cp && cp.pp) || 0, lazy: true }; });
     const order = mainsList().map(m => m.slug), ix = g => { const i = order.indexOf(g); return i < 0 ? 900 : i; };
     // Bestseller: die beliebtesten Produkte laut Print.com (Top 12, mindestens Beliebtheit 4 000); innerhalb der Gruppe zuerst
     // ohne Saison-/Nischenprodukte (Print.com führt z. B. Kalender, Lesezeichen, Pläne weit oben, das sind aber keine Alltags-Bestseller)
@@ -2943,9 +2947,10 @@ module.exports = function (D) {
       let seed = +day.replace(/-/g, "") % 233280; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
       const pool = FOCUS_POOL.filter(k => byKey[k] && k !== "flyer" && k !== "pvc-banner").map(k => [k, rnd()]).sort((a, b) => a[1] - b[1]).map(x => x[0]), focus = [];
       for (const k of pool) { if (focus.length >= 4) break; const r = await check(k, "Fokus"); if (r && r.ok) focus.push(k); }
-      // Neu im Sortiment: die neuesten Produkte mit Bild, geprüft – die ersten 4, die bestehen
-      const fresh = [], newest = pub.filter(x => x.added && x.img && focus.indexOf(x.key) < 0 && x.key !== "flyer" && x.key !== "pvc-banner").sort((a, b) => b.added.localeCompare(a.added)).slice(0, 10);
-      for (const x of newest) { if (fresh.length >= 4) break; const r = await check(x.key, "Neu"); if (r && r.ok) fresh.push(x.key); }
+      // Neu im Sortiment: die neuesten Produkte mit Bild, geprüft – die ersten 8, die bestehen (zwei Reihen, Wunsch Simon 11.11.2026)
+      await newSeenLoad().catch(() => {});
+      const fresh = [], newest = pub.filter(x => x.added && x.img && focus.indexOf(x.key) < 0 && x.key !== "flyer" && x.key !== "pvc-banner").sort((a, b) => b.added.localeCompare(a.added)).slice(0, 16);
+      for (const x of newest) { if (fresh.length >= 8) break; const r = await check(x.key, "Neu"); if (r && r.ok) fresh.push(x.key); }
       HOME = { date: day, at: nowIso(), focus, fresh, checks };
       await store.setMeta("print_home", HOME).catch(() => {});
       log("Druckshop: Startseite geprüft – Fokus " + focus.join(", ") + " · Neu " + fresh.join(", ") + " · " + checks.filter(c => !c.ok).length + " aussortiert");
@@ -5251,6 +5256,8 @@ module.exports = function (D) {
       res.push(r); await new Promise(z => setTimeout(z, 300));
     }
     if (res.some(x => x.enabled)) { await store.setMeta("print_settings", s); SETTINGS = s; PRICE_CACHE.clear(); }
+    await newSeenLoad().catch(() => {});
+    if (res.some(x => x.ok) && cfg().pcKey) setTimeout(() => homeCheck().catch(e => log("Startseiten-Check:", e.message)), 3000);   // neue Produkte gleich unter „Neu im Sortiment“
     const m = (await store.getMeta("print_new_skus").catch(() => null)) || { items: [] };
     res.forEach(x => { const e = (m.items || []).find(y => y.sku === x.sku); if (e) e.check = x; }); await store.setMeta("print_new_skus", m).catch(() => {});
     const on = res.filter(x => x.ok), bad = res.filter(x => !x.ok);

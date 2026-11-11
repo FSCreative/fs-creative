@@ -1246,10 +1246,10 @@
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer");
     var rv = S.cat && S.cat.ratings && S.cat.ratings[p.key]; if (rv) l.unshift("★ " + String(rv.avg).replace(".", ",") + " · " + rv.n + " Bewertungen");   // echte Kundenbewertungen (ab 3)
     return l.slice(0, 4); }
-  // Neu im Sortiment: die 4 zuletzt bei Print.com aufgenommenen Produkte (Datum aus dem Print.com-Katalog), ohne Doppelungen mit Klassikern/Fokus
-  function newestProds() { var hf = S.cat.home && S.cat.home.fresh && S.cat.home.fresh.map(prodByKey).filter(Boolean); if (hf && hf.length >= 2) return hf.slice(0, 4);
+  // Neu im Sortiment: die 8 zuletzt bei Print.com aufgenommenen Produkte (Datum aus dem Print.com-Katalog), ohne Doppelungen mit Klassikern/Fokus
+  function newestProds() { var hf = S.cat.home && S.cat.home.fresh && S.cat.home.fresh.map(prodByKey).filter(Boolean); if (hf && hf.length >= 2) return hf.slice(0, 8);
     var ex = {}; classics().concat(dailyPicks()).forEach(function (p) { ex[p.key] = 1; });
-    return S.cat.products.filter(function (p) { return p.added && imgOk(p.img) && !ex[p.key]; }).sort(function (a, b) { return a.added < b.added ? 1 : a.added > b.added ? -1 : 0; }).slice(0, 4); }
+    return S.cat.products.filter(function (p) { return p.added && imgOk(p.img) && !ex[p.key]; }).sort(function (a, b) { return a.added < b.added ? 1 : a.added > b.added ? -1 : 0; }).slice(0, 8); }
   function newLabel(d) { var t = new Date(d + "T12:00:00"); return isNaN(t) ? "Neu" : "Neu seit " + t.toLocaleDateString("de-AT", { day: "numeric", month: "long" }); }
   function featCard(p, big) {
     var tag = p.designer ? "Online gestalten oder Datei hochladen" : p.kind === "banner" ? "Wunschgröße in cm" : "Druckdaten hochladen";
@@ -1343,7 +1343,7 @@
       xmasTeaser()) + savedHomeHtml() + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
-      (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die vier neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
+      (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die acht neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
       lookbookTeaser() +
       '<section class="ps-hsec ps-designer-intro"><div class="dt"><span class="eyebrow">Online-Designer</span><h2>Selbst gestalten – ganz ohne Grafikprogramm</h2><p>Wähle eine Vorlage, tausche Texte und Bilder aus, füge dein Logo und einen QR-Code hinzu – fertig. Der Designer kennt Format, Beschnitt und Sicherheitsabstand und erstellt daraus ein druckfertiges PDF.</p>' +
       '<ul><li>Fertige Vorlagen für ' + dsg.map(function (p) { return esc(p.title); }).join(", ") + "</li><li>KI-Assistent: Texte und Gestaltungsideen auf Knopfdruck</li><li>Eigene Bilder, Logo, Farben, Schriften, QR-Code (Link oder Kontakt)</li><li>Vorschau wie gedruckt und automatischer Druckdaten-Check</li><li>Entwurf speichern und später weitermachen</li></ul>" +
