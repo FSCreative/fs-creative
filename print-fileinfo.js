@@ -130,6 +130,9 @@ async function pdfInfo(buf) {
         let txt = ""; for (const s of contents) { const b = decodeStream(PDFRawStream, s); if (b) txt += b.toString("latin1") + "\n"; if (txt.length > 8e6) break; }
         if (/\b(rg|RG)\b/.test(txt) && /[\d.]+\s+[\d.]+\s+[\d.]+\s+(rg|RG)\b/.test(txt)) spaces.add("RGB");
         if (/[\d.]+\s+[\d.]+\s+[\d.]+\s+[\d.]+\s+(k|K)\b/.test(txt)) spaces.add("CMYK");
+        if (/(^|\s)[\d.]+\s+(g|G)(\s|$)/m.test(txt)) spaces.add("Graustufen");
+        try { const csd = res && lk(res, "ColorSpace"); if (csd instanceof PDFDict) for (const [k, v] of csd.entries()) { if (new RegExp("/" + k.asString().slice(1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s+(cs|CS)\\b").test(txt)) { const n = csName(ctx.lookup(v) || v); if (n) spaces.add(n); } } } catch (e) {}
+        if (/\/DeviceRGB\s+(cs|CS)\b/.test(txt)) spaces.add("RGB"); if (/\/DeviceCMYK\s+(cs|CS)\b/.test(txt)) spaces.add("CMYK"); if (/\/DeviceGray\s+(cs|CS)\b/.test(txt)) spaces.add("Graustufen");
         const xo = res && lk(res, "XObject"), stack = []; let ctm = base.slice(), nums = [];
         const re = /(-?\d*\.?\d+(?:e-?\d+)?)|\/([^\s\/\[\]()<>{}%]+)|([A-Za-z'"*]+)|(\((?:\\.|[^\\)])*\))|(<[0-9A-Fa-f\s]*>)/g; let m, lastName = "";
         while ((m = re.exec(txt))) {
