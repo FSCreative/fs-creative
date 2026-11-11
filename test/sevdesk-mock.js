@@ -68,6 +68,7 @@ module.exports = function createSevMock(opts) {
         if (!state.orders.some((o) => o.id === mm[1])) return send(res, 400, { error: { message: "order not found" } });
         return send(res, 200, { objects: { filename: "AN-" + mm[1] + ".pdf", mimeType: "application/pdf", base64encoded: true, content: Buffer.from("%PDF-1.4 Angebot " + mm[1]).toString("base64") } });
       }
+      if (m === "GET" && (mm = p.match(/^\/Order\/(\d+)$/))) { const o = state.orders.find((x) => x.id === mm[1]); return send(res, 200, { objects: o ? [o] : [] }); }
       if (m === "PUT" && (mm = p.match(/^\/Order\/(\d+)\/sendBy$/))) { state.puts.push({ id: mm[1], sendBy: json }); const o = state.orders.find((x) => x.id === mm[1]); if (o) o.status = "200"; return send(res, 200, { objects: o || {} }); }
       if (m === "PUT" && (mm = p.match(/^\/Order\/(\d+)$/))) { state.puts.push({ id: mm[1], body: json }); const o = state.orders.find((x) => x.id === mm[1]); if (o && json && json.status) o.status = String(json.status); return send(res, 200, { objects: o || {} }); }
       if (m === "POST" && p === "/Invoice/Factory/createInvoiceFromOrder") { state.invoicesFromOrder.push(json); return send(res, 201, { objects: { id: "7001", objectName: "Invoice", invoiceNumber: "RE-1100", sumGross: "2400" } }); }

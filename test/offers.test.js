@@ -134,6 +134,14 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
     const r = await json("/admin/api/sevdesk/offers");
     assert.strictEqual(r.j.offers.find((o) => o.id === "501").status, 500); assert.strictEqual(r.j.offers.find((o) => o.id === "502").status, 200);
   });
+  await t("Versendetes Angebot legt den Kunden unter „Kunden & Leads“ an (Phase Angebot), ein zweites verknüpft statt doppelt", async () => {
+    const L = (await json("/admin/api/leads")).j.leads.filter((l) => l.contactId === "12");
+    assert.strictEqual(L.length, 1, JSON.stringify(L)); assert.strictEqual(L[0].stage, "angebot"); assert.strictEqual(L[0].value, 500); assert.match(L[0].source, /AN-1002/);
+    assert.ok((L[0].company || L[0].name) === "Verein Gaschurn", JSON.stringify(L[0]));
+    const again = await post("/admin/api/sevdesk/offer-lead", { id: "502", confirm: true, email: "Verein <obmann@verein-test.at>" }); assert.strictEqual(again.j.ok, true, JSON.stringify(again.j)); assert.strictEqual(again.j.lead.created, false);
+    const L2 = (await json("/admin/api/leads")).j.leads.filter((l) => l.contactId === "12"); assert.strictEqual(L2.length, 1); assert.strictEqual(L2[0].email, "obmann@verein-test.at");
+    assert.strictEqual((await post("/admin/api/sevdesk/offer-lead", { id: "502" })).j.ok, false, "ohne confirm nichts");
+  });
   await t("Status: Versandart beim Markieren – VPR (gedruckt übergeben), VM (per Mail), sonst VPDF", async () => {
     await json("/admin/api/sevdesk/offers?force=1");
     const n = mock.state.puts.length;

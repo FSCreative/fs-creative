@@ -38,9 +38,13 @@ function mailOf(o,l){ var m=F.metaCached&&F.metaCached(), cid=o.contactId!=null?
 function label(o){ return "Angebot"+(o.nr?" "+o.nr:""); }
 function isDraft(o){ return o.status!=null?+o.status===100:!!o.draft; }
 function sub(o){ return [o.contact,o.gross!=null&&o.gross!==""?eur(+o.gross):"",o.validUntil?"gültig bis "+F.de(o.validUntil):""].filter(Boolean).join(" · "); }
-function setStatus(id,type){
-  return F.api("/admin/api/sevdesk/offer-status",{body:{confirm:true,id:id,status:200,sendType:type}})
-    .then(function(j){ if(j&&j.ok){ if(OD[id]) OD[id].status=200; if(F.offersLoad) F.offersLoad(true); } return j||{ok:false}; })
+function setStatus(id,type,email){
+  var o=offer(id); email=email||o.email||"";
+  return F.api("/admin/api/sevdesk/offer-status",{body:{confirm:true,id:id,status:200,sendType:type,email:email}})
+    .then(function(j){ if(j&&j.ok){ if(OD[id]) OD[id].status=200; if(F.offersLoad) F.offersLoad(true);
+      /* Server legt den Kunden unter „Kunden & Leads“ an bzw. verknüpft ihn (Phase Angebot) → Liste neu laden */
+      if(j.lead){ if(F.load) F.load(true); setTimeout(function(){ F.toast(j.lead.created?"Neuer Kunde angelegt: "+j.lead.name:"Kunde „"+j.lead.name+"“ verknüpft · Phase Angebot",false,"Öffnen",function(){ F.go("kunden"); if(F.actions.lead) F.actions.lead(j.lead.id); }); },2600); } }
+      return j||{ok:false}; })
     .catch(function(){ return {ok:false,error:"Keine Verbindung zum Server."}; }); }
 function err(t){ var e=document.getElementById("odErr"); if(e) e.textContent=t||""; }
 
@@ -112,7 +116,7 @@ F.mailAfter.offerSent=function(a,info){
   var id=String((a&&a.id)||""); if(!id) return; var l=listed(id), lbl="Angebot"+(a.nr?" "+a.nr:"");
   if(l?+l.status!==100:!a.draft){ if(F.offersLoad) F.offersLoad(true); return; }
   if(a.file&&info&&info.files&&info.files.indexOf(a.file)<0){ F.toast("Mail ohne Angebots-PDF gesendet – "+lbl+" bleibt Entwurf",true); return; }
-  setStatus(id,"VM").then(function(j){
+  setStatus(id,"VM",info&&info.to).then(function(j){
     if(j.ok) F.toast("Gesendet an "+((info&&info.to)||"den Kunden")+" · "+lbl+" ist jetzt „versendet“");
     else F.toast("Mail gesendet, aber "+lbl+" ist noch Entwurf: "+(j.error||"Status nicht gespeichert"),true,F.actions.offstat?"Status ändern":null,F.actions.offstat?function(){ F.actions.offstat(id); }:null);
   });

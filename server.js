@@ -2061,7 +2061,41 @@ async function sevOfferStatus(pl) {
   if (status === 200 && (!cur || cur.status === 100)) await sev("PUT", "/Order/" + id + "/sendBy", { body: { sendType: ["VM", "VPR"].indexOf(pl.sendType) > -1 ? pl.sendType : "VPDF", sendDraft: false } });
   else await sev("PUT", "/Order/" + id, { body: { status } });
   OFFERS_CACHE.at = 0;
-  return { id, status };
+  let lead = null;
+  if (status === 200 && (!cur || cur.status === 100)) { try { lead = await offerEnsureLead(id, pl.email); } catch (e) { console.error("Angebot → Kunde:", e.message); } }
+  return { id, status, lead };
+}
+// Versendetes Angebot → Kunde unter „Kunden & Leads“ (Simon 11.11.2026: „wenn ich Angebote schicke, die Kunden auch gleich als Kunden anlegen“).
+// Vorhandenen Lead suchen (Buchhaltungs-Kontakt, E-Mail, exakter Name/Firma) → verknüpfen und auf Phase „Angebot“ heben; sonst neu anlegen.
+// Keine Aufgabe, keine Mail, keine Push-Meldung (anders als bei Website-Anfragen).
+async function offerEnsureLead(id, email) {
+  const oj = await sev("GET", "/Order/" + id, { query: { embed: "contact" } }); const o = oj && oj.objects && (Array.isArray(oj.objects) ? oj.objects[0] : oj.objects);
+  if (!o || (o.orderType && o.orderType !== "AN")) return null;
+  const c = o.contact || {}, cid = c.id ? String(c.id) : "", nm = (sevName(c) || String(o.address || "").split("\n")[0] || "").trim(); if (!nm && !cid) return null;
+  let mail = ((String(email || "").match(/[^\s<>,;"']+@[^\s<>,;"']+\.[a-z]{2,}/i) || [""])[0]).toLowerCase();
+  if (!mail) { mail = ""; try { const w = FIN_LOCAL.all("CommunicationWay").find(x => String(x.type || "").toUpperCase() === "EMAIL" && x.contact && String(x.contact.id) === cid && /@/.test(x.value || "")); if (w) mail = String(w.value).trim().toLowerCase(); } catch (e) {} }
+  const norm = v => String(v || "").toLowerCase().replace(/[^a-z0-9äöüß]+/g, " ").trim();
+  const leads = readLeads(), now = new Date().toISOString(), net = Math.round(sevNum(o.sumNet) * 100) / 100, nr = o.orderNumber || "";
+  const live = leads.filter(l => l.stage !== "verloren");
+  let l = (cid && live.find(x => String(x.contactId || "") === cid)) || (mail && live.find(x => String(x.email || "").trim().toLowerCase() === mail)) || null;
+  if (!l && nm) { const hits = live.filter(x => !x.contactId && (norm(x.company) === norm(nm) || norm(x.name) === norm(nm))); if (hits.length === 1) l = hits[0]; }
+  let created = false;
+  if (l) {
+    if (cid && !l.contactId) l.contactId = cid;
+    if (mail && !l.email) l.email = mail;
+    if (["anfrage", "entwurf"].indexOf(l.stage || "anfrage") > -1) { l.stage = "angebot"; l.history = (l.history || []).concat([{ at: now, stage: "angebot" }]).slice(-30); }
+    if (!(+l.value > 0) && net > 0) l.value = net;
+    l.updated = now;
+  } else {
+    const org = !!(c.name && String(c.name).trim()), person = [c.surename, c.familyname].filter(Boolean).join(" ").trim();
+    l = { id: "lead_" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex"), created: now, name: clip(person || nm, 120), email: clip(mail, 160), phone: "", company: clip(org ? nm : "", 160),
+      topic: "Angebot", entwurf: false, message: clip("Angebot " + nr + (o.header && !/^angebot( |$)/i.test(o.header) ? " – " + o.header : "") + " versendet am " + viennaToday(), 5000), source: "Angebot " + nr, stage: "angebot",
+      history: [{ at: now, stage: "angebot" }], value: net > 0 ? net : 0 };
+    if (cid) l.contactId = cid;
+    leads.push(l); created = true;
+  }
+  fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); try { COCKPIT_MEMO.at = 0; } catch (e) {}
+  return { id: l.id, created, name: l.company || l.name };
 }
 // Angebot → Rechnung (Entwurf) über /Invoice/Factory/createInvoiceFromOrder (ganze Summe als Schlussrechnung)
 async function sevOfferToInvoice(pl) {
@@ -4344,6 +4378,11 @@ async function handleAdmin(req, res, u, p) {
   }
   if ((p === "/admin/api/sevdesk/offer" || p === "/admin/api/sevdesk/offer-status" || p === "/admin/api/sevdesk/offer-invoice") && req.method === "POST") {
     try { const pl = await sevBody(req); const r = p.endsWith("/offer") ? await sevCreateOffer(pl) : p.endsWith("status") ? await sevOfferStatus(pl) : await sevOfferToInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/sevdesk/offer-lead" && req.method === "POST") {   // Kunde zu einem (versendeten) Angebot anlegen/verknüpfen – nachträglich
+    try { const pl = await sevBody(req); if (pl.confirm !== true) throw new Error("Bestätigung fehlt"); const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("kein_angebot");
+      const r = await offerEnsureLead(id, pl.email); return send(res, 200, JSON.stringify({ ok: !!r, lead: r, error: r ? undefined : "Angebot nicht gefunden" }), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/sevdesk/offer-detail" && req.method === "GET") {   // Entwurf zum Bearbeiten: Kopf + Positionen (inkl. Produktfotos)
