@@ -876,12 +876,17 @@ function fadeStart(W,R){ return Math.max(0,Math.min(R-30,W*.7)); }
 function fadeEnd(W,R,mob){ var a=fadeStart(W,R); return Math.min(W*.95,Math.max(a+120,R+(mob?100:300))); }
 function maskSvg(W,H,R,rects,mob,th){
   var a=fadeStart(W,R), b=fadeEnd(W,R,mob), st="", sv="";
-  for(var i=0;i<=12;i++){ var t=i/12, e=t*t*t*(t*(t*6-15)+10); st+='<stop offset="'+((a+(b-a)*t)/W).toFixed(4)+'" stop-color="#fff" stop-opacity="'+e.toFixed(3)+'"/>'; }
+  /* rechts (an „Heute“) und unten (über „Für dich, jetzt“) weich auslaufen statt harter Kante (Simon 11.11.2026) */
+  var rf=mob?0:Math.min(56,W*.06), bf=Math.min(mob?28:44,H*.14), rs=W-rf, i;
+  if(rs<=b+20) rf=0;
+  for(i=0;i<=12;i++){ var t=i/12, e=t*t*t*(t*(t*6-15)+10); st+='<stop offset="'+((a+(b-a)*t)/W).toFixed(4)+'" stop-color="#fff" stop-opacity="'+e.toFixed(3)+'"/>'; }
+  if(rf) for(i=0;i<=8;i++){ var t2=i/8, e2=1-t2*t2*t2*(t2*(t2*6-15)+10); st+='<stop offset="'+((rs+rf*t2)/W).toFixed(4)+'" stop-color="#fff" stop-opacity="'+e2.toFixed(3)+'"/>'; }
   var pad=mob?8:14, blur=mob?9:16, k="";
   rects.forEach(function(q){ k+='<rect x="'+(q[0]-pad).toFixed(1)+'" y="'+(q[1]-pad*.6).toFixed(1)+'" width="'+(q[2]-q[0]+pad*2).toFixed(1)+'" height="'+(q[3]-q[1]+pad*1.2).toFixed(1)+'" rx="'+pad+'"/>'; });
   /* oben weich ins Freie: im Glas länger (Übergang ins Foto), im Hellen kürzer */
   var vf=th==="light"?Math.min(.16,44/H):Math.min(.2,56/H);
   for(i=0;i<=8;i++){ var u=i/8, ev=u*u*u*(u*(u*6-15)+10); sv+='<stop offset="'+(u*vf).toFixed(4)+'" stop-color="#fff" stop-opacity="'+ev.toFixed(3)+'"/>'; }
+  for(i=0;i<=8;i++){ var w2=i/8, eb=1-w2*w2*w2*(w2*(w2*6-15)+10); sv+='<stop offset="'+(1-bf/H+w2*bf/H).toFixed(4)+'" stop-color="#fff" stop-opacity="'+eb.toFixed(3)+'"/>'; }
   var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+Math.round(W)+'" height="'+Math.round(H)+'" viewBox="0 0 '+W.toFixed(1)+' '+H.toFixed(1)+'" preserveAspectRatio="none"><defs>'+
     '<linearGradient id="h" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="'+W.toFixed(1)+'" y2="0">'+st+'</linearGradient>'+
     '<linearGradient id="v" x1="0" y1="0" x2="0" y2="1">'+sv+'</linearGradient>'+
