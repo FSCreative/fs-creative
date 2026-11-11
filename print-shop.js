@@ -833,7 +833,8 @@ module.exports = function (D) {
         const m = (await store.getMeta("print_new_skus").catch(() => null)) || {}; m.at = nowIso(); m.items = nw.map(x => ({ sku: x.sku, title: x.title, at: m.at })).concat(m.items || []).slice(0, 100);
         await store.setMeta("print_new_skus", m).catch(() => {});
         log("Print.com: " + nw.length + " neue Produkte – " + nw.slice(0, 8).map(x => x.title).join(", "));
-        if (D.push) D.push("lead", { title: "Print.com: " + nw.length + (nw.length === 1 ? " neues Produkt" : " neue Produkte"), body: nw.slice(0, 5).map(x => x.title).join(" · ") + (nw.length > 5 ? " …" : "") + "\nIm Cockpit unter Druckaufträge › Sortiment freischalten", url: "/admin#print", tag: "pc-new-" + m.at.slice(0, 10) }).catch(() => {});
+        // Preischeck + direkt freischalten (Wunsch Simon 11.11.2026: „ohne meine Rückmeldung“) – im Hintergrund, Meldung danach
+        setTimeout(() => newProductsCheck(nw.map(x => x.sku)).catch(e => log("Neue Produkte:", e.message)), 20000);
       }
     }
     const out = { at: nowIso(), cv: CUR_V, products: [], errors: [] };
@@ -5227,6 +5228,37 @@ module.exports = function (D) {
     ["m", "y", "all"].forEach(k => { out[k].margin = r2(out[k].margin); out[k].net = r2(out[k].net); });
     return out;
   }
+  // Neue Print.com-Produkte: Startausführung rechnen (bestellbar? Marge über 0 nach Einkauf + Zahlungsgebühr?), sonst Alternative suchen (wie die Sortiments-Prüfung).
+  // Bestanden → freischalten (enabled = true). Von Hand entschiedene Produkte bleiben, wie sie sind. Ergebnis je Produkt in print_new_skus (check), Push mit Zusammenfassung.
+  async function newProductsCheck(skuList, opt) {
+    opt = opt || {}; await startFixLoad(); const s = await settings(), all = await catalogAll().catch(() => null), res = [];
+    for (const sku of skuList) {
+      const it = ((all && all.items) || []).find(x => x.sku === sku); if (!it) { res.push({ sku, ok: false, why: "nicht im Sortiment" }); continue; }
+      const r = { sku, title: it.title, at: nowIso() };
+      try {
+        if (s.enabled[sku] === false && !opt.force) { r.ok = false; r.why = "von Hand ausgeblendet"; res.push(r); continue; }
+        let pd; for (let i = 0; ; i++) { try { pd = await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller", undefined, { low: true }); break; } catch (e) { if (i >= 2 || e.status !== 429) throw e; await new Promise(z => setTimeout(z, 8000 * (i + 1))); } }
+        const g0 = catOf(sku, s, it.auto), ours = parseProduct(genericCfg(it, g0), sku, pd), b0 = stdInput(withStart(ours, ours, s)); if (!b0) throw new Error("keine Startausführung");
+        let q = null, n = null;
+        try { n = normalizeSel(ours, b0); n.low = true; q = await quote(ours, n, "AT", "", {}); }
+        catch (e) { const fx = await auditFix(ours, b0).catch(() => null); if (!fx) throw e; START_FIX[sku] = Object.assign({ at: nowIso() }, fx.start); store.setMeta("print_startfix", START_FIX).catch(() => {}); r.fixed = fx.label;
+          const n2 = normalizeSel(ours, Object.assign({}, b0, fx.start)); n2.low = true; q = await quote(ours, n2, "AT", "", {}); n = n2; }
+        r.copies = n.copies; r.gross = q.gross; r.net = q.net; r.buy = q.purchase && q.purchase.total; r.margin = q.margin; r.marginPct = q.net > 0 ? Math.round(q.margin / q.net * 1000) / 10 : 0;
+        r.ok = q.gross > 0 && q.margin > 0;
+        if (!r.ok) r.why = "Marge nicht positiv";
+      } catch (e) { r.ok = false; r.why = clip(e.message || e, 160); }
+      if (r.ok && s.enabled[sku] !== true) { s.enabled[sku] = true; if (s.auditHid) delete s.auditHid[sku]; r.enabled = true; }
+      res.push(r); await new Promise(z => setTimeout(z, 300));
+    }
+    if (res.some(x => x.enabled)) { await store.setMeta("print_settings", s); SETTINGS = s; PRICE_CACHE.clear(); }
+    const m = (await store.getMeta("print_new_skus").catch(() => null)) || { items: [] };
+    res.forEach(x => { const e = (m.items || []).find(y => y.sku === x.sku); if (e) e.check = x; }); await store.setMeta("print_new_skus", m).catch(() => {});
+    const on = res.filter(x => x.ok), bad = res.filter(x => !x.ok);
+    log("Neue Produkte: " + on.length + " freigeschaltet, " + bad.length + " nicht – " + bad.map(x => x.title || x.sku).join(", "));
+    if (D.push && !opt.quiet && res.length) D.push("lead", { title: "Print.com: " + on.length + " neue" + (on.length === 1 ? "s Produkt" : " Produkte") + " im Shop",
+      body: on.slice(0, 5).map(x => x.title + " ab " + eurDe(x.gross)).join(" · ") + (on.length > 5 ? " …" : "") + (bad.length ? "\nNicht freigeschaltet: " + bad.slice(0, 3).map(x => x.title || x.sku).join(", ") : ""), url: "/admin#print", tag: "pc-new-" + nowIso().slice(0, 10) }).catch(() => {});
+    return res;
+  }
   async function sortimentState() {
     const s = await settings(), all = await catalogAll().catch(() => null), cat = CAT;
     const cur = {}; ((cat && cat.products) || []).forEach(p => { cur[p.sku] = p; });
@@ -5350,6 +5382,10 @@ module.exports = function (D) {
       }
       // Sortiment: alle Print.com-Produkte mit Kategorie und Freischaltung
       if (p === "/admin/api/print/sortiment" && req.method === "GET") return J(res, 200, await sortimentState());
+      // Neue Print.com-Produkte (letzte Abgleiche) mit Preischeck; POST {skus:[…]} prüft nachträglich und schaltet frei
+      if (p === "/admin/api/print/new" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, (await store.getMeta("print_new_skus").catch(() => null)) || { items: [] }));
+      if (p === "/admin/api/print/new" && req.method === "POST") { const b = await readJson(req, 20000); const l = (Array.isArray(b.skus) ? b.skus : []).map(String).filter(x => SKU_RX.test(x)).slice(0, 60);
+        if (!l.length) return J(res, 400, { ok: false, error: "keine SKUs" }); return J(res, 200, { ok: true, items: await newProductsCheck(l, { quiet: true }) }); }
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");

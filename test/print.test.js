@@ -872,6 +872,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     await admin("/admin/api/print/sortiment", { op: "override", sku: "umbrellas", cat: "clothing-textile/clothing" }); assert.strictEqual((await admin("/admin/api/print/sortiment")).items.find(x => x.sku === "umbrellas").sub, "clothing");
     const pv = await admin("/admin/api/print/sortiment", { op: "preview", sku: "notepads" }); assert.strictEqual(pv.ok, true, JSON.stringify(pv)); assert.ok(pv.gross > 0);
     const ps = await admin("/admin/api/print/sortiment", { op: "preview", sku: "t-shirt-budget-5" }); assert.strictEqual(ps.ok, true, JSON.stringify(ps));
+    // neue Produkte: Preischeck → direkt freischalten; von Hand ausgeblendete bleiben aus, unbekannte werden gemeldet
+    await admin("/admin/api/print/sortiment", { op: "set", sku: "umbrellas", on: false }); await admin("/admin/api/print/sortiment", { op: "set", sku: "notepads", on: null });
+    assert.ok(!(await keys()).includes("notepads"), "vor dem Check aus (Kategorie aus)");
+    const nw = await admin("/admin/api/print/new", { skus: ["notepads", "umbrellas", "gibts-nicht"] }); assert.strictEqual(nw.ok, true, JSON.stringify(nw));
+    const by = k => nw.items.find(x => x.sku === k) || {};
+    assert.strictEqual(by("notepads").ok, true, JSON.stringify(by("notepads"))); assert.strictEqual(by("notepads").enabled, true); assert.ok(by("notepads").gross > 0 && by("notepads").margin > 0);
+    assert.strictEqual(by("umbrellas").ok, false); assert.strictEqual(by("umbrellas").why, "von Hand ausgeblendet"); assert.strictEqual(by("gibts-nicht").ok, false);
+    assert.ok((await keys()).includes("notepads"), "freigeschaltet im Shop"); assert.ok(!(await keys()).includes("umbrellas"));
+    assert.strictEqual((await admin("/admin/api/print/new")).ok, true);
   });
   await t("Datencheck: Profi (+5 €, Warteschlange, eigene Rechnungszeile) bzw. direkt freigegeben (bezahlt → sofort an Print.com)", async () => {
     const base = { customer: Object.assign({}, cust, { email: "check@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
