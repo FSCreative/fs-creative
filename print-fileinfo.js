@@ -65,10 +65,25 @@ function decodeStream(PDFRawStream, s) {
     if (!(s instanceof PDFRawStream)) return null;
     const { PDFName, PDFArray } = require("pdf-lib"), f = s.dict.lookup(PDFName.of("Filter")), raw = Buffer.from(s.contents);
     const list = !f ? [] : f instanceof PDFArray ? f.asArray().map(String) : [String(f)];
-    if (!list.length) return raw;
-    if (list.length === 1 && list[0] === "/FlateDecode") return zlib.inflateSync(raw, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
-    return null;
+    let b = raw;
+    for (const f of list) {   // Filterkette der Reihe nach (z. B. [/ASCII85Decode /FlateDecode] aus pypdf/Ghostscript)
+      if (f === "/FlateDecode" || f === "/Fl") b = zlib.inflateSync(b, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+      else if (f === "/ASCII85Decode" || f === "/A85") b = a85(b);
+      else if (f === "/ASCIIHexDecode" || f === "/AHx") { const h = b.toString("latin1").replace(/[^0-9a-fA-F]/g, ""); b = Buffer.from(h.length % 2 ? h + "0" : h, "hex"); }
+      else return null;
+    }
+    return b;
   } catch (e) { return null; }
+}
+function a85(buf) {
+  const s = buf.toString("latin1").replace(/^\s*<~/, "").replace(/~>[\s\S]*$/, "").replace(/\s+/g, ""), out = []; let grp = [];
+  for (const ch of s) {
+    if (ch === "z" && !grp.length) { out.push(0, 0, 0, 0); continue; }
+    const c = ch.charCodeAt(0) - 33; if (c < 0 || c > 84) continue; grp.push(c);
+    if (grp.length === 5) { let v = 0; for (const g of grp) v = v * 85 + g; out.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255); grp = []; }
+  }
+  if (grp.length) { const n = grp.length; while (grp.length < 5) grp.push(84); let v = 0; for (const g of grp) v = v * 85 + g; const bytes = [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255]; out.push(...bytes.slice(0, n - 1)); }
+  return Buffer.from(out);
 }
 const mul = (a, b) => [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3], a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]];
 
