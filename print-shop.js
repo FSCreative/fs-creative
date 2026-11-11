@@ -195,6 +195,7 @@ const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420
 // Status im Shop (nicht Print.com): Reihenfolge = Ablauf
 // Beschnitt-Hinweis entschärfen, wenn die Vorschau rundum einen weißen Rand gefunden hat (kein Motiv bis zum Rand, Simon 09.11.2026)
 const BLEED_RX = /keinen Beschnitt|ohne Beschnitt/;
+const FILEINFO = require("./print-fileinfo.js");
 const fmtMm = v => String(Math.round(+v * 10) / 10).replace(".", ",");   // Millimeter für Kundentexte (1,5 statt 1.5)
 function bleedOkChecks(l) { l = Array.isArray(l) ? l : []; return l.some(c => BLEED_RX.test(c.text || "")) ? l.filter(c => !BLEED_RX.test(c.text || "")).concat([{ level: "ok", text: "Kein Beschnitt nötig – laut Vorschau rundum weißer Rand." }]) : l; }
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
@@ -5309,13 +5310,23 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, vouchers: Object.values(all).map(v => Object.assign({}, v, { usedBy: undefined, customers: (v.usedBy || []).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
       }
       if (p === "/admin/api/print/order" && req.method === "GET") {
+        // Prüfbericht (Simon 11.11.2026): technische Infos zum Original (bzw. zur Druckdatei) – einmal lesen, im Datei-Eintrag merken
+        const infoOf = async id => { if (!id) return null; const fm = await store.fileMeta(id).catch(() => null); if (!fm) return null; if (fm.info && fm.info.v === 2) return Object.assign({ name: fm.name || "" }, fm.info);
+          let info = null; if (+fm.bytes > 80e6) info = { type: String(fm.original || "pdf").toUpperCase(), bytes: fm.bytes, big: true };
+          else { const data = await store.fileData(id).catch(() => null); info = data ? await withPdf(() => FILEINFO.fileInfo(Buffer.from(data))).catch(e => ({ error: String(e.message || e).slice(0, 120) })) : null; }
+          if (!info) return null; info.v = 2; fm.info = info; await store.putFile(fm).catch(() => {}); return Object.assign({ name: fm.name || "" }, info); };
+
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fm = await store.fileMeta(o.fileId);
         // Druckdaten je Motiv (bzw. eine Datei) + ersetzte Versionen fürs Cockpit (Vorschau mit Rändern, alt ↔ neu, Anpassen)
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, dv = async (fid, label, motif) => { const m = await store.fileMeta(fid).catch(() => null) || {};
           const hs = (o.fileHistory || []).filter(h => (mot ? h.motif === motif : (h.motif == null || h.motif === -1)) && h.new === fid).pop();
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, src: m.src || null, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          const srcInfo = await infoOf(m.src || fid).catch(() => null), effDpi = m.dpi ? Math.round(m.dpi / Math.max(0.05, +(m.place && m.place.scale) || 1)) : 0;
+          const ck = (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))));
+          const hemMm = sleeveMm(o.sel), rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
+            noBleed: ck.some(c => BLEED_RX.test(c.text || "")), hem: hemMm ? "Tunnelsaum " + hemMm / 10 + " cm: in diesem Bereich steckt die Stange – keine Texte/Logos hinein." : /eyelet|oese|öse/i.test(JSON.stringify(o.sel || {})) ? "Ösen sitzen im Rand – Texte und Logos nicht in die Ecken bzw. an den Rand legen." : "" });
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
