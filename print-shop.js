@@ -5317,10 +5317,10 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/print/order" && req.method === "GET") {
         // Prüfbericht (Simon 11.11.2026): technische Infos zum Original (bzw. zur Druckdatei) – einmal lesen, im Datei-Eintrag merken
-        const infoOf = async id => { if (!id) return null; const fm = await store.fileMeta(id).catch(() => null); if (!fm) return null; if (fm.info && fm.info.v === 3) return Object.assign({ name: fm.name || "" }, fm.info);
+        const infoOf = async id => { if (!id) return null; const fm = await store.fileMeta(id).catch(() => null); if (!fm) return null; if (fm.info && fm.info.v === 4) return Object.assign({ name: fm.name || "" }, fm.info);
           let info = null; if (+fm.bytes > 80e6) info = { type: String(fm.original || "pdf").toUpperCase(), bytes: fm.bytes, big: true };
           else { const data = await store.fileData(id).catch(() => null); info = data ? await withPdf(() => FILEINFO.fileInfo(Buffer.from(data))).catch(e => ({ error: String(e.message || e).slice(0, 120) })) : null; }
-          if (!info) return null; info.v = 3; fm.info = info; await store.putFile(fm).catch(() => {}); return Object.assign({ name: fm.name || "" }, info); };
+          if (!info) return null; info.v = 4; fm.info = info; await store.putFile(fm).catch(() => {}); return Object.assign({ name: fm.name || "" }, info); };
 
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fm = await store.fileMeta(o.fileId);
