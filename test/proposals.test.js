@@ -392,6 +392,24 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
       assert.strictEqual(await E.M.paypalFees(), 0, "nur einmal");
     });
   }
+  {   // Warenkorb (12.11.2026): eine Mollie-Zahlung für zwei Druckshop-Rechnungen desselben Kunden → automatisch aufgeteilt, Gebühr als Zahlungsgebühr
+    const pid = "tr_Korb12345678", ci = { id: "77", objectName: "Contact" };
+    const ri = (id, nr, g, st) => ["Invoice", { id, invoiceType: "RE", status: st || "200", invoiceNumber: nr, sumGross: g.toFixed(2), paidAmount: "0", contact: ci, customerInternalNote: "Druckshop · Mollie " + pid, invoiceDate: "2026-10-20T00:00:00+02:00" }];
+    const mtx = (id, net, gross, fee, p) => ["CheckAccountTransaction", { id, checkAccount: { id: "2", objectName: "CheckAccount" }, amount: net.toFixed(2), mollieGross: gross.toFixed(2), mollieFeeAmt: fee.toFixed(2), molliePayment: p, mollieType: "payment", mollieId: "b" + id, valueDate: "2026-10-27T00:00:00+02:00", payeePayerName: "Testkunde Muster", paymtPurpose: "FS Creative Druck", status: "100" }];
+    const W = setup([acc("1", "George"), acc("2", "Mollie"), ["Contact", { id: "77", name: "Testkunde Muster GmbH" }],
+      ri("9101", "RE-9901", 41.4), ri("9102", "RE-9902", 41.28), mtx("5001", 80.03, 82.68, 2.65, pid),
+      ri("9201", "RE-9911", 20), ri("9202", "RE-9912", 30, "100"), mtx("5002", 48.5, 50, 1.5, "tr_KorbEntwurf99")]);
+    await W.L.load();
+    W.L.get("Invoice", "9201").customerInternalNote = "Mollie tr_KorbEntwurf99"; W.L.get("Invoice", "9202").customerInternalNote = "Mollie tr_KorbEntwurf99";
+    await t("Warenkorb: eine Mollie-Zahlung, zwei Rechnungen (Summe = Brutto) → automatisch aufgeteilt, beide bezahlt, Gebühr gebucht; mit Entwurf dabei nichts", async () => {
+      assert.strictEqual(await W.M.rematch(), 1);
+      assert.strictEqual(String(W.L.get("Invoice", "9101").status), "1000"); assert.strictEqual(String(W.L.get("Invoice", "9102").status), "1000");
+      assert.strictEqual(String(W.L.get("CheckAccountTransaction", "5001").status), "200");
+      const fee = W.L.all("Voucher").filter(v => String(v.creditDebit) === "C" && Math.abs(+v.sumGross - 2.65) < 0.001); assert.strictEqual(fee.length, 1, "Gebühr 2,65 € einmal als Zahlungsgebühr");
+      assert.strictEqual(String(W.L.get("CheckAccountTransaction", "5002").status), "100", "Entwurf im Warenkorb → bleibt offen");
+      assert.strictEqual(String(W.L.get("Invoice", "9201").status), "200");
+    });
+  }
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
   fails.forEach(f => console.log(" ✗ " + f));
   process.exit(fail ? 1 : 0);

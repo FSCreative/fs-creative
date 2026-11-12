@@ -110,7 +110,24 @@ module.exports = function (D) {
   // gefundene Rechnung: exakt und eindeutig (matchOf) → wird automatisch verbucht (Simon 28.10.2026: „brauche keine Prüfung“) – mit Eintrag
   // „Automatisch verbucht“ und „Rückgängig“ (fin-proposals.js). Einmal rückgängig gemacht → normaler Vorschlag „Zur Prüfung“.
   // Zahlungen älter als 60 Tage oder in einem schon gemeldeten UVA-Zeitraum bleiben immer Vorschlag (fin-proposals.js autoDateOk, auch mit Mollie-ID).
+  // Warenkorb (Simon 12.11.2026, Manuel Schneider): EINE Mollie-Zahlung für mehrere Druckshop-Rechnungen (je Position eine Rechnung, ältere Warenkörbe).
+  // Mollie-ID steht in allen Rechnungen → nur wenn ALLE diese Rechnungen offen sind, demselben Kunden gehören und ihr offener Betrag zusammen genau
+  // dem Brutto der Zahlung entspricht. Gebucht wird an der ersten Rechnung mit „weitere Rechnungen“ (Aufteilung am selben Umsatz, Gebühr als Zahlungsgebühr).
+  function cartOf(tx) {
+    const gross = +tx.mollieGross || +tx.amount, pid = low(tx.molliePayment); if (!(gross > 0) || pid.length < 8) return null;
+    const all = pidInvoices(tx, ["100", "200", "750", "1000"]); if (all.length < 2) return null;
+    if (all.some(i => ["200", "750"].indexOf(String(i.status)) < 0)) return null;   // Entwurf/bezahlt dabei → nicht automatisch
+    const cid = all[0].contact && String(all[0].contact.id); if (!cid || all.some(i => !i.contact || String(i.contact.id) !== cid)) return null;
+    const openOf = i => r2((+i.sumGross || 0) - (+i.paidAmount || 0));
+    if (all.some(i => !(openOf(i) > 0.004)) || Math.abs(r2(all.reduce((a, i) => a + openOf(i), 0)) - gross) > 0.011) return null;
+    return all.slice().sort((a, b) => String(a.invoiceNumber || a.id).localeCompare(String(b.invoiceNumber || b.id), "de", { numeric: true }));
+  }
   async function autoMatch(tx) {
+    const cart = cartOf(tx), prop0 = P();
+    if (cart && prop0) { const c = L.get("Contact", cart[0].contact.id), cn = c ? (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : "", nrs = cart.map(x => x.invoiceNumber || x.id).join(" + ");
+      return prop0.add({ autoAccept: true, kind: "mollie-match", key: "mmatch:" + tx.id + ":" + cart.map(x => x.id).join("+"), txId: String(tx.id), invoiceId: String(cart[0].id), amount: r2(+tx.mollieGross || +tx.amount), date: day(tx.valueDate),
+        title: "Mollie-Zahlung → Rechnungen " + nrs + (cn ? " · " + cn : ""), detail: (tx.payeePayerName || "") + " · Warenkorb: eine Zahlung für " + cart.length + " Rechnungen · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 100) + (+tx.mollieFeeAmt > 0 ? " · Gebühr " + eu(tx.mollieFeeAmt) + " wird als Zahlungsgebühr gebucht" : ""),
+        source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(cart[0].id), more: cart.slice(1).map(x => String(x.id)) } }); }
     const i = matchOf(tx), prop = P(); if (!i || !prop) return false;
     const c = i.contact && L.get("Contact", i.contact.id), cn = c ? (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : "";
     // automatisch nur bei sicherer Zuordnung: Mollie-ID bzw. Bestellnummer im Rechnungstext – nur nach Betrag+Name, wenn die Zahlung frisch ist (≤ 60 Tage) und nicht lange vor der Rechnung liegt
@@ -131,6 +148,11 @@ module.exports = function (D) {
   async function bookMatch(pl) {
     const tx = L.get("CheckAccountTransaction", pl.txId), i = L.get("Invoice", pl.invoiceId);
     if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen"); if (!i || (pl.online ? ["200", "750", "1000"] : ["200", "750"]).indexOf(String(i.status)) < 0) throw new Error("Die Rechnung ist nicht mehr offen");
+    if (Array.isArray(pl.more) && pl.more.length) {   // Warenkorb: Aufteilung auf mehrere Rechnungen am selben Umsatz (cartOf) – vorher nochmals genau prüfen
+      const cart = cartOf(tx); if (!cart || String(cart[0].id) !== String(i.id) || cart.slice(1).map(x => String(x.id)).join(",") !== pl.more.map(String).join(",")) throw new Error("Die Rechnungen zum Warenkorb haben sich geändert – bitte neu prüfen");
+      await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: Math.abs(+tx.amount), date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) }, extra: { kind: "invoices", invoices: pl.more.map(id => ({ id: String(id) })) } } });
+      return true;
+    }
     await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: Math.abs(+tx.amount), date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
     return true;
   }
