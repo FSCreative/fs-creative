@@ -882,6 +882,24 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok((await keys()).includes("notepads"), "freigeschaltet im Shop"); assert.ok(!(await keys()).includes("umbrellas"));
     assert.strictEqual((await admin("/admin/api/print/new")).ok, true);
   });
+  await t("Notizblock mit Deckblatt: Umschlag als eigene Datei (Endformat + Rücken + 15 mm Lasche), an der Kasse Pflicht, im Auftrag gespeichert, nie automatisch an Print.com", async () => {
+    await admin("/admin/api/print/sortiment", { op: "set", sku: "blocknotes", on: true });
+    const NB = { product: "blocknotes", sel: { size: "a5", material: "80gr_hvo", sheets_per_block: "50s", binding_edge: "binding_top", printtype: "40", cover_material: "170gr_silk_mc", printtype_cover: "40" }, copies: 100, urgency: "standard" };
+    const pr = await post("/print/api/price", NB); assert.strictEqual(pr.status, 200, JSON.stringify(pr.j)); const g = pr.j.price.gross;
+    const inner = await upload(await pdfOf(152, 214, 1), "block.pdf", NB); assert.strictEqual(inner.status, 200, JSON.stringify(inner.j)); assert.strictEqual(inner.j.cover, false);
+    const cv = await upload(await pdfOf(152, 235, 1), "umschlag.pdf", Object.assign({}, NB, { cover: true })); assert.strictEqual(cv.status, 200, JSON.stringify(cv.j));
+    assert.strictEqual(cv.j.cover, true); assert.deepStrictEqual(cv.j.size, { w: 148, h: 231 }, "A5 + 6 mm Rücken (50 Blatt 80 g) + 15 mm Lasche " + JSON.stringify({ ps: pr.j.size, inner: inner.j.size, c: cv.j.checks })); assert.strictEqual(cv.j.blocked, false, JSON.stringify(cv.j.checks));
+    const noCv = await upload(await pdfOf(152, 235, 1), "x.pdf", Object.assign({}, NB, { cover: true, sel: Object.assign({}, NB.sel, { cover_material: "none_cover" }) })); assert.strictEqual(noCv.status, 400, "ohne Deckel kein Umschlag");
+    const base = { customer: Object.assign({}, cust, { email: "block@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "self" };
+    let r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, NB, { fileId: inner.j.fileId, fileToken: inner.j.token, expectedGross: g })] }, base));
+    assert.strictEqual(r.status, 400, JSON.stringify(r.j)); assert.ok(/Umschlag/.test(r.j.error), r.j.error);
+    const nPc = M.orders.length;
+    r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, NB, { fileId: inner.j.fileId, fileToken: inner.j.token, coverId: cv.j.fileId, coverToken: cv.j.token, expectedGross: g })] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    const st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "paid", "mit Umschlag nie automatisch an Print.com"); assert.strictEqual(M.orders.length, nPc);
+    const ad = await admin("/admin/api/print/order?id=" + encodeURIComponent(r.j.orderId)); assert.strictEqual(ad.order.cover.fileId, cv.j.fileId); assert.strictEqual(ad.order.cover.spine, 6);
+    const f = await fetch(B + "/admin/api/print/file?id=" + encodeURIComponent(r.j.orderId) + "&fid=" + cv.j.fileId, { headers: { cookie: COOKIE } }); assert.strictEqual(f.status, 200, "Umschlag im Cockpit abrufbar");
+  });
   await t("Datencheck: Profi (+5 €, Warteschlange, eigene Rechnungszeile) bzw. direkt freigegeben (bezahlt → sofort an Print.com)", async () => {
     const base = { customer: Object.assign({}, cust, { email: "check@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     const u1 = await upload(await pdfOf(89, 59, 2), "c1.pdf", BC);

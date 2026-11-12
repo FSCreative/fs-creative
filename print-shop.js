@@ -1753,7 +1753,7 @@ module.exports = function (D) {
     } catch (e) { log("Preflight:", e.message); }
     return meta;
   }
-  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
+  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
     needBack: needBackOf(m), back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
   // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
@@ -1831,6 +1831,22 @@ module.exports = function (D) {
     return { prod, n, target: { product: prod.key, sel: n.fileSel, size: n.size, bleed: prod.bleed, sides: n.sides, multi: !!n.pages } };
   }
   const isLogo = prod => prod.kind === "textile" || prod.kind === "promo";
+  /* Umschlag als eigene Datei (Simon 12.11.2026, Notizblöcke mit Deckblatt): Produkte mit bedrucktem Umschlag, aber ohne Seitenzahl (Broschüren haben den
+     Umschlag schon in der PDF) brauchen eine zweite Datei. Format Notizblock laut Datenblatt des Produktionspartners: Endformat + Rücken (je Blattzahl/Papier)
+     + 15 mm Lasche hinten. Die Umschlag-Datei geht NICHT automatisch an Print.com – Simon klärt sie nach der Bestellung (kein automatisches Senden). */
+  const SPINE_MM = { 80: { 100: 12, 50: 6, 25: 4, 10: 1 }, 90: { 100: 13, 50: 7, 25: 5, 10: 2 } };
+  function coverSpec(prod, sel, size) {
+    sel = Object.assign({}, prod.fixed || {}, sel || {}); const hp = s => (prod.props || []).some(x => x.slug === s);   // feste Werte (nur eine Option) stehen nicht in sel
+    if (!hp("printtype_cover") || !hp("cover_material") || pagesOf(prod, sel)) return null;   // nur mit eigenem Deckel (Notizblock, Durchschreibesatz, Lose) – nicht Notizwürfel
+    const pt = String(sel.printtype_cover || ""); if (!pt || /^0+$/.test(pt)) return null;
+    if (sel.cover_material && /none|self/i.test(String(sel.cover_material))) return null;
+    const sides = /^\d\d/.test(pt) && pt[1] !== "0" ? 2 : 1; let cs = null, spine = null, edge = null;
+    if (size && /blocknote/i.test(prod.key)) {
+      const sh = parseInt(String(sel.sheets_per_block || ""), 10), g = /90gr/.test(String(sel.material || "")) ? 90 : 80; spine = (SPINE_MM[g] || {})[sh];
+      if (spine != null) { edge = /left|links/i.test(String(sel.binding_edge || "")) ? "left" : "top"; cs = edge === "top" ? { w: size.w, h: size.h + spine + 15 } : { w: size.w + spine + 15, h: size.h }; }
+    }
+    return { sides, size: cs, spine, flap: cs ? 15 : null, edge };
+  }
   // Upload-Konfiguration vorab prüfen (bevor die Datei gelesen wird)
   async function uploadTarget(input) {
     const prod = await findProduct(input.product); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
@@ -1965,6 +1981,7 @@ module.exports = function (D) {
     const t0 = await uploadTarget(input);
     if (t0.pos) return handleLogo(buf, name, t0.prod, t0.pos);
     const { prod, target } = t0;
+    if (input.cover) { const cs = coverSpec(prod, t0.n.sel, target.size); if (!cs) throw bad("Für diese Ausführung ist keine Umschlag-Datei nötig"); target.size = cs.size; target.sides = cs.sides; target.multi = false; }
     const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, JPG oder PNG möglich"), { status: 415 });
     if (!target.size) {   // Produkt ohne lesbares Endformat (allgemeines Print.com-Produkt): Datei annehmen, Format prüfen wir vor dem Druck
       if (type !== "pdf") throw Object.assign(new Error("Für dieses Produkt bitte eine druckfertige PDF hochladen"), { status: 400 });
@@ -2425,7 +2442,8 @@ module.exports = function (D) {
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
       x.fm.orderId = o.id; await store.putFile(x.fm);
       await briefDone(o); await store.putOrder(o);
-      for (const lid of (x.fm.logos || []).concat(x.fm.motifFiles || [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
+      if (o.cover) hist(o, "Umschlag-Datei " + o.cover.fileName + " dabei – nicht automatisch an Print.com: Umschlag nach dem Senden mit Print.com klären");
+      for (const lid of (x.fm.logos || []).concat(x.fm.motifFiles || [], o.cover ? [o.cover.fileId] : [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
     }
     const orders = prepared.map(x => x.o);
     if (method === "mollie") {
@@ -2464,6 +2482,9 @@ module.exports = function (D) {
       fm = await newFile("motifs", "motive.pdf", Buffer.from(await doc.save()), { product: t0.product, sel: t0.sel, size: t0.size, bleed: t0.bleed, sides: t0.sides, pages: pg - 1 }, checks, { pageMap, motifFiles: list.map(x => x.fm.id) });
       motifs = list.map((x, i) => ({ motif: i + 1, copies: x.copies, fileId: x.fm.id, fileName: x.fm.name }));
     } else fm = await chk(input.fileId, input.fileToken, "");
+    const cspec = coverSpec(prod, n.sel, n.size); let cover = null;
+    if (cspec) { if (!input.coverId) throw fail("Bitte noch die Umschlag-Datei hochladen"); const cf = await chk(input.coverId, input.coverToken, "Umschlag"); if (!cf.cover) throw fail("Umschlag-Datei nicht gefunden – bitte erneut hochladen");
+      cover = { fileId: cf.id, fileName: cf.name, checks: cf.checks || [], size: cf.size || null, spine: cspec.spine, flap: cspec.flap, edge: cspec.edge }; }
     n.fresh = true;   // an der Kasse: Einkaufspreise höchstens 5 min alt
     const q = await quote(prod, n, cust.country, cust.zip, Object.assign({}, cust, { disc: Array.isArray(input.__disc) ? input.__disc : [] }));
     const exp = parseFloat(input.expectedGross);
@@ -2472,7 +2493,7 @@ module.exports = function (D) {
     const o = { id, nr: "D-" + today().slice(2).replace(/-/g, "") + "-" + rnd(4), createdAt: nowIso(), status: method === "invoice" ? "invoice_requested" : "pending_payment",
       product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
       custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || (motifs ? motifs.map(m => ({ copies: m.copies })) : undefined), motifs: motifs || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
-      fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
+      fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], cover: cover || undefined, customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || undefined, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
@@ -2608,7 +2629,7 @@ module.exports = function (D) {
     const s = await settings();
     const direct = o.check === "self" && !(o.fileChecks || []).some(c => c.level === "error") && !(o.clientChecks || []).some(t => /wird sichtbar unscharf/.test(t));
     // Profi-Datencheck bezahlt → nie automatisch senden, Simon prüft persönlich (Bestellung D-261104-33V2 ging trotz „pro“ direkt raus)
-    if (((s.autoSend && o.check !== "pro" && o.check !== "graphic") || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
+    if (((s.autoSend && o.check !== "pro" && o.check !== "graphic" && !o.cover) || (direct && !o.cover)) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
   // Status der Rechnung in der Buchhaltung ("100" Entwurf, "200" offen, "750" teilbezahlt, "1000" bezahlt); "" = unbekannt (alter Server/keine Antwort)
@@ -4889,6 +4910,7 @@ module.exports = function (D) {
         await uploadTarget(input).catch(e => { req.resume(); throw e; });
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
         try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
+        if (input.cover && meta && !meta.cover) { meta.cover = true; await store.putFile(meta); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/back" && req.method === "POST") {   // Rückseite/Innenseite zur hochgeladenen Vorderseite (Body = Datei, Header wie Upload + X-Print-File/X-Print-Token)
@@ -5396,7 +5418,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
-        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean);
+        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid), o.cover ? [o.cover.fileId] : []).filter(Boolean);
         if (fidQ && allowed.indexOf(fidQ) < 0) return D.send(res, 404, "Datei nicht gefunden");
         const fm = await store.fileMeta(fidQ || o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
         if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }

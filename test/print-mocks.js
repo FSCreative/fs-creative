@@ -8,7 +8,7 @@
 const http = require("http");
 
 const CATS = { businesscards: ["paper-print", "cards-envelopes"], flyers: ["paper-print", "flyers-folders-posters"], posters: ["paper-print", "flyers-folders-posters"], folders: ["paper-print", "flyers-folders-posters"], stickers: ["stickers-tapes", "stickers"],
-  rollupbanners: ["outdoor-advertising", "roller-banners"], "pvc-510": ["materials-samples", "banner"], "t-shirt-budget-5": ["clothing-textile", "clothing", "clothing-per-type", "t-shirts"], "pen-apollo-hardcolor": ["gifts-merchandise-promotional", "writing"], notepads: ["paper-print", "office-print"] };
+  rollupbanners: ["outdoor-advertising", "roller-banners"], "pvc-510": ["materials-samples", "banner"], "t-shirt-budget-5": ["clothing-textile", "clothing", "clothing-per-type", "t-shirts"], "pen-apollo-hardcolor": ["gifts-merchandise-promotional", "writing"], blocknotes: ["paper-print", "cards-envelopes"], notepads: ["paper-print", "office-print"] };
 function product(sku, props, bleed, excludes, extra) { return Object.assign({ sku, bleed, category: CATS[sku], properties: props, excludes: excludes || [[{ property: "material", options: ["400gr_uncoated"] }, { property: "finish", options: ["gloss_laminate"] }]] }, extra || {}); }
 const opt = (slug, name, extra) => Object.assign({ slug, name, nullable: false }, extra || {});
 const copies = arr => ({ slug: "copies", title: "Auflage", locked: false, required: true, options: arr.map(n => opt(String(n), String(n))) });
@@ -83,6 +83,16 @@ const PRODUCTS = {
     copies([50, 150, 500, 2500]), urgency], 0, []),
   // allgemeines (nicht kuratiertes) Produkt
   // allgemeines Produkt wie live: freie Größe (customSizes), Mengen über rangeSets je Druckverfahren, Reihenfolge über propertyGroups
+  // Notizblock mit Deckblatt (Umschlag als eigene Datei, 12.11.2026)
+  blocknotes: product("blocknotes", [
+    { slug: "size", title: "Format", locked: false, required: true, options: [opt("a5", "A5")] },
+    { slug: "material", title: "Papier", locked: false, required: true, options: [opt("80gr_hvo", "80 g Offset")] },
+    { slug: "sheets_per_block", title: "Blätter", locked: false, required: true, options: [opt("50s", "50 Blatt")] },
+    { slug: "binding_edge", title: "Bindeseite", locked: false, required: true, options: [opt("binding_top", "oben")] },
+    { slug: "printtype", title: "Druck", locked: false, required: true, options: [opt("40", "Einseitig farbig (4/0)")] },
+    { slug: "cover_material", title: "Umschlag", locked: false, required: true, options: [opt("none_cover", "Ohne"), opt("170gr_silk_mc", "Softcover 170 g")] },
+    { slug: "printtype_cover", title: "Druck Umschlag", locked: false, required: true, options: [opt("00", "Unbedruckt"), opt("40", "Einseitig farbig (4/0)")] },
+    copies([100, 250]), urgency], 2),
   notepads: product("notepads", [
     { slug: "size", title: "Format", locked: false, required: true, options: [opt("a5", "A5"), opt("a6", "A6"), opt("custom", "Eigene Größe", { customSizes: { minWidth: 50, minHeight: 50, maxWidth: 210, maxHeight: 297 } })] },
     { slug: "material", title: "Papier", locked: false, required: true, options: [opt("90gr_offset", "90 g Offset")] },
@@ -96,7 +106,7 @@ const PRODUCTS = {
 };
 const LIST = [{ sku: "businesscards", titleSingle: "Visitenkarte", titlePlural: "Visitenkarten", active: true }, { sku: "flyers", titleSingle: "Flyer", titlePlural: "Flyer", active: true }, { sku: "posters", titlePlural: "Posters", active: true }, { sku: "folders", titlePlural: "Folder", active: true }, { sku: "stickers", titlePlural: "Stickers", active: true }, { sku: "rollupbanners", titlePlural: "Roll-up Banner", active: true }, { sku: "socks", titlePlural: "Socken", active: true },
   { sku: "pvc-510", titlePlural: "PVC Banner", active: true }, { sku: "t-shirt-budget-5", titlePlural: "T-Shirts", active: true }, { sku: "pen-apollo-hardcolor", titlePlural: "Kugelschreiber", active: true },
-  { sku: "notepads", titleSingle: "Notizblock", titlePlural: "Notizblöcke", active: true }, { sku: "beachflags", titlePlural: "Beachflags", active: true }, { sku: "mentos-rolls", titlePlural: "Mentos", active: true }, { sku: "aluminium-signs", titlePlural: "Alu-Schilder", active: true },
+  { sku: "blocknotes", titleSingle: "Notizblock", titlePlural: "Notizblöcke", active: true }, { sku: "notepads", titleSingle: "Notizblock", titlePlural: "Notizblöcke", active: true }, { sku: "beachflags", titlePlural: "Beachflags", active: true }, { sku: "mentos-rolls", titlePlural: "Mentos", active: true }, { sku: "aluminium-signs", titlePlural: "Alu-Schilder", active: true },
   { sku: "cardboard-boxes", titlePlural: "Kartons", active: true }, { sku: "umbrellas", titlePlural: "Regenschirme", active: true }, { sku: "tablecloths", titlePlural: "Tischdecken", active: true }, { sku: "inactive-thing", titlePlural: "Alt", active: false }];
 // Print.com-Verhalten nachbilden: Ausschlussregel trifft zu, wenn ALLE Bedingungen einer Regel zutreffen; nicht mitgeschickte Eigenschaften mit Standardwert
 // (pd.implied, z. B. personalize = none) zählen wie mitgeschickt
