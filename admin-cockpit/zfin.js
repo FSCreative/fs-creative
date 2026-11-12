@@ -5,7 +5,8 @@
 "use strict";
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, UI=F.UI;
 function deShort(v){ var m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"."+m[2]+"."+m[1].slice(2):""; }
-UI.fin=UI.fin||F.ls("fsc_fin_page")||"dash";
+UI.fin=UI.fin||"dash";   // Finanzen öffnet immer mit der Übersicht (Simon 12.11.2026) – Sprünge aus anderen Bereichen setzen UI.fin vorher selbst
+(function(){ var _go=F.go; F.go=function(id){ if(F.current==="geld"&&id!=="geld") UI.fin="dash"; return _go.apply(this,arguments); }; })();
 if(/^(fa|steuer|uva|u1|jab|anlagen|prognose)(:|$)/.test(UI.fin)) UI.fin="dash";   // Steuerliches ist jetzt der eigene Menüpunkt „Finanzamt“
 if(/^invd(:|$)/.test(UI.fin)&&!UI.fin.split(":")[1]) UI.fin="inv";   // Detailseite ohne Rechnung nie wiederherstellen
 var C={tx:null,vou:{},cn:null,busy:{}};
