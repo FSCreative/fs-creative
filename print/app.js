@@ -1207,10 +1207,10 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
-    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) { setTimeout(pfvRender, 0); setTimeout(studioPaint, 0); } document.documentElement.classList.toggle("ps-stu-open", !!(S.step === 3 && S.file && !isLogo() && root.querySelector(".ps-stu"))); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
+    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) { setTimeout(pfvRender, 0); setTimeout(studioPaint, 0); } if (S.step === 5) setTimeout(pwMeter, 0); document.documentElement.classList.toggle("ps-stu-open", !!(S.step === 3 && S.file && !isLogo() && root.querySelector(".ps-stu"))); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
       var t5 = cartTotals(), co5 = S.ctype === "company", m5 = document.createElement("div"); m5.className = "ps-mbar"; m5.id = "psMbar";
-      m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Weiter zur Zahlung</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
+      m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Zur Bestellübersicht & Checkout</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
     if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
       m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Zur Kasse</button>'; root.appendChild(m4); }
     if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
@@ -2685,7 +2685,8 @@
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psCrOpt"' + (S.crOpt ? " checked" : "") + '><span>Falls ich nicht fertig bestelle: Erinnert mich per E-Mail an meinen Warenkorb (freiwillig – nach 1 und 5 Tagen und vor dem Löschen, jederzeit abbestellbar).</span></label>' +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psFbOpt"' + (S.fbOpt ? " checked" : "") + '><span>Nach der Lieferung darf ich einmal per E-Mail um eine kurze Bewertung gebeten werden (freiwillig).</span></label>' +
-      '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
+      acctBox() +
+      '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Zur Bestellübersicht & Checkout</button></div></div>' + cartAside() + "</div>";
   }
   function mockHtml() {
     var pv = S.previews;
@@ -2698,9 +2699,10 @@
   }
   function cartAside() {
     var co = S.ctype === "company", t = cartTotals();
-    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + "</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
+    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + "</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") +
+      svcList().map(function (s0) { return "<li><span>" + (s0.v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + "</span><b>" + eur(co ? s0.g / (1 + s0.r / 100) : s0.g) + "</b></li>"; }).join("") + "</ul>" +
       '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p>' +
-      (S.step === 5 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next4">Weiter zur Zahlung →</button>' : S.step === 6 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + "Zahlungspflichtig bestellen</button>" : "") + "</aside>";   // Button-Lösung (§ 8 FAGG): Beschriftung muss die Zahlungspflicht nennen
+      (S.step === 5 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next4">Zur Bestellübersicht & Checkout →</button>' : S.step === 6 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + "Zahlungspflichtig bestellen</button>" : "") + "</aside>";   // Button-Lösung (§ 8 FAGG): Beschriftung muss die Zahlungspflicht nennen
   }
   function vCheckout() {
     var t = cartTotals(), c = S.customer, co = S.ctype === "company", invOk = co && S.uidRes && S.uidRes.valid, n = S.cart.length;
@@ -2737,8 +2739,7 @@
     if (capMin.length && !S.quoting) money = '<p class="ps-bonus-tag best">★ ' + esc(dlab ? dlab.tier : "Rabatt") + " gilt nicht bzw. nur teilweise für: " + esc(capMin.join(", ")) + " – Preis bereits knapp kalkuliert (Mindestpreis)</p>" + money;
     if (capBest && !S.quoting) money = '<p class="ps-bonus-tag best">★ ' + (capBest === S.cart.length ? "Bester Preis – derzeit kein " + (saved > 0 ? "höherer " : "") + "Rabatt möglich" : capBest + " Position" + (capBest > 1 ? "en" : "") + " schon zum besten Preis – dort derzeit kein höherer Rabatt möglich") + "</p>" + money;
     var acct = S.me ? '<p class="pd-muted">Die Bestellung wird in deinem Kundenkonto (' + esc(S.me.email) + ") gespeichert.</p>" :
-      '<label class="ps-cb"><input type="checkbox" data-act="newacct"' + (S.newAcct ? " checked" : "") + '><span><b>Kundenkonto anlegen</b> – Bestellungen und Adresse speichern (Bestätigung per Code an ' + esc(c.email) + ")</span></label>" +
-      (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort (mind. 8 Zeichen)</label><input id="psNewPw" type="password" autocomplete="new-password" value="' + esc(S.newPw || "") + '"></div>' : "");
+      (S.newAcct ? '<p class="pd-muted">✓ Mit der Bestellung wird dein Kundenkonto für ' + esc(c.email) + ' angelegt (Bestätigung per Code). <button type="button" class="ps-link" data-go="5">ändern</button></p>' : '<p class="pd-muted">Ohne Kundenkonto. <button type="button" class="ps-link" data-go="5">Kundenkonto anlegen</button></p>');
     /* Bestellübersicht vor dem Bezahlen (Simon 09.11.2026): nummerierte Abschnitte, rechts mitlaufende Zusammenfassung mit dem Bestellknopf */
     var sec = function (nr, title, body, right) { return '<section class="ps-co-sec"><div class="ps-co-sh"><span class="ps-co-n">' + nr + '</span><h3>' + title + '</h3>' + (right || "") + '</div>' + body + '</section>'; };
     var who = [c.company, (c.firstName + " " + c.lastName).trim()].filter(Boolean), dl = lastDel ? deDate(lastDel) : "";
@@ -2901,7 +2902,7 @@
         S.cart.push(j.item); cartSave(); S.view = ""; toast("„" + j.item.title + "“ liegt wieder im Warenkorb – Preis wird aktualisiert"); go(4); requoteCart(); try { history.pushState(null, "", "/print?warenkorb"); } catch (e) {} })
       .catch(function () { t.disabled = false; toast("Keine Verbindung", true); }); return; }
     if (k === "voucher") { var vi = document.getElementById("psVoucher"); S.voucher = v === "clear" ? "" : (vi ? vi.value.trim().toUpperCase() : ""); S.voucherErr = ""; S.voucherOk = ""; requoteCart(); render(); return; }
-    if (k === "newacct") { S.newAcct = !S.newAcct; render(); return; }
+    if (k === "newacct") { if (S.step === 5 && typeof saveAddr === "function") saveAddr(); var pw0 = document.getElementById("psNewPw"); if (pw0) S.newPw = pw0.value; S.newAcct = !S.newAcct; render(); if (S.newAcct) setTimeout(function () { var q = document.getElementById("psNewPw"); if (q) q.focus(); pwMeter(); }, 0); return; }
     if (k === "uidcheck") return uidCheck();
     if (k === "next4") return nextAddr();
     if (k === "order") return order();
@@ -2948,6 +2949,7 @@
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
+    if (e.target && e.target.id === "psNewPw") { S.newPw = e.target.value; e.target.removeAttribute("aria-invalid"); var ae = document.getElementById("psAddrErr"); if (ae && /^Passwort/.test(ae.textContent)) ae.textContent = ""; pwMeter(); return; }
     if (e.target.id === "psAdjS") { var ao = document.getElementById("psAdjO"); if (ao) ao.textContent = e.target.value + " %"; return; }
     if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo,.ps-oc").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
     var t = e.target;
@@ -3194,6 +3196,18 @@
     saveAddr(); if (!S.uid) { toast("Bitte UID eingeben", true); return; }
     api("/print/api/uid", { uid: S.uid }).then(function (j) { S.uidRes = j.ok ? j : { valid: false, why: j.error }; if (j.uid) S.uid = j.uid; render(); reprice(); });
   }
+  /* Kundenkonto bei der Lieferung (Simon 12.11.2026): wählbar, dann Passwort Pflicht mit Stärkeprüfung (gleiche Regel wie am Server) */
+  var PW_COMMON = /^(passwort|password|qwertz|qwerty|asdf|abc|test|hallo|willkommen|welcome|admin|letmein|iloveyou|sommer|winter|fussball|monkey)\d*!?$|^(\d)\1+$|^(0?123456789?0?|987654321|11111111|12341234)$/i;
+  function pwIssue(pw, email) { var p = String(pw || ""), loc = String(email || "").split("@")[0].toLowerCase();
+    if (p.length < 8) return "mindestens 8 Zeichen"; if (!/[a-zäöüß]/i.test(p) || !/\d/.test(p)) return "Buchstaben und Zahlen verwenden";
+    if (PW_COMMON.test(p) || (loc.length >= 4 && p.toLowerCase().indexOf(loc) > -1)) return "zu leicht zu erraten"; return ""; }
+  function pwScore(pw) { var p = String(pw || ""), n = 0; if (p.length >= 8) n++; if (p.length >= 12) n++; if (/[a-z]/.test(p) && /[A-Z]/.test(p)) n++; if (/\d/.test(p)) n++; if (/[^A-Za-z0-9]/.test(p)) n++; return n; }
+  function pwMeter() { var el = document.getElementById("psPwM"), pw = document.getElementById("psNewPw"); if (!el || !pw) return; var iss = pwIssue(pw.value, S.customer.email), sc = pwScore(pw.value);
+    var lv = !pw.value ? 0 : iss ? 1 : sc >= 4 ? 3 : 2; el.className = "ps-pwm l" + lv; el.querySelector("i").style.width = (lv * 33.4) + "%";
+    el.querySelector("small").textContent = !pw.value ? "Mindestens 8 Zeichen, Buchstaben und Zahlen." : iss ? "Zu schwach – " + iss + "." : lv === 3 ? "Starkes Passwort ✓" : "Passwort ok ✓ – mit Groß-/Kleinbuchstaben oder Sonderzeichen noch sicherer."; }
+  function acctBox() { if (S.me) return '<p class="pd-muted ps-acctbox">Du bist angemeldet – die Bestellung wird in deinem Kundenkonto (' + esc(S.me.email) + ") gespeichert.</p>";
+    return '<div class="ps-acctbox"><label class="ps-cb"><input type="checkbox" data-act="newacct"' + (S.newAcct ? " checked" : "") + '><span><b>Kundenkonto anlegen</b> – Bestellungen, Sendungsverfolgung und Adresse an einem Ort; nächstes Mal schneller bestellen.</span></label>' +
+      (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort *</label><input id="psNewPw" type="password" autocomplete="new-password" required value="' + esc(S.newPw || "") + '"><div class="ps-pwm" id="psPwM"><span><i></i></span><small></small></div></div><p class="pd-muted" style="margin:6px 0 0;font-size:13px">Nach der Bestellung bestätigst du das Konto mit einem Code per E-Mail.</p>' : "") + "</div>"; }
   function nextAddr() {
     saveAddr(); var c = S.customer, bad = [], f = document.getElementById("psAddr");
     var req = { firstName: c.firstName, lastName: c.lastName, street: c.street && /\d/.test(c.street) ? c.street : "", zip: (c.country === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(c.zip || "") ? c.zip : "", city: c.city, email: /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(c.email || "") ? c.email : "", phone: /^[+0-9 ()\/-]{6,40}$/.test(c.phone || "") ? c.phone : "" };
@@ -3201,6 +3215,8 @@
     Object.keys(req).forEach(function (k) { var el = f.elements[k]; var ok = !!req[k]; if (el) el.setAttribute("aria-invalid", ok ? "false" : "true"); if (!ok) bad.push(k); });
     var names = { firstName: "Vorname", lastName: "Nachname", street: "Straße und Hausnummer", zip: "PLZ", city: "Ort", email: "E-Mail", phone: "Telefon", company: "Firma" };
     if (bad.length) { document.getElementById("psAddrErr").textContent = "Bitte prüfen: " + bad.map(function (k) { return names[k]; }).join(", "); var first = f.elements[bad[0]]; if (first) first.focus(); return; }
+    if (!S.me && S.newAcct) { var pwe = document.getElementById("psNewPw"); if (pwe) S.newPw = pwe.value; var pi = pwIssue(S.newPw, c.email);
+      if (pi) { document.getElementById("psAddrErr").textContent = "Passwort für das Kundenkonto: " + pi + "."; if (pwe) { pwe.setAttribute("aria-invalid", "true"); pwe.focus(); } return; } }
     if (S.ctype === "company" && S.uid && !S.uidRes) { uidCheck(); }
     var nlo = document.getElementById("psNlOpt"); S.nlOpt = !!(nlo && nlo.checked);
     var cro = document.getElementById("psCrOpt"); S.crOpt = !!(cro && cro.checked); cartRemind();
@@ -3216,7 +3232,7 @@
     if (!S.accept.proof || !S.accept.terms || !S.accept.fagg) { show("Bitte die drei Bestätigungen anhaken."); return; }
     if (!S.payment) { show("Bitte eine Zahlungsart wählen."); return; }
     if (S.cart.some(function (x) { return !x.price; })) { show("Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."); return; }
-    if (!S.me && S.newAcct && String(S.newPw || "").length < 8) { er.textContent = "Das Passwort für das Kundenkonto braucht mindestens 8 Zeichen."; if (pw) pw.focus(); return; }
+    if (!S.me && S.newAcct && pwIssue(S.newPw, S.customer.email)) { er.textContent = "Passwort für das Kundenkonto: " + pwIssue(S.newPw, S.customer.email) + " – bitte unter Lieferung anpassen."; return; }
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, coverId: x.coverId || undefined, coverToken: x.coverToken || undefined, expectedGross: x.price.gross, check: itemCheck(x), clientWarn: x.clientWarn || undefined, bleedOk: x.bleedOk || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,

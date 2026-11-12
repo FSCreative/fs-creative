@@ -2416,3 +2416,8 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-daypop .ps-urk .c.has{cursor:pointer}
 
 .ps-ci-svc .ps-ci-svcic{display:grid;place-items:center;width:64px;height:64px;border-radius:14px;background:var(--ps-field);font-size:26px;flex:none}
+
+/* Kundenkonto bei der Lieferung + Passwort-Stärke (Simon 12.11.2026) */
+.ps-acctbox{margin:14px 0 4px;padding:12px 14px;border:1px solid var(--ps-line2);border-radius:14px;background:var(--ps-card)}
+.ps-pwm{display:grid;gap:4px;margin-top:6px}.ps-pwm span{display:block;height:6px;border-radius:9px;background:var(--ps-line2);overflow:hidden}.ps-pwm i{display:block;height:100%;width:0;transition:width .2s,background .2s}
+.ps-pwm small{font-size:12.5px;opacity:.85}.ps-pwm.l1 i{background:#e5484d}.ps-pwm.l2 i{background:#f5a524}.ps-pwm.l3 i{background:#30a46c}

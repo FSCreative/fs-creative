@@ -18,7 +18,14 @@ module.exports = function (D) {
   const hash = (pw, salt) => new Promise((ok, no) => crypto.scrypt(String(pw).slice(0, 200), salt, 32, (e, k) => e ? no(e) : ok(k.toString("hex"))));
   async function pwOk(c, pw) { if (!c || !c.pw) { await hash(pw, "x".repeat(32)); return false; } const h = Buffer.from(await hash(pw, c.pw.salt), "hex"), x = Buffer.from(c.pw.h, "hex"); return h.length === x.length && crypto.timingSafeEqual(h, x); }
   async function setPw(c, pw) { const salt = crypto.randomBytes(16).toString("hex"); c.pw = { salt, h: await hash(pw, salt) }; }
-  const pwBad = pw => String(pw || "").length < 8 ? "Das Passwort braucht mindestens 8 Zeichen." : String(pw).length > 200 ? "Das Passwort ist zu lang (max. 200 Zeichen)." : null;
+  // Passwort-Sicherheit (Simon 12.11.2026): mind. 8 Zeichen, Buchstaben UND Zahlen, keine gängigen Passwörter, nicht die eigene E-Mail – gleiche Regel wie im Shop (print/app.js pwIssue)
+  const PW_COMMON = /^(passwort|password|qwertz|qwerty|asdf|abc|test|hallo|willkommen|welcome|admin|letmein|iloveyou|sommer|winter|fussball|monkey)\d*!?$|^(\d)\1+$|^(0?123456789?0?|987654321|11111111|12341234)$/i;
+  const pwBad = (pw, email) => { const p = String(pw || ""), loc = String(email || "").split("@")[0].toLowerCase();
+    if (p.length < 8) return "Das Passwort braucht mindestens 8 Zeichen.";
+    if (p.length > 200) return "Das Passwort ist zu lang (max. 200 Zeichen).";
+    if (!/[a-zäöüß]/i.test(p) || !/\d/.test(p)) return "Das Passwort braucht Buchstaben und Zahlen.";
+    if (PW_COMMON.test(p) || (loc.length >= 4 && p.toLowerCase().indexOf(loc) > -1)) return "Dieses Passwort ist zu leicht zu erraten – bitte ein anderes wählen.";
+    return null; };
   // je Konto: max. 10 falsche Passwörter in 15 Min.; Codes frühestens alle 60 s und max. 6 pro Stunde (gegen Mail-Flut)
   const { hitCounter } = require("./client-ip.js"), PW_FAILS = hitCounter(5000, 3600000), CODE_SENT = hitCounter(5000, 3600000);
   const pwLocked = email => PW_FAILS.count(email, 900000) >= 10;
@@ -80,7 +87,7 @@ module.exports = function (D) {
   async function createFromCheckout(cust, pw) {
     const m = await all(), email = normMail(cust.email); if (!mailOk(email)) return null;
     if (m[email]) return m[email];   // gibt es schon – Bestellung wird über die E-Mail im Profil angezeigt, sobald bestätigt
-    if (pwBad(pw)) throw Object.assign(new Error(pwBad(pw)), { status: 400 });
+    if (pwBad(pw, email)) throw Object.assign(new Error(pwBad(pw, email)), { status: 400 });
     const c = { id: "K" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString("hex"), email, createdAt: nowIso(), verified: false };
     await setPw(c, pw); profileIn(c, cust); m[email] = c; await sendCode(c, "verify"); return c;
   }
