@@ -2414,3 +2414,5 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-daypop-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}.ps-daypop-h b{display:block;font-size:17px}.ps-daypop-h small{opacity:.75;font-size:12.5px}
 .ps-daypop-h .ps-pv-x{position:static;flex:none}
 .ps-daypop .ps-urk .c.has{cursor:pointer}
+
+.ps-ci-svc .ps-ci-svcic{display:grid;place-items:center;width:64px;height:64px;border-radius:14px;background:var(--ps-field);font-size:26px;flex:none}

@@ -4603,7 +4603,7 @@ module.exports = function (D) {
           const op = u.searchParams.get("op");
           if (op === "keep" && !r.keep) { r.keep = nowIso(); await crSet(all); }
           if (op === "stop" && !r.stop) { r.stop = nowIso(); await crSet(all); }
-          return J(res, 200, { ok: true, items: r.items, email: r.email, keep: !!r.keep, until: r.keep ? new Date(crUntil(r)).toISOString().slice(0, 10) : "", stop: !!r.stop }); }
+          return J(res, 200, { ok: true, items: r.items, link: !!r.link, email: r.email, keep: !!r.keep, until: r.keep ? new Date(crUntil(r)).toISOString().slice(0, 10) : "", stop: !!r.stop }); }
         if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
         if (limited("cartremind", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen" });

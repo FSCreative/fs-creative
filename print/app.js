@@ -178,10 +178,15 @@
     return '<div class="ps-feerows">' + (t.nGra ? '<div><span>Grafikaufbereitung' + (t.nGra > 1 ? " × " + t.nGra : "") + '</span><b>' + fx(t.nGra * GRAPHIC_CHECK) + "</b></div>" : "") + (t.nPro ? '<div><span>Profi-Datencheck' + (t.nPro > 1 ? " × " + t.nPro : "") + '</span><b>' + fx(t.nPro * PRO_CHECK) + "</b></div>" : "") + "</div>"; }
   /* Zusammenfassung bei der Summe (Simon 12.11.2026): jede Position mit Preis, darunter Liefertermin + „Lieferzeit anpassen“ (Kalender im Pop-up, Preis passt sich an) */
   function dLong(d) { return d ? new Date(d + "T12:00:00").toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "short" }) : ""; }
+  /* Grafikaufbereitung / Profi-Datencheck als eigene Position (Simon 12.11.2026) – ergibt sich aus der Datencheck-Wahl der jeweiligen Druckposition */
+  function svcList() { var r = (S.price && S.price.rate) || 20, out = []; S.cart.forEach(function (x) { var v = itemCheck(x); if (v === "graphic" || v === "pro") out.push({ x: x, v: v, g: v === "graphic" ? GRAPHIC_CHECK : PRO_CHECK, r: r }); }); return out; }
+  function svcRows(co) { return svcList().map(function (s0) { var t = s0.v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck";
+    return '<li class="ps-ci-svc"><span class="ps-ci-svcic" aria-hidden="true">' + (s0.v === "graphic" ? "✎" : "✓") + '</span><div class="ps-ci-bd"><b>' + t + "</b><span>" + (s0.v === "graphic" ? "Wir machen die Druckdaten druckfertig und senden dir vorab eine Vorschau zur Freigabe" : "Wir sehen uns die Druckdaten vor dem Druck persönlich an") + " · für: " + esc(s0.x.title) + (s0.x.fileName ? " (" + esc(s0.x.fileName) + ")" : "") + '</span></div><div class="ps-ci-pr"><b>' + eur(co ? s0.g / (1 + s0.r / 100) : s0.g) + "</b><small>" + (co ? "netto" : "inkl. USt") + '</small><button type="button" class="ps-link" data-act="svcdel:' + esc(s0.x.id) + '">Entfernen</button></div></li>'; }).join(""); }
   function cartSumList(co) { if (!S.cart.length) return "";
     return '<ul class="ps-sumlist">' + S.cart.map(function (x) { var pr = x.price, dd = pr && pr.deliveryDate;
       return '<li><div class="r"><span>' + esc(x.title) + (+x.copies > 1 ? ' <small>· ' + (+x.copies).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small>" : "") + '</span><b>' + (pr ? eur(co ? pr.net : pr.gross) : "…") + "</b></div>" +
-        '<div class="d">' + (dd ? "Lieferung " + esc(dLong(dd)) + (x.wish ? " (Wunschtermin)" : "") : S.quoting ? "Liefertermin wird berechnet …" : "") + ' <button type="button" class="ps-link" data-act="cartday:' + esc(x.id) + '">Lieferzeit anpassen</button></div></li>'; }).join("") + "</ul>"; }
+        '<div class="d">' + (dd ? "Lieferung " + esc(dLong(dd)) + (x.wish ? " (Wunschtermin)" : "") : S.quoting ? "Liefertermin wird berechnet …" : "") + ' <button type="button" class="ps-link" data-act="cartday:' + esc(x.id) + '">Lieferzeit anpassen</button></div></li>'; }).join("") +
+      svcList().map(function (s0) { return '<li><div class="r"><span>' + (s0.v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + '</span><b>' + eur(co ? s0.g / (1 + s0.r / 100) : s0.g) + "</b></div></li>"; }).join("") + "</ul>"; }
   function cartDay(id) {
     var x = S.cart.filter(function (c) { return c.id === id; })[0]; if (!x) return; var co = S.ctype === "company";
     var back = document.activeElement, ov = document.createElement("div"); ov.className = "ps-pop ps-daypop"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Lieferzeit anpassen");
@@ -262,8 +267,10 @@
       if (op === "stop") { toast("Erledigt – wir schicken dir zu diesem Warenkorb keine Erinnerungen mehr."); }
       if (op === "keep") { setTimeout(function () { toast("Dein Warenkorb bleibt gespeichert" + (j.until ? " – bis " + new Date(j.until + "T12:00:00").toLocaleDateString("de-AT") : "") + "."); }, 1800); }
       var have = {}; S.cart.forEach(function (x) { have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] = 1; });
-      var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile) && !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] && prodByKey(x.product); });
-      S.cart = S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
+      // fertiger Warenkorb-Link aus dem Cockpit (j.link): ersetzt den Warenkorb – keine alten Stände/fremden Positionen (Simon 12.11.2026)
+      var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile) && (j.link || !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]) && prodByKey(x.product); });
+      if (j.link && S.cart.length) toast("Dein Warenkorb wurde durch das Angebot ersetzt");
+      S.cart = j.link ? add : S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
       toast(add.length ? "Dein Warenkorb ist wieder da – Preise werden aktualisiert" : "Dein Warenkorb ist schon da"); go(4, true); requoteCart();
     }).catch(function () { go(4, true); });
   }
@@ -302,14 +309,14 @@
     S.cart.forEach(function (x) {
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
-      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + checkLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         (x.fileId ? ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.motifs && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
         ((x.fileId || x.noFile) && !x.motifs && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
-    h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
-      '<aside class="ps-price"><h3>Summe</h3>' + cartSumList(co) + cartFeeRows(t, co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
+    h += svcRows(co) + "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
+      '<aside class="ps-price"><h3>Summe</h3>' + cartSumList(co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
       '<p class="note">inkl. Versand innerhalb Österreichs · ' + (t.nGra ? "inkl. Grafikaufbereitung" + (t.nPro ? " und Profi-Datencheck" : "") : t.nPro ? "inkl. Profi-Datencheck" : "Datencheck kostenlos") + '. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Zur Kasse →</button></aside></div>';
     return h;
   }
@@ -2880,6 +2887,7 @@
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cpages") { pagesView(v); return; }
     if (k === "cartday") { cartDay(v); return; }
+    if (k === "svcdel") { var sx = S.cart.filter(function (x) { return x.id === v; })[0]; if (sx) { sx.check = "self"; if (S.check !== "self" && S.cart.every(function (x) { return x.check; })) {} cartSave(true); render(); toast("Datencheck-Leistung entfernt"); } return; }
     if (k === "pgmove") { var pm = v.split("|"); movePage(+pm[0], +pm[0] + (+pm[1])); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
