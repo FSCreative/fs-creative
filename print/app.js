@@ -184,6 +184,7 @@
     if (offerOn() && S.offer.fee && S.offer.fee.net > 0) { var fe = S.offer.fee; it.designFee = { net: fe.net, gross: fe.gross, vat: Math.round((fe.gross - fe.net) * 100) / 100 }; }
     // Gestaltung im Warenkorb änderbar (Wunsch Simon 06.11.2026): Designer-Stand als Entwurf auf dem Server (nicht in der Merkliste), Position merkt sich den Link;
     // kommt der Kunde über „Gestaltung ändern“, ersetzt die neue Fassung die alte Position statt eine zweite anzulegen
+    if (!it.motifs && S.file) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30) }; }
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
     if (S.design && S.file.kind === "design" && !it.motifs && !it.textile) api("/print/api/draft", Object.assign(cfgOf(), { design: S.design, cart: true })).then(function (j) {
@@ -261,7 +262,7 @@
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
       h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a></span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
-        (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : "") +
+        (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.motifs && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
     h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
@@ -1156,7 +1157,7 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
-    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
+    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) { setTimeout(pfvRender, 0); setTimeout(studioPaint, 0); } document.documentElement.classList.toggle("ps-stu-open", !!(S.step === 3 && S.file && !isLogo() && root.querySelector(".ps-stu"))); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
       var t5 = cartTotals(), co5 = S.ctype === "company", m5 = document.createElement("div"); m5.className = "ps-mbar"; m5.id = "psMbar";
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Weiter zur Zahlung</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
@@ -2107,22 +2108,7 @@
     if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
       var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
-      var left = '<div class="ps-upv-l">' + mtabs + "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) : f.kind === "design" ? "Deine Gestaltung" : "Deine Datei") + '</h2><p class="sub">' + esc(sum) + "</p>" +
-        '<div class="ps-upv-st"><div class="ps-upv-tabs" role="tablist" aria-label="Vorschau"><button type="button" role="tab" data-pvtab="mock" aria-selected="' + (tab === "mock") + '">Auf dem Produkt</button><button type="button" role="tab" data-pvtab="pfv" aria-selected="' + (tab === "pfv") + '">Mit Druckrändern</button></div>' +
-        '<div class="ps-upv-pane" data-pane="mock"' + (tab === "mock" ? "" : " hidden") + ">" + pmkHtml() + "</div>" +
-        '<div class="ps-upv-pane" data-pane="pfv"' + (tab === "pfv" ? "" : " hidden") + '><div class="ps-pfv' + (S.pfvBg ? " tr" : "") + '" id="psPfv" data-fid="' + esc(f.fileId) + '"><div class="ps-pfv-h"><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label>' +
-          // Hintergrund weiß ↔ transparent (Wunsch Simon 06.11.2026): die Vorschau ist durchsichtig gerendert – auf dem Kachelmuster sieht man weißen Druck (z. B. Pantone-Weiß auf Luftballons) und transparente Flächen
-          '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund der Vorschau"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
-        '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie</li>' : "") + "</ul></div></div></div>" +
-        (spec ? '<p class="ps-upv-spec">' + (p.dimsArea ? "Druckfläche " : "Endformat ") + esc(spec) + "</p>" : "") + "</div>";
-      var right = '<aside class="ps-upv-r"><div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages || "?") + " Seite" + (f.pages === 1 ? "" : "n") + (f.bytes ? " · " + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
-        (f.kind === "design" ? '<button type="button" class="ps-link" data-act="editdesign">Bearbeiten</button>' : "") + '<a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF</a><button type="button" class="ps-link" data-act="clearfile">Andere Datei</button></div></div>' +
-        backHtml(f) + qualHtml(f) + adjHtml(f) + bleedFixHtml(f) +
-        '<div class="ps-upv-chk">' + checksHtml(shown) + (rest.length ? '<details><summary>Alle Prüfungen anzeigen (' + top.length + ")</summary>" + checksHtml(rest) + "</details>" : "") + '<div id="psPfvW"></div></div>' +
-        (f.preflight && f.preflight.status === "PROCESSING" ? '<p class="pd-muted"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>' : "") + reqHtml(false) +
-        (!f.blocked ? '<button type="button" class="ps-btn primary ps-upv-go" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : '<p class="ps-nav-hint">Bitte die rot markierten Punkte korrigieren.</p>') +
-        '<button type="button" class="ps-btn ps-upv-back" data-go="2">Zurück zur Ausführung</button></aside>';
-      return '<div class="ps-upv">' + left + right + "</div>";
+      return studioHtml(f, mtabs, sum, spec, top, shown, rest);
     } else if (S.mode === "upload") {
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
         : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
@@ -2263,6 +2249,85 @@
       return hits; };
     var cs = [corner(0, 0, 1, 1), corner(W - 1, 0, -1, 1), corner(0, H - 1, 1, -1), corner(W - 1, H - 1, -1, -1)];
     return cs.filter(function (h) { return h === 3; }).length + (cs.filter(function (h) { return h; }).length >= 3 ? 1 : 0);
+  }
+  /* ── Studio (Simon 12.11.2026): nach jedem Upload bzw. jeder Gestaltung das Studio im Vollbild statt der alten Vorschau – alle Seiten groß mit
+     Druckrändern, rechts Datei, Anpassen (Einpassen/Füllen/Drehen/Größe), Beschnitt, Seiten ersetzen/umsortieren, Prüfungen → „In den Warenkorb“.
+     Aus dem Warenkorb öffnet „Im Studio bearbeiten“ dieselbe Position wieder (ersetzt sie beim erneuten Hinzufügen). */
+  function studioHtml(f, mtabs, sum, spec, top, shown, rest) {
+    var co = S.ctype === "company", pr = S.price, mot = S.mot.n > 1 && motOk(), key = f.fileId + (S.pfvOff ? ":0" : ":1");
+    var price = pr && (pr.gross || pr.net) ? '<span class="ps-stu-pr"><b>' + eur(co ? pr.net : pr.gross) + "</b><small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></span>" : "";
+    var go = !f.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (mot ? "Weiter" : S.cartEdit ? "Änderung übernehmen" : "In den Warenkorb") + " →</button>" : '<span class="ps-stu-blk">Bitte die rot markierten Punkte korrigieren</span>';
+    return '<div class="ps-stu" role="dialog" aria-modal="true" aria-label="Studio">' +
+      '<header class="ps-stu-top"><div class="ps-stu-brand"><b>STUDIO</b><span>' + esc(sum) + (spec ? " · " + esc(spec) : "") + '</span></div>' +
+      '<div class="ps-stu-act"><label class="ps-cb sm"><input type="checkbox" id="psStuEdges"' + (S.pfvOff ? "" : " checked") + '><span>Druckränder</span></label>' +
+      '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div>' +
+      price + (S.cartEdit ? '<button type="button" class="ps-btn" data-act="stucancel">Abbrechen</button>' : '<button type="button" class="ps-btn" data-go="2">← Ausführung</button>') + go + "</div></header>" +
+      '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (f.blocked ? "<b>Bitte rechts die rot markierten Punkte korrigieren.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb die grüne Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe dürfen bis dorthin reichen.</p>' +
+      '<main class="ps-stu-pages' + (S.pfvBg ? " tr" : "") + '" id="psStuPages" data-key="' + esc(key) + '"><div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div></main></div>' +
+      '<aside class="ps-stu-side">' + mtabs +
+        '<div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages || "?") + " Seite" + (f.pages === 1 ? "" : "n") + (f.bytes ? " · " + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
+        (f.kind === "design" ? '<button type="button" class="ps-link" data-act="editdesign">Bearbeiten</button>' : "") + '<a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF</a><button type="button" class="ps-link" data-act="clearfile">Andere Datei</button></div></div>' +
+        qualHtml(f) + adjHtml(f) + bleedFixHtml(f) + backHtml(f) +
+        '<div class="ps-upv-chk">' + checksHtml(shown) + (rest.length ? '<details><summary>Alle Prüfungen anzeigen (' + top.length + ")</summary>" + checksHtml(rest) + "</details>" : "") + '<div id="psPfvW"></div></div>' +
+        (f.preflight && f.preflight.status === "PROCESSING" ? '<p class="pd-muted"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>' : "") + reqHtml(false) +
+        '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie</li>' : "") + "</ul>" +
+        '<div hidden><div class="ps-pfv" id="psPfv" data-fid="' + esc(f.fileId) + '"><div class="ps-pfv-c"></div></div></div>' +
+      "</aside></div></div>";
+  }
+  var STU = {};
+  /* Seitenbeschriftung (Simon 12.11.2026): Sets/Kartensets ohne Bindung = je Seite ein Motiv → „Motiv 1 vorne / hinten“ statt „Seite 1 / 2“;
+     Broschüren, Bücher, Kalender (mit Bindung) bleiben bei Seitenzahlen; beidseitige Einzelprodukte Vorder-/Rückseite */
+  function setLike() { return !!pagesNeeded() && !S.prod.props.some(function (pr) { return /bind|wire|staple|heft/i.test(pr.slug) && !/binder-filler/i.test(pr.slug); }); }
+  function pgLabel(i, n) {
+    if (n === 2 && sides() === 2 && !pagesNeeded()) return sideNames()[i];
+    if (setLike()) return sides() === 2 ? "Motiv " + (Math.floor(i / 2) + 1) + (i % 2 ? " hinten" : " vorne") : "Motiv " + (i + 1);
+    return "Seite " + (i + 1);
+  }
+  function stuLabel(i, n) { return pgLabel(i, n); }
+  function studioPaint() {
+    var box = document.getElementById("psStuPages"); if (!box || !S.file) return; var f = S.file, key = box.getAttribute("data-key");
+    if (STU[key] && STU[key].html) { box.innerHTML = STU[key].html; return; }
+    if (STU[key]) { if (STU[key].figs.length) box.innerHTML = STU[key].figs.join(""); return; }   // läuft schon – fertige Seiten zeigen, der Rest folgt
+    var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = safeOf(), off = !!S.pfvOff, job = STU[key] = { figs: [] };
+    if (!trim) { box.innerHTML = ""; return; }
+    var rnd = /rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape")), fo = S.price && S.price.folds;
+    var show = function () { var b = document.getElementById("psStuPages"); if (b && b.getAttribute("data-key") === key) b.innerHTML = job.figs.join("") + (job.html ? "" : '<div class="ps-stu-load"><span class="ps-spin"></span> weitere Seiten werden geladen …</div>'); };
+    pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
+      var n = Math.min(doc.numPages, 60), i = 0;
+      var step = function () { if (i >= n) return Promise.resolve(); var idx = i++; return doc.getPage(idx + 1).then(function (pg) {
+        var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, hmm = v0.height / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
+        // Seite größer/kleiner, aber gleiches Seitenverhältnis wie Endformat + Beschnitt → der Server skaliert sie passend: Linien im Druckmaß einzeichnen
+        var tw = trim.w + 2 * bleed, th = trim.h + 2 * bleed, mmW = wmm;
+        if (!b && bleed) { if (Math.abs(wmm / hmm - tw / th) < 0.012) { b = bleed; mmW = tw; } else if (Math.abs(wmm / hmm - th / tw) < 0.012) { b = bleed; mmW = th; } }
+        var sc = Math.min(3, 900 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () {
+          var x = cv.getContext("2d"), W = cv.width, H = cv.height, pxmm = W / mmW, bp = b * pxmm, sp = (b + safe) * pxmm;
+          if (!off && rnd) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2, true); x.fill("evenodd");
+            x.lineWidth = 2; x.strokeStyle = "#ff3b30"; x.beginPath(); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2); x.stroke();
+            x.strokeStyle = "#30d158"; x.setLineDash([8, 5]); x.beginPath(); x.ellipse(W / 2, H / 2, Math.max(1, W / 2 - sp), Math.max(1, H / 2 - sp), 0, 0, Math.PI * 2); x.stroke(); x.restore(); }
+          else if (!off) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
+            x.lineWidth = 2; x.strokeStyle = "#ff3b30"; if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
+            x.strokeStyle = "#30d158"; x.setLineDash([8, 5]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp);
+            if (fo && trim.w === (S.price.size || {}).w) { x.strokeStyle = "#bf5af2"; x.lineWidth = 2; x.setLineDash([10, 6]);
+              fo.x.forEach(function (fx) { var X = bp + (idx % 2 ? trim.w - fx : fx) * pxmm; x.beginPath(); x.moveTo(X, 0); x.lineTo(X, H); x.stroke(); });
+              fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); }); }
+            x.restore(); }
+          job.figs.push('<figure class="ps-stu-pg" id="psStuPg' + (idx + 1) + '"><img src="' + cv.toDataURL("image/png") + '" alt="' + esc(stuLabel(idx, n)) + '"><figcaption><b>' + esc(stuLabel(idx, n)) + "</b></figcaption></figure>");
+          show(); }); }).then(step); };
+      return step();
+    }).then(function () { job.html = job.figs.join(""); show(); })
+      .catch(function () { delete STU[key]; var b3 = document.getElementById("psStuPages"); if (b3) b3.innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – <a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF ansehen</a>.</p>'; });
+  }
+  // Warenkorb → Studio: Position mit Ausführung und Datei wieder öffnen; erneut „Änderung übernehmen“ ersetzt sie (cartAdd, S.cartEdit)
+  function cartStudio(x) {
+    pickProduct(x.product, function () {
+      S.prod.props.forEach(function (pr) { if (x.sel && pr.options.some(function (o) { return o.slug === x.sel[pr.slug]; })) S.sel[pr.slug] = x.sel[pr.slug]; });
+      if (+x.copies > 0) S.copies = +x.copies; if (x.urgency) { S.urgency = x.urgency; S.dday = x.wish || ""; } if (x.custom && x.custom.w) S.custom = { w: x.custom.w, h: x.custom.h }; if (x.pm) S.pm = x.pm;
+      fixSel(); loadPrice();
+      S.file = Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
+      S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.cartEdit = x.id; S.step = 3; render(); pollPreflight();
+      try { history.replaceState(null, "", "/print"); } catch (e) {}
+    });
   }
   function pfvRender() {
     var box = document.getElementById("psPfv"); if (!box || !S.file) return; var f = S.file, key = f.fileId + (S.pfvOff ? ":0" : ":1"), c = box.querySelector(".ps-pfv-c");
@@ -2712,7 +2777,9 @@
     if (k === "savdel") { savDel(v); return; }
     if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0" + (sx.unit || "Stk.") + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
-    if (k === "pfvbg") { S.pfvBg = v === "1"; var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
+    if (k === "pfvbg") { S.pfvBg = v === "1"; var sp0 = document.getElementById("psStuPages"); if (sp0) sp0.classList.toggle("tr", S.pfvBg); document.querySelectorAll(".ps-stu [data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
+    if (k === "cartstudio") { var cs0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cs0 && cs0.fileId) cartStudio(cs0); return; }
+    if (k === "stucancel") { S.cartEdit = ""; S.file = null; S.previews = null; S.mode = ""; go(4); return; }
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cpages") { pagesView(v); return; }
     if (k === "pgmove") { var pm = v.split("|"); movePage(+pm[0], +pm[0] + (+pm[1])); return; }
@@ -2765,6 +2832,7 @@
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
     if (t.id === "psPfvT") { S.pfvOff = !t.checked; pfvRender(); return; }
+    if (t.id === "psStuEdges") { S.pfvOff = !t.checked; var sp1 = document.getElementById("psStuPages"); if (sp1 && S.file) sp1.setAttribute("data-key", S.file.fileId + (S.pfvOff ? ":0" : ":1")); studioPaint(); return; }
     if (t.hasAttribute && t.hasAttribute("data-numpick")) { var nk = t.getAttribute("data-numpick"), its = (DDI[nk] || []).filter(function (x) { return !x.off && /^\s*\d+/.test(String(x.name)); }), want = parseInt(t.value, 10); if (!its.length || !(want > 0)) return;
       var best = its.reduce(function (a, x) { var n = parseInt(String(x.name), 10); return !a || Math.abs(n - want) < Math.abs(a.n - want) ? { v: x.val, n: n } : a; }, null); if (best.n !== want) toast("Nächster möglicher Wert: " + best.n);
       if (nk.indexOf("prop:") === 0) { S.dd = ""; setProp(nk.slice(5), best.v); } return; }
@@ -2870,7 +2938,7 @@
         '<label class="ps-drop ps-pgc ps-pgc-new" data-back="1"><input type="file" id="psBack" accept="' + ACC_UP + '"><span class="ps-pgc-th"><i>+</i></span><span class="ps-pgc-t"><b>' + esc(nm) + ' hinzufügen</b><small>Datei hierher ziehen oder klicken · sonst bleibt sie weiß</small></span><div class="ps-prog" id="psBackProg" hidden><i></i></div></label></div><div id="psBackErr"></div></div>'; }
     if (n < 2) return "";
     setTimeout(function () { pageThumbs(f); }, 0);
-    var two = twoUp() && n === 2, labs = function (i) { return two ? sideNames()[i] : "Seite " + (i + 1); };
+    var labs = function (i) { return pgLabel(i, n); };
     return '<div class="ps-pgw"><div class="ps-pgw-h"><b>Deine ' + n + ' Seiten</b><small>Datei auf eine Seite ziehen ersetzt sie' + (n > 1 ? " · Karten ziehen zum Umsortieren" : "") + ".</small></div>" +
       '<div class="ps-pgg' + (n > 6 ? " many" : "") + '">' + Array.from({ length: n }, function (x, i) { return pgCard(f, i, n, labs(i), f.pageNames && f.pageNames[i] && f.pageNames[i] !== f.name ? f.pageNames[i] : ""); }).join("") + "</div>" +
       (S.fileFront ? '<p class="ps-back-x"><button type="button" class="ps-link" data-act="backremove">' + nm + " entfernen</button></p>" : "") + '<div id="psPgErr"></div></div>';
@@ -2884,7 +2952,7 @@
   root.addEventListener("dragend", function (e) { var c = e.target.closest && e.target.closest(".ps-pgc"); if (c) c.classList.remove("drag"); });
   function uploadPage(f, page) {
     var cur = S.file; if (!cur) return; var n = +cur.pages || 0, pg = page === "sel" ? parseInt((document.getElementById("psPgN") || {}).value, 10) : +page, er = document.getElementById("psPgErr");
-    var lab = twoUp() && n === 2 ? sideNames()[pg - 1] : "Seite " + pg, fail = function (m) { upPop("close"); if (er) er.innerHTML = '<p class="ps-err">' + esc(m) + "</p>"; else toast(m, true); };
+    var lab = pgLabel(pg - 1, n), fail = function (m) { upPop("close"); if (er) er.innerHTML = '<p class="ps-err">' + esc(m) + "</p>"; else toast(m, true); };
     if (!(pg >= 1 && pg <= n)) return fail("Bitte eine Seite zwischen 1 und " + n + " wählen.");
     if (f.size > 50 * 1024 * 1024) return fail("Die Datei ist größer als 50 MB.");
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return fail("Bitte PDF, JPG oder PNG hochladen.");
