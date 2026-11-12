@@ -270,6 +270,7 @@
       h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + checkLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         (x.fileId ? ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.motifs && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
+        ((x.fileId || x.noFile) && !x.motifs && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
     h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
@@ -2312,7 +2313,7 @@
       '<header class="ps-stu-top"><div class="ps-stu-brand"><b>STUDIO</b><span>' + esc(sum) + (spec ? " · " + esc(spec) : "") + '</span></div>' +
       '<div class="ps-stu-act"><label class="ps-cb sm"><input type="checkbox" id="psStuEdges"' + (S.pfvOff ? "" : " checked") + '><span>Druckränder</span></label>' +
       '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div>' +
-      price + (S.cartEdit ? '<button type="button" class="ps-btn" data-act="stucancel">Abbrechen</button>' : '<button type="button" class="ps-btn" data-go="2">← Ausführung</button>') + go + "</div></header>" +
+      price + (S.cartEdit ? '<button type="button" class="ps-btn" data-act="stucancel">Abbrechen</button>' : "") + '<button type="button" class="ps-btn" data-go="2">← Ausführung</button>'  + go + "</div></header>" +
       '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (f.blocked ? "<b>Bitte rechts die rot markierten Punkte korrigieren.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb der grünen Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe sollen bis an den äußeren Rand reichen, damit nach dem Schneiden kein weißer Rand bleibt.</p>' +
       '<main class="ps-stu-pages' + (S.pfvBg ? " tr" : "") + '" id="psStuPages" data-key="' + esc(key) + '"><div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div></main></div>' +
       '<aside class="ps-stu-side">' + mtabs +
@@ -2369,15 +2370,23 @@
     }).then(function () { job.html = job.figs.join(""); show(); })
       .catch(function () { delete STU[key]; var b3 = document.getElementById("psStuPages"); if (b3) b3.innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – <a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF ansehen</a>.</p>'; });
   }
+  var rbSeq = 0;
+  function fileRebind() { var f = S.file, my = ++rbSeq; if (!f) return; S.file = Object.assign({}, f, { rebinding: true });
+    clearTimeout(fileRebind.t); fileRebind.t = setTimeout(function () {
+      api("/print/api/file/rebind", { fileId: f.fileId, token: f.token, config: cfgOf() }).then(function (j) { if (my !== rbSeq) return;
+        if (!j || !j.ok) { S.file = null; S.previews = null; toast((j && j.error) || "Ausführung geändert – bitte die Datei erneut hochladen.", true); render(); return; }
+        S.file = j; S.previews = null; render(); toast(j.blocked ? "Ausführung geändert – deine Datei passt so nicht mehr, bitte prüfen" : "Ausführung geändert – deine Datei wurde neu geprüft ✓", !!j.blocked); pollPreflight(); })
+        .catch(function () { if (my !== rbSeq) return; S.file = null; render(); toast("Ausführung geändert – bitte die Datei erneut hochladen.", true); }); }, 600); }
   // Warenkorb → Studio: Position mit Ausführung und Datei wieder öffnen; erneut „Änderung übernehmen“ ersetzt sie (cartAdd, S.cartEdit)
-  function cartStudio(x) {
+  function cartStudio(x, step) {
     pickProduct(x.product, function () {
       S.prod.props.forEach(function (pr) { if (x.sel && pr.options.some(function (o) { return o.slug === x.sel[pr.slug]; })) S.sel[pr.slug] = x.sel[pr.slug]; });
       if (+x.copies > 0) S.copies = +x.copies; if (x.urgency) { S.urgency = x.urgency; S.dday = x.wish || ""; } if (x.custom && x.custom.w) S.custom = { w: x.custom.w, h: x.custom.h }; if (x.pm) S.pm = x.pm;
       fixSel(); loadPrice();
-      S.file = Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
+      S.file = x.noFile ? noFileObj() : Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
       S.cover = x.coverId ? { fileId: x.coverId, token: x.coverToken, name: x.coverName || "Umschlag", kind: "upload", cover: true, checks: [] } : null;
-      S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.cartEdit = x.id; S.step = 3; render(); pollPreflight();
+      S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.cartEdit = x.id; S.step = step || 3; render(); if (!x.noFile) pollPreflight();
+      if (step === 2) toast("Ausführung ändern – danach „Weiter“ und „Änderung übernehmen“, die Position wird ersetzt.");
       try { history.replaceState(null, "", "/print"); } catch (e) {}
     });
   }
@@ -2815,7 +2824,7 @@
     if (k === "backcancel") { S.backEdit = false; render(); return; }
     if (k === "backremove") { if (S.fileFront) { S.file = S.fileFront; S.fileFront = null; } S.backEdit = false; S.previews = null; S.pmkSide = 0; render(); return; }
     if (k === "editdesign") return openDesigner();
-    if (k === "next3") { if (!S.file || S.file.blocked) return; if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
+    if (k === "next3") { if (S.file && S.file.rebinding) { toast("Einen Moment – deine Datei wird für die neue Ausführung geprüft …"); return; } if (!S.file || S.file.blocked) return; if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
       if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }
         if (miss > -1) { motLoad(miss); toast("Jetzt Motiv " + (miss + 1) + " gestalten oder hochladen"); render(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
         if (motSum() !== +S.copies) { toast("Die Stückzahlen der Motive ergeben nicht die Auflage – bitte in „Ausführung“ anpassen", true); return; } }
@@ -2831,6 +2840,7 @@
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "pfvbg") { S.pfvBg = v === "1"; var sp0 = document.getElementById("psStuPages"); if (sp0) sp0.classList.toggle("tr", S.pfvBg); document.querySelectorAll(".ps-stu [data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
     if (k === "cartstudio") { var cs0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cs0 && cs0.fileId) cartStudio(cs0); return; }
+    if (k === "cartcfg") { var cc0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cc0 && (cc0.fileId || cc0.noFile)) cartStudio(cc0, 2); return; }
     if (k === "stucancel") { S.cartEdit = ""; S.file = null; S.previews = null; S.mode = ""; go(4); return; }
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cpages") { pagesView(v); return; }
@@ -2928,7 +2938,9 @@
     S.sel[slug] = val; fixSel(slug);
     // Probedruck/Muster (z. B. Kartenset): gibt es nur als 1 Stück – Auflage auf 1, beim Zurückwechseln die vorige Auflage wieder (Simon 10.11.2026)
     if (slug === "sample") { if (/^sample_/.test(String(val))) { if (+S.copies !== 1) S.copiesNoSample = S.copies; S.copies = 1; } else if (S.copiesNoSample) { S.copies = S.copiesNoSample; S.copiesNoSample = null; } }
-    if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
+    if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) {
+      if (S.file && S.file.kind === "upload" && S.file.fileId && !S.file.noFile && !(S.mot.n > 1)) fileRebind();   // Datei behalten und für die neue Ausführung neu prüfen (Simon 12.11.2026)
+      else if (!(S.file && S.file.noFile)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } }
     if (isLogo() && kind() === "promo" && lk !== logoKey()) { S.logos = {}; S.file = null; }
     render(); loadPrice();
   }

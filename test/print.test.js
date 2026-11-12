@@ -537,6 +537,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(sd.ordered <= sd.check && sd.check <= sd.shipped, JSON.stringify(sd)); assert.strictEqual(sd.expected, st.deliveryDate);
     assert.ok(r.order.statusAt && r.order.statusAt.ordered && r.order.statusAt.shipped, "statusAt gestempelt");
   });
+  await t("Ausführung geändert: Datei wird für die neue Ausführung neu geprüft (rebind) und passt dann an der Kasse; falsches Token → 403", async () => {
+    const up = await upload(await pdfOf(89, 59, 2), "wechsel.pdf", BC); assert.ok(up.j.ok, JSON.stringify(up.j));
+    const BC2 = Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { material: "400gr_uncoated" }) });
+    const bad = await post("/print/api/file/rebind", { fileId: up.j.fileId, token: "x", config: BC2 }); assert.strictEqual(bad.status, 403);
+    const rb = await post("/print/api/file/rebind", { fileId: up.j.fileId, token: up.j.token, config: BC2 }); assert.strictEqual(rb.status, 200, JSON.stringify(rb.j));
+    assert.ok(rb.j.ok && rb.j.fileId && rb.j.fileId !== up.j.fileId && rb.j.pages === 2, JSON.stringify(rb.j));
+    const pr = await post("/print/api/price", Object.assign({ country: "AT" }, BC2));
+    if (pr.j.ok) { const r = await post("/print/api/order", Object.assign(order({ fileId: rb.j.fileId, fileToken: rb.j.token, expectedGross: pr.j.price.gross }), { sel: BC2.sel })); assert.notStrictEqual(r.status, 409, "Datei passt zur neuen Ausführung: " + JSON.stringify(r.j)); }
+  });
   await t("Rechnung für Firmen: nur mit gültiger UID; AT-Firma → 20 % USt, Freigabe nötig, keine Zahlung", async () => {
     const up = await upload(await pdfOf(89, 59, 2), "firma.pdf", BC);
     const priv = await post("/print/api/order", order({ fileId: up.j.fileId, fileToken: up.j.token, payment: "invoice" })); assert.strictEqual(priv.status, 400);

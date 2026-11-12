@@ -4957,6 +4957,18 @@ module.exports = function (D) {
         if (input.cover && meta && !meta.cover) { meta.cover = true; await store.putFile(meta); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
+      // Ausführung geändert (Simon 12.11.2026): vorhandene Datei für die neue Ausführung neu prüfen statt verwerfen – Inhalt der aktuellen Fassung (mit Anpassungen),
+      // neue Datei-ID; passt sie nicht (anderes Format/Seitenzahl), stehen die Fehler in den Prüfungen
+      if (p === "/print/api/file/rebind" && req.method === "POST") {
+        if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
+        const b = await readJson(req, 20000).catch(() => ({})), id = String(b.fileId || "");
+        if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
+        const fm = await store.fileMeta(id); if (!fm || fm.kind !== "upload" || fm.cover) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const input = b.config && typeof b.config === "object" ? b.config : null; if (!input) return J(res, 400, { ok: false, error: "Konfiguration fehlt" });
+        const rel = await pdfSlot(); let meta;
+        try { const data = await store.fileData(fm.id); if (!data) return J(res, 410, { ok: false, error: "Datei nicht mehr vorhanden" }); meta = await handleUpload(Buffer.from(data), fm.name || "druck.pdf", input); } finally { rel(); }
+        return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
       if (p === "/print/api/file/back" && req.method === "POST") {   // Rückseite/Innenseite zur hochgeladenen Vorderseite (Body = Datei, Header wie Upload + X-Print-File/X-Print-Token)
         if (limited("upload", ip, 200, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" }); }
         const id = String(req.headers["x-print-file"] || ""); if (!sigOk("file", id, String(req.headers["x-print-token"] || ""))) { req.resume(); return J(res, 403, { ok: false, error: "Datei nicht gefunden" }); }
