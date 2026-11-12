@@ -1831,6 +1831,16 @@ module.exports = function (D) {
     return { prod, n, target: { product: prod.key, sel: n.fileSel, size: n.size, bleed: prod.bleed, sides: n.sides, multi: !!n.pages } };
   }
   const isLogo = prod => prod.kind === "textile" || prod.kind === "promo";
+  // Unbedruckt ohne Konturschnitt (Simon 12.11.2026: Kartonstützen u. a. Zubehör) → keine Druckdatei nötig; Konturschnitt braucht immer eine Datei (Schneidlinie)
+  const BLANK_VAL = v => /^0+(_.*)?$|^0\/0|unprint|blank|^none$|^raw_material$/i.test(String(v == null ? "" : v));
+  function noFileNeeded(prod, sel) {
+    if (!prod || isLogo(prod) || !/^(flat|banner)$/.test(prod.kind || "flat")) return false;
+    const all = Object.assign({}, prod.fixed || {}, sel || {});
+    if (Object.keys(all).some(k => /custom_shape|die_cut|kiss_cut|thru_?cut|contour/i.test(k) && all[k] && !/^(no|none|nein|false|geen|__none)$/i.test(String(all[k])))) return false;
+    if (String(all.printingmethod || "") === "raw_material") return true;
+    const pk = Object.keys(all).filter(k => /^(printtype.*|print_position.*|print_side.*|printing_(position|side|colou?rs?).*|imprint.*)$/.test(k));
+    return pk.length > 0 && pk.every(k => BLANK_VAL(all[k]));
+  }
   /* Umschlag als eigene Datei (Simon 12.11.2026, Notizblöcke mit Deckblatt): Produkte mit bedrucktem Umschlag, aber ohne Seitenzahl (Broschüren haben den
      Umschlag schon in der PDF) brauchen eine zweite Datei. Format Notizblock laut Datenblatt des Produktionspartners: Endformat + Rücken (je Blattzahl/Papier)
      + 15 mm Lasche hinten. Die Umschlag-Datei geht NICHT automatisch an Print.com – Simon klärt sie nach der Bestellung (kein automatisches Senden). */
@@ -2440,15 +2450,15 @@ module.exports = function (D) {
       if (x.bleedOk === true) { o.bleedOk = true; o.fileChecks = bleedOkChecks(o.fileChecks); }   // Vorschau: Motiv endet vor dem Rand → Beschnitt-Hinweis entfällt
       hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "graphic" ? "Datencheck mit Grafikaufbereitung gewünscht – Grafik druckfertig machen und dem Kunden zur Freigabe senden" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
-      x.fm.orderId = o.id; await store.putFile(x.fm);
+      if (x.fm) { x.fm.orderId = o.id; await store.putFile(x.fm); }
       await briefDone(o); await store.putOrder(o);
       if (o.cover) hist(o, "Umschlag-Datei " + o.cover.fileName + " dabei – nicht automatisch an Print.com: Umschlag nach dem Senden mit Print.com klären");
-      for (const lid of (x.fm.logos || []).concat(x.fm.motifFiles || [], o.cover ? [o.cover.fileId] : [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
+      for (const lid of ((x.fm && x.fm.logos) || []).concat((x.fm && x.fm.motifFiles) || [], o.cover ? [o.cover.fileId] : [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
     }
     const orders = prepared.map(x => x.o);
     if (method === "mollie") {
       try { const url = await createPayment(orders); for (const o of orders) { hist(o, "Mollie-Zahlung " + o.payment.mollieId + " erstellt"); await store.putOrder(o); } return { orders, checkoutUrl: url, groupId, account }; }
-      catch (e) { for (const x of prepared) { x.fm.orderId = null; await store.putFile(x.fm); x.o.status = "payment_failed"; hist(x.o, "Zahlung konnte nicht gestartet werden: " + e.message); await store.putOrder(x.o); } throw Object.assign(new Error("Zahlung konnte nicht gestartet werden – bitte später erneut versuchen"), { status: 502 }); }
+      catch (e) { for (const x of prepared) { if (x.fm) { x.fm.orderId = null; await store.putFile(x.fm); } x.o.status = "payment_failed"; hist(x.o, "Zahlung konnte nicht gestartet werden: " + e.message); await store.putOrder(x.o); } throw Object.assign(new Error("Zahlung konnte nicht gestartet werden – bitte später erneut versuchen"), { status: 502 }); }
     }
     for (const o of orders) await submitted(o);
     return { orders, groupId, account };
@@ -2469,9 +2479,10 @@ module.exports = function (D) {
       if ((f.checks || []).some(c => c.level === "error")) throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren");
       return f;
     };
-    let fm, motifs = null;
+    let fm = null, motifs = null; const noFile = noFileNeeded(prod, n.sel);
     // Mehrere Motive (Sortenmix): Stückzahlen je Motiv = Gesamtauflage; die Druckdateien werden zu einem PDF zusammengeführt (Motiv für Motiv), an Print.com als variants
-    if (Array.isArray(input.motifs) && input.motifs.length > 1 && (prod.kind || "flat") === "flat") {
+    if (noFile) { /* unbedruckt: keine Druckdatei */ }
+    else if (Array.isArray(input.motifs) && input.motifs.length > 1 && (prod.kind || "flat") === "flat") {
       const ms = input.motifs.slice(0, MAX_MOTIFS); let sum = 0; const list = [];
       for (let i = 0; i < ms.length; i++) { const c = Math.max(1, parseInt(ms[i].copies, 10) || 0); sum += c; list.push({ fm: await chk(ms[i].fileId, ms[i].fileToken, "Motiv " + (i + 1)), copies: c }); }
       if (sum !== n.copies) throw fail("Die Stückzahlen der Motive (" + sum + ") ergeben nicht die Gesamtauflage (" + n.copies + ")");
@@ -2482,7 +2493,7 @@ module.exports = function (D) {
       fm = await newFile("motifs", "motive.pdf", Buffer.from(await doc.save()), { product: t0.product, sel: t0.sel, size: t0.size, bleed: t0.bleed, sides: t0.sides, pages: pg - 1 }, checks, { pageMap, motifFiles: list.map(x => x.fm.id) });
       motifs = list.map((x, i) => ({ motif: i + 1, copies: x.copies, fileId: x.fm.id, fileName: x.fm.name }));
     } else fm = await chk(input.fileId, input.fileToken, "");
-    const cspec = coverSpec(prod, n.sel, n.size); let cover = null;
+    const cspec = noFile ? null : coverSpec(prod, n.sel, n.size); let cover = null;
     if (cspec) { if (!input.coverId) throw fail("Bitte noch die Umschlag-Datei hochladen"); const cf = await chk(input.coverId, input.coverToken, "Umschlag"); if (!cf.cover) throw fail("Umschlag-Datei nicht gefunden – bitte erneut hochladen");
       cover = { fileId: cf.id, fileName: cf.name, checks: cf.checks || [], size: cf.size || null, spine: cspec.spine, flap: cspec.flap, edge: cspec.edge }; }
     n.fresh = true;   // an der Kasse: Einkaufspreise höchstens 5 min alt
@@ -2492,14 +2503,14 @@ module.exports = function (D) {
     const id = "P" + Date.now().toString(36).toUpperCase() + rnd(6);
     const o = { id, nr: "D-" + today().slice(2).replace(/-/g, "") + "-" + rnd(4), createdAt: nowIso(), status: method === "invoice" ? "invoice_requested" : "pending_payment",
       product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
-      custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || (motifs ? motifs.map(m => ({ copies: m.copies })) : undefined), motifs: motifs || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
-      fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], cover: cover || undefined, customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
+      custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || (motifs ? motifs.map(m => ({ copies: m.copies })) : undefined), motifs: motifs || undefined, pageMap: (fm || {}).pageMap || undefined, logoFiles: (fm || {}).logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
+      fileId: fm ? fm.id : null, fileName: fm ? fm.name : "", fileKind: fm ? fm.kind : "none", fileChecks: fm ? fm.checks || [] : [], noFile: noFile || undefined, cover: cover || undefined, customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || undefined, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
-    if (fm.briefId) {   // von FS Creative gestaltet (Gestaltungsanfrage): Grafik-Aufschlag ist Pflicht und nicht abwählbar
+    if (fm && fm.briefId) {   // von FS Creative gestaltet (Gestaltungsanfrage): Grafik-Aufschlag ist Pflicht und nicht abwählbar
       const br = (await briefsGet()).find(x => x.id === fm.briefId), of = br && br.offer;
-      if (!of || of.fileId !== fm.id) throw fail("Dieses Gestaltungsangebot ist nicht mehr gültig – bitte melde dich bei uns");
+      if (!of || of.fileId !== (fm && fm.id)) throw fail("Dieses Gestaltungsangebot ist nicht mehr gültig – bitte melde dich bei uns");
       const net = r2(+of.feeNet || 0), vat = r2(net * (o.price.rate || 0) / 100), gross = r2(net + vat);
       if (net > 0) { o.price.designFee = { net, vat, gross }; o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net); }
       o.briefId = br.id;
@@ -2689,7 +2700,7 @@ module.exports = function (D) {
       const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
       if (!(o.status === "paid" || o.status === "invoice_requested" || (o.status === "problem" && !o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – kann nicht bestellt werden");
       if (o.redo && o.redo.status === "open") throw new Error("Wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
-      const fm = await store.fileMeta(o.fileId); if (!fm) throw new Error("Druckdatei fehlt");
+      const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error("Druckdatei fehlt");
       const c = o.customer, base = cfg().publicUrl;
       const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
@@ -2697,7 +2708,7 @@ module.exports = function (D) {
         items: motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(base, m.fileId),
           fileOptions: { isProduction: true }, approveDesign: true, senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: m.copies }] })) : [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
           // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
-          motifDesigns(o, base) ? { designs: motifDesigns(o, base) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, { fileUrl: pcFileUrl(base, fm.id) }), { fileOptions: { isProduction: true }, approveDesign: true,
+          motifDesigns(o, base) ? { designs: motifDesigns(o, base) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, fm ? { fileUrl: pcFileUrl(base, fm.id) } : {}), fm ? { fileOptions: { isProduction: true }, approveDesign: true } : {}, {
           senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: o.copies }] })] };
       // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
       const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
@@ -4590,7 +4601,7 @@ module.exports = function (D) {
         if (!CR_EMAIL.test(email)) return J(res, 400, { ok: false, error: "E-Mail ungültig" });
         const all0 = await crGet(), kept = all0.some(x => x.email === email && !x.done && x.keep);
         const all = all0.filter(x => !(x.email === email && !x.done));   // offener Eintrag dieser Adresse wird ersetzt (Änderung = Ablauf neu ab jetzt) bzw. gelöscht
-        if (b.on === true) { const items = (Array.isArray(b.items) ? b.items : []).slice(0, 20).filter(x => x && typeof x.product === "string" && typeof x.fileId === "string" && typeof x.fileToken === "string");
+        if (b.on === true) { const items = (Array.isArray(b.items) ? b.items : []).slice(0, 20).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true));
           if (items.length) all.push(Object.assign({ id: "c" + crypto.randomBytes(9).toString("hex"), v: 2, at: nowIso(), email, firstName: clip(b.firstName, 60), items }, kept ? { keep: nowIso() } : {})); }
         await crSet(all); return J(res, 200, { ok: true });
       }
@@ -4889,7 +4900,7 @@ module.exports = function (D) {
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
-        return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, pages: n.pages || null, size: n.size, folds: n.folds, closed: n.closed, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
+        return J(res, 200, { ok: true, noFile: noFileNeeded(prod, n.sel), price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, pages: n.pages || null, size: n.size, folds: n.folds, closed: n.closed, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
       }
       if (p === "/print/api/deltas") {   // Aufpreise je Option („+ 4,20 €“) gegenüber der aktuellen Auswahl – gleiches Druckverfahren, niedrige Priorität, max. 12 je Anfrage
         if (limited("delta", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
@@ -5364,9 +5375,9 @@ module.exports = function (D) {
       // ohne E-Mail, keine Erinnerungen (kein v), 90 Tage gespeichert
       if (p === "/admin/api/print/cartlink" && req.method === "POST") {
         const b = await readJson(req, 400000).catch(() => ({}));
-        const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && typeof x.fileId === "string" && typeof x.fileToken === "string");
+        const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true));
         if (!items.length) return J(res, 400, { ok: false, error: "Keine Positionen mit Datei" });
-        for (const x of items) { const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
+        for (const x of items) { if (x.noFile) continue; const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
         const all = await crGet(), id = "c" + crypto.randomBytes(9).toString("hex");
         all.push({ id, at: nowIso(), keep: nowIso(), email: "", firstName: "", items, link: true, note: clip(b.note, 120) }); await crSet(all);
         const url = cfg().publicUrl + "/print?wk=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(sig("cartrem", id));

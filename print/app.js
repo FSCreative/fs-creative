@@ -178,7 +178,7 @@
     var pr = S.price || {}, pv = S.previews && S.previews[0];
     var it = JSON.parse(JSON.stringify(cfgOf()));
     Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, unit: S.prod.unit || "", tiers: (S.prod.tiers || []).slice(0, 30), img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
-      fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
+      fileId: S.file.noFile ? "" : S.file.fileId, fileToken: S.file.noFile ? "" : S.file.token, noFile: S.file.noFile ? true : undefined, fileName: S.file.noFile ? "Unbedruckt – keine Druckdaten nötig" : S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), bleedOk: !!S.file.bleedOk, checks: (S.file.checks || []).filter(function (c) { return c.level !== "ok"; }).map(function (c) { return { level: c.level, text: String(c.text || "").slice(0, 400) }; }).slice(0, 10), at: Date.now() });
     if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.thumb || (f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "") }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
@@ -186,7 +186,7 @@
     // Gestaltung im Warenkorb änderbar (Wunsch Simon 06.11.2026): Designer-Stand als Entwurf auf dem Server (nicht in der Merkliste), Position merkt sich den Link;
     // kommt der Kunde über „Gestaltung ändern“, ersetzt die neue Fassung die alte Position statt eine zweite anzulegen
     if (coverNeed() && S.cover) { it.coverId = S.cover.fileId; it.coverToken = S.cover.token; it.coverName = S.cover.name; }
-    if (!it.motifs && S.file) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30) }; }
+    if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30) }; }
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
     if (S.design && S.file.kind === "design" && !it.motifs && !it.textile) api("/print/api/draft", Object.assign(cfgOf(), { design: S.design, cart: true })).then(function (j) {
@@ -198,7 +198,7 @@
   var PRO_CHECK = 5, GRAPHIC_CHECK = 20;   // Datencheck: Profi (5 €) bzw. mit Grafikaufbereitung (20 €, Wunsch Simon 05.11.2026)
   // Datencheck je Position (Wunsch Simon 09.11.2026): x.check überschreibt die Auswahl für alle (S.check)
   var ckNorm = function (v) { return v === "pro" || v === "graphic" ? v : "self"; };
-  var itemCheck = function (x) { return ckNorm(x && x.check ? x.check : S.check); };
+  var itemCheck = function (x) { return x && x.noFile ? "self" : ckNorm(x && x.check ? x.check : S.check); };   // unbedruckt: kein Datencheck
   var ckFee = function (v) { return v === "graphic" ? GRAPHIC_CHECK : v === "pro" ? PRO_CHECK : 0; };
   var checkFee = function () { return S.cart.reduce(function (a, x) { return a + ckFee(itemCheck(x)); }, 0); };
   var anyCheck = function () { return S.cart.some(function (x) { return itemCheck(x) !== "self"; }); };
@@ -221,8 +221,8 @@
       if (!j.ok || !Array.isArray(j.items)) { toast(j.error || "Warenkorb nicht mehr verfügbar", true); go(4, true); return; }
       if (op === "stop") { toast("Erledigt – wir schicken dir zu diesem Warenkorb keine Erinnerungen mehr."); }
       if (op === "keep") { setTimeout(function () { toast("Dein Warenkorb bleibt gespeichert" + (j.until ? " – bis " + new Date(j.until + "T12:00:00").toLocaleDateString("de-AT") : "") + "."); }, 1800); }
-      var have = {}; S.cart.forEach(function (x) { have[x.fileId + "|" + x.product + "|" + x.copies] = 1; });
-      var add = viaUs(j.items).filter(function (x) { return x && x.product && x.fileId && !have[x.fileId + "|" + x.product + "|" + x.copies] && prodByKey(x.product); });
+      var have = {}; S.cart.forEach(function (x) { have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] = 1; });
+      var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile) && !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] && prodByKey(x.product); });
       S.cart = S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
       toast(add.length ? "Dein Warenkorb ist wieder da – Preise werden aktualisiert" : "Dein Warenkorb ist schon da"); go(4, true); requoteCart();
     }).catch(function () { go(4, true); });
@@ -263,7 +263,7 @@
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
       h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
-        ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a></span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
+        (x.fileId ? ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.motifs && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
@@ -873,7 +873,7 @@
       var seq = ++pSeq;
       api("/print/api/price", Object.assign(cfgOf(), { country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) {
         if (seq !== pSeq) return; S.priceBusy = false;
-        if (j.ok) { var before = isLogo() ? logoKey() : ""; S.price = j.price; S.price.size = j.size; S.price.folds = j.folds || null; S.price.closed = j.closed || null; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.pages = j.pages || null; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
+        if (j.ok) { var before = isLogo() ? logoKey() : ""; S.noFile = !!j.noFile && !isLogo(); if (S.noFile) { if (!S.file || !S.file.noFile) { S.file = noFileObj(); S.previews = null; S.design = null; } } else if (S.file && S.file.noFile) S.file = null; S.price = j.price; S.price.size = j.size; S.price.folds = j.folds || null; S.price.closed = j.closed || null; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.pages = j.pages || null; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
           if (isLogo() && before !== logoKey()) { S.logos = {}; S.file = null; } }
         else if (S.undo && /nicht lieferbar|keinen Preis/i.test(j.error || "")) {   // gerade gewählte Option geht nicht → zurück zur letzten bestellbaren Auswahl
           var u = S.undo, t0 = Object.assign({}, u.sel); t0[u.slug] = u.val; BAD[badKey(t0)] = 1; BAD[badKey(S.sel)] = 1; S.undo = null;
@@ -2097,7 +2097,14 @@
       '<li><span class="ri" aria-hidden="true">✓</span><div><b>Kein Rahmen, kein Hintergrund</b><span>Nur das Logo selbst – weiße Flächen um das Logo werden sonst mitgedruckt</span></div></li></ul></div></div>';
   }
   // Schritt 3: Gestalten / Druckdatei (Drucksachen, Banner)
-  function vDesign() { var h0 = vDesign0(); if (!offerOn()) return h0; var f = S.offer.fee || {}, co = S.ctype === "company";
+  /* Unbedruckt ohne Konturschnitt (Simon 12.11.2026, z. B. Kartonstützen): keine Druckdatei – Platzhalter statt Upload, direkt in den Warenkorb */
+  function noFileObj() { return { noFile: true, kind: "none", fileId: "", token: "", name: "Unbedruckt – keine Druckdaten nötig", checks: [], pages: 0 }; }
+  function vNoFile() {
+    return '<div class="ps-layout"><div class="ps-panel"><h2>Keine Druckdaten nötig</h2><p class="sub">' + esc(S.prod.title) + ' wird unbedruckt geliefert – du musst nichts hochladen oder gestalten.</p>' +
+      '<div class="ps-offer"><span class="ic" aria-hidden="true">✓</span><div><b>Fertig zum Bestellen</b><span>Lege die Ausführung einfach in den Warenkorb.</span></div></div>' +
+      '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button><button type="button" class="ps-btn primary" data-act="next3">In den Warenkorb →</button></div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
+  }
+  function vDesign() { if (S.noFile && S.file && S.file.noFile && !isLogo()) return vNoFile(); var h0 = vDesign0(); if (!offerOn()) return h0; var f = S.offer.fee || {}, co = S.ctype === "company";
     return '<div class="ps-offer"><span class="ic" aria-hidden="true">🎨</span><div><b>Von FS Creative für dich gestaltet</b><span>Die fertige Druckdatei ist schon eingesetzt – bitte kurz prüfen und in den Warenkorb legen.' + (f.net > 0 ? " Die Grafikbearbeitung (" + eur(co ? f.net : f.gross) + " " + (co ? "netto" : "inkl. USt") + ") wird automatisch hinzugefügt." : "") + (S.offer.note ? "<br>" + esc(S.offer.note) : "") + "</span></div></div>" + h0; }
   function vDesign0() {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
@@ -2653,7 +2660,7 @@
     // Profi-Datencheck empfehlen (Wunsch Simon 06.11.2026: öfter anbieten) – bei Hinweisen zur Datei oder größerem Auftrag (ab 100 €), der Check kostet dann nur wenige Prozent
     var big = !S.quoting && t.gross >= 100, proRec = warnN || big, proPct = t.gross ? Math.max(1, Math.round(PRO_CHECK / t.gross * 100)) : 0;
     var mixed = S.cart.some(function (x) { return x.check && ckNorm(x.check) !== ckNorm(S.check); }), warnOpen = S.cart.filter(function (x) { return x.warn && itemCheck(x) === "self"; }).length;
-    var perPos = n > 1 ? '<div class="ps-ckpos"><p class="ps-ckpos-h">' + (mixed ? "Individuell je Position:" : "Gilt für alle Positionen – oder je Position wählen:") + "</p>" + S.cart.map(function (x) { var v = itemCheck(x);
+    var perPos = n > 1 ? '<div class="ps-ckpos"><p class="ps-ckpos-h">' + (mixed ? "Individuell je Position:" : "Gilt für alle Positionen – oder je Position wählen:") + "</p>" + S.cart.map(function (x) { var v = itemCheck(x); if (x.noFile) return '<div class="ps-ckpos-r"><span>' + esc(x.title) + '</span><span class="pd-muted">unbedruckt – kein Datencheck</span></div>';
       return '<label class="ps-ckpos-r"><span>' + esc(x.title) + (x.warn ? ' <em class="ps-warnl">⚠</em>' : "") + '</span><select name="icheck" data-id="' + esc(x.id) + '">' +
         [["self", "Direkt freigeben · gratis"], ["pro", "Profi-Datencheck · " + eur(PRO_CHECK)], ["graphic", "Grafikaufbereitung · " + eur(GRAPHIC_CHECK)]].map(function (o) { return '<option value="' + o[0] + '"' + (v === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>"; }).join("") + "</div>" : "";
     var chk = '<fieldset class="ps-pay ps-check" style="border:0;padding:0"><legend class="ps-lbl">Datencheck</legend>' + (n > 1 ? '<p class="ps-ckpos-note">Der Aufpreis gilt je Position mit Datencheck.</p>' : '') +
