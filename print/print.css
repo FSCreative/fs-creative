@@ -2395,7 +2395,7 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-stu-help .g{color:#1d8f3c;font-weight:600}.ps-stu-help .r{color:#d1281c;font-weight:600}
 @media (max-width:900px){.ps-stu-mid{display:block}.ps-stu-help{padding:8px 12px;font-size:13px}}
 /* Umschlag-Feld im Studio (Notizblock mit Deckblatt) */
-.ps-cv{padding:14px;border-radius:16px;border:2px dashed #f0a020;background:#fff8ec}
+.ps-cv{display:block;padding:14px;border-radius:16px;border:2px dashed #f0a020;background:#fff8ec}
 .ps-cv.ok{border:1px solid var(--ps-line2);background:var(--ps-card)}
 .ps-cv-h{display:grid;gap:2px;margin:0 0 10px}.ps-cv-h small{color:var(--text-dim,#5f6778)}
 .ps-cv-b{display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;align-items:start}
@@ -2403,3 +2403,4 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-cv-sk{width:72px;height:auto}
 .ps-cv .ps-drop.small{margin-top:6px}
 .ps-ok-t{color:#1d8f3c;font-weight:600}
+.ps-cv-b>div{min-width:0}.ps-cv-b p{overflow-wrap:anywhere}
