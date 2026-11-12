@@ -173,6 +173,11 @@
     }).catch(function () { toast("Angebot konnte nicht geladen werden", true); });
   }
   function offerOn() { return !!(S.offer && S.file && S.file.fileId === S.offer.fileId); }
+  /* Datencheck-Aufpreise im Warenkorb sichtbar (Simon 12.11.2026: „die 20 € Datenaufbereitung fehlen“) – Zeilen über der Summe und Hinweis je Position */
+  function cartFeeRows(t, co) { if (!t || !t.fee) return ""; var fx = function (g) { return eur(co ? g / (1 + (t.rate || 0) / 100) : g); };
+    return '<div class="ps-feerows">' + (t.nGra ? '<div><span>Grafikaufbereitung' + (t.nGra > 1 ? " × " + t.nGra : "") + '</span><b>' + fx(t.nGra * GRAPHIC_CHECK) + "</b></div>" : "") + (t.nPro ? '<div><span>Profi-Datencheck' + (t.nPro > 1 ? " × " + t.nPro : "") + '</span><b>' + fx(t.nPro * PRO_CHECK) + "</b></div>" : "") + "</div>"; }
+  function checkLine(x) { var v = itemCheck(x), co = S.ctype === "company", g = v === "graphic" ? GRAPHIC_CHECK : v === "pro" ? PRO_CHECK : 0; if (!g) return "";
+    var r = (S.price && S.price.rate) || 20; return '<span class="ps-ci-fee">+ ' + (v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + ": <b>" + eur(co ? g / (1 + r / 100) : g) + "</b> " + (co ? "netto" : "inkl. USt") + "</span>"; }
   function feeLine(x) { var f = x.designFee; if (!f) return ""; var co = S.ctype === "company"; return '<span class="ps-ci-fee">+ Grafikbearbeitung durch FS Creative: <b>' + eur(co ? f.net : f.gross) + "</b> " + (co ? "netto" : "inkl. USt") + " · fester Bestandteil dieses Angebots</span>"; }
   function cartAdd() {
     var pr = S.price || {}, pv = S.previews && S.previews[0];
@@ -262,14 +267,14 @@
     S.cart.forEach(function (x) {
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
-      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + checkLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         (x.fileId ? ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.motifs && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
     h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
-      '<aside class="ps-price"><h3>Summe</h3><div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
-      '<p class="note">inkl. Versand innerhalb Österreichs · Datencheck kostenlos. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Zur Kasse →</button></aside></div>';
+      '<aside class="ps-price"><h3>Summe</h3>' + cartFeeRows(t, co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
+      '<p class="note">inkl. Versand innerhalb Österreichs · ' + (t.nGra ? "inkl. Grafikaufbereitung" + (t.nPro ? " und Profi-Datencheck" : "") : t.nPro ? "inkl. Profi-Datencheck" : "Datencheck kostenlos") + '. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Zur Kasse →</button></aside></div>';
     return h;
   }
 

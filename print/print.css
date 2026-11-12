@@ -2404,3 +2404,4 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-cv .ps-drop.small{margin-top:6px}
 .ps-ok-t{color:#1d8f3c;font-weight:600}
 .ps-cv-b>div{min-width:0}.ps-cv-b p{overflow-wrap:anywhere}
+.ps-feerows{display:grid;gap:4px;margin:0 0 10px;padding:0 0 10px;border-bottom:1px solid var(--ps-line2);font-size:14px}.ps-feerows>div{display:flex;justify-content:space-between;gap:10px}
