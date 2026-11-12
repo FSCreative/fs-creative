@@ -145,7 +145,7 @@ function chShow(i,el){ var t=document.getElementById("fchTip"); if(t) t.innerHTM
 document.addEventListener("mouseover",function(e){ var g=e.target&&e.target.closest&&e.target.closest(".fch-m"); if(g) chShow(+g.getAttribute("data-chm"),g); });
 F.action("chm",function(v,el){ chShow(+v,el); });
 
-/* Plattform-Kacheln (Blitzdings, kochdu, Kantineur, Skikaiser, Hüttengaudi): Umsatz groß, Kennzahlen darunter, Mollie-Stand */
+/* Plattform-Kacheln (Blitzdings, kochdu, Kantineur, Skikaiser, Druckshop): Umsatz groß, Kennzahlen darunter, Mollie-Stand */
 function platTiles(){
   var P=(F.D&&F.D.platforms)||{}, c=function(v){ return eur0((+v||0)/100); }, out=[];
   var moOf=function(rx){ var p=null; (MO&&MO.summary||[]).forEach(function(m){ (m.byProfile||[]).forEach(function(b){ if(rx.test(b.name)) p=b; }); }); if(!p) return "";
@@ -155,12 +155,15 @@ function platTiles(){
   var k=P.kochdu; if(k&&k.totals){ var t=k.totals; out.push(tile("kochdu","kochdu",c((+t.onlineProvisionCents||0)+(+t.barProvisionCents||0)),"Provisionen gesamt",[["online / bar",c(t.onlineProvisionCents)+" / "+c(t.barProvisionCents)],["Bar noch offen",c(t.barOpenCents)],["Bestellungen",((+t.onlineOrders||0)+(+t.barOrders||0))+" · "+((k.restaurants||[]).length)+" Lokale"],["Nutzer",(k.nutzer&&k.nutzer.gesamt)||0]],moOf(/koch/i))); }
   var q=P.kantineur; if(q&&q.canteens) out.push(tile("kantineur","Kantineur",c(q.mrrCents)+"<small>/Monat</small>","wiederkehrend (MRR)",[["Umsatz bisher",c(q.revenueGrossCents)],["Kantinen aktiv",(q.canteens.byStatus&&q.canteens.byStatus.ACTIVE)||q.canteens.total||0],["zahlend / gesponsert",((q.subscribers||{}).paying||0)+" / "+((q.subscribers||{}).sponsored||0)]],moOf(/kantin/i)));
   var game=function(key,name,d){ if(!d||!d.configured) return; var t=d.totals||{}, u=d.users||{}; out.push(tile(key,name,c(t.proceedsCents),"Erlöse (nach Store-Gebühr)",[["Käufe",(t.count||0)+(t.refunds?" · "+t.refunds+" erstattet":"")],["Spieler",(u.total!=null?u.total:u.gesamt)||0],["aktiv 30 Tage",(u.aktiv&&u.aktiv.monat!=null?u.aktiv.monat:u.aktiv30)||0]])); };
-  game("skikaiser","Skikaiser",F.D&&F.D.skikaiser); game("huettengaudi","Hüttengaudi",F.D&&F.D.huettengaudi);
+  game("skikaiser","Skikaiser",F.D&&F.D.skikaiser);
+  /* Druckshop statt Hüttengaudi (Simon 12.11.2026) – Zahlen wie unter Plattformen → Druckshop */
+  var ps=F.prStats&&F.prStats(); if(!ps&&F.loadPrint&&!C.busy.pr){ C.busy.pr=1; F.loadPrint().then(function(r){ C.busy.pr=0; if(r&&F.current==="geld") F.render(); }); }
+  if(ps) out.push(tile("druck","Druckshop",eur0(ps.gross),"Umsatz (brutto)",[["Marge",eur0(ps.margin)],["diesen Monat",eur0(ps.mGross)],["Bestellungen",ps.n]],moOf(/print|druck/i)));
   if(!out.length) return "";
   if(!MO&&!C.busy.mo){ C.busy.mo=1; F.api("/admin/api/fin/mollie?year="+F.D.year).then(function(j){ C.busy.mo=0; MO=j||{ok:false}; F.render(); }); }
   return '<div class="pt-wrap"><div class="fsd-ch" style="margin:4px 2px 8px"><b>Plattformen</b><span class="muted">'+esc(String(F.D.year))+' · live</span></div><div class="pt-grid">'+out.join("")+'</div></div>';
 }
-F.action("platgo",function(k){ var t={blitzdings:"blitz",kochdu:"kochdu",kantineur:"kantineur",skikaiser:"ski",huettengaudi:"hg"}[k]||"ueb"; F.UI.plat=t; F.ls("fsc_plat_tab",t); F.go("plat"); window.scrollTo(0,0); });
+F.action("platgo",function(k){ var t={blitzdings:"blitz",kochdu:"kochdu",kantineur:"kantineur",skikaiser:"ski",huettengaudi:"hg",druck:"druck"}[k]||"ueb"; F.UI.plat=t; F.ls("fsc_plat_tab",t); F.go("plat"); window.scrollTo(0,0); });
 /* Jahreszahlen wie in der Desktop-Übersicht: Umsatz netto (Rechnungen ohne Stornierte + Einnahme-Belege), Aufwand netto ohne Anlagenkäufe + AfA */
 function yearFig(){
   var sev=F.D.sev, y=String(F.D.year); vouLoad();
@@ -1047,7 +1050,8 @@ function mDash(){
   if(P.blitzdings&&P.blitzdings.revenue) plat.push(mRow("platgo:blitzdings","Blitzdings",((P.blitzdings.bookings||{}).upcomingCount||0)+" Buchungen kommend · offen "+c(P.blitzdings.revenue.openCents),c(P.blitzdings.revenue.paidCents),"<span class='fsm-s'>bezahlt</span>"));
   if(P.kochdu&&P.kochdu.totals){ var t=P.kochdu.totals; plat.push(mRow("platgo:kochdu","kochdu","Provisionen · bar offen "+c(t.barOpenCents),c((+t.onlineProvisionCents||0)+(+t.barProvisionCents||0)),"<span class='fsm-s'>gesamt</span>")); }
   if(P.kantineur&&P.kantineur.canteens) plat.push(mRow("platgo:kantineur","Kantineur",((P.kantineur.canteens.byStatus&&P.kantineur.canteens.byStatus.ACTIVE)||0)+" Kantinen aktiv",c(P.kantineur.mrrCents),"<span class='fsm-s'>pro Monat</span>"));
-  [["skikaiser","Skikaiser"],["huettengaudi","Hüttengaudi"]].forEach(function(g){ var d=F.D&&F.D[g[0]]; if(d&&d.configured) plat.push(mRow("platgo:"+g[0],g[1],((d.users||{}).total||(d.users||{}).gesamt||0)+" Spieler",c((d.totals||{}).proceedsCents),"<span class='fsm-s'>Erlöse</span>")); });
+  var psm=F.prStats&&F.prStats(); if(!psm&&F.loadPrint&&!C.busy.pr){ C.busy.pr=1; F.loadPrint().then(function(r){ C.busy.pr=0; if(r&&F.current==="geld") F.render(); }); } if(psm) plat.push(mRow("platgo:druck","Druckshop",psm.n+" Bestellungen · Marge "+eur0(psm.margin),eur0(psm.gross),"<span class='fsm-s'>Umsatz</span>"));
+  [["skikaiser","Skikaiser"]].forEach(function(g){ var d=F.D&&F.D[g[0]]; if(d&&d.configured) plat.push(mRow("platgo:"+g[0],g[1],((d.users||{}).total||(d.users||{}).gesamt||0)+" Spieler",c((d.totals||{}).proceedsCents),"<span class='fsm-s'>Erlöse</span>")); });
   return '<div class="fsm-quick">'+scanInput("fsm-q fsm-q1","Scannen")+'<button type="button" class="fsm-q" data-act="newinvoice">'+ic("inv")+'<span>Rechnung</span></button><button type="button" class="fsm-q" data-act="voucher">'+ic("vou")+'<span>Ausgabe</span></button></div>'+
     '<section class="fsm-card fsm-hero"><div class="fsm-hh"><span>'+esc(fg.y)+' bis heute</span><button type="button" class="link small" data-act="fin:steuer">Steuern →</button></div>'+
       '<div class="fsm-h3"><div><span>Umsatz netto</span><b>'+(fg.ready?eur0(fg.tr):"…")+'</b><i>brutto '+(fg.ready?eur0(fg.trG):"…")+'</i></div><div><span>Ausgaben</span><b>'+(fg.ready?eur0(fg.te):"…")+'</b><i>inkl. Abschreibung</i></div><div><span>Gewinn</span><b class="'+(res<0?"bad-t":"ok-t")+'">'+(fg.ready?eur0(res):"…")+'</b><i>vor Steuern</i></div></div>'+

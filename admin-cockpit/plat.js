@@ -18,6 +18,7 @@ function prStats(){ if(!PRS) return null; var y=String(F.D.year), m=new Date().t
   var sum=function(a,k){ return a.reduce(function(s,o){ return s+(+o[k]||0); },0); }, lm=l.filter(function(o){ return String(o.createdAt||"").slice(0,7)===m; });
   var open=PRS.filter(function(o){ return o.status==="invoice_requested"||(o.status==="pending_payment"&&o.payment!=="mollie"); });
   return { n:l.length, gross:sum(l,"gross"), net:sum(l,"net"), margin:sum(l,"margin"), mN:lm.length, mGross:sum(lm,"gross"), mMargin:sum(lm,"margin"), open:sum(open,"gross"), last:PRS.slice().sort(function(a,b){ return String(b.createdAt).localeCompare(String(a.createdAt)); }).slice(0,8), all:l }; }
+F.prStats=prStats; F.loadPrint=loadPrint;   /* auch für die Finanzen-Übersicht (zfin.js) */
 function vDruck(){ var st=prStats(); if(!st) return '<div class="panel empty"><span class="spin"></span> Druckshop-Zahlen werden geladen …</div>';
   var by={}; st.all.forEach(function(o){ var k=o.product||o.title||"Sonstiges"; by[k]=(by[k]||0)+(+o.gross||0); });
   var top=Object.keys(by).sort(function(a,b){ return by[b]-by[a]; }).slice(0,6);
