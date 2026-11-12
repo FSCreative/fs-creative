@@ -315,9 +315,9 @@
         ((x.fileId || x.noFile) && !x.motifs && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
-    h += svcRows(co) + "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
+    h += svcRows(co) + "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Weiter zur Lieferung</button></div></div>' +
       '<aside class="ps-price"><h3>Summe</h3>' + cartSumList(co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
-      '<p class="note">inkl. Versand innerhalb Österreichs · ' + (t.nGra ? "inkl. Grafikaufbereitung" + (t.nPro ? " und Profi-Datencheck" : "") : t.nPro ? "inkl. Profi-Datencheck" : "Datencheck kostenlos") + '. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Zur Kasse →</button></aside></div>';
+      '<p class="note">inkl. Versand innerhalb Österreichs · ' + (t.nGra ? "inkl. Grafikaufbereitung" + (t.nPro ? " und Profi-Datencheck" : "") : t.nPro ? "inkl. Profi-Datencheck" : "Datencheck kostenlos") + '. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Weiter zur Lieferung →</button></aside></div>';
     return h;
   }
 
@@ -1215,7 +1215,7 @@
       var t5 = cartTotals(), co5 = S.ctype === "company", m5 = document.createElement("div"); m5.className = "ps-mbar"; m5.id = "psMbar";
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Zur Bestellübersicht & Checkout</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
     if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
-      m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Zur Kasse</button>'; root.appendChild(m4); }
+      m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Weiter zur Lieferung</button>'; root.appendChild(m4); }
     if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) { renderPrice(); secNav(); fillRows(); dlKick(); }
   }
