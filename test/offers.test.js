@@ -254,6 +254,22 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
         await page.evaluate(() => window.FSC.openInvoice({}));
         assert.ok(/Neue Rechnung/.test(await page.textContent("#modalHost h2"))); assert.ok(await page.$('#modalHost [name="delivery"]')); assert.ok(!(await page.$('#modalHost [name="valid"]')));
         await page.evaluate(() => window.FSC.closeModal());
+        // Positionen per Drag & Drop umsortieren (Wunsch Simon 12.11.2026): dritte Position am Griff nach oben ziehen, danach Pfeiltaste
+        await page.evaluate(() => window.FSC.openInvoice({ items: [{ name: "Alpha", qty: 1, priceGross: 10, taxRate: 20 }, { name: "Beta", qty: 1, priceGross: 20, taxRate: 20 }, { name: "Gamma", qty: 1, priceGross: 30, taxRate: 20 }] }));
+        const names = () => page.$$eval('#irows .irow [data-i="name"]', (els) => els.map((e) => e.value).join(","));
+        assert.strictEqual(await names(), "Alpha,Beta,Gamma");
+        await new Promise((r) => setTimeout(r, 1200)); await page.evaluate(() => { const d = document.querySelector("#modalHost .dialog"), r = document.getElementById("irows"); d.scrollTop = r.getBoundingClientRect().top - d.getBoundingClientRect().top + d.scrollTop - 150; });
+        await new Promise((r) => setTimeout(r, 400));
+        const g = await page.$$("#irows .irow [data-grip]"), b3 = await g[2].boundingBox(), b1 = await (await page.$("#irows .irow")).boundingBox();
+        await page.mouse.move(b3.x + b3.width / 2, b3.y + b3.height / 2); await page.mouse.down();
+        for (let k = 1; k <= 8; k++) await page.mouse.move(b3.x + b3.width / 2, b3.y + (b1.y + 4 - b3.y) * k / 8);
+        await page.mouse.up();
+        assert.strictEqual(await names(), "Gamma,Alpha,Beta", "per Ziehen nach oben");
+        if (process.env.OFFERS_SHOT) await page.screenshot({ path: process.env.OFFERS_SHOT.replace(/\.png$/, "-pos.png") });
+        await (await page.$$("#irows .irow [data-grip]"))[0].focus(); await page.keyboard.press("ArrowDown");
+        assert.strictEqual(await names(), "Alpha,Gamma,Beta", "per Pfeiltaste");
+        assert.ok(/60,00/.test(await page.textContent("#invSum")), "Summe bleibt");
+        await page.evaluate(() => window.FSC.closeModal());
         // Status-Dialog öffnet
         await page.evaluate(() => window.FSC.go("kunden")); await page.waitForSelector('[data-act="offstat:502"]');
         await page.click('[data-act="offstat:502"]'); assert.ok(/Status von AN-1002/.test(await page.textContent("#modalHost")));
