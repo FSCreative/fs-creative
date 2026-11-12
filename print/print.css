@@ -2423,3 +2423,7 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-pwm small{font-size:12.5px;opacity:.85}.ps-pwm.l1 i{background:#e5484d}.ps-pwm.l2 i{background:#f5a524}.ps-pwm.l3 i{background:#30a46c}
 
 .ps-sumlist .ps-sl-d{display:grid;gap:1px;justify-items:start;height:auto;width:auto}.ps-sumlist .ps-sl-d .l1{white-space:nowrap}.ps-sumlist .ps-sl-d .l2{font-size:12px;opacity:.75}.ps-sumlist .ps-sl-d .ps-link{margin:2px 0 0}
+
+/* Ausführung am Handy (Simon 12.11.2026): aufgeklappte Auswahl über die volle Breite, Kacheln nie breiter als der Bildschirm */
+.ps-opgrid,.ps-oc,.ps-ocb{min-width:0}.ps-ocb b,.ps-ocb small{overflow-wrap:anywhere}
+@media (max-width:600px){.ps-cfg .ps-tile.open>.ps-op{grid-column:1/-1!important;margin-left:0}.ps-cfg .ps-tile.open .ps-opgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
