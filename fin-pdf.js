@@ -103,11 +103,21 @@ module.exports = function (D) {
     if (contact && contact.vatNumber) { doc.font("Helvetica").fontSize(7.5).fillColor(MUTED).text("UID Empfänger: " + contact.vatNumber, L, addrEnd + 4, { width: 250 }); }
 
     // Überschrift (nur wenn eigene) + Einleitung
+    // Adressen im Text anklickbar (Simon 12.11.2026: Bestelllinks im Angebot) – Zeile für Zeile, URL blau + unterstrichen mit Link
+    const URL_RX = /(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])/g, LINKC = "#1a5fd0";
+    const segs = line => String(line).split(URL_RX).filter(x => x !== "");
+    const segDraw = (parts, col, op, first) => parts.forEach((pt, k) => { const u = /^https?:\/\//.test(pt), last = k === parts.length - 1;
+      doc.fillColor(u ? LINKC : col); const o2 = Object.assign({}, op, { continued: !last, link: u ? pt : null, underline: u });
+      if (k === 0 && first) first(pt, o2); else doc.text(pt, o2); });
+    const textL = (str, x, y0, op, col) => { if (!/https?:\/\//.test(str)) { doc.fillColor(col).text(str, x, y0, op); return; }
+      String(str).split("\n").forEach((line, li) => { const parts = segs(line); if (!parts.length) parts.push(" ");
+        segDraw(parts, col, op, (pt, o2) => doc.text(pt, x, li ? doc.y : y0, o2)); });
+      doc.fillColor(col); };
     let y = Math.max(top + 120, iy + 24, doc.y + 24);
     const hd = strip(o.header), generic = !hd || /^(rechnung|angebot|gutschrift|stornorechnung|auftragsbestätigung|lieferschein|zahlungserinnerung|abschlagsrechnung)(\s+(nr\.?\s*)?[A-Z]{2}-?\d+)?$/i.test(hd);
     if (!generic) { doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(hd, L, y, { width: R - L }); y = doc.y + 10; }
     const head = strip(o.headText) || (isOrder ? "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage. Gerne unterbreite ich Ihnen folgendes Angebot:" : it === "MA" ? "" : "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihren Auftrag und das damit verbundene Vertrauen!\nHiermit stelle ich Ihnen die folgenden Leistungen in Rechnung:");
-    if (head) { doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(head, L, y, { width: R - L, lineGap: 2 }); y = doc.y + 16; }
+    if (head) { doc.font("Helvetica").fontSize(9.5); textL(head, L, y, { width: R - L, lineGap: 2 }, INK); y = doc.y + 16; }
 
     // Produktfotos je Position (Angebote mit Bildern): vorab laden – JPG über Contentful (pdfkit kann kein WebP), 8 s Zeitlimit, Fehler → ohne Bild
     const IMG = {};
@@ -121,8 +131,8 @@ module.exports = function (D) {
     const richLines = t => String(t || "").split("\n").map(l => { const m = l.match(/^([A-ZÄÖÜ][A-ZÄÖÜa-zäöüß0-9 &/.()-]{2,40}:)\s*(.*)$/); return m ? [m[1] + " ", m[2]] : ["", l]; });
     const richH = (t, w, fs) => richLines(t).reduce((h, l) => h + doc.font("Helvetica").fontSize(fs).heightOfString((l[0] + l[1]) || " ", { width: w }) + 1, 0);
     const richDraw = (t, x, y0, w, fs, col) => { let yy = y0; richLines(t).forEach(l => { const s = (l[0] + l[1]) || " ", h = doc.font("Helvetica").fontSize(fs).heightOfString(s, { width: w });
-      if (l[0]) { doc.font("Helvetica-Bold").fontSize(fs).fillColor(INK).text(l[0], x, yy, { width: w, continued: true }); doc.font("Helvetica").fillColor(col).text(l[1], { width: w }); }
-      else doc.font("Helvetica").fontSize(fs).fillColor(col).text(s, x, yy, { width: w }); yy += h + 1; }); };
+      if (l[0]) { doc.font("Helvetica-Bold").fontSize(fs).fillColor(INK).text(l[0], x, yy, { width: w, continued: true }); doc.font("Helvetica"); const ps = segs(l[1]); if (!ps.length) ps.push(" "); segDraw(ps, col, { width: w }); }
+      else { doc.font("Helvetica").fontSize(fs); textL(s, x, yy, { width: w }, col); } yy += h + 1; }); };
 
     // Tabelle
     const showNet = String(o.showNet) !== "0" && o.showNet !== false;
@@ -151,7 +161,7 @@ module.exports = function (D) {
         [[cx.desc, w1], [cx.desc + w1 + 8, w2], [cx.desc + w1 + 16 + w2, w2]].slice(0, pics.length).forEach((c, k) => { doc.save(); doc.roundedRect(c[0], py, c[1], PH, 6).fill("#f3f2ef"); doc.restore();
           try { doc.image(pics[k], c[0] + 4, py + 4, { fit: [c[1] - 8, PH - 8], align: "center", valign: "center" }); } catch (e) {} });
         if (txt) richDraw(txt, cx.desc, py + PH + 12, TW, tfs, "#3a3a3a");
-      } else if (txt) doc.font("Helvetica").fontSize(7.8).fillColor(MUTED).text(txt, cx.desc, ty + hName + 2, { width: 268 });
+      } else if (txt) { doc.font("Helvetica").fontSize(7.8); textL(txt, cx.desc, ty + hName + 2, { width: 268 }, MUTED); }
       const uName = unitName(p.unity);
       doc.font("Helvetica").fontSize(9).fillColor(INK).text((Math.round(q * 100) / 100).toLocaleString("de-AT") + (uName ? " " + uName : ""), cx.qty - 30, ty, { width: 86, align: "right" })
         .text(unitTxt, cx.unit - 6, ty, { width: 62, align: "right" }).text((+p.taxRate || 0) + " %", cx.tax, ty, { width: 30, align: "right" });
@@ -191,7 +201,7 @@ module.exports = function (D) {
     // Gruß + Name setzt das PDF selbst darunter – aus sevDesk übernommene Fußtexte enthalten ihn schon („Mit freundlichen Grüßen [%KONTAKTPERSON%]“) → nicht doppelt
     const foot = strip(o.footText).replace(/\n*\s*mit freundlichen gr(ü|ue)(ß|ss)en[\s,]*(\[%KONTAKTPERSON%\]|[^\n]{0,60})?\s*$/i, "").replace(/\[%KONTAKTPERSON%\]/gi, F.contactPerson || F.owner || "").trim() || (isOrder ? "Dieses Angebot ist 30 Tage gültig." : isCn ? "Der Betrag wird Ihnen gutgeschrieben bzw. überwiesen." : "Zahlbar innerhalb von " + (o.timeToPay || 14) + " Tagen ohne Abzug. Bitte bei der Überweisung die Rechnungsnummer " + nr + " angeben.");
     if (y > H - FH - 80) { doc.addPage(); y = 60; }
-    doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(foot, L, y, { width: R - L - 140, lineGap: 2 }); y = doc.y + 12;
+    doc.font("Helvetica").fontSize(9.5); textL(foot, L, y, { width: R - L - 140, lineGap: 2 }, INK); doc.fillColor(INK); y = doc.y + 12;
     doc.text("Mit freundlichen Grüßen", L, y); doc.font("Helvetica-Bold").text(F.owner || F.contactPerson || "", L, doc.y + 3);
     doc.end();
     return done;
