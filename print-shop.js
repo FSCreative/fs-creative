@@ -247,7 +247,7 @@ function bonusCalc(orders, at) {
 }
 
 // Shop-AGB: Version wird bei jeder Bestellung gespeichert (bei Änderung der AGB hochzählen, Datum = Stand)
-const AGB_VERSION = "2026-11-06";
+const AGB_VERSION = "2026-11-12";   // 12.11.2026: keine Haftung für Lieferverzögerungen (Pkt. 5)
 // Mitgelieferte Schriften (SIL Open Font License, latin-Teilmenge, aus @fontsource) – Browser und PDF nutzen dieselben Dateien (print/fonts/*.woff)
 const FONTS = [
   ["Inter", "inter", 1], ["Open Sans", "open-sans", 1], ["Montserrat", "montserrat", 1], ["Lato", "lato", 1], ["Poppins", "poppins", 1], ["Raleway", "raleway", 1], ["Nunito", "nunito", 1],

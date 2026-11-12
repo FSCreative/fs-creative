@@ -176,6 +176,41 @@
   /* Datencheck-Aufpreise im Warenkorb sichtbar (Simon 12.11.2026: „die 20 € Datenaufbereitung fehlen“) – Zeilen über der Summe und Hinweis je Position */
   function cartFeeRows(t, co) { if (!t || !t.fee) return ""; var fx = function (g) { return eur(co ? g / (1 + (t.rate || 0) / 100) : g); };
     return '<div class="ps-feerows">' + (t.nGra ? '<div><span>Grafikaufbereitung' + (t.nGra > 1 ? " × " + t.nGra : "") + '</span><b>' + fx(t.nGra * GRAPHIC_CHECK) + "</b></div>" : "") + (t.nPro ? '<div><span>Profi-Datencheck' + (t.nPro > 1 ? " × " + t.nPro : "") + '</span><b>' + fx(t.nPro * PRO_CHECK) + "</b></div>" : "") + "</div>"; }
+  /* Zusammenfassung bei der Summe (Simon 12.11.2026): jede Position mit Preis, darunter Liefertermin + „Lieferzeit anpassen“ (Kalender im Pop-up, Preis passt sich an) */
+  function dLong(d) { return d ? new Date(d + "T12:00:00").toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "short" }) : ""; }
+  function cartSumList(co) { if (!S.cart.length) return "";
+    return '<ul class="ps-sumlist">' + S.cart.map(function (x) { var pr = x.price, dd = pr && pr.deliveryDate;
+      return '<li><div class="r"><span>' + esc(x.title) + (+x.copies > 1 ? ' <small>· ' + (+x.copies).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small>" : "") + '</span><b>' + (pr ? eur(co ? pr.net : pr.gross) : "…") + "</b></div>" +
+        '<div class="d">' + (dd ? "Lieferung " + esc(dLong(dd)) + (x.wish ? " (Wunschtermin)" : "") : S.quoting ? "Liefertermin wird berechnet …" : "") + ' <button type="button" class="ps-link" data-act="cartday:' + esc(x.id) + '">Lieferzeit anpassen</button></div></li>'; }).join("") + "</ul>"; }
+  function cartDay(id) {
+    var x = S.cart.filter(function (c) { return c.id === id; })[0]; if (!x) return; var co = S.ctype === "company";
+    var back = document.activeElement, ov = document.createElement("div"); ov.className = "ps-pop ps-daypop"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Lieferzeit anpassen");
+    ov.innerHTML = '<div class="ps-pop-c ps-daypop-c"><div class="ps-daypop-h"><div><b>Lieferzeit anpassen</b><small>' + esc(x.title) + " · " + esc(itemLine(x)) + '</small></div><button type="button" class="ps-pv-x" data-dpx aria-label="Schließen">✕</button></div><div class="ps-daypop-b"><span class="ps-spin"></span> Liefertermine werden geladen …</div></div>';
+    document.body.appendChild(ov); document.documentElement.classList.add("ps-noscroll");
+    var close = function () { document.removeEventListener("keydown", key); ov.remove(); document.documentElement.classList.remove("ps-noscroll"); if (back && back.focus) back.focus(); };
+    var key = function (e) { if (e.key === "Escape") close(); }; document.addEventListener("keydown", key);
+    ov.addEventListener("click", function (e) { if (e.target === ov || e.target.closest("[data-dpx]")) { close(); return; }
+      var c = e.target.closest("[data-dp]"); if (!c) return; var v = c.getAttribute("data-dp").split("|");
+      x.urgency = v[0]; x.wish = v[1] || undefined; cartSave(true); close(); toast("Liefertermin geändert – Preis wird aktualisiert"); requoteCart(); render(); });
+    var q = function (u) { return api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: u, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }).then(function (j) { return j && j.ok ? { u: u, j: j } : null; }).catch(function () { return null; }); };
+    api("/print/api/product?key=" + encodeURIComponent(x.product), null, "GET").then(function (pj) { var pp = (pj && (pj.product || pj)) || {}, urg = (pp.urgency || []).map(function (u) { return u.slug; }); if (!urg.length) urg = [x.urgency || "standard"];
+      return Promise.all(urg.map(q)); }).then(function (rs) {
+      var C = { standard: "g", quick: "p", urgent: "y" }, ORD = ["standard", "quick", "urgent"], by = {};
+      rs.filter(Boolean).forEach(function (r) { var lg = function (o) { return co ? o.net : o.gross; }; (r.j.price.days && r.j.price.days.length ? r.j.price.days : [{ d: r.j.price.deliveryDate, net: r.j.price.net, gross: r.j.price.gross }]).forEach(function (o) { if (!o.d) return; var pr = lg(o);
+        if (!by[o.d] || pr < by[o.d].p - 0.004 || (Math.abs(pr - by[o.d].p) < 0.005 && ORD.indexOf(r.u) < ORD.indexOf(by[o.d].u))) by[o.d] = { u: r.u, p: pr, c: C[r.u] || "g" }; }); });
+      var dates = Object.keys(by).sort(); if (!dates.length) { ov.querySelector(".ps-daypop-b").innerHTML = '<p class="pd-muted">Für diese Ausführung sind gerade keine Liefertermine abrufbar.</p>'; return; }
+      var iso = function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); };
+      var t0 = new Date(), start = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + 1), last = new Date(dates[dates.length - 1] + "T12:00:00");
+      var mon = new Date(start.getFullYear(), start.getMonth(), start.getDate() - ((start.getDay() + 6) % 7)), cells = [];
+      for (var d1 = new Date(mon); d1 <= last || cells.length % 7; d1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate() + 1)) { cells.push(d1); if (cells.length > 42) break; }
+      var cur = x.price && x.price.deliveryDate, MO = ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."], used = {}; dates.forEach(function (k) { used[by[k].c] = 1; });
+      ov.querySelector(".ps-daypop-b").innerHTML = '<p class="pd-muted">Tippe auf einen Tag – der Preis der Position passt sich an (' + (co ? "netto" : "inkl. USt") + ', inkl. Versand).</p><div class="ps-urk" role="grid" aria-label="Liefertermine"><div class="hd">' + ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(function (w) { return "<span>" + w + "</span>"; }).join("") + "</div>" +
+        [0, 1, 2, 3, 4, 5].filter(function (w) { return w * 7 < cells.length; }).map(function (w) { return '<div class="wk">' + cells.slice(w * 7, w * 7 + 7).map(function (d, j) { var k = iso(d), o = by[k], on = k === cur, past = d < start;
+          return '<div class="c' + (j > 4 ? " we" : "") + (past ? " past" : o ? " has" : " none") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-dp="' + esc(o.u) + "|" + k + '"' : "") + '><span class="n">' + d.getDate() + (j === 0 || d.getDate() === 1 ? "<small>" + MO[d.getMonth()] + "</small>" : "") + "</span>" + (o ? '<span class="pp"><i class="d ' + o.c + '"></i>' + eur(o.p) + "</span>" : "") + "</div>"; }).join("") + "</div>"; }).join("") + "</div>" +
+        '<div class="ps-urk-l">' + [["g", "Standard"], ["p", "Schnell"], ["y", "Express"]].filter(function (z) { return used[z[0]]; }).map(function (z) { return '<span><i class="d ' + z[0] + '"></i>' + z[1] + "</span>"; }).join("") + "</div>" +
+        '<p class="pd-muted" style="font-size:12.5px">Lieferung frei Haus innerhalb Österreichs · Zustellung durch den Paketdienst, in Einzelfällen auch erst am darauffolgenden Werktag.</p>';
+    });
+  }
   function checkLine(x) { var v = itemCheck(x), co = S.ctype === "company", g = v === "graphic" ? GRAPHIC_CHECK : v === "pro" ? PRO_CHECK : 0; if (!g) return "";
     var r = (S.price && S.price.rate) || 20; return '<span class="ps-ci-fee">+ ' + (v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + ": <b>" + eur(co ? g / (1 + r / 100) : g) + "</b> " + (co ? "netto" : "inkl. USt") + "</span>"; }
   function feeLine(x) { var f = x.designFee; if (!f) return ""; var co = S.ctype === "company"; return '<span class="ps-ci-fee">+ Grafikbearbeitung durch FS Creative: <b>' + eur(co ? f.net : f.gross) + "</b> " + (co ? "netto" : "inkl. USt") + " · fester Bestandteil dieses Angebots</span>"; }
@@ -274,7 +309,7 @@
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
     h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
-      '<aside class="ps-price"><h3>Summe</h3>' + cartFeeRows(t, co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
+      '<aside class="ps-price"><h3>Summe</h3>' + cartSumList(co) + cartFeeRows(t, co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
       '<p class="note">inkl. Versand innerhalb Österreichs · ' + (t.nGra ? "inkl. Grafikaufbereitung" + (t.nPro ? " und Profi-Datencheck" : "") : t.nPro ? "inkl. Profi-Datencheck" : "Datencheck kostenlos") + '. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Zur Kasse →</button></aside></div>';
     return h;
   }
@@ -2844,6 +2879,7 @@
     if (k === "stucancel") { S.cartEdit = ""; S.file = null; S.previews = null; S.mode = ""; go(4); return; }
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cpages") { pagesView(v); return; }
+    if (k === "cartday") { cartDay(v); return; }
     if (k === "pgmove") { var pm = v.split("|"); movePage(+pm[0], +pm[0] + (+pm[1])); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
