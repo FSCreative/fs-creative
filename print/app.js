@@ -549,8 +549,22 @@
   function fixLabels(list) { (list || []).forEach(function (p) { if (PDESC[p.key]) p.desc = PDESC[p.key];
     (p.props || []).forEach(function (pr) { if (pr.slug === "number_of_contour_lines") { pr.title = "Anzahl Konturen (Schnittformen)"; pr.options.forEach(function (o) { o.name = o.slug + (o.slug === "1" ? " Kontur" : " Konturen"); o.desc = CONTOUR_HELP; delete o.more; }); }
     });
-    (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
+    (p.props || []).forEach(function (pr) { plainLbl(pr); var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
 
+  // Laienverständliche Bezeichnungen (Simon 12.11.2026) – allgemein per Muster für alle Produkte, Fachbegriff bleibt in Klammern erkennbar
+  var SPOT_SIDE = { vorderseite: "vorne", "rückseite": "hinten" };
+  function plainLbl(pr) {
+    var sl = pr.slug, t = String(pr.title || "").trim();
+    if (sl === "printtype" || sl === "printtype_cover") { if (/^Farbigkeit$/i.test(t)) pr.title = "Druck";
+      pr.options.forEach(function (o) { var m = String(o.name).match(/^(Einseitig|Beidseitig)(,)?\s+(.+)$/); if (m) o.name = (m[1] === "Einseitig" ? "Nur Vorderseite" : "Vorder- und Rückseite") + (m[2] ? ", " : " ") + m[3]; }); }
+    if (/^spot_finish/.test(sl)) { var sm = t.match(/^Spot[- ]?Veredelung\s*(.*)$/i); if (sm) { var sd = sm[1].trim(); pr.title = "Glanz-/Folieneffekt an Stellen" + (sd ? " (" + (SPOT_SIDE[sd.toLowerCase()] || sd.toLowerCase()) + ")" : ""); }
+      pr.options.forEach(function (o) { var n = String(o.name), fm = n.match(/^Digitale Relieffolie (.+?)( beidseitig)?$/);
+        if (fm) o.name = fm[1] + "-Folie, fühlbar erhaben" + (fm[2] ? " – beidseitig" : "");
+        else if (/^Partieller UV-Lack(?: 3D)? \(\d+\s*μm\)$/.test(n)) o.name = n.replace(/^Partieller UV-Lack(?: 3D)? \((\d+)\s*μm\)$/, "Glanzlack, fühlbar erhaben (UV-Lack $1 μm)");
+        else if (/^Partieller UV-Lack/.test(n)) o.name = "Glanzlack, glatt (UV-Lack)"; }); }
+    if (sl === "variable_creasing_line") { pr.title = "Knicklinien (zum Falten)";
+      pr.options.forEach(function (o) { var n = String(o.name); if (/^Keine Rillung$/i.test(n)) o.name = "Keine"; else o.name = n.replace(/Falzlinie(n?)\b/, "Knicklinie$1"); }); }
+  }
   function prodByKey(k) { return ((S.cat && S.cat.products) || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
   var isLogo = function () { return kind() === "textile" || kind() === "promo"; };
@@ -644,9 +658,21 @@
       (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + "<b>" + esc(nm) + "</b>" + (hint ? "<small>" + esc(hint) + "</small>" : "") + '<span class="ps-oc-f">' + (x.best ? '<em>Beliebt</em>' : "") + (sel ? '<span class="ps-oc-ok">✓ gewählt</span>' : dlSpan(key, x)) + "</span></button>" +
       (x.desc || x.img ? '<button type="button" class="ps-oc-i" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>";
   }
+  // Schnellfilter für lange Materiallisten (Simon 12.11.2026: statt durch 76 Papiere zu scrollen) – per Stichwort, für alle Produkte
+  var MAT_F = [{ k: "gl", n: "Glänzend", rx: /glänz|glanz|gloss/ }, { k: "ma", n: "Matt", rx: /\bmatt/ }, { k: "na", n: "Naturpapier", rx: /offset|ungestrichen|natur|bankpost|cotton|vergé|tintoretto|constellation|kraftpapier|beschreibbar/ },
+    { k: "re", n: "Recycling & Öko", rx: /recy|balancepure|paperwise|vivus|rebello|gras|wildblumen|saat|samen/ }, { k: "fx", n: "Edel & besonders", rx: /metallic|sirio|gmund|cotton|vergé|leinen|tintoretto|conqueror|constellation|perlmutt|color nero/ }, { k: "wf", n: "Wasserfest", rx: /reißfest|wasserfest|yupo|teslin|synaps/ }];
+  function matQ(x) { return String(x.name + " " + (x.group || "") + " " + (x.fold || "")).toLowerCase(); }
+  function matFilters(key, list) {
+    if (!/^prop:(cover_)?material$/.test(key) || list.length <= 12) return null;
+    var fs = MAT_F.map(function (F) { var c = list.filter(function (x) { return F.rx.test(matQ(x)); }).length; return { k: F.k, n: F.n, rx: F.rx, c: c }; }).filter(function (F) { return F.c && F.c < list.length; });
+    return fs.length >= 2 ? fs : null;
+  }
   function optPanel(key, title, items, cur) {
     var cust = key === "prop:size" && S.prod && S.prod.custom && S.prod.props.some(function (pr) { return pr.slug === "size" && pr.options.some(function (o) { return o.slug === "custom"; }); });
     var list = cust ? items.filter(function (x) { return x.val !== "custom"; }) : items, groups = [], gi = {};
+    var mf = matFilters(key, list), mfa = mf && (S.opf || {})[key], mfo = mfa && mf.filter(function (F) { return F.k === mfa; })[0];
+    var mfHtml = mf ? '<div class="ps-opf" role="group" aria-label="' + esc(title) + ' filtern"><button type="button" class="ps-opfc' + (mfo ? "" : " on") + '" data-opf="' + esc(key) + '|" aria-pressed="' + !mfo + '">Alle <small>' + list.length + "</small></button>" + mf.map(function (F) { var on = mfo && mfo.k === F.k; return '<button type="button" class="ps-opfc' + (on ? " on" : "") + '" data-opf="' + esc(key) + "|" + F.k + '" aria-pressed="' + !!on + '">' + esc(F.n) + " <small>" + F.c + "</small></button>"; }).join("") + "</div>" : "";
+    if (mfo) list = list.filter(function (x) { return mfo.rx.test(matQ(x)) || String(x.val) === String(cur); });
     list.forEach(function (x) { var g = x.fold || x.group || ""; if (!(g in gi)) { gi[g] = groups.length; groups.push({ n: g, l: [] }); } groups[gi[g]].l.push(x); });
     var named = groups.length > 1 && groups.some(function (g) { return g.n; });
     // innerhalb einer Gruppe aufsteigend nach der führenden Zahl (z. B. 115, 130, 170 g/m²) – leichter zu überblicken (Simon 12.11.2026), „Beliebt“ bleibt als Markierung
@@ -661,7 +687,7 @@
       var quick = nums.filter(function (x) { return QS.indexOf(x.n) > -1; }).slice(0, 16);
       return '<div class="ps-op ps-opnum"><div class="ps-num"><button type="button" class="ps-numb" data-ddpick="' + esc(key) + "|" + esc(prev.v) + '"' + (ci <= 0 ? " disabled" : "") + ' aria-label="weniger">−</button><input type="number" inputmode="numeric" min="' + nums[0].n + '" max="' + nums[nums.length - 1].n + '" value="' + (ci > -1 ? nums[ci].n : "") + '" data-numpick="' + esc(key) + '" aria-label="' + esc(title) + '"><button type="button" class="ps-numb" data-ddpick="' + esc(key) + "|" + esc(next.v) + '"' + (ci >= nums.length - 1 ? " disabled" : "") + ' aria-label="mehr">+</button><span class="ps-numr">' + nums[0].n + "–" + nums[nums.length - 1].n + " möglich</span></div>" +
         (quick.length ? '<div class="ps-numq">' + quick.map(function (x) { return '<button type="button" class="ps-numc' + (String(x.v) === String(cur) ? " on" : "") + '" data-ddpick="' + esc(key) + "|" + esc(x.v) + '">' + x.n + "</button>"; }).join("") + "</div>" : "") + "</div>"; }
-    return '<div class="ps-op">' + (list.length > 12 ? '<input type="search" class="ps-ddq ps-opq" placeholder="' + esc(title) + ' suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") +
+    return '<div class="ps-op">' + mfHtml + (list.length > 12 || mf ? '<input type="search" class="ps-ddq ps-opq" placeholder="' + esc(title) + ' suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") +
       groups.map(function (g) { return (named && g.n ? '<div class="ps-opg">' + esc(g.n) + "</div>" : "") + '<div class="ps-opgrid">' + g.l.map(function (x) { return optCard(key, x, cur, named ? g.n : ""); }).join("") + "</div>"; }).join("") +
       (cust ? '<div class="ps-opc"><div class="ps-opg">Eigenes Format' + (isCustom() ? ' <span class="ps-oc-ok">✓ gewählt</span>' : "") + "</div>" + customHtml(true) + "</div>" : "") + "</div>";
   }
@@ -1696,10 +1722,12 @@
     var keep = function (pr) { return pr.slug === "finish" || !isNone(pr); };   // Veredelung immer sichtbar
     var main = rest.filter(keep), minor = rest.filter(function (pr) { return !keep(pr); }), changed = minor.filter(function (pr) { return S.sel[pr.slug] !== (p.defaults || {})[pr.slug]; }).length;
     var tiles = function (l) { return l.map(tileHtml).join(""); };
-    var more = minor.length ? '<details class="ps-more"' + (changed || S.moreOpen || (S.dd && minor.some(function (pr) { return pr.slug === S.dd; })) ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
+    // Druckverfahren: „Automatisch“ passt fast immer → unter „Weitere Optionen“ (Simon 12.11.2026); sichtbar oben nur, wenn es umgestellt werden musste
+    var pmT = pmTile(), pmM = S.price && S.price.methods && S.price.methods.length > 1, pmFell = / warn/.test(pmT.slice(0, 60)), pmIn = !pmFell && (minor.length || pmM);
+    var pmChg = pmIn && S.pm && S.pm !== "auto" ? 1 : 0, mt = minor.map(function (pr) { return rowTitle(pr); }).concat(pmIn && pmM ? ["Druckverfahren"] : []);
+    var more = pmIn || minor.length ? '<details class="ps-more"' + (changed || pmChg || S.moreOpen || S.dd === "pm" || (S.dd && minor.some(function (pr) { return S.dd === "prop:" + pr.slug; })) ? " open" : "") + '><summary><span class="ps-more-t">Weitere Optionen</span>' + (changed + pmChg ? ' <b class="ps-cnt">' + (changed + pmChg) + " geändert</b>" : "") + '<small class="ps-more-h">Brauchst du meistens nicht – ist schon sinnvoll eingestellt.' + (mt.length ? " (" + esc(mt.slice(0, 4).join(", ") + (mt.length > 4 ? " u. a." : "")) + ")" : "") + '</small></summary><div class="ps-grid2">' + tiles(minor) + (pmIn ? pmT : "") + "</div></details>" : "";
     var custom = p.kind === "banner" && p.custom && !fmt.some(function (pr) { return pr.slug === "size"; }) ? customHtml() : "";   // sonst steht die freie Eingabe direkt in der Format-Zeile
-    var pmT = pmTile();
-    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
+    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + (pmIn ? "" : pmT)) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
   }
   // Druckverfahren (Digital/Offset/…): Preise je Verfahren vom Server, günstigstes zuerst; „automatisch“ nimmt immer das günstigste
   function pmTile() {
@@ -2818,6 +2846,8 @@
     if (dc) { var cv = dc.getAttribute("data-ddcat"), ci = cv.indexOf("|"); S.ddCat[cv.slice(0, ci)] = cv.slice(ci + 1); render(); var ds2 = root.querySelector(".ps-ddl.big .ps-dds"); if (ds2) ds2.scrollTop = 0; return; }
     if (e.target.closest("[data-galzoom]")) { galPop(S.gal); return; }
     var gp = e.target.closest("[data-galpop]"); if (gp) { galPop(+gp.getAttribute("data-galpop")); return; }
+    var opf = e.target.closest("[data-opf]");
+    if (opf) { var ov = opf.getAttribute("data-opf"), oi = ov.lastIndexOf("|"); S.opf = S.opf || {}; S.opf[ov.slice(0, oi)] = ov.slice(oi + 1); render(); var op0 = root.querySelector(".ps-tile.open .ps-opf"); if (op0 && op0.getBoundingClientRect().top < 0) op0.scrollIntoView({ block: "start" }); return; }
     var dg = e.target.closest("[data-ddgrp]");
     if (dg) { var gv = dg.getAttribute("data-ddgrp"), gi = gv.indexOf("|"), gk = gv.slice(0, gi), gn = gv.slice(gi + 1), opn = dg.getAttribute("aria-expanded") !== "true", G0 = S.ddGrp[gk] = { _set: 1 }; if (opn) G0[gn] = true;   // Akkordeon: andere schließen
       var sc0 = root.querySelector(".ps-dds"), st0 = sc0 ? sc0.scrollTop : 0; render(); var sc1 = root.querySelector(".ps-dds"); if (sc1) sc1.scrollTop = st0; return; }

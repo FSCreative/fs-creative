@@ -2427,3 +2427,10 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 /* Ausführung am Handy (Simon 12.11.2026): aufgeklappte Auswahl über die volle Breite, Kacheln nie breiter als der Bildschirm */
 .ps-opgrid,.ps-oc,.ps-ocb{min-width:0}.ps-ocb b,.ps-ocb small{overflow-wrap:anywhere}
 @media (max-width:600px){.ps-cfg .ps-tile.open>.ps-op{grid-column:1/-1!important;margin-left:0}.ps-cfg .ps-tile.open .ps-opgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Ausführung laienfreundlich (12.11.2026): Hinweis bei „Weitere Optionen“, Material-Schnellfilter */
+.ps-more>summary .ps-more-t{color:inherit;font-weight:600;font-size:14.5px}
+.ps-more>summary .ps-more-h{flex-basis:100%;color:var(--text-faint);font-weight:400;font-size:13px;line-height:1.35;margin:-6px 0 6px}
+.ps-opf{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 10px}
+.ps-opfc{min-height:36px;padding:6px 12px;border-radius:999px;border:1px solid var(--ps-line2);background:var(--ps-card);color:inherit;font:inherit;font-size:13.5px;font-weight:500;cursor:pointer}
+.ps-opfc small{color:var(--text-faint);font-size:12px;margin-left:2px}
+.ps-opfc.on{background:#0a84ff;border-color:#0a84ff;color:#fff}.ps-opfc.on small{color:rgba(255,255,255,.8)}
