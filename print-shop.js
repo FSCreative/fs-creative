@@ -2734,7 +2734,8 @@ module.exports = function (D) {
       return o;
     } finally { LOCK.delete(id); }
   }
-  async function rejectOrder(id, reason, refund) {
+  async function rejectOrder(id, reason, refund, opt) {   // opt.silent: keine Mail an den Kunden (Storno telefonisch vereinbart / automatisch), opt.storno: "manual" | "auto"
+    opt = opt || {};
     const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
     if (["ordered", "in_production", "shipped", "delivered"].indexOf(o.status) > -1) throw new Error("Schon bei Print.com bestellt – dort stornieren bzw. Gutschrift manuell");
     if (o.status === "rejected") throw new Error("Schon abgelehnt");
@@ -2756,11 +2757,12 @@ module.exports = function (D) {
       else { try { await D.deleteInvoice(o.invoice.id); o.invoice.deleted = nowIso(); hist(o, "Rechnungsentwurf gelöscht"); }
         catch (e) { o.invoice.deleteError = clip(e.message, 200); const st1 = await invoiceStatusOf(o.invoice.id); if (INV_SENT.indexOf(st1) > -1) { o.invoice.needsStorno = true; o.invoice.draft = false; hist(o, "Rechnung ist schon versendet – nicht gelöscht, bitte unter Finanzen stornieren"); } } }
     }
-    o.status = "rejected"; stamp(o); o.rejectReason = clip(reason, 500); hist(o, "Abgelehnt" + (reason ? ": " + reason : ""));
+    o.status = "rejected"; stamp(o); o.rejectReason = clip(reason, 500); if (opt.storno) o.storno = opt.storno;
+    hist(o, opt.note || ((opt.storno ? "Storniert" : "Abgelehnt") + (reason ? ": " + reason : "") + (opt.silent ? " (ohne Mail an den Kunden)" : "")));
     await store.putOrder(o);
     if (regroup && regroup.length) { const sib = regroup.concat([o]), first = regroup[0]; await makeGroupInvoice(first, sib); for (const x of regroup) await store.putOrder(x);
       if (first.invoice.id && regroup.every(x => PLACED.indexOf(x.status) > -1)) await sendGroupInvoice(first); }
-    if (o.status === "rejected" && o.payment.status !== "open") await mail(o.customer.email, "Deine Druckbestellung " + o.nr + " · FS Creative", "Deine Bestellung konnte leider nicht gedruckt werden",
+    if (!opt.silent && o.status === "rejected" && o.payment.status !== "open") await mail(o.customer.email, "Deine Druckbestellung " + o.nr + " · FS Creative", "Deine Bestellung konnte leider nicht gedruckt werden",
       ["Hallo " + o.customer.firstName + ",", "leider können wir deine Bestellung " + o.nr + " so nicht in Druck geben." + (o.rejectReason ? " Grund: " + o.rejectReason : ""), o.payment.refund ? "Den Betrag von " + eur(o.price.gross) + " erstatten wir dir über den gewählten Zahlungsweg – das dauert meist ein paar Werktage." : ""].filter(Boolean),
       [], ["Melde dich gern, dann finden wir gemeinsam eine Lösung."], D.notifyTo);
     return o;
@@ -4134,6 +4136,7 @@ module.exports = function (D) {
     rememberDue().catch(e => log("Angebots-Erinnerung:", e.message));
     cartRemindDue().catch(e => log("Warenkorb-Erinnerung:", e.message));
     payReminderDue().catch(e => log("Zahlungs-Erinnerung:", e.message));
+    autoCancelDue().catch(e => log("Auto-Storno:", e.message));
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
@@ -4220,10 +4223,15 @@ module.exports = function (D) {
     if (!D.mailSend) return 0; if (!forceId) { if (Date.now() - lastPayRem < 10 * 60e3) return 0; lastPayRem = Date.now(); }
     let sent = 0;
     const all = await store.listOrders().catch(() => []), now = Date.now(), done = {};
-    const open = all.filter(o => o && o.payment && o.payment.method === "mollie" && ["pending_payment", "payment_failed"].indexOf(o.status) > -1 && !(o.mails && o.mails.payRemind) && o.customer && o.customer.email);
+    // Simon 12.11.2026: Erinnerung 12 h nach der Bestellung; aus dem Cockpit (forceId) auch, wenn schon einmal erinnert wurde
+    const open = all.filter(o => o && o.payment && o.payment.method === "mollie" && ["pending_payment", "payment_failed"].indexOf(o.status) > -1 && (!(o.mails && o.mails.payRemind) || (forceId && o.id === forceId)) && o.customer && o.customer.email);
+    // Doppelt bestellt (gleiche E-Mail, gleiches Produkt, gleiche Ausführung und Menge, z. B. Skischule See 11.11.2026): nur die neueste wird erinnert
+    const same = x => [String(x.customer.email).toLowerCase(), x.product && x.product.key, JSON.stringify(x.sel || {}), x.copies].join("|");
     for (const o of open) {
       if (forceId && o.id !== forceId) continue;
-      const age = now - Date.parse(o.createdAt || 0); if (!forceId && (age < 2 * 3600e3 || age > 60 * 3600e3)) continue; if (age > 72 * 3600e3) continue;
+      const age = now - Date.parse(o.createdAt || 0); if (!forceId && (age < 12 * 3600e3 || age > 60 * 3600e3)) continue; if (age > 72 * 3600e3) continue;
+      if (!o.groupId && all.some(x => x && x.id !== o.id && !x.groupId && x.customer && x.customer.email && ["pending_payment", "payment_failed"].indexOf(x.status) > -1 && same(x) === same(o) && Date.parse(x.createdAt || 0) > Date.parse(o.createdAt || 0))) {
+        o.mails = o.mails || {}; o.mails.payRemind = "doppelt"; hist(o, "Keine Zahlungs-Erinnerung – gleiche Bestellung später nochmals aufgegeben (nur die neueste wird erinnert)"); await store.putOrder(o); continue; }
       const key = o.groupId || o.id; if (done[key]) continue; done[key] = 1;
       const grp = o.groupId ? open.filter(x => x.groupId === o.groupId) : [o], em = String(o.customer.email).toLowerCase();
       // Banküberweisung über Mollie (Simon 09.11.2026, Lorant hatte überwiesen und bekam trotzdem die Erinnerung): Zahlung bleibt „offen“, bis Mollie das Geld zuordnet (1–3 Werktage)
@@ -4235,11 +4243,26 @@ module.exports = function (D) {
         .concat([["Bestellnummer", grp.map(x => x.nr).join(", ")], ["Gesamt inkl. USt & Versand", eur(sum)], ["Jetzt bezahlen", link, "button"]]);
       const ok = await mail(o.customer.email, "Deine Bestellung " + o.nr + " wartet noch auf die Zahlung", "Deine Bestellung ist noch nicht bezahlt",
         ["Hallo " + (o.customer.firstName || "") + ",", "deine Bestellung ist bei uns gespeichert – die Zahlung wurde aber noch nicht abgeschlossen. Mit einem Klick kannst du sie jetzt bezahlen, deine Druckdaten und Einstellungen bleiben erhalten."],
-        rows, ["Sobald die Zahlung eingegangen ist, prüfen wir deine Daten und geben den Druck frei. Die Bestellung kann noch bis " + deDate(new Date(Date.parse(o.createdAt) + 3 * 864e5).toISOString()) + " bezahlt werden.", "Fragen oder etwas ändern? Antworte einfach auf diese Mail."], D.notifyTo, 0);
+        rows, ["Sobald die Zahlung eingegangen ist, prüfen wir deine Daten und geben den Druck frei. Die Bestellung kann noch bis " + deDate(new Date(Date.parse(o.createdAt) + 3 * 864e5).toISOString()) + " bezahlt werden – danach wird sie automatisch storniert.", "Fragen oder etwas ändern? Antworte einfach auf diese Mail."], D.notifyTo, 0);
       for (const x of grp) { x.mails = x.mails || {}; x.mails.payRemind = ok ? nowIso() : "fehler"; if (ok) hist(x, "Zahlungs-Erinnerung per Mail gesendet" + (forceId ? " (Cockpit)" : "")); await store.putOrder(x); }
       if (ok) sent++;
     }
     return sent;
+  }
+  // Automatisch stornieren (Simon 12.11.2026): Mollie-Bestellung 72 h nach dem Aufgeben ohne Zahlung → still storniert (keine Mail).
+  // Nicht bei nachgewiesener/laufender Banküberweisung und nicht, solange der letzte Zahlungsversuch bei Mollie noch offen ist.
+  let lastAutoCancel = 0;
+  async function autoCancelDue() {
+    if (Date.now() - lastAutoCancel < 30 * 60e3) return 0; lastAutoCancel = Date.now();
+    const all = await store.listOrders().catch(() => []), now = Date.now(); let n = 0;
+    for (const o of all) {
+      if (!o || !o.payment || o.payment.method !== "mollie" || ["pending_payment", "payment_failed"].indexOf(o.status) < 0) continue;
+      if (now - Date.parse(o.createdAt || 0) < 72 * 3600e3 || o.payment.transfer || o.payment.transferOk || o.payment.status === "paid") continue;
+      try { const pay = o.payment.mollieId ? await mollie("GET", "/payments/" + encodeURIComponent(o.payment.mollieId)) : null;
+        if (pay && (pay.status === "open" || pay.status === "pending" || pay.status === "paid" || pay.status === "authorized")) continue; } catch (e) { continue; }
+      try { await rejectOrder(o.id, "", false, { silent: true, storno: "auto", note: "Automatisch storniert – 72 Stunden ohne Zahlung" }); n++; } catch (e) { log("Auto-Storno", o.nr, e.message); }
+    }
+    return n;
   }
   // Warenkorb-Erinnerung (Wunsch Simon 06.11.2026) – nur wer an der Kasse das Häkchen setzt: kommt binnen 3 h keine Bestellung mit dieser E-Mail,
   // EINE Mail mit Link, der den Warenkorb wiederherstellt (ohne Rabatt). Gespeichert ohne Vorschaubilder, nach 14 Tagen gelöscht (Datenschutz).
@@ -5037,7 +5060,7 @@ module.exports = function (D) {
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      payment: o.payment.method, paymentStatus: o.payment.status, storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: o.customer.zip || "", city: o.customer.city || "", region: regionOf(o.customer.country, o.customer.zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
@@ -5711,7 +5734,7 @@ module.exports = function (D) {
           return J(res, 200, { ok: !!sent, order: o, error: sent ? undefined : "Mail an den Kunden fehlgeschlagen" });
         }
         if (op === "payremind") { const n = await payReminderDue(id); return J(res, 200, { ok: n > 0, sent: n, error: n ? undefined : "Nicht gesendet (bezahlt, schon erinnert oder keine E-Mail)" }); }
-        if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false); return J(res, 200, { ok: true, order: o }); }
+        if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false, b.silent ? { silent: true, storno: "manual" } : null); return J(res, 200, { ok: true, order: o }); }
         if (op === "complete") {   // manuell abschließen (z. B. aus den Aufträgen: „Erledigt“) – erst nach der Bestellung bei Print.com
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!(["ordered", "in_production", "shipped"].indexOf(o.status) > -1 || (o.status === "problem" && o.printcom && o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – abschließen geht erst nach der Bestellung bei Print.com");
