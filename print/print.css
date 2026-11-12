@@ -2409,7 +2409,7 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 /* Warenkorb: Zusammenfassung bei der Summe + Lieferzeit-Pop-up (Simon 12.11.2026) */
 .ps-sumlist{list-style:none;margin:0 0 12px;padding:0 0 10px;display:grid;gap:10px;border-bottom:1px solid var(--ps-line2)}
 .ps-sumlist .r{display:flex;justify-content:space-between;gap:10px;font-size:14px}.ps-sumlist .r small{opacity:.7}
-.ps-sumlist .d{font-size:12.5px;opacity:.8;margin-top:2px}.ps-sumlist .d .ps-link{font-size:12.5px;margin-left:4px}
+.ps-sumlist .ps-sl-d{font-size:12.5px;opacity:.85;margin-top:2px}.ps-sumlist .ps-sl-d .ps-link{font-size:12.5px}
 .ps-daypop-c{padding:18px 20px;width:min(560px,100%)}
 .ps-daypop-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}.ps-daypop-h b{display:block;font-size:17px}.ps-daypop-h small{opacity:.75;font-size:12.5px}
 .ps-daypop-h .ps-pv-x{position:static;flex:none}
@@ -2421,3 +2421,5 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-acctbox{margin:14px 0 4px;padding:12px 14px;border:1px solid var(--ps-line2);border-radius:14px;background:var(--ps-card)}
 .ps-pwm{display:grid;gap:4px;margin-top:6px}.ps-pwm span{display:block;height:6px;border-radius:9px;background:var(--ps-line2);overflow:hidden}.ps-pwm i{display:block;height:100%;width:0;transition:width .2s,background .2s}
 .ps-pwm small{font-size:12.5px;opacity:.85}.ps-pwm.l1 i{background:#e5484d}.ps-pwm.l2 i{background:#f5a524}.ps-pwm.l3 i{background:#30a46c}
+
+.ps-sumlist .ps-sl-d{display:grid;gap:1px;justify-items:start;height:auto;width:auto}.ps-sumlist .ps-sl-d .l1{white-space:nowrap}.ps-sumlist .ps-sl-d .l2{font-size:12px;opacity:.75}.ps-sumlist .ps-sl-d .ps-link{margin:2px 0 0}

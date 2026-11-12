@@ -177,7 +177,7 @@
   function cartFeeRows(t, co) { if (!t || !t.fee) return ""; var fx = function (g) { return eur(co ? g / (1 + (t.rate || 0) / 100) : g); };
     return '<div class="ps-feerows">' + (t.nGra ? '<div><span>Grafikaufbereitung' + (t.nGra > 1 ? " × " + t.nGra : "") + '</span><b>' + fx(t.nGra * GRAPHIC_CHECK) + "</b></div>" : "") + (t.nPro ? '<div><span>Profi-Datencheck' + (t.nPro > 1 ? " × " + t.nPro : "") + '</span><b>' + fx(t.nPro * PRO_CHECK) + "</b></div>" : "") + "</div>"; }
   /* Zusammenfassung bei der Summe (Simon 12.11.2026): jede Position mit Preis, darunter Liefertermin + „Lieferzeit anpassen“ (Kalender im Pop-up, Preis passt sich an) */
-  function dLong(d) { return d ? new Date(d + "T12:00:00").toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "short" }) : ""; }
+  function dDue(d) { if (!d) return ""; var x = new Date(d + "T12:00:00"); if (isNaN(x)) return ""; return ["So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."][x.getDay()] + ", " + x.getDate() + ". " + ["Jän.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."][x.getMonth()]; }
   /* Grafikaufbereitung / Profi-Datencheck als eigene Position (Simon 12.11.2026) – ergibt sich aus der Datencheck-Wahl der jeweiligen Druckposition */
   function svcList() { var r = (S.price && S.price.rate) || 20, out = []; S.cart.forEach(function (x) { var v = itemCheck(x); if (v === "graphic" || v === "pro") out.push({ x: x, v: v, g: v === "graphic" ? GRAPHIC_CHECK : PRO_CHECK, r: r }); }); return out; }
   function svcRows(co) { return svcList().map(function (s0) { var t = s0.v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck";
@@ -185,7 +185,7 @@
   function cartSumList(co) { if (!S.cart.length) return "";
     return '<ul class="ps-sumlist">' + S.cart.map(function (x) { var pr = x.price, dd = pr && pr.deliveryDate;
       return '<li><div class="r"><span>' + esc(x.title) + (+x.copies > 1 ? ' <small>· ' + (+x.copies).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small>" : "") + '</span><b>' + (pr ? eur(co ? pr.net : pr.gross) : "…") + "</b></div>" +
-        '<div class="d">' + (dd ? "Lieferung " + esc(dLong(dd)) + (x.wish ? " (Wunschtermin)" : "") : S.quoting ? "Liefertermin wird berechnet …" : "") + ' <button type="button" class="ps-link" data-act="cartday:' + esc(x.id) + '">Lieferzeit anpassen</button></div></li>'; }).join("") +
+        '<div class="ps-sl-d">' + (dd ? '<span class="l1">Lieferung ' + esc(dDue(dd)) + (x.wish ? " (Wunschtermin)" : "") + '</span><span class="l2">Bei Bestellung bis ' + esc(dueCut()) + "</span>" : S.quoting ? '<span class="l1">Liefertermin wird berechnet …</span>' : "") + '<button type="button" class="ps-link" data-act="cartday:' + esc(x.id) + '">Lieferzeit anpassen</button></div></li>'; }).join("") +
       svcList().map(function (s0) { return '<li><div class="r"><span>' + (s0.v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + '</span><b>' + eur(co ? s0.g / (1 + s0.r / 100) : s0.g) + "</b></div></li>"; }).join("") + "</ul>"; }
   function cartDay(id) {
     var x = S.cart.filter(function (c) { return c.id === id; })[0]; if (!x) return; var co = S.ctype === "company";
@@ -1019,6 +1019,9 @@
   // Wochenende Freitag 16:00 bis Montag 8:00 (Wien): Simon nur sporadisch erreichbar – Hinweis beim Profi-Datencheck (Wunsch Simon 06.11.2026)
   function weekendNow() { var v = vienna(); return (v.wd === "Fri" && v.h >= 16) || v.wd === "Sat" || v.wd === "Sun" || (v.wd === "Mon" && v.h < 8); }
   function vienna() { var f = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date()), g = function (t) { return (f.filter(function (x) { return x.type === t; })[0] || {}).value; }; return { wd: g("weekday"), h: +g("hour"), m: +g("minute") }; }
+  function dueCut() { var v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m), dl = new Date(), add = work && left > 0 ? 0 : 1;
+    if (add) { do { dl.setDate(dl.getDate() + 1); } while (dl.getDay() === 0 || dl.getDay() === 6); }
+    var t = new Date(); t.setDate(t.getDate() + 1); return (!add ? "heute" : dl.toDateString() === t.toDateString() ? "morgen" : dl.toLocaleDateString("de-AT", { weekday: "long", day: "numeric", month: "long" })) + ", 14:00 Uhr"; }
   function dueHtml() { var p = S.price; if (!p || !p.deliveryDate) return ""; var d = new Date(p.deliveryDate + "T12:00:00"); if (isNaN(d)) return "";
     var day = d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }), v = vienna(), work = ["Sat", "Sun"].indexOf(v.wd) < 0, left = (14 * 60) - (v.h * 60 + v.m);
     // ruhig statt Countdown (06.11.2026): Liefertag groß, Bestellschluss nur als kleine Zeile
