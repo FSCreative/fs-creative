@@ -5360,6 +5360,18 @@ module.exports = function (D) {
         // „Bestellt“ = echte Bestellungen (je Warenkorb einmal, bezahlt bzw. auf Rechnung) statt gezählter Browser-Tabs (Simon 10.11.2026: 61 statt ~31)
         if (ls.funnel && !ls.funnel.real) { REAL_ORD.at = 0; realOrd(); if (REAL_ORD.p) await REAL_ORD.p; if (REAL_ORD.n != null) { ls.funnel.ordered = REAL_ORD.n; ls.funnel.real = true; } }
         return J(res, 200, Object.assign({ ok: true }, ls)); }
+      // Fertiger Warenkorb als Link (Simon 12.11.2026): Positionen (wie im Shop-Warenkorb, mit Datei) speichern → /print?wk=…&t=… lädt sie beim Kunden;
+      // ohne E-Mail, keine Erinnerungen (kein v), 90 Tage gespeichert
+      if (p === "/admin/api/print/cartlink" && req.method === "POST") {
+        const b = await readJson(req, 400000).catch(() => ({}));
+        const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && typeof x.fileId === "string" && typeof x.fileToken === "string");
+        if (!items.length) return J(res, 400, { ok: false, error: "Keine Positionen mit Datei" });
+        for (const x of items) { const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
+        const all = await crGet(), id = "c" + crypto.randomBytes(9).toString("hex");
+        all.push({ id, at: nowIso(), keep: nowIso(), email: "", firstName: "", items, link: true, note: clip(b.note, 120) }); await crSet(all);
+        const url = cfg().publicUrl + "/print?wk=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(sig("cartrem", id));
+        return J(res, 200, { ok: true, id, url, short: await shortMake(url).catch(() => url) });
+      }
       if (p === "/admin/api/print/short" && req.method === "POST") { try { const sb = await readJson(req, 20000); return J(res, 200, { ok: true, url: await shortMake(sb.url) }); } catch (e) { return J(res, 400, { ok: false, error: e.message }); } }
       if (p === "/admin/api/print/staffel") {   // Staffel-Prüfung: GET = Stand, POST {op:"run"} = neu prüfen (Hintergrund, ca. 2 s je Menge)
         const sb = req.method === "POST" ? await readJson(req, 1000) : {};
