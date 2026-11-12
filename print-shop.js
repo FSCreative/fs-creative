@@ -1450,6 +1450,9 @@ module.exports = function (D) {
     const out = [], W = size.w + 2 * bleed, H = size.h + 2 * bleed;
     if (info.trim && fits(info.trim, size.w, size.h, 1)) out.push({ level: "ok", text: "Endformat (TrimBox) " + size.w + " × " + size.h + " mm passt." });
     if (fits(info.media, W, H, 1.2)) out.push({ level: "ok", text: "Seitengröße inkl. " + bleed + " mm Beschnitt passt (" + W + " × " + H + " mm)." });
+    // mehr Beschnitt als nötig (z. B. 3 mm statt 2 mm), Endformat laut TrimBox stimmt → nicht skalieren, sondern den Überschuss abschneiden (Simon 12.11.2026, Programmheft 154 × 216 mm)
+    else if (info.trim && fits(info.trim, size.w, size.h, 1) && fits(info.media, info.trim.w + 2 * Math.max(0, (info.media.w - info.trim.w) / 2), info.trim.h + 2 * Math.max(0, (info.media.h - info.trim.h) / 2), 0.5) && Math.min(info.media.w - info.trim.w, info.media.h - info.trim.h) / 2 > bleed + 0.3)
+      out.push({ level: "ok", text: "Die Datei hat " + fmtMm(r2(Math.min(info.media.w - info.trim.w, info.media.h - info.trim.h) / 2)) + " mm Beschnitt – mehr als nötig. Das Endformat passt, der überschüssige Beschnitt wird auf " + fmtMm(bleed) + " mm abgeschnitten (nichts wird verkleinert)." });
     else if (fits(info.media, size.w, size.h, 1)) out.push({ level: "warn", text: "Die Datei hat keinen Beschnitt. Bitte im Format " + fmtMm(W) + " × " + fmtMm(H) + " mm anliefern (Endformat " + fmtMm(size.w) + " × " + fmtMm(size.h) + " mm + " + fmtMm(bleed) + " mm Beschnitt je Seite) – reicht der Hintergrund nicht über den Rand, kann nach dem Schneiden ein feiner weißer Rand sichtbar sein." });
     else if (info.media) {
       const ar = (info.media.w / info.media.h), arT = W / H;
@@ -2003,6 +2006,13 @@ module.exports = function (D) {
       const info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
       target.pages = info.pages;
       const checks = checkPdf(info, target.size, target.bleed, target.sides, target.multi), src = target.multi ? null : await keepSrc(buf, "pdf", name);
+      if (checks.some(c => /mehr als nötig\. Das Endformat passt/.test(c.text || ""))) {   // überschüssigen Beschnitt abschneiden: Seitenboxen = TrimBox + Beschnitt (alle Seiten)
+        try { const { PDFDocument } = require("pdf-lib"), doc = await PDFDocument.load(buf, { updateMetadata: false }), bp = target.bleed * MM_PT;
+          doc.getPages().forEach(pg => { const t = pg.getTrimBox(); const x = t.x - bp, y = t.y - bp, w = t.width + 2 * bp, h = t.height + 2 * bp; pg.setMediaBox(x, y, w, h); pg.setCropBox(x, y, w, h); pg.setBleedBox(x, y, w, h); });
+          const out = Buffer.from(await doc.save());
+          return newFile("upload", name, out, target, checks, { original: "pdf", src });
+        } catch (e) { log("Beschnitt zuschneiden:", e.message); }
+      }
       const sc = checks.findIndex(c => /Seitenverhältnis passt/.test(c.text || ""));
       if (sc > -1 && src) {   // nur die Größe weicht ab → jetzt wirklich skalieren (vorher stand nur der Hinweis da)
         try { const r = await withPdf(() => placeFile(buf, "pdf", target.size, target.bleed, { mode: "fill" }, target.sides));
