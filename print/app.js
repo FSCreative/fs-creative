@@ -120,6 +120,7 @@
     var p = S.prod; (p.props || []).forEach(function (pr) { var v = c.s && c.s[pr.slug]; if (v != null && pr.options.some(function (o) { return String(o.slug) === String(v); })) S.sel[pr.slug] = String(v); });
     if (+c.q > 0 && +c.q <= 1e6) S.copies = Math.round(+c.q); if (c.u && (p.urgency || []).some(function (u) { return u.slug === c.u; })) S.urgency = c.u; if (c.m && typeof c.m === "string") S.pm = c.m;
     if (c.c && c.c.w && c.c.h && p.custom) S.custom = { w: String(+c.c.w || ""), h: String(+c.c.h || "") };
+    if (c.ck === "pro" || c.ck === "graphic") S.check = c.ck;   // Link mit vorgewähltem Datencheck (Simon 12.11.2026: „mit 20 € Grafikaufbereitung“)
     if (c.mo && +c.mo.n > 1 && +c.mo.n <= 50) { var sp = (c.mo.sp || []).map(function (v) { return Math.max(0, Math.round(+v || 0)); }).slice(0, +c.mo.n); S.mot = { n: +c.mo.n, split: sp, files: [], i: 0 }; if (sp.length !== S.mot.n || sp.reduce(function (a, b) { return a + b; }, 0) !== +S.copies) motBalance(); }
     if (c.f || (c.mo && c.mo.f) || c.lg) setTimeout(function () { linkFiles(c); }, 0);
     if (c.t && kind() === "textile" && S.textile && p.methods) { var m = p.methods.filter(function (x) { return x.key === c.t.method; })[0];
