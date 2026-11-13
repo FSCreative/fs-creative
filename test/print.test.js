@@ -1114,14 +1114,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: ups[0].j.fileId, fileToken: ups[0].j.token, expectedGross: 38.4, motifs: [[150, 0], [50, 1], [50, 2]].map(([c, i]) => ({ copies: c, fileId: ups[i].j.fileId, fileToken: ups[i].j.token })) })] }, base), { "x-forwarded-for": "203.0.113.77" });   // eigene IP: Bestell-Limit (40/h) der vorigen Tests
     assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const mpid = r.j.checkoutUrl.split("/").pop(); M.payments[mpid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mpid });
-    const sku = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order.product.sku; const pd = M.products[sku]; pd.maxDesigns = 2;
+    const sku = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order.product.sku; const pd = M.products[sku]; pd.maxDesigns = 2; M.orderWrap = true;   // Antwort als { order: {...} }
     try {
       const pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl));
       const its = M.orders[M.orders.length - 1].items; assert.strictEqual(its.length, 2, JSON.stringify(its).slice(0, 400));
       assert.deepStrictEqual(its[0].designs.map(d => d.copies), [150, 50]); assert.strictEqual(its[0].options.copies, 200);
       assert.ok(its[1].fileUrl && !its[1].designs && its[1].options.copies === 50 && its[1].shipments[0].copies === 50, JSON.stringify(its[1]).slice(0, 300));
       assert.ok(/Motive auf 2 Positionen aufgeteilt/.test(JSON.stringify(pl.order.history || pl.order.log || "")), "Verlauf");
-    } finally { delete pd.maxDesigns; }
+      assert.ok(/^\d+$/.test(pl.order.printcom.orderNumber), "Auftragsnummer auch aus { order: … } " + JSON.stringify(pl.order.printcom));
+    } finally { delete pd.maxDesigns; M.orderWrap = false; }
   });
   await t("Beidseitig: Rückseite als eigenes Bild/PDF → 2-seitige Druck-PDF (alle beidseitigen Produkte; gefalzt = Innenseite); einseitig nicht möglich", async () => {
     const back = async (f, buf, name) => { const r = await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token }, body: buf }); return { status: r.status, j: await r.json() }; };

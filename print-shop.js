@@ -2850,7 +2850,8 @@ module.exports = function (D) {
         parts.filter(x => x.wish).forEach(x => hist(x.o, "Wunsch-Liefertag " + x.wish.deliveryDate + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt")); j = null; }
       try { if (!j) j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
       catch (e) { await fail(e); throw e; }
-      const r = firstOf(j), rItems = Array.isArray(r.items) ? r.items : [];
+      // Antwort kommt teils als { results: [...] }, teils als { order: {...} } (Warenkorb mit mehreren Positionen, 6002355487)
+      const r = j && j.order && typeof j.order === "object" && !Array.isArray(j.results) ? j.order : firstOf(j), rItems = Array.isArray(r.items) ? r.items : [];
       const orderNumber = String(r.orderNumber || (rItems[0] && rItems[0].orderNumber) || "");
       for (const x of parts) {
         const o = x.o, it = rItems.find(i => i && String(i.customerReference || "").indexOf(o.nr) === 0) || rItems[0];
