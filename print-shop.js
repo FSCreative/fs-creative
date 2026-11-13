@@ -1431,6 +1431,14 @@ module.exports = function (D) {
     return null;
   }
   // Wie pdfInfo, aber auch für komprimierte PDFs (Objekt-Streams, z. B. aus InDesign/pdf-lib): fehlende Angaben per pdf-lib nachlesen
+  // Geladene PDF speichern (D-261112-YTL3, 13.11.2026): pdf-lib schreibt PDFs mit nachträglich gespeicherten Änderungen (Objekte mit Generation > 0,
+  // z. B. „1 1 obj“) kaputt zurück („xref num 1 not found“) – Print.com meldet dann „Verarbeitung hat nicht geklappt“. In dem Fall Seiten in ein neues Dokument kopieren.
+  async function pdfSave(doc) {
+    const { PDFDocument } = require("pdf-lib");
+    if (!doc.context.enumerateIndirectObjects().some(([ref]) => ref.generationNumber > 0)) return Buffer.from(await doc.save({ useObjectStreams: false }));
+    const out = await PDFDocument.create(); (await out.copyPages(doc, doc.getPageIndices())).forEach(pg => out.addPage(pg));
+    return Buffer.from(await out.save({ useObjectStreams: false }));
+  }
   async function pdfInfoX(buf) {
     const i = pdfInfo(buf); if (i.encrypted || (i.media && i.pages)) return i;
     try { const { PDFDocument } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false }), pg = d.getPages(), p0 = pg[0];
@@ -2014,7 +2022,7 @@ module.exports = function (D) {
       if (checks.some(c => /mehr als nötig\. Das Endformat passt/.test(c.text || ""))) {   // überschüssigen Beschnitt abschneiden: Seitenboxen = TrimBox + Beschnitt (alle Seiten)
         try { const { PDFDocument } = require("pdf-lib"), doc = await PDFDocument.load(buf, { updateMetadata: false }), bp = target.bleed * MM_PT;
           doc.getPages().forEach(pg => { const t = pg.getTrimBox(); const x = t.x - bp, y = t.y - bp, w = t.width + 2 * bp, h = t.height + 2 * bp; pg.setMediaBox(x, y, w, h); pg.setCropBox(x, y, w, h); pg.setBleedBox(x, y, w, h); });
-          const out = Buffer.from(await doc.save());
+          const out = await pdfSave(doc);
           return newFile("upload", name, out, target, checks, { original: "pdf", src });
         } catch (e) { log("Beschnitt zuschneiden:", e.message); }
       }
@@ -2676,8 +2684,31 @@ module.exports = function (D) {
     if (mb.x || mb.y) np.setMediaBox(mb.x, mb.y, mb.width, mb.height);
     try { const tb = p0.getTrimBox(); np.setTrimBox(tb.x, tb.y, tb.width, tb.height); } catch (e) {}
     try { const bb = p0.getBleedBox(); np.setBleedBox(bb.x, bb.y, bb.width, bb.height); } catch (e) {}
-    const out = Buffer.from(await d.save({ useObjectStreams: false }));
+    const out = await pdfSave(d);
     memo(PADDED, k, out);
+    return out;
+  }
+  // Seitengröße für Print.com vereinheitlichen (D-261112-YTL3, 13.11.2026): Endformat (TrimBox) passt, aber zu viel Beschnitt (3 statt 2 mm) oder einzelne Seiten
+  // minimal anders groß → alle passenden Seiten auf Endformat + Beschnitt zuschneiden (um die Mitte des Endformats). Nur verkleinern, nie Rand dazuerfinden.
+  const FITTED = new Map();
+  async function fitForPrint(buf, fm, o) {
+    const sz = o && o.size, b = +(o && o.bleed) || 0;
+    if (!sz || !(sz.w > 0) || !(sz.h > 0) || /^(textile|promo)$/.test((o.product && o.product.kind) || "") || (fm && fm.kind === "motifs")) return buf;
+    const k = fm.id + ":" + buf.length; if (FITTED.has(k)) return FITTED.get(k);
+    const { PDFDocument } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false, ignoreEncryption: true }), MM = 25.4 / 72, near = (a, x, t) => Math.abs(a - x) <= t;
+    let changed = false;
+    d.getPages().forEach(pg => {
+      let t; try { t = pg.getTrimBox(); } catch (e) { return; } const m = pg.getMediaBox(); if (!t || !m) return;
+      const tw = t.width * MM, th = t.height * MM, flip = !(near(tw, sz.w, 1.5) && near(th, sz.h, 1.5)) && near(tw, sz.h, 1.5) && near(th, sz.w, 1.5);
+      if (!flip && !(near(tw, sz.w, 1.5) && near(th, sz.h, 1.5))) return;   // anderes Format – nicht anfassen
+      const W = (flip ? sz.h : sz.w) / MM, H = (flip ? sz.w : sz.h) / MM, B = b / MM, cx = t.x + t.width / 2, cy = t.y + t.height / 2;
+      const x0 = cx - W / 2 - B, y0 = cy - H / 2 - B, x1 = cx + W / 2 + B, y1 = cy + H / 2 + B, tol = 0.3 / MM;
+      if (x0 < m.x - tol || y0 < m.y - tol || x1 > m.x + m.width + tol || y1 > m.y + m.height + tol) return;   // zu wenig Beschnitt: nichts dazuerfinden
+      if (near(m.x, x0, tol) && near(m.y, y0, tol) && near(m.width, x1 - x0, tol) && near(m.height, y1 - y0, tol) && near(tw, W * MM, 0.1) && near(th, H * MM, 0.1)) return;   // passt schon
+      pg.setMediaBox(x0, y0, x1 - x0, y1 - y0); pg.setCropBox(x0, y0, x1 - x0, y1 - y0); pg.setBleedBox(x0, y0, x1 - x0, y1 - y0); pg.setTrimBox(cx - W / 2, cy - H / 2, W, H); pg.setArtBox(cx - W / 2, cy - H / 2, W, H); changed = true;
+    });
+    const out = changed ? await pdfSave(d) : buf;
+    if (out !== buf) memo(FITTED, k, out);
     return out;
   }
   // Querformat-Datei für ein Hochformat (oder umgekehrt, z. B. A5 quer bei „A5“): Print.com setzt die Seite sonst ungedreht und verkleinert ins Format
@@ -2700,7 +2731,7 @@ module.exports = function (D) {
       if (!(near(w, sz.h) && near(h, sz.w))) return;   // anderes Format – nicht anfassen
       pg.setRotation(degrees((rot + (i % 2 ? 270 : 90)) % 360)); changed = true;
     });
-    const out = changed ? Buffer.from(await d.save({ useObjectStreams: false })) : buf;
+    const out = changed ? await pdfSave(d) : buf;
     if (out !== buf) memo(ROTATED, k, out);
     return out;
   }
@@ -4555,6 +4586,7 @@ module.exports = function (D) {
         const fm = await store.fileMeta(m[1]); const o = fm && fm.orderId && await store.getOrder(fm.orderId);
         if (!o || ["ordered", "in_production", "shipped", "delivered", "problem", "paid", "invoice_requested"].indexOf(o.status) < 0) return D.send(res, 404, "Not found");
         let buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
+        buf = await fitForPrint(buf, fm, o).catch(e => { log("Format vereinheitlichen", o.nr, e.message); return buf; });
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
