@@ -2591,6 +2591,8 @@
   function pagesView(id) {
     var x = S.cart.filter(function (c) { return c.id === id; })[0]; if (!x || !x.fileId) return;
     var src = (x.motifs && x.motifs.length ? x.motifs : [x]).map(function (m, i, a) { return { url: "/print/api/file/" + encodeURIComponent(m.fileId) + "?t=" + encodeURIComponent(m.fileToken) + "&pdf=1&pv=1", label: a.length > 1 ? "Motiv " + (i + 1) + " (" + (+m.copies || 0).toLocaleString("de-AT") + " Stk.)" : "" }; });
+    // eigene Umschlag-Datei (Notizblock-Deckblatt, Broschüren-Umschlag …) gehört mit in die Seitenansicht (Simon 13.11.2026) – vorne als „Umschlag“
+    if (x.coverId && x.coverToken) { src.forEach(function (s0) { if (!s0.label) s0.label = "Innenteil"; }); src.unshift({ url: "/print/api/file/" + encodeURIComponent(x.coverId) + "?t=" + encodeURIComponent(x.coverToken) + "&pdf=1&pv=1", label: "Umschlag" }); }
     var back = document.activeElement, ov = document.createElement("div"); ov.className = "ps-pv"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Seitenansicht " + x.title);
     ov.innerHTML = '<div class="ps-pv-top"><div><b>' + esc(x.title) + '</b><small>' + esc(itemLine(x)) + '</small></div><button type="button" class="ps-pv-x" aria-label="Schließen">✕</button></div><div class="ps-pv-st"><span class="ps-spin"></span> Seiten werden geladen …</div>';
     document.body.appendChild(ov); document.documentElement.classList.add("ps-noscroll");
