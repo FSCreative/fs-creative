@@ -995,6 +995,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     fx2 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, orderNumber: "6000999", restore: true }); assert.strictEqual(fx2.orders[0].status, "ordered"); assert.strictEqual(fx2.orders[0].orderNumber, "6000999");
     const m0 = fx2.orders[0].margin, fx3 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, prices: { [r3.j.orders[0].nr]: { gross: 26.4, urgency: "standard" } } });
     assert.strictEqual(fx3.orders[0].gross, 26.4); assert.strictEqual(fx3.orders[0].margin, Math.round((m0 - 10) * 100) / 100, "Marge um den Netto-Unterschied (12 € brutto = 10 € netto)");
+    const fx4 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, purchaseTotal: 5 }); assert.strictEqual(fx4.orders[0].margin, Math.round((fx3.orders[0].margin + 25 - 5) * 100) / 100, "Einkauf 25 → 5 € erhöht die Marge um 20 €");
   });
   await t("Druckdaten ablehnen: Mail-Vorschau, Senden, Bestellen gesperrt, Kunde lädt neue Datei hoch (Prüfung wie im Shop), danach wieder bestellbar", async () => {
     const base = { customer: Object.assign({}, cust, { email: "redo@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };

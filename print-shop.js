@@ -5948,6 +5948,10 @@ module.exports = function (D) {
             const fee = (x.price.checkFee ? x.price.checkFee.gross : 0) + (x.price.designFee ? x.price.designFee.gross : 0), rate = x.price.rate || 0, oldNet = x.price.net;
             const gross = r2(+q.gross + fee), net = r2(gross / (1 + rate / 100)); x.price.gross = gross; x.price.net = net; x.price.vat = r2(gross - net); x.price.margin = r2((x.price.margin || 0) + net - oldNet);
             if (q.urgency) x.urgency = String(q.urgency); hist(x, "Preis im Cockpit auf den tatsächlich bestellten Stand gesetzt: " + eur(+q.gross) + (q.urgency ? " (" + (URGENCY_DE[q.urgency] || q.urgency) + ")" : "")); }
+          // purchaseTotal: tatsächlicher Einkauf laut Print.com für den ganzen Auftrag (netto) – anteilig nach bisherigem Einkauf verteilt, Marge angepasst
+          if (+b.purchaseTotal > 0) { const old = grp.map(x => +(x.price.purchase && x.price.purchase.total) || 0), sum = old.reduce((a, v) => a + v, 0) || grp.length; let rest = r2(+b.purchaseTotal);
+            grp.forEach((x, i) => { const v = i === grp.length - 1 ? rest : r2(+b.purchaseTotal * (sum === grp.length ? 1 : old[i]) / sum); rest = r2(rest - v);
+              x.price.purchase = Object.assign({}, x.price.purchase, { total: v, actual: true }); x.price.margin = r2((x.price.margin || 0) + old[i] - v); hist(x, "Einkauf laut Print.com übernommen: " + eur(v) + (grp.length > 1 ? " (Anteil am Auftrag " + eur(+b.purchaseTotal) + ")" : "")); }); }
           if (b.graphicFee === true && !grp.some(x => x.price.checkFee && x.price.checkFee.kind === "graphic")) {
             const x = grp.find(y => !y.noFile) || grp[0], rate = x.price.rate || 0, gross = GRAPHIC_CHECK_GROSS, net = r2(gross / (1 + rate / 100)), vat = r2(gross - net);
             x.price.checkFee = { gross, net, vat, kind: "graphic" }; x.price.gross = r2(x.price.gross + gross); x.price.net = r2(x.price.net + net); x.price.vat = r2(x.price.vat + vat); x.price.margin = r2((x.price.margin || 0) + net);
