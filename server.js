@@ -5417,7 +5417,7 @@ const server = http.createServer((req, res) => {
     // Ausnahmen: lokale Entwicklung und Railway-intern. GET/HEAD → 301, sonst 308 (Methode bleibt erhalten).
     const host = String(req.headers.host || "").toLowerCase().split(":")[0];
     // Ausnahme Druckdateien für Print.com (große PDFs bis 500 MB): auf der Railway-Adresse ohne Umleitung – an Cloudflare (100 s bis zur Antwort) vorbei
-    const pcDirect = host && host === String(process.env.RAILWAY_PUBLIC_DOMAIN || "").toLowerCase() && /^\/print-files\//.test(String(req.url || ""));
+    const pcDirect = /^[a-z0-9-]+\.up\.railway\.app$/.test(host) && /^\/print-files\//.test(String(req.url || ""));   // Links sind signiert
     if (!pcDirect && host && host !== CANON_HOST && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(host) && !/\.railway\.internal$/.test(host) && host !== "healthcheck.railway.app" && !/\.localhost$/.test(host)) {
       const code = (req.method === "GET" || req.method === "HEAD") ? 301 : 308;
       return send(res, code, "", "text/plain", { Location: ORIGIN + (req.url || "/"), "X-Robots-Tag": "noindex" });

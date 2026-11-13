@@ -2706,7 +2706,7 @@ module.exports = function (D) {
   }
   // Absender-Aufkleber mit unserem Logo (Glühbirne) – wie die Absenderadresse „mit Logo“ im Print.com-Konto; ohne Bild nimmt Print.com die Adresse ohne Logo
   const senderLogo = base => process.env.PRINT_SENDER_LOGO_URL || base + "/logos/absender-logo.png";
-  const BIG_FILE = 80e6;   // ab hier holt Print.com die Druckdatei direkt über Railway (RAILWAY_PUBLIC_DOMAIN), nicht über Cloudflare
+  const BIG_FILE = 80e6;   // ab hier holt Print.com die Druckdatei direkt über die Railway-Adresse, nicht über Cloudflare
   const pcFileUrl = (base, id) => base + "/print-files/" + id + "/" + sig("pcfile", id) + ".pdf";
   // Offsetdruck + mehrere Motive (ältere Bestellungen): je Motiv eigene Position im selben Auftrag statt „designs“
   const motifSplit = o => Array.isArray(o.motifs) && o.motifs.length > 1 && String((o.pcOptions || {}).printingmethod || "") === "offset";
@@ -2722,7 +2722,7 @@ module.exports = function (D) {
       const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error("Druckdatei fehlt");
       const c = o.customer, base = cfg().publicUrl;
       let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
-      const fbase = big && process.env.RAILWAY_PUBLIC_DOMAIN ? "https://" + process.env.RAILWAY_PUBLIC_DOMAIN : base;
+      const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
       const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
         billingAddress: billingFs(),
