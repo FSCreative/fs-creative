@@ -2130,14 +2130,14 @@
       ["📄", "Seiten", pagesTxt],
       ["🎨", "Farben", "<b>CMYK</b> anlegen – RGB-Dateien werden beim Druck umgerechnet, leuchtende Bildschirmfarben wirken dann etwas ruhiger"],
       ["🔤", "Schriften", "In der PDF <b>einbetten</b> oder in Pfade umwandeln; Schriftgröße ab " + (big ? "20 pt" : "6 pt") + ", feine Linien ab 0,25 pt"],
-      ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 50 MB · keine Schnittmarken"]
+      ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 100 MB · keine Schnittmarken"]
     ];
     // Aufdruck (Werbeartikel, Taschen, Textil, Tampon-/Siebdruck): Druckfläche statt Endformat, kein Beschnitt, kein Sicherheitsabstand
     if (p.imprint) { var pms = /pantone|sonderfarbe/i.test(labelOf("printtype") || "");
       items = [["📏", "Druckfläche", "<b>max. " + unit(sz.w) + " × " + unit(sz.h) + "</b> – dein Motiv in dieser Größe oder kleiner anlegen, <b>ohne Beschnitt</b>; wir platzieren es mittig in der Druckfläche"],
         ["✒️", "Logo", "Am besten als <b>Vektor</b> (PDF, AI, EPS oder SVG); Schriften in Pfade umwandeln, feine Linien ab 0,3 pt" + (pms ? ". Fotos und Farbverläufe sind im " + esc(labelOf("printtype")) + " nicht möglich" : "")],
         ["🎨", "Farben", pms ? "<b>Pantone-Farben</b> laut gewählter Farbanzahl – bitte die Pantone-Nummern in der Datei angeben" : "<b>CMYK</b> anlegen – RGB wird beim Druck umgerechnet"],
-        ["📦", "Datei", "<b>PDF</b> mit nur dem Motiv – ohne Hintergrundfläche, ohne Rahmen und Schnittmarken · max. 50 MB"]]; }
+        ["📦", "Datei", "<b>PDF</b> mit nur dem Motiv – ohne Hintergrundfläche, ohne Rahmen und Schnittmarken · max. 100 MB"]]; }
     if (p.mustTpl) items.unshift(["⚠️", "Vorlage verwenden – Pflicht", esc(p.mustTpl) + " " + wfHtml("soft"), "wide"]);
     var spi = spotItem(); if (spi && !p.imprint) items.splice(5, 0, spi);
     // Transparentes Material (Plexiglas, Fensterfolie, transparente Aufkleber …): was bleibt durchsichtig, wozu Weiß? (Wunsch Simon 05.11.2026 nach Kundenfrage)
@@ -2207,7 +2207,7 @@
     } else if (S.mode === "upload") {
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
         : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
-      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() || multiMot() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : multiMot() ? " · mehrere Dateien auf einmal = je Datei ein Motiv (ab Motiv " + (S.mot.i + 1) + ")" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
+      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() || multiMot() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 100 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : multiMot() ? " · mehrere Dateien auf einmal = je Datei ein Motiv (ab Motiv " + (S.mot.i + 1) + ")" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
         reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
@@ -2222,7 +2222,7 @@
     var slots = pos.map(function (x) { var l = S.logos[x.slug];
       return '<div class="ps-logo"><div class="ps-logo-h"><b>' + esc(x.title) + '</b><span class="pd-muted">max. ' + x.area[0] + " × " + x.area[1] + " mm</span></div>" +
         (l ? '<div class="ps-file" style="margin-top:8px"><div><b>' + esc(l.name) + '</b><div class="pd-muted">' + (l.blocked ? '<span style="color:var(--ps-bad)">bitte anderes Logo</span>' : "Logo geprüft") + '</div></div><button type="button" class="ps-btn small" data-act="clearlogo:' + esc(x.slug) + '">Anderes Logo</button></div>' + checksHtml(l.checks.filter(function (c) { return c.level !== "ok"; }))
-          : '<label class="ps-drop small" data-logo="' + esc(x.slug) + '"><input type="file" data-logo="' + esc(x.slug) + '" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"><b>Logo auswählen oder hierher ziehen</b><small>PNG mit transparentem Hintergrund (mind. 1000 px) oder Vektor-PDF · max. 50 MB</small><div class="ps-prog" hidden><i></i></div></label>') +
+          : '<label class="ps-drop small" data-logo="' + esc(x.slug) + '"><input type="file" data-logo="' + esc(x.slug) + '" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"><b>Logo auswählen oder hierher ziehen</b><small>PNG mit transparentem Hintergrund (mind. 1000 px) oder Vektor-PDF · max. 100 MB</small><div class="ps-prog" hidden><i></i></div></label>') +
         '<div class="ps-uperr" data-err="' + esc(x.slug) + '"></div></div>'; }).join("");
     var merged = S.file ? '<div class="ps-file"><div><b>Logo-PDF für den Druck</b><div class="pd-muted">' + (S.file.pages || pos.length) + " Seite(n) – eine je Position · " + (S.file.blocked ? '<span style="color:var(--ps-bad)">bitte korrigieren</span>' : "bereit") + '</div></div><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a></div>' + checksHtml(S.file.checks.filter(function (c) { return c.level === "error"; })) : "";
     var tx = kind() === "textile", tdz = tx ? texDesignHtml(pos) : "";
@@ -3048,7 +3048,7 @@
   }
   function uploadFile(f, logo, back) {
     var er = logo ? root.querySelector('[data-err="' + logo + '"]') : document.getElementById("psUpErr"); er.innerHTML = "";
-    if (f.size > 50 * 1024 * 1024) { er.innerHTML = '<p class="ps-err">Die Datei ist größer als 50 MB.</p>'; return; }
+    if (f.size > 100e6) { er.innerHTML = '<p class="ps-err">Die Datei ist größer als 100 MB.</p>'; return; }
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { er.innerHTML = '<p class="ps-err">Bitte PDF, JPG oder PNG hochladen.</p>'; return; }
     var pr = logo ? root.querySelector('label[data-logo="' + logo + '"] .ps-prog') : document.getElementById("psProg"); pr.hidden = false;
     var x = new XMLHttpRequest(); x.open("POST", "/print/api/upload");
@@ -3105,7 +3105,7 @@
     var cur = S.file; if (!cur) return; var n = +cur.pages || 0, pg = page === "sel" ? parseInt((document.getElementById("psPgN") || {}).value, 10) : +page, er = document.getElementById("psPgErr");
     var lab = pgLabel(pg - 1, n), fail = function (m) { upPop("close"); if (er) er.innerHTML = '<p class="ps-err">' + esc(m) + "</p>"; else toast(m, true); };
     if (!(pg >= 1 && pg <= n)) return fail("Bitte eine Seite zwischen 1 und " + n + " wählen.");
-    if (f.size > 50 * 1024 * 1024) return fail("Die Datei ist größer als 50 MB.");
+    if (f.size > 100e6) return fail("Die Datei ist größer als 100 MB.");
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return fail("Bitte PDF, JPG oder PNG hochladen.");
     var x = new XMLHttpRequest(); x.open("POST", "/print/api/file/page");
     x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
@@ -3139,8 +3139,8 @@
   // ohne gemeinsame Rückseite und beidseitig zählen mehrere Dateien weiter als Vorder-/Rückseite eines Motivs
   function multiMot() { return S.mot.n > 1 && motOk() && !isLogo() && (sides() !== 2 || sameBack()); }
   function uploadMotifs(list) {
-    var files = [].slice.call(list).filter(function (f) { return /\.(pdf|jpe?g|png)$/i.test(f.name) && f.size <= 50 * 1024 * 1024; }); motSave();
-    var start = S.mot.i, n = Math.min(files.length, S.mot.n - start), done = 0, fails = []; if (!n) { toast("Bitte PDF, JPG oder PNG (max. 50 MB) wählen.", true); return; }
+    var files = [].slice.call(list).filter(function (f) { return /\.(pdf|jpe?g|png)$/i.test(f.name) && f.size <= 100e6; }); motSave();
+    var start = S.mot.i, n = Math.min(files.length, S.mot.n - start), done = 0, fails = []; if (!n) { toast("Bitte PDF, JPG oder PNG (max. 100 MB) wählen.", true); return; }
     if (files.length > n) toast("Nur " + n + " von " + files.length + " Dateien passen ab Motiv " + (start + 1) + " – der Rest wurde nicht hochgeladen.", true);
     var one = function (k) {
       if (k >= n) { var f0 = S.mot.files[start] || {}; S.mot.i = start; S.file = f0.file || null; S.previews = f0.previews || null; S.design = f0.design || null; S.mode = f0.mode || ""; render(); /* nicht motLoad: das würde den leeren Stand über Motiv 1 speichern */ upPop("close"); toast(fails.length ? fails.length + " Datei(en) nicht hochgeladen: " + fails.join(", ") : n + " Motive hochgeladen ✓", !!fails.length); return; }
@@ -3167,7 +3167,7 @@
   function uploadBack(f) {
     var cur = S.file; if (!cur) return; var er = document.getElementById("psBackErr"), pr = document.getElementById("psBackProg"), nm = sideNames()[1];
     var fail = function (m) { upPop("close"); if (pr) pr.hidden = true; if (er) er.innerHTML = '<p class="ps-err">' + esc(m) + "</p>"; else toast(m, true); };
-    if (f.size > 50 * 1024 * 1024) return fail("Die Datei ist größer als 50 MB.");
+    if (f.size > 100e6) return fail("Die Datei ist größer als 100 MB.");
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return fail("Bitte PDF, JPG oder PNG hochladen.");
     if (pr) pr.hidden = false;
     var x = new XMLHttpRequest(); x.open("POST", "/print/api/file/back");
@@ -3385,7 +3385,7 @@
     var r = o.redo; if (!r) return "";
     var files = (o.files || []).map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ");
     var up = function (lab) { return r.canUpload ? '<div class="ps-redo-u">' + (r.motifs ? '<label class="ps-lbl">Motiv <select class="ps-redo-m">' + Array.apply(null, Array(r.motifs)).map(function (_, i) { return '<option value="' + i + '">Motiv ' + (i + 1) + "</option>"; }).join("") + "</select></label>" : "") +
-      '<label class="ps-btn primary ps-redo-b">' + lab + '<input type="file" accept="' + ACC_UP + '" data-redoup hidden></label><span class="pd-muted">PDF, JPG oder PNG · max. 50 MB</span></div><div class="ps-redo-p" hidden><span class="ps-spin"></span> <span>Datei wird hochgeladen und geprüft …</span></div><div class="ps-redo-c"></div><p class="ps-err" role="alert" hidden></p>' : ""; };
+      '<label class="ps-btn primary ps-redo-b">' + lab + '<input type="file" accept="' + ACC_UP + '" data-redoup hidden></label><span class="pd-muted">PDF, JPG oder PNG · max. 100 MB</span></div><div class="ps-redo-p" hidden><span class="ps-spin"></span> <span>Datei wird hochgeladen und geprüft …</span></div><div class="ps-redo-c"></div><p class="ps-err" role="alert" hidden></p>' : ""; };
     if (r.status === "uploaded") return '<div class="ps-pfx ok" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>✓ Neue Druckdaten sind angekommen</h3><p>Danke! Wir prüfen sie und geben den Auftrag dann in den Druck. Bei Fragen melden wir uns.</p><p>' + files + "</p>" + (r.canUpload ? "<details><summary>Doch eine andere Datei hochladen</summary>" + up("Andere Datei wählen") + "</details>" : "") + "</div>";
     return '<div class="ps-pfx warn" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte neue Druckdaten hochladen</h3><p>Wir haben deine Druckdaten angesehen – so können wir sie leider noch nicht drucken lassen.</p>' +
       (r.reason ? '<p class="ps-pfx-n"><b>Grund:</b> ' + esc(r.reason) + "</p>" : "") + (files ? "<p>Bisherige Datei: " + files + "</p>" : "") + up("Neue Datei hochladen") + "</div>";
@@ -3394,7 +3394,7 @@
     var inp = e.target; if (!inp || !inp.hasAttribute || !inp.hasAttribute("data-redoup")) return; var f = inp.files && inp.files[0]; inp.value = ""; if (!f) return;
     var bx = inp.closest(".ps-pfx"), err = bx.querySelector(".ps-err"), pr = bx.querySelector(".ps-redo-p"), ck = bx.querySelector(".ps-redo-c"), ms = bx.querySelector(".ps-redo-m");
     err.hidden = true; ck.innerHTML = "";
-    if (f.size > 50 * 1024 * 1024) { err.textContent = "Die Datei ist größer als 50 MB."; err.hidden = false; return; }
+    if (f.size > 100e6) { err.textContent = "Die Datei ist größer als 100 MB."; err.hidden = false; return; }
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { err.textContent = "Bitte PDF, JPG oder PNG hochladen."; err.hidden = false; return; }
     pr.hidden = false;
     var x = new XMLHttpRequest(); x.open("POST", "/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/reupload?t=" + encodeURIComponent(bx.getAttribute("data-t")) + (ms ? "&motif=" + encodeURIComponent(ms.value) : ""));

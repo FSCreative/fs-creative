@@ -19,7 +19,7 @@ const MM_PT = 72 / 25.4;
 // nur Österreich: Print.com liefert direkt aus den NL – bei Lieferung nach DE wäre es kein ig. Erwerb in AT mehr (Dreiecksgeschäft bzw. DE-Registrierung)
 const COUNTRIES = { AT: "Österreich" };
 const PLZ = { AT: /^\d{4}$/, DE: /^\d{5}$/ };
-const MAX_UPLOAD = 50 * 1024 * 1024;
+const MAX_UPLOAD = 100 * 1000 * 1000;   // Druckdateien max. 100 MB (Simon 13.11.2026; Cloudflare nimmt je Anfrage höchstens 100 MB an)
 const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", uid: "ATU82622967", email: "simon@fs-creative.at", phone: "+43 664 1430620" };
 
 // Kategorien = Print.com-Produktbaum (Hauptgruppe/Untergruppe als Slug, Namen aus dem Print.com-CMS). Ohne Angabe von Print.com: Stichwort-Regeln als Ersatz.
@@ -4365,13 +4365,13 @@ module.exports = function (D) {
     const fun = funSummary(7); realOrd(); if (REAL_ORD.n != null) { fun.ordered = REAL_ORD.n; fun.real = true; }
     return { funnel: fun, at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
-  // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
+  // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 180 s – große Dateien brauchen länger)
   const PDF_SLOTS = { busy: 0, wait: [] };
   function pdfSlot() {
     const release = () => { const w = PDF_SLOTS.wait.shift(); if (w) { clearTimeout(w.t); w.res(release); } else PDF_SLOTS.busy--; };
     if (PDF_SLOTS.busy < 2) { PDF_SLOTS.busy++; return Promise.resolve(release); }
     if (PDF_SLOTS.wait.length >= 12) return Promise.reject(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 }));
-    return new Promise((res, rej) => { const w = { res, t: setTimeout(() => { PDF_SLOTS.wait.splice(PDF_SLOTS.wait.indexOf(w), 1); rej(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 })); }, 60000) }; PDF_SLOTS.wait.push(w); });
+    return new Promise((res, rej) => { const w = { res, t: setTimeout(() => { PDF_SLOTS.wait.splice(PDF_SLOTS.wait.indexOf(w), 1); rej(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 })); }, 180000) }; PDF_SLOTS.wait.push(w); });
   }
   const withPdf = async fn => { const rel = await pdfSlot(); try { return await fn(); } finally { rel(); } };
   // Entwürfe: je IP höchstens 150 MB pro Tag (Speicher schützen)
@@ -4386,9 +4386,9 @@ module.exports = function (D) {
   }
   function readBody(req, max) {
     return new Promise((resolve, reject) => {
-      const len = parseInt(req.headers["content-length"] || "0", 10); if (len > max) { reject(Object.assign(new Error("Datei zu groß (max. " + Math.round(max / 1048576) + " MB)"), { status: 413 })); req.resume(); return; }
+      const len = parseInt(req.headers["content-length"] || "0", 10); if (len > max) { reject(Object.assign(new Error("Datei zu groß (max. " + Math.floor(max / 1e6) + " MB)"), { status: 413 })); req.resume(); return; }
       const chunks = []; let n = 0, dead = false;
-      req.on("data", c => { if (dead) return; n += c.length; if (n > max) { dead = true; reject(Object.assign(new Error("Datei zu groß (max. " + Math.round(max / 1048576) + " MB)"), { status: 413 })); req.resume(); return; } chunks.push(c); });
+      req.on("data", c => { if (dead) return; n += c.length; if (n > max) { dead = true; reject(Object.assign(new Error("Datei zu groß (max. " + Math.floor(max / 1e6) + " MB)"), { status: 413 })); req.resume(); return; } chunks.push(c); });
       req.on("end", () => { if (!dead) resolve(Buffer.concat(chunks)); }); req.on("error", e => { if (!dead) reject(e); });
     });
   }
