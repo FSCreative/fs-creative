@@ -134,7 +134,11 @@ module.exports = function (D) {
   }
   async function status() { if (!ST) ST = (await store.getMeta("chat_status").catch(() => null)) || { online: false, beat: 0 }; return ST; }
   // Online nur von Hand (Schalter im Cockpit): kein automatisches Ein- oder Ausschalten, keine Ruhezeit, kein Herzschlag (Wunsch Simon 06.11.2026)
-  const isOnline = () => !!(ST && ST.online);
+  // Ab 18:00 Uhr (Wien) immer offline, und der Schalter gilt nur für den Tag, an dem er eingeschaltet wurde – am nächsten Tag wieder von Hand (Wunsch Simon 13.11.2026)
+  const viennaNow = d => { const f = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false }).formatToParts(d || new Date()), g = t => (f.find(x => x.type === t) || {}).value || "";
+    return { day: g("year") + "-" + g("month") + "-" + g("day"), hour: +g("hour") % 24 }; };
+  const OFF_HOUR = 18;
+  const isOnline = () => { if (!(ST && ST.online)) return false; const n = viennaNow(); if (n.hour >= OFF_HOUR) return false; return !ST.since || viennaNow(new Date(ST.since)).day === n.day; };
   async function online() { await status(); return isOnline(); }
   async function setStatus(on) { await status(); const was = isOnline(); ST.online = !!on; ST.beat = on ? Date.now() : 0; if (!on) ST.since = nowIso(); else if (!was) ST.since = nowIso(); await store.setMeta("chat_status", ST).catch(e => log("Status speichern:", e.message)); bump(); return isOnline(); }
   async function aiDay() { const d = today(); if (!AIDAY || AIDAY.day !== d) { const m = await store.getMeta("chat_ai_day").catch(() => null); AIDAY = m && m.day === d ? m : { day: d, n: 0 }; } return AIDAY; }

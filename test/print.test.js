@@ -1121,8 +1121,22 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.deepStrictEqual(its[0].designs.map(d => d.copies), [150, 50]); assert.strictEqual(its[0].options.copies, 200);
       assert.ok(its[1].fileUrl && !its[1].designs && its[1].options.copies === 50 && its[1].shipments[0].copies === 50, JSON.stringify(its[1]).slice(0, 300));
       assert.ok(/Motive auf 2 Positionen aufgeteilt/.test(JSON.stringify(pl.order.history || pl.order.log || "")), "Verlauf");
+      const od = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order, before = od.price.purchase.total;
+      assert.strictEqual(before, 23, "Einkauf = Summe der Print.com-Positionen (2 × 11,50)"); assert.ok(od.price.purchase.actual && /Einkauf laut Print\.com/.test(JSON.stringify(od.history)), JSON.stringify(od.price.purchase));
       assert.ok(/^\d+$/.test(pl.order.printcom.orderNumber), "Auftragsnummer auch aus { order: … } " + JSON.stringify(pl.order.printcom));
     } finally { delete pd.maxDesigns; M.orderWrap = false; }
+  });
+  await t("Abgebrochene Zahlung: Zahlart, Ablehnungsgrund und Dauer von Mollie im Verlauf; nachträglich abrufbar", async () => {
+    const up = await upload(await pdfOf(89, 59, 2), "pf.pdf", BC);
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: up.j.fileId, fileToken: up.j.token, expectedGross: 38.4 })] }, { customer: Object.assign({}, cust, { email: "zahlung@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true }), { "x-forwarded-for": "203.0.113.78" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); const mpid = r.j.checkoutUrl.split("/").pop();
+    Object.assign(M.payments[mpid], { status: "failed", method: "creditcard", createdAt: "2026-11-13T10:00:00Z", failedAt: "2026-11-13T10:03:00Z", details: { failureReason: "insufficient_funds", cardLabel: "Mastercard", cardCountryCode: "AT" } });
+    await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mpid });
+    let od = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order; assert.strictEqual(od.status, "payment_failed");
+    assert.ok(/Zahlung fehlgeschlagen: .*Kreditkarte Mastercard \(AT\).*nicht genug Deckung/.test(JSON.stringify(od.history)), JSON.stringify(od.history).slice(-400));
+    Object.assign(M.payments[mpid], { status: "expired", method: null, details: null, expiredAt: "2026-11-13T10:19:00Z" });
+    const pi = await admin("/admin/api/print/op", { op: "payinfo", id: r.j.orderId, confirm: true }); assert.ok(pi.ok && /keine Zahlart gewählt.*nach 19 Min/.test(pi.info.text), JSON.stringify(pi));
+    const st = await admin("/admin/api/print/state"); assert.ok(/keine Zahlart gewählt/.test((st.orders.find(x => x.id === r.j.orderId) || {}).payFail), "Cockpit-Liste");
   });
   await t("Beidseitig: Rückseite als eigenes Bild/PDF → 2-seitige Druck-PDF (alle beidseitigen Produkte; gefalzt = Innenseite); einseitig nicht möglich", async () => {
     const back = async (f, buf, name) => { const r = await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token }, body: buf }); return { status: r.status, j: await r.json() }; };

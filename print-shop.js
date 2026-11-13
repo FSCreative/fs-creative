@@ -2795,6 +2795,13 @@ module.exports = function (D) {
     const pd = await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller"), v = +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null;
     if (v) MAXD.set(sku, { at: Date.now(), v }); return v;
   }
+  // tatsächlicher Einkauf laut Print.com-Antwort (je Position grandTotal inkl. Versand) → Einkauf + Marge der Bestellung anpassen (Simon 13.11.2026: Marge immer echt)
+  function setActualPurchase(o, v, why) {
+    v = r2(+v); if (!(v > 0) || !o.price) return false;
+    const old = +(o.price.purchase && o.price.purchase.total) || 0; if (Math.abs(old - v) < 0.005 && o.price.purchase && o.price.purchase.actual) return false;
+    o.price.purchase = Object.assign({}, o.price.purchase, { total: v, actual: true }); o.price.margin = r2((o.price.margin || 0) + old - v);
+    hist(o, "Einkauf laut Print.com: " + eur(v) + (old ? " (geplant " + eur(old) + ", Marge " + (old - v >= 0 ? "+" : "") + eur(r2(old - v)) + ")" : "") + (why ? " · " + why : "")); return true;
+  }
   const motifChunks = (ms, mx) => { const out = []; for (let i = 0; i < ms.length; i += mx) out.push(ms.slice(i, i + mx).map((m, k) => Object.assign({ idx: i + k }, m))); return out; };
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
   // Positionen einer Bestellung für Print.com (Datei-Links, Motive, Varianten, Lieferadresse)
@@ -2860,6 +2867,8 @@ module.exports = function (D) {
         if (needsBack(x.fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
         if (o.cover && o.cover.fileId) hist(o, "Umschlag als Seite 1 in die Druckdatei für Print.com übernommen");
         if (!orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
+        { const mine = rItems.filter(i => i && String(i.customerReference || "").indexOf(o.nr) === 0), tot = mine.reduce((a, i) => a + (+i.grandTotal || 0), 0);
+          if (mine.length && mine.length === x.items.length && mine.every(i => +i.grandTotal > 0)) setActualPurchase(o, tot, mine.length > 1 ? mine.length + " Positionen" : ""); }
         await store.putOrder(o);
       }
       let grpInvSent = false;
@@ -2935,6 +2944,18 @@ module.exports = function (D) {
     for (const o of L) await submitted((await store.getOrder(o.id)) || o);   // frisch laden: eine frühere Position kann den ganzen Warenkorb schon bestellt haben
     return await store.getOrder(id);
   }
+  // Abgebrochene/fehlgeschlagene Zahlung genauer (Simon 13.11.2026): gewählte Zahlart, Ablehnungsgrund der Karte, Dauer bis Abbruch – aus Mollie
+  const PAY_M = { creditcard: "Kreditkarte", applepay: "Apple Pay", googlepay: "Google Pay", paypal: "PayPal", eps: "eps-Überweisung", banktransfer: "Banküberweisung", klarna: "Klarna", klarnapaylater: "Klarna Rechnung", klarnapaynow: "Klarna Sofort", klarnasliceit: "Klarna Ratenkauf", billie: "Billie (Firmenrechnung)", in3: "in3", riverty: "Riverty", trustly: "Trustly", paybybank: "Pay by Bank", twint: "TWINT", bancontact: "Bancontact", ideal: "iDEAL", giropay: "giropay", sofort: "Sofort", przelewy24: "Przelewy24", blik: "BLIK", satispay: "Satispay", bizum: "Bizum", alma: "Alma", mybank: "MyBank", directdebit: "Lastschrift" };
+  const PAY_FAIL = { authentication_failed: "3-D-Secure-Bestätigung fehlgeschlagen", card_declined: "Karte abgelehnt", card_expired: "Karte abgelaufen", inactive_card: "Karte nicht aktiviert", insufficient_funds: "nicht genug Deckung", invalid_card_holder_name: "Name des Karteninhabers ungültig", invalid_card_number: "Kartennummer ungültig", invalid_card_type: "Kartentyp nicht unterstützt", invalid_cvv: "Prüfnummer (CVC) falsch", possible_fraud: "Bank vermutet Betrug", refused_by_issuer: "von der Bank abgelehnt", unknown_reason: "Grund unbekannt (Bank)", card_country_not_accepted: "Kartenland nicht akzeptiert" };
+  function payFailInfo(pay, st) {
+    pay = pay || {}; const d = pay.details || {}, m = pay.method ? (PAY_M[pay.method] || String(pay.method)) : "", reason = d.failureReason ? (PAY_FAIL[d.failureReason] || String(d.failureReason)) : "", msg = clip(d.failureMessage || "", 160);
+    const end = pay.expiredAt || pay.canceledAt || pay.failedAt, mins = end && pay.createdAt ? Math.max(0, Math.round((Date.parse(end) - Date.parse(pay.createdAt)) / 60000)) : null;
+    const what = st === "canceled" ? "Kunde hat die Zahlung abgebrochen" : st === "expired" ? (m ? "Zahlung nicht abgeschlossen – Zahlart gewählt, aber nicht bestätigt" : "Zahlung nicht abgeschlossen – keine Zahlart gewählt (Bezahlseite verlassen oder geschlossen)") : "Zahlung fehlgeschlagen";
+    const card = d.cardLabel ? clip(String(d.cardLabel) + (d.cardCountryCode ? " (" + d.cardCountryCode + ")" : ""), 40) : "";
+    const text = what + (m ? " · Zahlart: " + m + (card ? " " + card : "") : "") + (reason ? " · Grund: " + reason : "") + (msg && msg !== reason ? " („" + msg + "“)" : "") + (mins != null && st !== "failed" ? " · nach " + mins + " Min." : "");
+    return { status: st, method: String(pay.method || ""), reason: String(d.failureReason || ""), message: msg, card, minutes: mins, text, at: nowIso() };
+  }
+  const PAY_ST_DE = { canceled: "abgebrochen", expired: "abgelaufen", failed: "fehlgeschlagen" };
   // Mollie-Webhook: nie dem Inhalt trauen, sondern die Zahlung bei Mollie abrufen
   async function mollieWebhook(paymentId) {
     if (!/^tr_[A-Za-z0-9]{4,40}$/.test(paymentId)) return;
@@ -2953,7 +2974,7 @@ module.exports = function (D) {
           if (x.status === "pending_payment" || x.status === "payment_failed") x.status = "paid";
           hist(x, "Zahlung eingegangen (Mollie " + paymentId + ", Warenkorb " + md.groupId + ")" + (was ? " – war schon nach Zahlungsnachweis in Arbeit" : "")); await briefDone(x); await store.putOrder(x); if (!was) (x.__sub = true);
         } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.transferOk && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { await transferMissing(x, st);
-        } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { x.payment.status = st; if (x.status === "pending_payment") x.status = "payment_failed"; hist(x, "Zahlung " + st); await briefUndo(x); await store.putOrder(x); }
+        } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { x.payment.status = st; x.payment.fail = payFailInfo(pay, st); if (x.status === "pending_payment") x.status = "payment_failed"; hist(x, "Zahlung " + (PAY_ST_DE[st] || st) + ": " + x.payment.fail.text); await briefUndo(x); await store.putOrder(x); }
       }
       for (const x of orders) if (x.__sub) await submitted((await store.getOrder(x.id)) || x);   // frisch laden (Warenkorb wird gemeinsam bestellt)
       return;
@@ -2971,7 +2992,7 @@ module.exports = function (D) {
       if (!was) await submitted(o);
     } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && o.payment.transferOk && o.payment.status !== "paid" && paymentId === o.payment.mollieId) { await transferMissing(o, st);
     } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && o.payment.status !== "paid" && paymentId === o.payment.mollieId) {
-      o.payment.status = st; if (o.status === "pending_payment") o.status = "payment_failed"; hist(o, "Zahlung " + st); await briefUndo(o); await store.putOrder(o);
+      o.payment.status = st; o.payment.fail = payFailInfo(pay, st); if (o.status === "pending_payment") o.status = "payment_failed"; hist(o, "Zahlung " + (PAY_ST_DE[st] || st) + ": " + o.payment.fail.text); await briefUndo(o); await store.putOrder(o);
     } else if (pay.amountRefunded && parseFloat(pay.amountRefunded.value) > 0 && o.payment.refund && o.payment.refund.status !== "refunded") { o.payment.refund.status = "refunded"; await store.putOrder(o); }
   }
   // Gestaltungsanfrage zur Bestellung erledigen (Wunsch Simon 05.11.2026): über den Angebotslink (briefId) oder – Kunde bestellt ohne Link (eigene Datei,
@@ -5288,7 +5309,7 @@ module.exports = function (D) {
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
@@ -5985,6 +6006,8 @@ module.exports = function (D) {
             const gross = r2(+q.gross + fee), net = r2(gross / (1 + rate / 100)); x.price.gross = gross; x.price.net = net; x.price.vat = r2(gross - net); x.price.margin = r2((x.price.margin || 0) + net - oldNet);
             if (q.urgency) x.urgency = String(q.urgency); hist(x, "Preis im Cockpit auf den tatsächlich bestellten Stand gesetzt: " + eur(+q.gross) + (q.urgency ? " (" + (URGENCY_DE[q.urgency] || q.urgency) + ")" : "")); }
           // purchaseTotal: tatsächlicher Einkauf laut Print.com für den ganzen Auftrag (netto) – anteilig nach bisherigem Einkauf verteilt, Marge angepasst
+          // purchases: { "<Bestellnr>": Einkauf netto } – genau je Bestellung (statt anteilig)
+          if (b.purchases && typeof b.purchases === "object") for (const x of grp) { const v = +b.purchases[x.nr]; if (v > 0) setActualPurchase(x, v, "im Cockpit nachgetragen"); }
           if (+b.purchaseTotal > 0) { const old = grp.map(x => +(x.price.purchase && x.price.purchase.total) || 0), sum = old.reduce((a, v) => a + v, 0) || grp.length; let rest = r2(+b.purchaseTotal);
             grp.forEach((x, i) => { const v = i === grp.length - 1 ? rest : r2(+b.purchaseTotal * (sum === grp.length ? 1 : old[i]) / sum); rest = r2(rest - v);
               x.price.purchase = Object.assign({}, x.price.purchase, { total: v, actual: true }); x.price.margin = r2((x.price.margin || 0) + old[i] - v); hist(x, "Einkauf laut Print.com übernommen: " + eur(v) + (grp.length > 1 ? " (Anteil am Auftrag " + eur(+b.purchaseTotal) + ")" : "")); }); }
@@ -6023,6 +6046,15 @@ module.exports = function (D) {
         }
         if (op === "payremind") { const n = await payReminderDue(id); return J(res, 200, { ok: n > 0, sent: n, error: n ? undefined : "Nicht gesendet (bezahlt, schon erinnert oder keine E-Mail)" }); }
         if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false, b.silent ? { silent: true, storno: "manual" } : null); return J(res, 200, { ok: true, order: o }); }
+        if (op === "payinfo") {   // Details einer abgebrochenen Zahlung nachträglich bei Mollie abrufen (ganzer Warenkorb)
+          const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
+          if (!(o0.payment && o0.payment.mollieId)) return J(res, 400, { ok: false, error: "Keine Mollie-Zahlung" });
+          const pay = await mollie("GET", "/payments/" + encodeURIComponent(o0.payment.mollieId)), st = String(pay.status || "");
+          if (["canceled", "expired", "failed"].indexOf(st) < 0) return J(res, 200, { ok: true, status: st, info: null });
+          const info = payFailInfo(pay, st), grp = isGroup(o0) ? await siblingsOf(o0) : [o0];
+          for (const x of grp) { if (!x.payment || x.payment.mollieId !== o0.payment.mollieId) continue; const had = x.payment.fail && x.payment.fail.text === info.text; x.payment.fail = info; if (!had) hist(x, "Zahlungsdetails von Mollie: " + info.text); await store.putOrder(x); }
+          return J(res, 200, { ok: true, status: st, info, order: await store.getOrder(id) });
+        }
         if (op === "complete") {   // manuell abschließen (z. B. aus den Aufträgen: „Erledigt“) – erst nach der Bestellung bei Print.com
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!(["ordered", "in_production", "shipped"].indexOf(o.status) > -1 || (o.status === "problem" && o.printcom && o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – abschließen geht erst nach der Bestellung bei Print.com");
