@@ -988,6 +988,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.ok(sevMock.state.invoices.length > inv0); assert.ok(!/online bezahlt/.test(JSON.stringify(inv)), "Überweisung offen → kein „online bezahlt“");
     const fx = await admin("/admin/api/print/op", { op: "fixup", id: r.j.orders[1].id, confirm: true, invoice: { id: "9999", nr: "RE-TEST" }, graphicFee: true }); assert.strictEqual(fx.ok, true, JSON.stringify(fx));
     assert.ok(fx.orders.every(x => x.invoice === "RE-TEST" && x.status === "ordered")); assert.strictEqual(Math.round(fx.orders.reduce((a, x) => a + x.gross, 0) * 100) / 100, 96.8, "+20 € Grafikaufbereitung");
+    // versehentlich storniert → nur mit restore wieder „bestellt“
+    const u3 = await upload(await pdfOf(89, 59, 2), "tr3.pdf", BC), r3 = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u3.j.fileId, fileToken: u3.j.token, expectedGross: 38.4 })] }, base));
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "reject", id: r3.j.orders[0].id, confirm: true, reason: "Test", silent: true })).ok, true);
+    let fx2 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, orderNumber: "6000999" }); assert.strictEqual(fx2.orders[0].status, "rejected", "ohne restore bleibt storniert");
+    fx2 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, orderNumber: "6000999", restore: true }); assert.strictEqual(fx2.orders[0].status, "ordered"); assert.strictEqual(fx2.orders[0].orderNumber, "6000999");
   });
   await t("Druckdaten ablehnen: Mail-Vorschau, Senden, Bestellen gesperrt, Kunde lädt neue Datei hoch (Prüfung wie im Shop), danach wieder bestellbar", async () => {
     const base = { customer: Object.assign({}, cust, { email: "redo@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };

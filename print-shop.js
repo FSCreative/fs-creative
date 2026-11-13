@@ -5933,7 +5933,10 @@ module.exports = function (D) {
           const grp = isGroup(o0) ? await siblingsOf(o0) : [o0], ids = grp.map(x => x.id), nr = String(b.orderNumber || "").trim();
           if (nr && !/^\d{6,14}$/.test(nr)) return J(res, 400, { ok: false, error: "Print.com-Auftragsnummer ungültig" });
           for (const x of grp) {
-            if (nr && ["paid", "invoice_requested", "ordered", "problem"].indexOf(x.status) > -1 && !(x.printcom && x.printcom.orderNumber && x.printcom.orderNumber !== nr)) {
+            // restore: im Cockpit versehentlich stornierte Position, die bei Print.com mitbestellt wurde, zurückholen (nur ausdrücklich)
+            const back = b.restore === true && x.status === "rejected";
+            if (nr && (back || ["paid", "invoice_requested", "ordered", "problem"].indexOf(x.status) > -1) && !(x.printcom && x.printcom.orderNumber && x.printcom.orderNumber !== nr)) {
+              if (back) { hist(x, "Stornierung zurückgenommen – Position ist bei Print.com mitbestellt"); delete x.rejectReason; delete x.storno; }
               x.printcom = Object.assign({}, x.printcom, { orderNumber: nr, at: (x.printcom && x.printcom.at) || nowIso(), by: (x.printcom && x.printcom.by) || "Cockpit (nachgetragen)", group: grp.length > 1 ? ids : undefined });
               if (x.status !== "ordered") { x.status = "ordered"; stamp(x); } hist(x, "Print.com-Auftrag " + nr + " im Cockpit zugeordnet");
             }
