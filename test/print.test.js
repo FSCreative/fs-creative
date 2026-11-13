@@ -969,6 +969,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(sevMock.state.invoices.length, nInv + 1, "eine Sammelrechnung für den Warenkorb");
     const ginv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(ginv.invoicePosSave.length, 3, JSON.stringify(ginv.invoicePosSave.map(x => x.name)));
   });
+  await t("Nach abgebrochener Zahlung denselben Warenkorb erneut bestellen (Datei wieder frei); offene Zahlung → Hinweis statt „gehört schon zu einer Bestellung“", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "retry@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "self" };
+    const u = await upload(await pdfOf(89, 59, 2), "retry.pdf", BC), item = Object.assign({}, BC, { fileId: u.j.fileId, fileToken: u.j.token, expectedGross: 38.4 });
+    let r = await post("/print/api/checkout", Object.assign({ items: [item] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const r2 = await post("/print/api/checkout", Object.assign({ items: [item] }, base)); assert.strictEqual(r2.status, 409); assert.ok(/Zahlung offen/.test(r2.j.error), r2.j.error);
+    const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "canceled"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    r = await post("/print/api/checkout", Object.assign({ items: [item] }, base)); assert.strictEqual(r.status, 200, "nach abgebrochener Zahlung wieder bestellbar: " + JSON.stringify(r.j));
+  });
   await t("Druckdaten ablehnen: Mail-Vorschau, Senden, Bestellen gesperrt, Kunde lädt neue Datei hoch (Prüfung wie im Shop), danach wieder bestellbar", async () => {
     const base = { customer: Object.assign({}, cust, { email: "redo@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     const u1 = await upload(await pdfOf(89, 59, 2), "r1.pdf", BC);

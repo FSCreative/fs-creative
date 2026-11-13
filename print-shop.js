@@ -2093,7 +2093,7 @@ module.exports = function (D) {
     for (const p of n.positions) {
       const g = objOf(given[p.slug]); const fm = await store.fileMeta(String(g.fileId || ""));
       if (!fm || !sigOk("file", fm.id, g.token) || fm.kind !== "logo" || fm.product !== prod.key || fm.pos !== p.slug) throw bad("Bitte für „" + p.title + "“ ein Logo hochladen");
-      if (fm.orderId) throw Object.assign(new Error("Dieses Logo gehört schon zu einer Bestellung – bitte erneut hochladen"), { status: 409 });
+      if (await fileBusy(fm)) throw Object.assign(new Error("Dieses Logo gehört schon zu einer Bestellung – bitte erneut hochladen"), { status: 409 });
       metas.push([p, fm]);
     }
     const checks = [];
@@ -2507,6 +2507,15 @@ module.exports = function (D) {
   }
   // Auswahl unabhängig von der Schlüssel-Reihenfolge vergleichen – Postgres (jsonb) sortiert die Schlüssel der gespeicherten Datei-Metadaten um
   function canon(v) { if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]"; if (v && typeof v === "object") return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}"; return JSON.stringify(v === undefined ? null : v); }
+  // Datei schon einer Bestellung zugeordnet? Nach abgebrochener Zahlung darf die Kundin denselben Warenkorb erneut bestellen (Simon 13.11.2026, Pappaufsteller):
+  // frei, wenn die alte Bestellung nicht bezahlt wurde (Zahlung fehlgeschlagen/abgebrochen, abgelehnt) oder die offene Zahlung älter als 30 Minuten ist
+  async function fileBusy(f) {
+    if (!f || !f.orderId) return "";
+    const prev = await store.getOrder(f.orderId).catch(() => null);
+    if (!prev || ["payment_failed", "rejected"].indexOf(prev.status) > -1) return "";
+    if (prev.status === "pending_payment") return Date.now() - Date.parse(prev.createdAt || 0) > 30 * 60e3 ? "" : "pending";
+    return "ordered";
+  }
   async function prepItem(input, s, cust, method, uidRes, idx, total) {
     const where = total > 1 ? "Position " + (idx + 1) + ": " : "";
     const fail = (m, st) => Object.assign(new Error(where + m), { status: st || 400 });
@@ -2515,7 +2524,9 @@ module.exports = function (D) {
     const chk = async (fid, tok, label) => {
       const f = await store.fileMeta(String(fid || "")), w = label ? label + ": " : "";
       if (!f || !sigOk("file", f.id, tok)) throw fail(w + "Druckdatei nicht gefunden – bitte erneut hochladen");
-      if (f.orderId) throw fail(w + "Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
+      const busy = await fileBusy(f);
+      if (busy === "pending") throw fail(w + "Für diese Druckdatei ist gerade noch eine Zahlung offen – bitte die Zahlung abschließen oder in ein paar Minuten erneut bestellen", 409);
+      if (busy) throw fail(w + "Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
       if (f.kind === "logo" || (f.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
       if (f.product !== prod.key || canon(f.sel) !== canon(n.fileSel)) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
       if ((f.checks || []).some(c => c.level === "error")) throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren");
