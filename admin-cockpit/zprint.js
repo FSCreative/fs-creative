@@ -477,9 +477,34 @@ F.action("prvodel",function(code){ F.confirm("Gutschein „"+code+"“ löschen?
 F.action("prord",function(id){ openOrder(id); });
 /* Freigeben / Ablehnen / Abschließen – auch aus den Aufträgen (info = Kurzinfo der Aufgabe, quiet = Bestellung danach nicht öffnen) */
 function ord(id,info){ return ((ST&&ST.orders)||[]).find(function(x){ return x.id===id; })||info||{}; }
-F.prPlace=function(id,info,quiet){ var o=ord(id,info); F.confirm("Jetzt bei Print.com bestellen? "+(o.nr||"")+" · "+(o.product||"")+(o.purchase!=null?" · Einkauf ca. "+eur(o.purchase):"")+". Danach wird die Rechnung fertiggestellt und an den Kunden gesendet – außer sie ist schon versendet.","Verbindlich bestellen",function(){
-  F.api("/admin/api/print/op",{body:{confirm:true,op:"place",id:id}}).then(function(j){ if(j&&j.needForce){ F.confirm(j.error+". Trotzdem jetzt bei Print.com bestellen?","Ohne Freigabe bestellen",function(){ op({op:"place",id:id,force:true},"Bei Print.com bestellt",quiet); },true); return; }
-    if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Bei Print.com bestellt"); load(true); if(j.order&&!quiet) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); if(F.tkReload) F.tkReload(); }); }); };
+/* Übertragung an Print.com mit Fortschritts-Fenster (Simon 13.11.2026): Schritte + Balken, Fehler verständlich mit „Nochmal versuchen“ */
+function pcErr(e){ var t=String(e||"Unbekannter Fehler"), m=t.match(/"errorMessage"\s*:\s*"((?:[^"\\]|\\.)*)"/); if(m) t=m[1].replace(/\\"/g,'"'); t=t.replace(/^\[\d{3}\]\s*/,"");
+  var de=[[/Number of designs \((\d+)\) exceeds the maximum of (\d+)/i,function(x){ return "Zu viele Motive: "+x[1]+" Motive, Print.com erlaubt bei diesem Produkt höchstens "+x[2]+" je Position."; }],
+    [/Cannot have multiple designs with offset/i,function(){ return "Mehrere Motive sind im Offsetdruck nicht möglich."; }],[/file.*(not|could not).*(download|found|reach)/i,function(){ return "Print.com konnte die Druckdatei nicht laden."; }],
+    [/timeout|timed out|ETIMEDOUT/i,function(){ return "Print.com hat nicht rechtzeitig geantwortet – evtl. trotzdem angekommen, bitte im Print.com-Konto prüfen."; }]];
+  for(var k=0;k<de.length;k++){ var mm=t.match(de[k][0]); if(mm) return { de:de[k][1](mm), raw:t }; } return { de:t.replace(/^Print\.com:\s*/,""), raw:t }; }
+function pcProg(title,sub){ var STEPS=[[0,"Druckdaten und Optionen vorbereiten …"],[18,"Druckdateien an Print.com übertragen …"],[55,"Auftrag bei Print.com anlegen …"],[82,"Auf Bestätigung von Print.com warten …"]], p=0, done=false;
+  F.modal('<div class="pcp"><h2 style="font-size:19px;margin:0">'+esc(title)+'</h2><p class="muted" style="margin:0">'+esc(sub||"")+'</p><div class="pcp-bar"><i id="pcpB"></i></div><div class="pcp-row"><span id="pcpT">'+STEPS[0][1]+'</span><b id="pcpP">0 %</b></div><div id="pcpE"></div><div class="foot" id="pcpF" hidden></div></div>',"narrow");
+  var set=function(v,txt){ var b=document.getElementById("pcpB"), pp=document.getElementById("pcpP"), tt=document.getElementById("pcpT"); if(!b) return; b.style.width=v+"%"; pp.textContent=Math.round(v)+" %"; if(txt) tt.textContent=txt; };
+  var tm=setInterval(function(){ if(done) return clearInterval(tm); p+=Math.max(0.15,(93-p)*0.035); if(p>93) p=93; var st=STEPS.filter(function(x){ return p>=x[0]; }).pop(); set(p,st&&st[1]); },250);
+  return { ok:function(msg,btns){ done=true; clearInterval(tm); var b=document.getElementById("pcpB"); if(!b) return; b.parentNode.classList.add("ok"); set(100,"✓ "+msg); var f=document.getElementById("pcpF"); f.hidden=false; f.innerHTML='<span></span><span class="row">'+(btns||"")+'<button class="btn primary" data-closemodal>Fertig</button></span>'; },
+    fail:function(err,retry){ done=true; clearInterval(tm); var b=document.getElementById("pcpB"); if(!b) return; var e=pcErr(err); b.parentNode.classList.add("bad"); set(p,"Übertragung fehlgeschlagen");
+      document.getElementById("pcpE").innerHTML='<div class="pcp-err"><b>Fehlermeldung</b><p>'+esc(e.de)+'</p>'+(e.raw!==e.de?'<details><summary>Technische Details</summary><code>'+esc(e.raw)+'</code></details>':'')+'</div>';
+      var f=document.getElementById("pcpF"); f.hidden=false; f.innerHTML='<span></span><span class="row"><button class="btn" data-closemodal>Schließen</button>'+(retry?'<button class="btn primary" id="pcpR">Nochmal versuchen</button>':'')+'</span>'; if(retry) document.getElementById("pcpR").onclick=retry; } }; }
+F.css('.pcp{display:grid;gap:12px}.pcp-bar{height:10px;border-radius:99px;background:var(--line);overflow:hidden}.pcp-bar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--accent,#2563eb);transition:width .25s ease}.pcp-bar.ok i{background:#16a34a}.pcp-bar.bad i{background:#dc2626}'+
+  '.pcp-row{display:flex;justify-content:space-between;gap:12px;font-size:13.5px}.pcp-err{border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:12px;padding:12px 14px;font-size:13.5px}.pcp-err p{margin:4px 0 0}.pcp-err details{margin-top:8px}.pcp-err code{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;margin-top:4px}'+
+  '@media(prefers-color-scheme:dark){.pcp-err{background:#3b0d0d;border-color:#7f1d1d;color:#fecaca}}');
+F.prPlace=function(id,info,quiet){ var o=ord(id,info); F.confirm("Jetzt bei Print.com bestellen? "+(o.nr||"")+" · "+(o.product||"")+(o.purchase!=null?" · Einkauf ca. "+eur(o.purchase):"")+". Danach wird die Rechnung fertiggestellt und an den Kunden gesendet – außer sie ist schon versendet.","Verbindlich bestellen",function(){ pcSend(id,o,quiet,false); }); };
+function pcSend(id,o,quiet,force){
+  var pg=pcProg("An Print.com übertragen",(o.nr||"")+(o.product?" · "+o.product:"")+(o.groupSize>1?" · ganzer Warenkorb ("+o.groupSize+" Positionen)":""));
+  F.api("/admin/api/print/op",{body:{confirm:true,op:"place",id:id,force:!!force}}).then(function(j){
+    if(j&&j.needForce){ F.closeModal(); F.confirm(j.error+". Trotzdem jetzt bei Print.com bestellen?","Ohne Freigabe bestellen",function(){ pcSend(id,o,quiet,true); },true); return; }
+    if(!j||!j.ok){ pg.fail((j&&j.error)||"Fehler",function(){ pcSend(id,o,quiet,force); }); load(true); return; }
+    var nr=j.order&&j.order.printcom&&j.order.printcom.orderNumber; pg.ok("Bei Print.com bestellt"+(nr?" · Auftrag "+nr:""),j.order&&!quiet?'<button class="btn" id="pcpO">Bestellung öffnen</button>':"");
+    var ob=document.getElementById("pcpO"); if(ob) ob.onclick=function(){ F.closeModal(); openOrder(j.order.id); };
+    load(true); if(F.reviewReset) F.reviewReset(); if(F.tkReload) F.tkReload();
+  }).catch(function(e){ pg.fail(e&&e.message||"Verbindung unterbrochen",function(){ pcSend(id,o,quiet,force); }); });
+}
 F.prComplete=function(id,info,quiet){ var o=ord(id,info); F.confirm("Druckauftrag "+(o.nr||"")+" abschließen? Er gilt dann als zugestellt – der Status wird bei Print.com nicht mehr abgefragt, eine noch ausstehende Versandmail geht nicht mehr raus.","Abschließen",function(){ op({op:"complete",id:id,by:quiet?"Aufträge":"Druck-Seite"},"Druckauftrag abgeschlossen",quiet); }); };
 F.action("prplace",function(id){ F.prPlace(id); });
 F.action("prcomplete",function(id){ F.prComplete(id); });

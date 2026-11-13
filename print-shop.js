@@ -689,7 +689,7 @@ module.exports = function (D) {
     const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10), large = dims && Math.max(dims[0], dims[1]) >= 1000;
     const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null && !/shape|complex|simple|die_?cut|thru_?cut|contour/i.test(String(fixed.custom_shape || "").replace(/^clean_cut$/, "")), safe: c.safe || 3, sku: String(sku),
       bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
-      props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
+      props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, maxDesigns: +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       // Weißdruck (Print.com blendet „white_print“ aus): bei Druck „Farbe + Weiß“ (5/…) muss er mit, sonst gibt es keinen Preis (Acrylglas, Fotokacheln …)
       white: by.white_print && !exposed.some(x => x.slug === "white_print") && fixed.white_print == null ? (wo => ({ yes: wo.find(v => !NONE_SLUG.test(v)) || "", no: wo.find(v => NONE_SLUG.test(v)) || "" }))((by.white_print.options || []).map(o => String(o.slug))) : null,
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
@@ -949,7 +949,7 @@ module.exports = function (D) {
     return { key: p.key, mustTpl: MUST_TPL[p.sku] || MUST_TPL[p.key] || "", title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: addedOf(p.sku, cp), icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g), bleed: p.bleed, safe: p.safe, imprint: !!p.imprint, generic: !!p.generic, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
-      excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : x[1], x[2]].concat(x[3] ? [x[3]] : [])), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+      excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : x[1], x[2]].concat(x[3] ? [x[3]] : [])), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, maxDesigns: p.maxDesigns || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
   const MAIN_INTO = { "gift-packaging": ["packaging-bags", "gift-packaging"], "displays-pos-material": ["indoor-interior", "displays-pos-material"], "outdoor-furniture": ["outdoor-advertising", "outdoor-furniture"], "materials-samples": ["outdoor-advertising", "banners-outdoor"] };
@@ -2539,6 +2539,8 @@ module.exports = function (D) {
       const ms = input.motifs.slice(0, MAX_MOTIFS); let sum = 0; const list = [];
       for (let i = 0; i < ms.length; i++) { const c = Math.max(1, parseInt(ms[i].copies, 10) || 0); sum += c; list.push({ fm: await chk(ms[i].fileId, ms[i].fileToken, "Motiv " + (i + 1)), copies: c }); }
       if (sum !== n.copies) throw fail("Die Stückzahlen der Motive (" + sum + ") ergeben nicht die Gesamtauflage (" + n.copies + ")");
+      // Print.com-Grenze je Produkt (maxDesigns, z. B. Kartensets 1, Aufkleber 5) – D-261113-6F8J
+      if (prod.maxDesigns && list.length > prod.maxDesigns) throw fail(prod.maxDesigns === 1 ? "Bei diesem Produkt ist nur ein Motiv je Auflage möglich – für weitere Motive bitte jeweils eine eigene Position in den Warenkorb legen" : "Bei diesem Produkt sind höchstens " + prod.maxDesigns + " Motive je Auflage möglich");
       const { PDFDocument } = require("pdf-lib"); const doc = await PDFDocument.create(); const pageMap = []; let pg = 1;
       for (let i = 0; i < list.length; i++) { const src = await PDFDocument.load(await store.fileData(list[i].fm.id)); const pages = await doc.copyPages(src, src.getPageIndices()); pages.forEach(x => doc.addPage(x));
         pageMap.push({ page: pages.length > 1 ? pg + "–" + (pg + pages.length - 1) : String(pg), title: "Motiv " + (i + 1) + " (" + list[i].copies + " Stk.)", motif: i + 1, copies: list[i].copies }); pg += pages.length; }
@@ -2786,6 +2788,14 @@ module.exports = function (D) {
   // Offsetdruck + mehrere Motive (ältere Bestellungen): je Motiv eigene Position im selben Auftrag statt „designs“
   const motifSplit = o => Array.isArray(o.motifs) && o.motifs.length > 1 && String((o.pcOptions || {}).printingmethod || "") === "offset";
   const motifDesigns = (o, base) => Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => ({ fileUrl: pcFileUrl(base, m.fileId), copies: m.copies })) : null;
+  // Höchstzahl Motive je Position laut Print.com (maxDesigns, z. B. Kartensets 1, Aufkleber 5): mehr Motive → mehrere Positionen im selben Auftrag (D-261113-6F8J)
+  const MAXD = new Map();
+  async function maxDesignsOf(sku) {
+    const h = MAXD.get(sku); if (h && Date.now() - h.at < 6 * 3600e3) return h.v;
+    const pd = await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller"), v = +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null;
+    if (v) MAXD.set(sku, { at: Date.now(), v }); return v;
+  }
+  const motifChunks = (ms, mx) => { const out = []; for (let i = 0; i < ms.length; i += mx) out.push(ms.slice(i, i + mx).map((m, k) => Object.assign({ idx: i + k }, m))); return out; };
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
   // Positionen einer Bestellung für Print.com (Datei-Links, Motive, Varianten, Lieferadresse)
   async function pcItemsOf(o) {
@@ -2797,6 +2807,17 @@ module.exports = function (D) {
     const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
     const sh = shipOf(o), addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };   // nur die Lieferadresse geht an Print.com
     const sender = Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) });
+    const mx = Array.isArray(o.motifs) && o.motifs.length > 1 && !motifSplit(o) ? await maxDesignsOf(o.product.sku).catch(() => null) : null;
+    if (mx && o.motifs.length > mx) {
+      const items = motifChunks(o.motifs, mx).map(ch => { const n = ch.reduce((a, m) => a + (+m.copies || 0), 0), one = ch.length === 1;
+        return Object.assign({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (one ? ch[0].idx + 1 : (ch[0].idx + 1) + "–" + (ch[ch.length - 1].idx + 1)), 120), options: Object.assign({}, o.pcOptions, { copies: n }) },
+          one ? { fileUrl: pcFileUrl(fbase, ch[0].fileId) } : { designs: ch.map(m => ({ fileUrl: pcFileUrl(fbase, m.fileId), copies: m.copies })) },
+          { fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: n }] }); });
+      const pw0 = o.price && o.price.wish, pm0 = o.price && o.price.purchase && o.price.purchase.method, wish0 = pw0 && pm0 && pw0 > today() ? { deliveryDate: pw0, method: pm0 } : null;
+      if (wish0) items.forEach(it => Object.assign(it.shipments[0], wish0));
+      hist(o, o.motifs.length + " Motive auf " + items.length + " Positionen aufgeteilt (Print.com: höchstens " + mx + " je Position)");
+      return { o, fm, items, wish: wish0, split: items.length };
+    }
     const items = motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(fbase, m.fileId),
         fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: m.copies }] })) : [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
         // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF

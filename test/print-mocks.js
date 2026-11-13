@@ -169,5 +169,6 @@ module.exports = function createMocks(opts) {
       send(res, 404, { error: "unknown" });
     });
   });
+  state.products = PRODUCTS2;   // Tests können Produktdaten ändern (z. B. maxDesigns)
   return { server, state };
 };

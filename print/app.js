@@ -121,7 +121,7 @@
     if (+c.q > 0 && +c.q <= 1e6) S.copies = Math.round(+c.q); if (c.u && (p.urgency || []).some(function (u) { return u.slug === c.u; })) S.urgency = c.u; if (c.m && typeof c.m === "string") S.pm = c.m;
     if (c.c && c.c.w && c.c.h && p.custom) S.custom = { w: String(+c.c.w || ""), h: String(+c.c.h || "") };
     if (c.ck === "pro" || c.ck === "graphic") S.check = c.ck;   // Link mit vorgewähltem Datencheck (Simon 12.11.2026: „mit 20 € Grafikaufbereitung“)
-    if (c.mo && +c.mo.n > 1 && +c.mo.n <= 50) { var sp = (c.mo.sp || []).map(function (v) { return Math.max(0, Math.round(+v || 0)); }).slice(0, +c.mo.n); S.mot = { n: +c.mo.n, split: sp, files: [], i: 0 }; if (sp.length !== S.mot.n || sp.reduce(function (a, b) { return a + b; }, 0) !== +S.copies) motBalance(); }
+    if (c.mo && +c.mo.n > 1 && +c.mo.n <= motMax()) { var sp = (c.mo.sp || []).map(function (v) { return Math.max(0, Math.round(+v || 0)); }).slice(0, +c.mo.n); S.mot = { n: +c.mo.n, split: sp, files: [], i: 0 }; if (sp.length !== S.mot.n || sp.reduce(function (a, b) { return a + b; }, 0) !== +S.copies) motBalance(); }
     if (c.f || (c.mo && c.mo.f) || c.lg) setTimeout(function () { linkFiles(c); }, 0);
     if (c.t && kind() === "textile" && S.textile && p.methods) { var m = p.methods.filter(function (x) { return x.key === c.t.method; })[0];
       if (m) { S.textile.method = m.key; var ps = (c.t.positions || []).filter(function (x) { return m.positions.indexOf(x) > -1; }); if (ps.length) S.textile.positions = ps;
@@ -510,7 +510,9 @@
 
   // ── Mehrere Motive (Sortenmix): Anzahl + Stückzahl je Motiv in „Ausführung“, je Motiv eine Datei/Gestaltung in „Gestalten“ ──
   S.mot = { n: 1, split: [], files: [], i: 0 };
-  var motOk = function () { return !!S.prod && kind() === "flat" && !isLogo() && !(S.prod.custom && kind() === "banner"); };
+  // Höchstzahl Motive je Auflage laut Print.com (maxDesigns, z. B. Kartensets 1, Aufkleber 5); unbekannt = 50
+  function motMax() { var m = S.prod && +S.prod.maxDesigns; return m > 0 ? Math.min(50, m) : 50; }
+  var motOk = function () { return !!S.prod && kind() === "flat" && !isLogo() && !(S.prod.custom && kind() === "banner") && motMax() > 1; };
   function motBalance() { var n = S.mot.n, c = +S.copies || 0, b = Math.floor(c / n), r = c - b * n; S.mot.split = []; for (var i = 0; i < n; i++) S.mot.split.push(b + (i < r ? 1 : 0)); }
   function motReset(keepN) { var n = keepN ? S.mot.n : 1; S.mot = { n: n, split: [], files: [], i: 0 }; motBalance(); }
   function motSum() { return S.mot.split.reduce(function (a, b) { return a + (+b || 0); }, 0); }
@@ -519,15 +521,16 @@
   function mkThumb(src, cb) { try { var im = new Image(); im.onload = function () { try { var w = 240, h = Math.max(1, Math.round(im.height * w / im.width)), c = document.createElement("canvas"); c.width = w; c.height = h; var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(im, 0, 0, w, h); cb(c.toDataURL("image/jpeg", 0.72)); } catch (e) {} }; im.src = src; } catch (e) {} }
   function motLoad(i) { motSave(); S.mot.i = i; var f = S.mot.files[i] || {}; S.file = f.file || null; S.previews = f.previews || null; S.design = f.design || null; S.mode = f.mode || ""; }
   function motHtml() {
-    if (!motOk()) return "";
+    if (!motOk()) return S.prod && kind() === "flat" && !isLogo() && motMax() === 1 ? '<p class="ps-help ps-mot1">Bei diesem Produkt ist ein Motiv je Auflage möglich. Für weitere Motive legst du einfach je Motiv eine eigene Position in den Warenkorb.</p>' : "";
+    var mxm = motMax(); if (S.mot.n > mxm) { S.mot.n = mxm; S.mot.files = S.mot.files.slice(0, mxm); if (S.mot.i >= mxm) S.mot.i = 0; motBalance(); }
     var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
-    var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="50" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
+    var segs = [1, 2, 3, 4, 5].filter(function (k) { return k <= mxm; }).map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (mxm <= 5 ? "" : n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="' + mxm + '" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
     var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>' + U() + '</small></label>'; }).join("") +
       '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + "" + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
     DDI.motinfo = [{ val: "1", name: "Was sind Motive?", desc: "Ein Motiv ist ein Design, also eine Druckdatei. Mit mehreren Motiven bestellst du verschiedene Designs in einer Auflage, zum Beispiel 500 Flyer mit 2 Motiven: 250 Stück mit Design A und 250 Stück mit Design B. Die Aufteilung kannst du selbst festlegen. Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln – ohne Aufpreis. Hast du nur ein Design, lass einfach 1 gewählt." }];
     return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <button type="button" class="ps-i sm" data-ddinfo="motinfo|1" aria-label="Was bedeutet Anzahl Motive?" aria-haspopup="dialog">i</button> <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
       (n > 1 && sides() === 2 ? '<label class="ps-cb sm ps-msb"><input type="checkbox" data-motsb="1"' + (S.mot.sameBack !== false ? " checked" : "") + '><span>' + sideNames()[1] + " für alle Motive gleich – nur einmal hochladen</span></label>" : "") +
-      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu 50 Motive, ohne Aufpreis. Mit mehreren Motiven wird digital gedruckt – Offsetdruck gibt es nur mit einem Motiv.</p>" : "") + "</div>";
+      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu " + mxm + " Motive, ohne Aufpreis. Mit mehreren Motiven wird digital gedruckt – Offsetdruck gibt es nur mit einem Motiv.</p>" : "") + "</div>";
   }
 
   // Verständliche Namen + Erklärungen für Fachbegriffe aus dem Print.com-Katalog
@@ -2847,7 +2850,7 @@
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
-      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(50, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); loadPrice(); return; }
+      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(motMax(), +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); loadPrice(); return; }
       if (mn.hasAttribute("data-motbal")) { motBalance(); render(); return; }
       if (mn.hasAttribute("data-moti")) { motLoad(+mn.getAttribute("data-moti")); render(); return; }
     }
@@ -2975,7 +2978,7 @@
     if (t.matches("select[data-urgency]")) { S.urgency = t.value; S.dday = ""; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
     if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }
-    if (t.hasAttribute("data-motcount")) { var mc = Math.max(2, Math.min(50, parseInt(t.value, 10) || 2)); if (mc > S.copies) { toast("Mehr Motive als Stück geht nicht", true); render(); return; } motSave(); S.mot.n = mc; S.mot.files = S.mot.files.slice(0, mc); S.mot.i = Math.min(S.mot.i, mc - 1); motLoad(S.mot.i); motBalance(); render(); loadPrice(); return; }
+    if (t.hasAttribute("data-motcount")) { var mc = Math.max(2, Math.min(motMax(), parseInt(t.value, 10) || 2)); if (mc > S.copies) { toast("Mehr Motive als Stück geht nicht", true); render(); return; } motSave(); S.mot.n = mc; S.mot.files = S.mot.files.slice(0, mc); S.mot.i = Math.min(S.mot.i, mc - 1); motLoad(S.mot.i); motBalance(); render(); loadPrice(); return; }
     if (t.hasAttribute("data-motsb")) { S.mot.sameBack = t.checked; render(); if (t.checked) applyBackAll(); return; }
     if (t.id === "psCBack" && t.files && t.files[0]) return uploadCommonBack(t.files[0]);
     if (t.hasAttribute("data-mots")) { S.mot.split[+t.getAttribute("data-mots")] = Math.max(1, parseInt(t.value, 10) || 1); render(); return; }

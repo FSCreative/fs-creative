@@ -1108,6 +1108,21 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const u3 = await upload(await pdfOf(89, 59, 2), "m3.pdf", BC);
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 38.4, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
   });
+  await t("Mehr Motive als Print.com je Position erlaubt (maxDesigns): an der Kasse abgelehnt, ältere Bestellungen auf mehrere Positionen aufgeteilt", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "motive2@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
+    const ups = []; for (let i = 0; i < 3; i++) ups.push(await upload(await pdfOf(89, 59, 2), "mx" + i + ".pdf", BC));
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: ups[0].j.fileId, fileToken: ups[0].j.token, expectedGross: 38.4, motifs: [[150, 0], [50, 1], [50, 2]].map(([c, i]) => ({ copies: c, fileId: ups[i].j.fileId, fileToken: ups[i].j.token })) })] }, base), { "x-forwarded-for": "203.0.113.77" });   // eigene IP: Bestell-Limit (40/h) der vorigen Tests
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const mpid = r.j.checkoutUrl.split("/").pop(); M.payments[mpid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mpid });
+    const sku = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order.product.sku; const pd = M.products[sku]; pd.maxDesigns = 2;
+    try {
+      const pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl));
+      const its = M.orders[M.orders.length - 1].items; assert.strictEqual(its.length, 2, JSON.stringify(its).slice(0, 400));
+      assert.deepStrictEqual(its[0].designs.map(d => d.copies), [150, 50]); assert.strictEqual(its[0].options.copies, 200);
+      assert.ok(its[1].fileUrl && !its[1].designs && its[1].options.copies === 50 && its[1].shipments[0].copies === 50, JSON.stringify(its[1]).slice(0, 300));
+      assert.ok(/Motive auf 2 Positionen aufgeteilt/.test(JSON.stringify(pl.order.history || pl.order.log || "")), "Verlauf");
+    } finally { delete pd.maxDesigns; }
+  });
   await t("Beidseitig: Rückseite als eigenes Bild/PDF → 2-seitige Druck-PDF (alle beidseitigen Produkte; gefalzt = Innenseite); einseitig nicht möglich", async () => {
     const back = async (f, buf, name) => { const r = await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token }, body: buf }); return { status: r.status, j: await r.json() }; };
     const fr = await upload(png(1060, 700, [200, 30, 30]), "vorne.png", BC); assert.strictEqual(fr.j.needBack, true, JSON.stringify(fr.j));
