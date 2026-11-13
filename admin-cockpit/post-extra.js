@@ -30,14 +30,17 @@ document.addEventListener("scroll",function(e){ if(ctxEl&&!ctxEl.contains(e.targ
 window.addEventListener("resize",hideCtx);
 M.ctxOpen=function(){ return ctxEl&&!ctxEl.hidden; };
 
+/* Eine Regel überall (Rechtsklick wie Tastatur): gehört die Zeile zur Auswahl, gilt die Aktion für die ganze Auswahl, sonst nur für diese Mail */
+function rowTargets(id){ var sel=M.selectedIds(); return UI.mpick[id]&&sel.indexOf(id)>-1?sel:[id]; }
 function rowMenu(m,x,y){
-  var id=m.id, tr=M.isTrashed(m), sp=M.isSpam(m);
+  var id=m.id, tr=M.isTrashed(m), sp=M.isSpam(m), tg=rowTargets(id), many=tg.length>1, ms=tg.map(M.find).filter(Boolean);
+  var anyUnread=ms.some(function(z){ return !z.read; }), allStar=ms.length&&ms.every(function(z){ return z.starred; }), sfx=many?" ("+tg.length+")":"";
   /* Kunde zur Mail (post.js): Kundenakte bzw. „Als Lead übernehmen“, „Zahlungseingang erfassen …“ nur bei offenen Rechnungen */
   var ci=!tr&&!m.local&&M.custItems?M.custItems(m):{};
   var items=[
     {label:"Öffnen",act:function(){ M.open(id,{fromOutside:F.current!=="post"}); }},
-    {label:m.read?"Als ungelesen markieren":"Als gelesen markieren",act:function(){ M.setRead([m],!m.read); }},
-    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:function(){ M.toggleStar(m); }},
+    {label:(anyUnread?"Als gelesen markieren":"Als ungelesen markieren")+sfx,act:function(){ M.readIds(tg,anyUnread); }},
+    {label:(allStar?"★ Markierung entfernen":"☆ Markieren")+sfx,act:function(){ M.starIds(tg); }},
     {sep:true},
     {label:"Antworten",act:function(){ M.reply(m,"reply"); }},
     {label:"Allen antworten",act:function(){ M.reply(m,"all"); }},
@@ -51,12 +54,15 @@ function rowMenu(m,x,y){
     {label:"Überweisung anlegen",act:function(){ if(F.payFromMail) F.payFromMail(m,null); }},
     {label:"Als Termin",act:function(){ M.eventFromMail(m); }},
     {sep:true},
-    {label:"Archivieren",act:function(){ M.archive(UI.mpick[id]?M.selectedIds():[id]); },hide:!(M.canArchive&&M.canArchive(m))},
-    {label:"Verschieben …",act:function(){ M.showMoveMenu(x,y,UI.mpick[id]?M.selectedIds():[id]); }},
-    {label:sp?"Kein Spam":"Als Spam",act:function(){ if(sp) M.moveMessages([id],"INBOX","move"); else M.moveMessages([id],null,"spam"); }},
+    {label:"Archivieren"+sfx,act:function(){ M.archive(tg); },hide:tr||!(M.canArchive&&M.canArchive(m))},
+    {label:"Verschieben …"+sfx,act:function(){ M.showMoveMenu(x,y,tg); }},
+    {label:(sp?"Kein Spam":"Als Spam")+sfx,act:function(){ if(sp) M.moveMessages(tg,"INBOX","move"); else M.moveMessages(tg,null,"spam"); },hide:tr},
     {label:UI.mpick[id]?"Abwählen":"Auswählen",act:function(){ M.togglePick(id); }},
-    {label:tr?"Wiederherstellen":"In den Papierkorb",danger:!tr,act:function(){ if(tr) M.restore([id]); else M.trash(UI.mpick[id]?M.selectedIds():[id]); }}
+    tr?{label:"Wiederherstellen"+sfx,act:function(){ M.restore(tg); }}:{hide:true},
+    {label:(tr?"Endgültig löschen":"In den Papierkorb")+sfx,danger:true,act:function(){ if(tr) M.purge(tg); else M.trash(tg); }}
   ];
+  /* Absender: alle auswählen / verschieben / löschen, Regel daraus */
+  var si=!tr&&M.senderItems?M.senderItems(m):[]; if(si.length){ items.push({sep:true}); si.forEach(function(it){ items.push(it); }); }
   items=items.filter(function(it){ return !it.hide; });
   if(m.local) items=items.filter(function(it){ return /Öffnen|Antworten|Weiterleiten|To-Do|Termin/.test(it.label||""); });
   M.ctx(x,y,items);
@@ -66,55 +72,100 @@ F.listen("contextmenu",".mrow2",function(el,e){ var id=el.getAttribute("data-mid
 F.listen("keydown",".mrow2",function(el,e){ if(e.target!==el) return; if(e.key==="ContextMenu"||(e.shiftKey&&e.key==="F10")){ var m=M.find(el.getAttribute("data-mid")); if(!m) return; e.preventDefault(); var r=el.getBoundingClientRect(); rowMenu(m,r.left+40,r.top+r.height/2); } });
 
 /* ---------- Tastenkürzel ---------- */
-var KEYS=[["Nächste / vorherige Mail",["J","K"],["↓","↑"]],["Neue Mail",["C"]],["Antworten",["R"]],["Allen antworten",["A"]],["Weiterleiten",["F"]],["Archivieren",["E"]],["Löschen",["#"],["Entf"]],["Markieren (Stern)",["S"]],["Gelesen / ungelesen",["U"]],["Auswählen",["X"]],["Verschieben",["V"]],["Als Aufgabe",["T"]],["Suchen",["/"]],["Diese Hilfe",["?"]],["Senden (im Editor)",["⌘","↵"]],["Entwurf speichern (im Editor)",["⌘","S"]],["Schließen / abwählen",["Esc"]],["Kontextmenü auf einer Zeile",["⇧","F10"]]];
+var KEYS=[["Nächste / vorherige Mail",["J","K"],["↓","↑"]],["Auswahl nach unten / oben erweitern",["⇧","J"],["⇧","K"]],["Auswählen (Zeile)",["X"]],["Alle auswählen",["⌘","A"]],["Auswahl aufheben / schließen",["Esc"]],
+  ["Neue Mail",["C"]],["Antworten",["R"]],["Allen antworten",["A"]],["Weiterleiten",["F"]],["Archivieren",["E"]],["Verschieben",["V"]],["Löschen (im Papierkorb: endgültig)",["#"],["Entf"]],["Als Spam",["!"]],
+  ["Markieren (Stern)",["S"]],["Gelesen / ungelesen",["U"]],["Als gelesen / ungelesen",["⇧","I"],["⇧","U"]],["Rückgängig",["Z"]],["Als Aufgabe",["T"]],
+  ["Zum Posteingang",["G","I"]],["Zu Gesendet",["G","S"]],["Zum Papierkorb",["G","T"]],["Suchen",["/"]],["Diese Hilfe",["?"]],["Senden (im Editor)",["⌘","↵"]],["Entwurf speichern (im Editor)",["⌘","S"]],["Kontextmenü auf einer Zeile",["⇧","F10"]]];
 M.showKeys=function(){
-  F.modal('<div class="row-between"><h2 style="font-size:19px">Tastenkürzel im Postfach</h2>'+F.btnClose()+'</div><div class="mkeys">'+KEYS.map(function(k){ return '<div><span>'+esc(k[0])+'</span><span>'+k[1].map(function(x){ return '<span class="kbd">'+esc(x)+'</span>'; }).join(" ")+(k[2]?' <span class="muted">oder</span> '+k[2].map(function(x){ return '<span class="kbd">'+esc(x)+'</span>'; }).join(" "):'')+'</span></div>'; }).join("")+'</div><div class="foot"><span class="muted">Rechtsklick auf eine Mail öffnet weitere Aktionen. Am Handy: Zeile nach links wischen löscht, nach rechts ändert gelesen, lange drücken wählt aus.</span><button type="button" class="btn primary" data-closemodal>Alles klar</button></div>',"narrow");
+  F.modal('<div class="row-between"><h2 style="font-size:19px">Tastenkürzel im Postfach</h2>'+F.btnClose()+'</div><div class="mkeys">'+KEYS.map(function(k){ return '<div><span>'+esc(k[0])+'</span><span>'+k[1].map(function(x){ return '<span class="kbd">'+esc(x)+'</span>'; }).join(" ")+(k[2]?' <span class="muted">oder</span> '+k[2].map(function(x){ return '<span class="kbd">'+esc(x)+'</span>'; }).join(" "):'')+'</span></div>'; }).join("")+'</div><div class="foot"><span class="muted">Aktionen gelten für die Auswahl, sonst für die offene bzw. markierte Mail. Rechtsklick auf eine Mail öffnet weitere Aktionen. Am Handy: wischen (anpassbar unter „Wischgesten“), lange drücken zeigt Aktionen.</span><button type="button" class="btn primary" data-closemodal>Alles klar</button></div>',"narrow");
 };
 F.action("mkeys",M.showKeys);
+/* Ziel einer Taste: Auswahl, sonst offene Mail, sonst Zeile mit Fokus bzw. Tastatur-Markierung */
+function focusRowId(){ var a=document.activeElement, r=a&&a.closest&&a.closest(".mrow2"); if(r) return r.getAttribute("data-mid"); return UI.mcur&&M.find(UI.mcur)?UI.mcur:null; }
+function keyTargets(){ var sel=M.selectedIds(); if(sel.length) return sel; var id=UI.msel&&M.find(UI.msel)?UI.msel:focusRowId(); return id&&M.find(id)&&!/^(dr_|ob_)/.test(id)?[id]:[]; }
+function keyMoveAnchor(){ var b=document.querySelector('.rb[data-act="mx:move"]'); return b&&b.offsetWidth?b:null; }
+var gKey=0;
 document.addEventListener("keydown",function(e){
   if(F.current!=="post"||!F.D) return;
   if(M.composeOpen&&M.composeOpen()) return;
+  if(M.mvOpen&&M.mvOpen()) return;   /* Verschieben-Menü offen: es bedient die Tasten selbst */
   if(M.ctxOpen()){ if(e.key==="Escape"){ e.preventDefault(); hideCtx(); } return; }
   if(F.modalOpen()) { if(e.key==="?"&&document.querySelector("#modalHost .mkeys")){ e.preventDefault(); F.closeModal(); } return; }
   if(document.getElementById("drawer").classList.contains("on")) return;
   var t=e.target;
   if(t&&t.id==="mqr"&&(e.metaKey||e.ctrlKey)&&e.key==="Enter"){ e.preventDefault(); M.quickReply(M.cur()); return; }
   if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))){ if(e.key==="Escape"&&t.id!=="msearch") t.blur(); return; }
+  var k=e.key;
+  if((e.metaKey||e.ctrlKey)&&!e.altKey&&!e.shiftKey&&(k==="a"||k==="A")){ e.preventDefault(); if(M.selectAll) M.selectAll(); return; }
   if(e.metaKey||e.ctrlKey||e.altKey) return;
-  var k=e.key, m=M.cur(), list=M.viewIds(), i=list.indexOf(UI.msel);
+  var m=M.cur(), list=M.viewIds(), i=list.indexOf(UI.msel);
+  if(i<0&&UI.mcur) i=list.indexOf(UI.mcur);
+  /* g i / g s / g t: Ordner wechseln */
+  if(gKey&&Date.now()-gKey<1500){ gKey=0; var to={i:"inbox",s:"sent",t:"trash"}[String(k).toLowerCase()]; if(to){ e.preventDefault(); F.actions.mfolder(to); return; } }
+  gKey=0;
+  if(k==="g"){ gKey=Date.now(); return; }
   function go(d){ if(!list.length) return; var n=i<0?0:Math.max(0,Math.min(list.length-1,i+d)), id=list[n]; if(id.indexOf("dr_")===0||id.indexOf("ob_")===0){ UI.msel=id; UI.mscrollTo=id; F.render(); return; } M.open(id); }
-  if(k==="j"||k==="ArrowDown"){ e.preventDefault(); go(1); }
+  /* ⇧J / ⇧K: Auswahl erweitern, ohne zu öffnen */
+  function ext(d){ if(!list.length) return; var cur=i<0?-1:i, n=Math.max(0,Math.min(list.length-1,cur+d)); if(cur>-1&&!/^(dr_|ob_)/.test(list[cur])) UI.mpick[list[cur]]=true; var id=list[n]; if(!/^(dr_|ob_)/.test(id)) UI.mpick[id]=true; UI.mcur=id; UI.mlast=id; UI.msel=null; UI.mscrollTo=id; F.render(); }
+  var tg=keyTargets(), inTrash=UI.mf==="trash";
+  if(k==="J"&&e.shiftKey){ e.preventDefault(); ext(1); }
+  else if(k==="K"&&e.shiftKey){ e.preventDefault(); ext(-1); }
+  else if(k==="j"||k==="ArrowDown"){ e.preventDefault(); go(1); }
   else if(k==="k"||k==="ArrowUp"){ e.preventDefault(); go(-1); }
   else if(k==="c"){ e.preventDefault(); F.compose({}); }
   else if(k==="/"){ e.preventDefault(); var s=document.getElementById("msearch"); if(s){ s.focus(); s.select(); } }
   else if(k==="?"){ e.preventDefault(); M.showKeys(); }
-  else if(k==="Escape"){ if(M.selectedIds().length){ UI.mpick={}; F.render(); } else if(UI.msel){ UI.msel=null; F.render(); } }
+  else if(k==="Escape"){ if(M.selectedIds().length||Object.keys(UI.mpick).length){ UI.mpick={}; UI.mcur=null; F.render(); } else if(UI.msel){ UI.msel=null; F.render(); } else if(UI.mcur){ UI.mcur=null; F.render(); } }
   else if(k==="Enter"&&UI.msel&&UI.msel.indexOf("dr_")===0){ e.preventDefault(); M.openDraft(UI.msel.slice(3)); }
+  else if(k==="Enter"&&!UI.msel&&UI.mcur){ e.preventDefault(); M.open(UI.mcur); }
+  else if(k==="z"||k==="Z"){ e.preventDefault(); if(M.undoLast) M.undoLast(); }
+  else if(k==="x"){ e.preventDefault(); var fid=focusRowId()||UI.msel; if(fid&&M.find(fid)) M.togglePick(fid); }
+  else if(k==="#"||k==="Delete"||k==="Backspace"){ if(!tg.length) return; e.preventDefault(); if(inTrash||tg.every(function(id){ return M.isTrashed(M.find(id)); })) M.purge(tg); else M.trash(tg); }
+  else if(k==="e"){ if(!tg.length) return; e.preventDefault(); if(!inTrash&&M.archive) M.archive(tg); }
+  else if(k==="v"){ if(!tg.length) return; e.preventDefault(); var ab=keyMoveAnchor(), p=M.menuPos(ab); M.showMoveMenu(ab?p[0]:0,ab?p[1]:0,tg,{el:ab}); }
+  else if(k==="!"){ if(!tg.length||inTrash) return; e.preventDefault(); var f0=M.find(tg[0]); if(f0&&M.isSpam(f0)) M.moveMessages(tg,"INBOX","move"); else M.moveMessages(tg,null,"spam"); }
+  else if(k==="I"&&e.shiftKey){ if(!tg.length) return; e.preventDefault(); M.readIds(tg,true); }
+  else if(k==="U"&&e.shiftKey){ if(!tg.length) return; e.preventDefault(); M.readIds(tg,false); }
+  else if(k==="u"){ if(!tg.length) return; e.preventDefault(); M.readIds(tg,null); }
+  else if(k==="s"){ if(!tg.length) return; e.preventDefault(); M.starIds(tg); }
   else if(!m) return;
   else if(k==="r"){ e.preventDefault(); M.reply(m,"reply"); }
   else if(k==="a"){ e.preventDefault(); M.reply(m,"all"); }
   else if(k==="f"){ e.preventDefault(); M.reply(m,"fwd"); }
-  else if(k==="#"||k==="Delete"||k==="Backspace"){ e.preventDefault(); var sel=M.selectedIds(); if(M.isTrashed(m)&&!sel.length) M.purge([m.id]); else M.trash(sel.length?sel:[m.id]); }
-  else if(k==="e"){ e.preventDefault(); var sel3=M.selectedIds(); if(M.archive) M.archive(sel3.length?sel3:[m.id]); }
-  else if(k==="s"){ e.preventDefault(); M.toggleStar(m); }
-  else if(k==="u"){ e.preventDefault(); M.setRead([m],!m.read); }
-  else if(k==="x"){ e.preventDefault(); M.togglePick(m.id); }
-  else if(k==="v"){ e.preventDefault(); var sel2=M.selectedIds(), p=M.menuPos(document.querySelector('.rb[data-act="mx:move"]')); M.showMoveMenu(p[0],p[1],sel2.length?sel2:[m.id]); }
   else if(k==="t"){ e.preventDefault(); M.todoFromMail(m); }
 });
 
-/* ---------- Handy-Gesten (wie Outlook): wischen links = löschen, rechts = gelesen; lange drücken = auswählen;
-   oben herunterziehen = aktualisieren; in der Lese-Ansicht vom linken Rand wischen = zurück ---------- */
+/* ---------- Handy-Gesten (wie Outlook): wischen links/rechts = einstellbar (Standard: löschen / gelesen), lange drücken = Aktionen
+   (bei laufender Auswahl: auswählen); oben herunterziehen = aktualisieren; in der Lese-Ansicht vom linken Rand wischen = zurück ---------- */
 var SW=null, TH=0.38;
 function mob(){ return window.innerWidth<=900; }
 function vib(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(e){} }
 function holdRender(){ F._scrollAt=Date.now(); }
+/* Wischgesten einstellbar (Wunsch Simon 13.11.2026): je Richtung Löschen, Archivieren, Verschieben oder Gelesen/Ungelesen */
+var SWOPT=[["trash","Löschen"],["archive","Archivieren"],["move","Verschieben"],["read","Gelesen / Ungelesen"]];
+function swCfg(){ var c=F.ls("fsc_mswipe")||{}, ok=function(v){ return SWOPT.some(function(o){ return o[0]===v; }); }; return {l:ok(c.l)?c.l:"trash",r:ok(c.r)?c.r:"read"}; }
+function swLabel(a,m){ var tr=M.isTrashed(m);
+  if(a==="read") return [m.read?"Ungelesen":"Gelesen",m.read?"mail":"mailopen"]; if(a==="trash") return tr?["Wiederherstellen","restore"]:["Löschen","trash"];
+  if(a==="archive") return ["Archivieren","archive"]; return ["Verschieben","folder"]; }
+M.swipeDesc=function(){ var c=swCfg(), n=function(a){ return {trash:"löscht",archive:"archiviert",move:"verschiebt",read:"ändert gelesen/ungelesen"}[a]; }; return "Mail nach links wischen "+n(c.l)+", nach rechts "+n(c.r)+"."; };
+F.action("mswipecfg",function(){ var c=swCfg(), sel=function(k){ return '<label class="fl">Nach '+(k==="l"?"links":"rechts")+' wischen<select class="f" data-mswcfg="'+k+'">'+SWOPT.map(function(o){ return '<option value="'+o[0]+'"'+(c[k]===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select></label>'; };
+  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:19px">Wischgesten</h2>'+F.btnClose()+'</div><p class="muted" style="margin:0">Was passiert, wenn du eine Mail in der Liste zur Seite wischst. Gespeichert auf diesem Gerät.</p>'+sel("l")+sel("r")+'<div class="foot"><span></span><button type="button" class="btn primary" data-closemodal>Fertig</button></div></div>',"narrow"); });
+F.listen("change","[data-mswcfg]",function(el){ var c=swCfg(); c[el.getAttribute("data-mswcfg")]=el.value; F.ls("fsc_mswipe",c); F.toast("Wischgeste gespeichert"); });
 function swWrap(row,m){
   var w=document.createElement("div"); w.className="msw";
-  var tr=M.isTrashed(m);
-  w.innerHTML='<div class="msw-bg r">'+M.ic(m.read?"mail":"mailopen")+'<span>'+(m.read?"Ungelesen":"Gelesen")+'</span></div><div class="msw-bg l"><span>'+(tr?"Wiederherstellen":"Löschen")+'</span>'+M.ic(tr?"restore":"trash")+'</div>';
+  var c=swCfg(), L=swLabel(c.l,m), R=swLabel(c.r,m);
+  w.innerHTML='<div class="msw-bg r a-'+c.r+'">'+M.ic(R[1])+'<span>'+esc(R[0])+'</span></div><div class="msw-bg l a-'+(c.l==="trash"&&M.isTrashed(m)?"restore":c.l)+'"><span>'+esc(L[0])+'</span>'+M.ic(L[1])+'</div>';
   row.parentNode.insertBefore(w,row); w.appendChild(row); return w;
 }
+/* Langes Drücken auf eine Zeile: Aktionen als Blatt von unten */
+function rowSheet(m,x,y){ var id=m.id, tr=M.isTrashed(m);
+  var its=[{label:"Auswählen",icon:"check",act:function(){ M.togglePick(id); }},
+    {label:"Verschieben …",icon:"folder",act:function(){ M.showMoveMenu(x,y,[id]); }}];
+  if(!tr&&M.canArchive&&M.canArchive(m)) its.push({label:"Archivieren",icon:"archive",act:function(){ M.archive([id]); }});
+  its.push(tr?{label:"Wiederherstellen",icon:"restore",act:function(){ M.restore([id]); }}:{label:"Löschen",icon:"trash",danger:true,act:function(){ M.trash([id]); }},
+    {label:m.read?"Als ungelesen markieren":"Als gelesen markieren",icon:m.read?"mail":"mailopen",act:function(){ M.setRead([m],!m.read); }});
+  if(!tr&&M.selectSender&&!M.isSent(m)&&m.from) its.push({sep:true},{label:"Alle vom Absender auswählen",icon:"check",act:function(){ M.selectSender(m); }});
+  M.ctx(x,y,its,(m.fromName||m.from||m.subject||"Mail").slice(0,60)); }
 function swUnwrap(s){ if(!s.wrap||!s.wrap.parentNode) return; s.wrap.parentNode.insertBefore(s.row,s.wrap); s.wrap.remove(); s.wrap=null; }
 document.addEventListener("touchstart",function(e){
   if(!mob()||e.touches.length!==1) { SW=null; return; }
@@ -125,7 +176,8 @@ document.addEventListener("touchstart",function(e){
   if(e.target.closest(".star")){ SW=null; return; }
   var id=row.getAttribute("data-mid"), m=M.find(id);
   SW={kind:"row",row:row,id:id,m:m,x:t.clientX,y:t.clientY,dx:0,lock:null,w:row.offsetWidth,t0:Date.now(),go:false};
-  if(m&&!m.outbox&&!m.draftLocal) SW.hold=setTimeout(function(){ if(SW&&SW.row===row&&SW.lock===null){ SW.held=true; F._swHeldAt=Date.now(); vib(); F._forceRender=true; M.togglePick(id); } },430);
+  if(m&&!m.outbox&&!m.draftLocal) SW.hold=setTimeout(function(){ if(SW&&SW.row===row&&SW.lock===null){ SW.held=true; F._swHeldAt=Date.now(); vib();
+    if(M.selectedIds().length||m.local){ F._forceRender=true; M.togglePick(id); } else rowSheet(m,SW.x,SW.y); } },430);
 },{passive:true});
 document.addEventListener("touchmove",function(e){
   if(!SW) return; var t=e.touches[0], dx=t.clientX-SW.x, dy=t.clientY-SW.y;
@@ -152,17 +204,20 @@ function swEnd(){
   var r=s.row, m=s.m, w=s.wrap;
   r.style.transition="transform .25s cubic-bezier(.2,.8,.2,1)";
   if(Math.abs(s.dx)<=s.w*TH||!m){ r.style.transform=""; setTimeout(function(){ swUnwrap(s); },260); return; }
-  if(s.dx>0){   /* gelesen umschalten: zurückfedern */
-    r.style.transform=""; setTimeout(function(){ swUnwrap(s); F._forceRender=true; M.setRead([m],!m.read); },230); return;
+  var a=s.dx<0?swCfg().l:swCfg().r;
+  if(a==="archive"&&!(M.canArchive&&M.canArchive(m))) a="none";
+  if(a==="read"||a==="move"||a==="none"){   /* zurückfedern, dann umschalten bzw. Verschieben-Menü */
+    r.style.transform=""; setTimeout(function(){ swUnwrap(s); F._forceRender=true; if(a==="read") M.setRead([m],!m.read); else if(a==="move") M.showMoveMenu(s.x,s.y,[m.id]); else F.toast("Diese Mail lässt sich nicht archivieren"); },230); return;
   }
-  /* löschen: rausfliegen, Zeile zuklappen, dann löschen (mit Rückgängig) */
-  r.style.transform="translateX(-110%)";
+  /* löschen/archivieren: rausfliegen, Zeile zuklappen, dann ausführen (mit Rückgängig) */
+  r.style.transform="translateX("+(s.dx<0?"-":"")+"110%)";
   setTimeout(function(){ w.style.height=w.offsetHeight+"px"; void w.offsetHeight; w.classList.add("out"); w.style.height="0"; w.style.opacity="0"; },200);
-  setTimeout(function(){ F._forceRender=true; if(M.isTrashed(m)) M.restore([m.id]); else M.trash([m.id]); },430);
+  setTimeout(function(){ F._forceRender=true; if(a==="archive") M.archive([m.id]); else if(M.isTrashed(m)) M.restore([m.id]); else M.trash([m.id]); },430);
 }
 document.addEventListener("touchend",swEnd,{passive:true});
 document.addEventListener("touchcancel",function(){ if(!SW) return; if(SW.kind==="row"){ SW.lock=null; SW.dx=0; } swEnd(); },{passive:true});
-/* nach langem Drücken keinen Klick (Öffnen) auslösen */
+/* nach langem Drücken keinen Klick (Öffnen) auslösen – und das eben geöffnete Aktionsblatt nicht gleich wieder schließen */
+document.addEventListener("touchend",function(e){ if(F._swHeldAt&&Date.now()-F._swHeldAt<900&&e.cancelable&&e.target&&e.target.closest&&e.target.closest(".mrow2")) e.preventDefault(); },{passive:false});
 document.addEventListener("click",function(e){ if(F._swHeldAt&&Date.now()-F._swHeldAt<600){ e.stopPropagation(); e.preventDefault(); } },true);
 
 /* ---------- Drucken: druckbare Ansicht in neuem Tab (Mail-HTML gesäubert, Skripte per CSP gesperrt) ---------- */

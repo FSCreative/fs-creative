@@ -47,7 +47,9 @@ var IC={
   swipe:'<path d="M4 12h16"/><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   filter:'<path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/>',
-  send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>'
+  send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+  sortab:'<path d="M7 4v16"/><path d="m3 8 4-4 4 4"/><path d="M17 20V4"/><path d="m13 16 4 4 4-4"/>',
+  people:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4.6a3 3 0 0 1 0 6"/><path d="M18 14.2a5 5 0 0 1 3 5.8"/>'
 };
 Object.keys(IC).forEach(function(k){ F.icons["m_"+k]=IC[k]; });
 /* Gemeinsame Cockpit-Symbole (core.js, gleicher Strich) bevorzugen, sonst die eigenen von oben */
@@ -126,7 +128,7 @@ function applyOv(m){
   ["read","starred"].forEach(function(k){ if(k in o){ if(!!m[k]===!!o[k]) delete o[k]; else m[k]=o[k]; } });
   ["answered","forwarded","answeredAt"].forEach(function(k){ if(k in o){ if(m[k]) delete o[k]; else m[k]=o[k]; } });
   if("folder" in o){ if(m.folder===o.folder) delete o.folder; else m.folder=o.folder; }
-  if("deleted" in o){ if(TRASHRX.test(m.folder)||!o.deleted) delete o.deleted; else { m.deleted=true; m.trashedAt=o.trashedAt; m.flushed=!!o.flushed; } }
+  if("deleted" in o){ if(TRASHRX.test(m.folder)||!o.deleted) delete o.deleted; else { m.deleted=true; m.trashedAt=o.trashedAt; m.flushed=!!o.flushed; if(o.trashedFrom) m.trashedFrom=o.trashedFrom; } }
   return m;
 }
 function liveLocals(server){
@@ -195,7 +197,7 @@ M.loadFull=function(){
 /* Alle 4 s nur den ETag prüfen (billig, Antwort ohne Mails); bei Änderung den neuen Stand übernehmen – vorher 10 s (Wunsch Simon 05.11.2026: so schnell wie Outlook) */
 var POLL_BUSY=false;
 setInterval(function(){
-  if(POLL_BUSY||document.hidden||!S.full||M._lf||UNDO.timer) return;
+  if(POLL_BUSY||document.hidden||!S.full||M._lf||UNDO.timer||PURGE.timer) return;
   POLL_BUSY=true;
   F.api("/admin/api/mail?etag="+encodeURIComponent(S.etag||"")).then(function(md){
     POLL_BUSY=false;
@@ -248,14 +250,20 @@ UI.mthreads=UI.mthreads!=null?UI.mthreads:(F.ls("fsc_mthreads")!==false); UI.mth
 var THR=null, THR_V=-1;
 function subjNorm(x){ return String(x||"").replace(/^(\s*((re|aw|wg|fw|fwd|antw|antwort|tr|r)\s*(\[\d+\]|\(\d+\))?\s*:\s*)|\s*\[[^\]]{1,40}\]\s*)+/i,"").replace(/\s+/g," ").trim().toLowerCase(); }
 function partnerOf(m){ var raw=String(isSent(m)?(m.to||""):(m.from||"")).toLowerCase(); return (raw.match(/[^\s<>,;"]+@[^\s<>,;"]+/)||[raw])[0]; }
+/* Betreff allein verbindet nie Benachrichtigungen (noreply, Newsletter, Shop-Systeme mit info@ …) – sonst landen z. B. alle „Ihre Bestellung“-Mails in einer Unterhaltung */
+var THNOTE=/(^|[._+-])(no-?reply|do-?not-?reply|donotreply|notifications?|mailer(-daemon)?|bounces?|newsletters?)([._+-]|@)|^info@/i;
 function threads(){ if(THR&&THR_V===S.ver) return THR; THR_V=S.ver;
-  var all=S.messages.filter(function(m){ return !m.deleted&&!isSpam(m)&&!isDraftBox(m)&&!m.outbox&&!m.draftLocal&&m.id; }), par={};
+  /* gelöschte (auch lokal, noch nicht am Server) und Spam gehören nie zu einer Unterhaltung – Zähler und aufgeklappte Zeilen zeigen sie sonst weiter */
+  var all=S.messages.filter(function(m){ return !m.deleted&&!isTrashed(m)&&!isSpam(m)&&!isDraftBox(m)&&!m.outbox&&!m.draftLocal&&m.id&&!PURGE.ids[m.id]; }), par={};
   var fnd=function(x){ while(par[x]!==x){ par[x]=par[par[x]]; x=par[x]; } return x; }, uni=function(a,b){ a=fnd(a); b=fnd(b); if(a!==b) par[b]=a; };
   all.forEach(function(m){ par[m.id]=m.id; });
-  var byMid={}; all.forEach(function(m){ if(m.messageId) byMid[msgKey(m.messageId)]=m.id; });
-  all.forEach(function(m){ var p=m.inReplyTo&&byMid[msgKey(m.inReplyTo)]; if(p&&p!==m.id) uni(p,m.id); });
-  var bySub={}; all.forEach(function(m){ var sj=subjNorm(m.subject); if(sj.length<4) return; var k=sj+"|"+partnerOf(m), f=bySub[k];
-    if(!f) bySub[k]={id:m.id,d:new Date(m.date)}; else if(Math.abs(new Date(m.date)-f.d)<120*864e5) uni(f.id,m.id); });
+  var byMid={}, linked={}; all.forEach(function(m){ if(m.messageId) byMid[msgKey(m.messageId)]=m.id; });
+  all.forEach(function(m){ var p=m.inReplyTo&&byMid[msgKey(m.inReplyTo)]; if(p&&p!==m.id){ uni(p,m.id); linked[p]=linked[m.id]=1; } });
+  /* gleicher Betreff nur, wenn keine der beiden Mails per Message-ID/In-Reply-To verkettet ist, die Gegenseite kein Benachrichtigungs-Absender ist
+     und die Mail zeitlich an die jeweils letzte Mail der Gruppe anschließt (nicht an die erste) */
+  var bySub={}; all.slice().sort(function(a,b){ return (Date.parse(a.date)||0)-(Date.parse(b.date)||0); }).forEach(function(m){ if(linked[m.id]) return; var sj=subjNorm(m.subject); if(sj.length<4) return; var pa=partnerOf(m); if(THNOTE.test(pa)) return;
+    var k=sj+"|"+pa, f=bySub[k], d=Date.parse(m.date)||0;
+    if(f&&Math.abs(d-f.d)<120*864e5){ uni(f.id,m.id); f.d=Math.max(f.d,d); } else bySub[k]={id:m.id,d:d}; });
   var groups={}, key={}; all.forEach(function(m){ var r=fnd(m.id); (groups[r]=groups[r]||[]).push(m); key[m.id]=r; });
   Object.keys(groups).forEach(function(r){ groups[r].sort(function(a,b){ return new Date(b.date)-new Date(a.date); }); });
   THR={key:key,groups:groups}; return THR; }
@@ -267,6 +275,15 @@ function withThread(ids){ var out=[], seen={}; ids.forEach(function(id){ var m=f
 function threadKey(m){ return m?threads().key[m.id]||m.id:""; }
 function threadingOn(){ return !!UI.mthreads&&!UI.mq&&["sent","trash","spam","drafts","outbox"].indexOf(UI.mf)<0; }
 M.threadOf=threadOf;
+/* Wann nimmt eine Aktion die ganze Unterhaltung mit? Nur bei einer Unterhaltungs-Zeile der normalen Liste (Unterhaltungen an, keine Suche),
+   nie bei einer aufgeklappten älteren Mail, bei Suchtreffern oder „Jede Mail einzeln“. o.conv = ausdrücklich ganze Unterhaltung, o.single = nur genau diese Mails */
+function expandConv(ids,o){ o=o||{}; var force=!!o.conv, on=!o.single&&(force||threadingOn()), reps=on&&!force?mvSet():null, out=[], seen={}, conv=0, cn=0;
+  ids.forEach(function(id){ if(seen[id]) return; var m=find(id), grow=m&&on&&(force||reps[id])&&threadOf(m).length>1;
+    if(!grow){ seen[id]=1; out.push(id); return; }
+    var t=withThread([id]).filter(function(x){ return !seen[x]; }); t.forEach(function(x){ seen[x]=1; out.push(x); }); if(t.length>1){ conv++; cn+=t.length; } });
+  return {ids:out,conv:conv,convN:cn,asked:ids.length}; }
+/* Meldungstext: „Unterhaltung (3 Mails) archiviert“, „5 Mails archiviert“ … */
+function cntTxt(x,n,verb){ if(x&&x.conv===1&&x.asked===1&&n>1) return "Unterhaltung ("+n+" Mails) "+verb; if(x&&x.conv>0&&n>1) return n+" Mails ("+x.conv+(x.conv===1?" Unterhaltung":" Unterhaltungen")+") "+verb; return (n>1?n+" Mails":"Mail")+" "+verb; }
 /* Zitierten Verlauf in Antworten einklappen (sonst steht jede ältere Mail nochmal im Text) – nur bei Antworten, nie bei Weiterleitungen */
 function isReplyMail(m){ return !!m.inReplyTo||/^\s*(re|aw|antw|antwort)\s*:/i.test(m.subject||""); }
 var QSEL='div.gmail_quote,blockquote[type="cite"],#appendonsend,#divRplyFwdMsg,div.OutlookMessageHeader,#mail-editor-reference-message-container,.moz-cite-prefix,div[name="messageReplySection"],.yahoo_quoted,div.protonmail_quote';
@@ -289,7 +306,7 @@ function quoteText(t,m){ t=String(t||""); if(!isReplyMail(m)) return linkify(t);
   return linkify(L.slice(0,i).join("\n").replace(/\s+$/,""))+'<details class="mq"><summary>··· Verlauf anzeigen</summary><div>'+linkify(L.slice(i).join("\n"))+'</div></details>'; }
 M.quoteHtml=quoteHtml; M.quoteText=quoteText;
 function baseView(){
-  var a=S.messages.slice(), f=UI.mf, list;
+  var a=S.messages.filter(function(m){ return !PURGE.ids[m.id]; }), f=UI.mf, list;
   if(f==="outbox") list=M.obItems?M.obItems():[];
   else if(f==="drafts") list=(M.draftItems?M.draftItems():[]).concat(a.filter(isDraftBox));
   else if(f==="trash") list=a.filter(isTrashed);
@@ -305,14 +322,26 @@ function baseView(){
   return list;
 }
 /* ---------- Suche (Wunsch Simon 19.10.2026): alle Ordner, alle Wörter, Umlaute egal, Befehle, dazu Treffer direkt aus dem Postfach (auch ältere Mails, Volltext) ---------- */
-function normS(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ß/g,"ss"); }
-function parseMq(q){ var Q={words:[],from:[],to:[],subj:[],att:false,unread:false,star:false};
+function normS(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/ß/g,"ss"); }
+/* Datum in Befehlen: TT.MM.JJJJ, T.M.JJ, TT.MM. (laufendes Jahr) oder JJJJ-MM-TT → Tagesbeginn (lokale Zeit) */
+function parseDay(v){ var x=/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})?$/.exec(v), y, mo, d;
+  if(x){ d=+x[1]; mo=+x[2]; y=x[3]?+x[3]:new Date().getFullYear(); if(y<100) y+=2000; }
+  else { x=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(v); if(!x) return null; y=+x[1]; mo=+x[2]; d=+x[3]; }
+  var t=new Date(y,mo-1,d); return (t.getMonth()===mo-1&&t.getDate()===d)?t.getTime():null; }
+/* Q.srv = Teile, die an die Postfach-Suche gehen (nach:/vor:/datum:/in: prüft nur das Cockpit) */
+function parseMq(q){ var Q={words:[],from:[],to:[],subj:[],att:false,unread:false,read:false,star:false,after:null,before:null,inF:[],srv:[]};
+  var after=function(t){ Q.after=Q.after==null?t:Math.max(Q.after,t); }, before=function(t){ Q.before=Q.before==null?t:Math.min(Q.before,t); };
   String(q||"").replace(/(\w+):("([^"]*)"|\S+)|"([^"]*)"|(\S+)/g,function(m,op,v,vq,ph,w){
-    if(op){ var val=(vq!=null?vq:v).trim(), o=op.toLowerCase(), nv=normS(val); if(!val) return m;
+    if(op){ var val=(vq!=null?vq:v).trim(), o=op.toLowerCase(), nv=normS(val), srv=true, day; if(!val) return m;
       if(/^(von|from|absender)$/.test(o)) Q.from.push(nv); else if(/^(an|to)$/.test(o)) Q.to.push(nv); else if(/^(betreff|subject)$/.test(o)) Q.subj.push(nv);
-      else if(/^(hat|has)$/.test(o)&&/^(anhang|anhange|attachment)/.test(nv)) Q.att=true; else if(/^(ist|is)$/.test(o)&&/^(ungelesen|unread)$/.test(nv)) Q.unread=true; else if(/^(ist|is)$/.test(o)&&/^(markiert|starred)$/.test(nv)) Q.star=true; else Q.words.push(normS(m));
-      return m; }
-    var t=normS(ph!=null?ph:w).trim(); if(t) Q.words.push(t); return m; });
+      else if(/^(hat|has)$/.test(o)&&/^(anhang|anhange|attachment)/.test(nv)) Q.att=true; else if(/^(ist|is)$/.test(o)&&/^(ungelesen|unread)$/.test(nv)) Q.unread=true; else if(/^(ist|is)$/.test(o)&&/^(gelesen|read)$/.test(nv)) Q.read=true; else if(/^(ist|is)$/.test(o)&&/^(markiert|starred)$/.test(nv)) Q.star=true;
+      else if(/^(nach|after)$/.test(o)&&(day=parseDay(val))!=null){ after(day); srv=false; }
+      else if(/^(vor|before)$/.test(o)&&(day=parseDay(val))!=null){ before(day); srv=false; }
+      else if(/^(datum|date)$/.test(o)&&(day=parseDay(val))!=null){ var nx=new Date(day); nx.setDate(nx.getDate()+1); after(day); before(nx.getTime()); srv=false; }
+      else if(/^(in|ordner|folder)$/.test(o)){ Q.inF.push(nv); srv=false; }
+      else Q.words.push(normS(m));
+      if(srv) Q.srv.push(m); return m; }
+    var t=normS(ph!=null?ph:w).trim(); if(t){ Q.words.push(t); Q.srv.push(ph!=null?'"'+ph+'"':w); } return m; });
   return Q; }
 M.parseMq=parseMq;
 var STX={};
@@ -320,54 +349,131 @@ function stxOf(m){ var k=m.id+"|"+(m.body?m.body.length:0), c=STX[m.id]; if(c&&c
   c=STX[m.id]={k:k,from:normS((m.fromName||"")+" "+(m.from||"")),to:normS((m.toName||"")+" "+(m.to||"")+" "+(m.toList||[]).map(function(a){return (a.name||"")+" "+a.address;}).join(" ")+" "+(m.ccList||[]).map(function(a){return (a.name||"")+" "+a.address;}).join(" ")),subj:normS(m.subject),
     body:normS((m.preview||"")+" "+(m.bodyHtml?String(m.body||"").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&"):(m.body||""))+" "+(m.attachments||[]).map(function(a){return a.filename;}).join(" "))};
   return c; }
-function mqMatch(m,Q){ var x=stxOf(m), all=x.from+" "+x.to+" "+x.subj+" "+x.body;
-  if(Q.att&&!(m.attachments&&m.attachments.length)) return false; if(Q.unread&&m.read) return false; if(Q.star&&!m.starred) return false;
-  for(var i=0;i<Q.words.length;i++) if(all.indexOf(Q.words[i])<0) return false;
-  for(i=0;i<Q.from.length;i++) if(x.from.indexOf(Q.from[i])<0) return false;
-  for(i=0;i<Q.to.length;i++) if(x.to.indexOf(Q.to[i])<0) return false;
-  for(i=0;i<Q.subj.length;i++) if(x.subj.indexOf(Q.subj[i])<0) return false;
+/* alle Befehle (ohne freie Wörter) – gilt auch für Treffer der Postfach-Suche, deren Text das Cockpit nicht kennt */
+function mqOps(m,Q){
+  if(Q.att&&!(m.attachments&&m.attachments.length)) return false; if(Q.unread&&m.read) return false; if(Q.read&&!m.read) return false; if(Q.star&&!m.starred) return false;
+  if(Q.after!=null||Q.before!=null){ var t=Date.parse(m.date); if(isNaN(t)||(Q.after!=null&&t<Q.after)||(Q.before!=null&&t>=Q.before)) return false; }
+  if(Q.from.length||Q.to.length||Q.subj.length){ var x=stxOf(m), i;
+    for(i=0;i<Q.from.length;i++) if(x.from.indexOf(Q.from[i])<0) return false;
+    for(i=0;i<Q.to.length;i++) if(x.to.indexOf(Q.to[i])<0) return false;
+    for(i=0;i<Q.subj.length;i++) if(x.subj.indexOf(Q.subj[i])<0) return false; }
   return true; }
+function mqMatch(m,Q){ if(!mqOps(m,Q)) return false; if(!Q.words.length) return true; var x=stxOf(m), all=x.from+" "+x.to+" "+x.subj+" "+x.body;
+  for(var i=0;i<Q.words.length;i++) if(all.indexOf(Q.words[i])<0) return false;
+  return true; }
+/* in:<Ordner> – passt auf den angezeigten Ordnernamen (auch Teil davon), Systemordner deutsch und englisch */
+function folderWords(m){ if(isTrashed(m)) return "papierkorb trash geloscht deleted"; if(isSpam(m)) return "spam junk"; if(isSent(m)) return "gesendet sent"; if(isDraftBox(m)) return "entwurfe drafts";
+  var f=m.folder||"INBOX"; return f==="INBOX"?"posteingang inbox":normS(fpathLabel(accOf(m),f)+" "+f); }
+/* „Nur dieser Ordner“ statt „Alle Ordner“ (Chip in der Trefferzeile) */
+UI.mscope=UI.mscope||F.ls("fsc_mscope")||"all";
+function scopeHere(Q){ return UI.mscope==="here"&&!Q.inF.length&&["outbox","drafts","unread","starred","trash","spam"].indexOf(UI.mf)<0; }
+var DUPF={};   /* Suchtreffer: dieselbe Mail (Message-ID) in mehreren Ordnern/Labels eines Kontos (Gmail) → eine Zeile, Ordner zusammen */
+function fLabel(m){ return isTrashed(m)?"Papierkorb":isSent(m)?"Gesendet":isSpam(m)?"Spam":(m.folder||"INBOX")==="INBOX"?"Posteingang":folderName(m.folder,accOf(m)); }
+function dupRank(m){ var f=m.folder||"INBOX"; return (m.lite?10:0)+(f==="INBOX"?0:/all mail|alle nachrichten|important|wichtig|starred|markiert/i.test(f)?2:1); }
+function dedupe(list){ var by={}, out=[]; DUPF={};
+  list.forEach(function(m){ var mid=m.messageId?msgKey(m.messageId):""; if(!mid){ out.push(m); return; } var k=accOf(m)+"|"+mid, g=by[k], fl=fLabel(m);
+    if(!g){ by[k]={m:m,f:[fl],i:out.length}; out.push(m); return; }
+    if(g.f.indexOf(fl)<0) g.f.push(fl); if(dupRank(m)<dupRank(g.m)){ out[g.i]=m; g.m=m; } });
+  Object.keys(by).forEach(function(k){ var g=by[k]; if(g.f.length>1) DUPF[g.m.id]=g.f; });
+  return out; }
 function searchList(){
-  var Q=parseMq(UI.mq), f=UI.mf, inTrash=f==="trash", inSpam=f==="spam", seen={}, out=[];
-  var keep=function(m){ return m&&!m.local&&!m.outbox&&acctOk(m)&&(inTrash?isTrashed(m):!isTrashed(m))&&(inSpam?isSpam(m):(inTrash||!isSpam(m))); };
+  var Q=parseMq(UI.mq), f=UI.mf, here=scopeHere(Q), seen={}, out=[];
+  var keep=function(m){ if(!m||m.local||m.outbox||m.draftLocal||!acctOk(m)||PURGE.ids[m.id]) return false;
+    if(Q.inF.length){ var fw=folderWords(m); return Q.inF.every(function(x){ return fw.indexOf(x)>-1; }); }
+    if(here) return M.folderKeyOf(m)===f;
+    if(f==="trash") return isTrashed(m); if(f==="spam") return isSpam(m);
+    return !isTrashed(m)&&!isSpam(m); };
   S.messages.forEach(function(m){ if(keep(m)&&mqMatch(m,Q)){ seen[m.id]=1; out.push(m); } });
-  var sr=UI.msr; if(sr&&sr.q===UI.mq.trim()&&sr.list) sr.list.forEach(function(m){ if(!seen[m.id]&&keep(m)&&(!Q.att||(m.attachments&&m.attachments.length))&&(!Q.star||m.starred)){ seen[m.id]=1; out.push(m); } });
-  return out;
+  var sr=UI.msr; if(sr&&sr.q===UI.mq.trim()&&sr.list) sr.list.forEach(function(m){ if(!seen[m.id]&&keep(m)&&mqOps(m,Q)){ seen[m.id]=1; out.push(m); } });
+  return dedupe(out);
 }
-// Server-Suche verzögert starten (nicht bei jedem Tastendruck)
+// Server-Suche verzögert starten (nicht bei jedem Tastendruck); auch für reine Befehle wie ist:ungelesen
 var msrT=0;
 function serverSearch(){
-  clearTimeout(msrT); var q=String(UI.mq||"").trim(), Q=parseMq(q);
-  if(!q||(!Q.words.some(function(w){return w.length>=2;})&&!Q.from.length&&!Q.to.length&&!Q.subj.length)){ UI.msr=null; return; }
+  clearTimeout(msrT); var q=String(UI.mq||"").trim(), Q=parseMq(q), sq=Q.srv.join(" ").trim();
+  var any=Q.words.some(function(w){return w.length>=2;})||Q.from.length||Q.to.length||Q.subj.length||Q.att||Q.unread||Q.read||Q.star;
+  if(!q||!sq||!any){ UI.msr=null; return; }
   if(UI.msr&&UI.msr.q===q&&UI.msr.acc===UI.macct) return;
   UI.msr={q:q,acc:UI.macct,busy:true,list:null};
-  msrT=setTimeout(function(){ F.api("/admin/api/mail-search?q="+encodeURIComponent(q)+"&account="+encodeURIComponent(UI.macct||"all")).then(function(j){
+  msrT=setTimeout(function(){ F.api("/admin/api/mail-search?q="+encodeURIComponent(sq)+"&account="+encodeURIComponent(UI.macct||"all")).then(function(j){
     if(!UI.msr||UI.msr.q!==q) return;
     UI.msr={q:q,acc:UI.macct,busy:false,list:j&&j.ok?(j.messages||[]):[],err:j&&j.ok?"":((j&&j.error)||"Suche im Postfach fehlgeschlagen"),partial:!!(j&&j.partial),took:j&&j.took};
-    if(F.cur&&F.cur()!=="post") return; F.render(); }); },450); }
+    if(F.cur&&F.cur()!=="post") return; F.render(); }).catch(function(){ if(UI.msr&&UI.msr.q===q){ UI.msr={q:q,acc:UI.macct,busy:false,list:[],err:"Keine Verbindung zur Postfach-Suche"}; F.render(); } }); },450); }
 M.serverSearch=serverSearch; M.prevText=cleanPrev;
+/* Trefferzeile: eine kompakte Zeile – Anzahl, Bereich (alle Ordner / nur dieser), „Alle N Treffer auswählen“, Stand der Postfach-Suche */
 function searchInfo(list){ if(!UI.mq) return "";
   if(!UI.msr||UI.msr.q!==UI.mq.trim()||UI.msr.acc!==UI.macct) serverSearch();   // z. B. nach Kontowechsel neu im Postfach suchen
-  var sr=UI.msr, n=list.length, more=sr&&sr.list?sr.list.filter(function(m){ return !S.messages.some(function(x){return x.id===m.id;}); }).length:0;
-  return '<div class="msinfo">'+ic("search")+'<span><b>'+n+'</b> Treffer in allen Ordnern'+(UI.macct!=="all"&&multiAcc()?" ("+esc(accInfo(UI.macct).label)+")":"")+'</span>'+
-    (sr&&sr.busy?'<span class="mu"><span class="spin"></span> durchsucht das ganze Postfach …</span>':sr&&sr.err?'<span class="bad-t">'+esc(sr.err)+'</span>':sr&&sr.list?'<span class="mu">Postfach durchsucht'+(more?" · "+more+" ältere dazu":"")+(sr.partial?" · nur teilweise (zu viele Ordner)":"")+'</span>':'<span class="mu">Tipp: von:, an:, betreff:, hat:anhang, ist:ungelesen</span>')+'</div>'; }
-function hl(s){ var Q=UI.mq?parseMq(UI.mq):null, t=esc(s); if(!Q) return t; var ws=Q.words.concat(Q.from,Q.to,Q.subj).filter(function(w){return w.length>=2;}); if(!ws.length) return t;
-  var src=String(s||""), ns=normS(src); if(ns.length!==src.length) return t;   // Umlaute zerlegt → Positionen stimmen nicht, dann ohne Markierung
-  var marks=[]; ws.forEach(function(w){ var i=ns.indexOf(w); while(i>-1){ marks.push([i,i+w.length]); i=ns.indexOf(w,i+w.length); } });
+  var sr=UI.msr, n=list.length, Q=parseMq(UI.mq), here=scopeHere(Q), fixed=UI.mf==="trash"||UI.mf==="spam";
+  var own={}; S.messages.forEach(function(x){ own[x.id]=1; }); var more=sr&&sr.list?list.filter(function(m){ return !own[m.id]; }).length:0;   /* nur, was die Postfach-Suche wirklich dazu gebracht hat (ohne doppelte) */
+  var scope=Q.inF.length?'<span class="msc on" title="Befehl in: – sucht nur in diesem Ordner">in: '+esc(Q.inF.join(", "))+'</span>':fixed?'<span class="msc on">Nur '+esc(curFolderLabel())+'</span>':
+    '<button type="button" class="msc" data-act="mscope" aria-pressed="'+here+'" title="Umschalten: nur im aktuellen Ordner oder in allen Ordnern suchen">'+(here?"Nur "+esc(curFolderLabel()):"Alle Ordner")+ic("chev")+'</button>';
+  var ex=!fixed&&!here&&!Q.inF.length?'<span class="msq msx" title="Papierkorb und Spam werden nur mit in:papierkorb bzw. in:spam durchsucht">ohne Papierkorb/Spam (in:papierkorb, in:spam)</span>':'';
+  var st=sr&&sr.busy?'<span class="msq"><span class="spin"></span> Postfach …</span>':sr&&sr.err?'<span class="bad-t" title="'+esc(sr.err)+'">'+esc(sr.err)+'</span>':sr&&sr.list?'<span class="msq" title="Das ganze Postfach wurde durchsucht">'+(more?"+"+more+" ältere":"✓ Postfach")+(sr.partial?" · teilweise":"")+'</span>':'';
+  return '<div class="msinfo" title="Befehle: von: an: betreff: hat:anhang ist:ungelesen ist:gelesen ist:markiert nach:TT.MM.JJJJ vor:TT.MM.JJJJ datum:TT.MM.JJJJ in:Ordner">'+ic("search")+'<b>'+n+'</b><span>Treffer</span>'+scope+
+    (n>1?'<button type="button" class="link" data-act="msrall">Alle '+n+' Treffer auswählen</button>':'')+st+ex+'</div>'; }
+/* Markierung der Suchwörter: Vergleich auf einer normalisierten Kopie mit Positions-Tabelle (ß → ss, é → e verschieben sonst die Stellen) */
+function hlNorm(src){ var ns="", map=[]; for(var i=0;i<src.length;i++){ var n=normS(src[i]); for(var k=0;k<n.length;k++){ ns+=n[k]; map.push(i); } } return {ns:ns,map:map}; }
+var HLQ={q:null,ws:[]};
+function hl(s){ var t=esc(s); if(!UI.mq) return t; if(HLQ.q!==UI.mq){ var Q=parseMq(UI.mq); HLQ={q:UI.mq,ws:Q.words.concat(Q.from,Q.to,Q.subj).filter(function(w){return w.length>=2;})}; } var ws=HLQ.ws; if(!ws.length) return t;
+  var src=String(s||""), ns=normS(src), map=null;
+  if(ns.length!==src.length||/[̀-ͯß]/.test(src)){ var N=hlNorm(src); ns=N.ns; map=N.map; }
+  var at=function(i){ return map?map[i]:i; };
+  var marks=[]; ws.forEach(function(w){ var i=ns.indexOf(w); while(i>-1){ marks.push([at(i),at(i+w.length-1)+1]); i=ns.indexOf(w,i+w.length); } });
   if(!marks.length) return t; marks.sort(function(a,b){return a[0]-b[0];}); var out="",p=0; marks.forEach(function(r){ if(r[0]<p) return; out+=esc(src.slice(p,r[0]))+"<mark>"+esc(src.slice(r[0],r[1]))+"</mark>"; p=r[1]; }); return out+esc(src.slice(p)); }
 function isOpen(m){ var rs=replyState(m); return !m.outbox&&!m.draftLocal&&!isSent(m)&&!(rs&&rs.ans); }
+/* ---------- Sortierung je Ordner (Wunsch Simon 13.11.2026): Datum ↓ (Standard), Datum ↑, Absender, Betreff, Ungelesene/Markierte zuerst; Mails ohne gültiges Datum immer zuletzt ---------- */
+var SORTS=[["new","Datum – neueste zuerst"],["old","Datum – älteste zuerst"],["from","Absender A–Z"],["subj","Betreff A–Z"],["unread","Ungelesene zuerst"],["star","Markierte zuerst"]];
+var SORTMAP=F.ls("fsc_msort")||{};
+function sortKey(){ return UI.mq?"search":UI.mf; }
+function sortMode(){ var s=SORTMAP[sortKey()]; return SORTS.some(function(x){ return x[0]===s; })?s:"new"; }
+function dv(m){ var t=Date.parse(m&&m.date); return isNaN(t)?null:t; }
+function sortName(m){ var s=isSent(m)||m.outbox||m.draftLocal; return normS(s?(m.toName||m.to):(m.fromName||m.from)).replace(/^["'\s]+/,""); }
+/* Zwischenspeicher: dieselbe Liste wird pro Darstellung mehrfach gebraucht (Liste, Kopf, Auswahl, Tastatur) */
+var MVC={k:"",t:0,v:null,act:null}, VSC={mv:null,k:"",v:null};
+function mvKey(){ var sr=UI.msr; return [S.ver,UI.mf,UI.macct,UI.mq,UI.mfilt,UI.mthreads?1:0,sortMode(),UI.mscope,sr?sr.q+"|"+(sr.busy?1:0)+"|"+(sr.list?sr.list.length:-1):"",UI.mf==="outbox"&&M.outbox?M.outbox().length:"",UI.mf==="drafts"&&M.draftItems?M.draftItems().length:"",PURGE.v].join("¦"); }
 function mailView(){
-  var list=baseView(), flt=UI.mfilt||"all";
+  var key=mvKey(), now=Date.now(); if(MVC.v&&MVC.k===key&&now-MVC.t<80) return MVC.v;
+  var list=baseView(), flt=UI.mfilt||"all", sm=sortMode(), act={}, un={};
   if(flt==="unread") list=list.filter(function(m){return !m.read;});
   else if(flt==="star") list=list.filter(function(m){return m.starred;});
   else if(flt==="att") list=list.filter(function(m){return m.attachments&&m.attachments.length;});
   else if(flt==="open") list=list.filter(isOpen);
-  list.sort(function(x,y){ return (new Date(y.date))-(new Date(x.date)); });
+  var nd0=function(x,y){ var a=dv(x), b=dv(y); if(a==null&&b==null) return 0; if(a==null) return 1; if(b==null) return -1; return b-a; };
+  list.sort(nd0);
   if(threadingOn()){ var seen={}; list=list.filter(function(m){ if(m.outbox||m.draftLocal) return true; var k=threadKey(m); if(seen[k]) return false; seen[k]=1; return true; }); }   /* je Unterhaltung nur die neueste */
-  return list;
+  /* Unterhaltungen nach der letzten Aktivität (auch gesendete Antwort), ohne Papierkorb/Spam (threads() schließt sie aus) */
+  list.forEach(function(m){ var best=dv(m), u=!m.read; if(threadingOn()&&!m.outbox&&!m.draftLocal) threadOf(m).forEach(function(x){ var d=dv(x); if(d!=null&&(best==null||d>best)) best=d; if(!x.read&&!isSent(x)) u=true; }); act[m.id]=best; un[m.id]=u; });
+  var ad=function(asc){ return function(x,y){ var a=act[x.id], b=act[y.id]; if(a==null&&b==null) return 0; if(a==null) return 1; if(b==null) return -1; return asc?a-b:b-a; }; }, nd=ad(false);
+  if(sm==="old") list.sort(ad(true));
+  else if(sm==="from") list.sort(function(x,y){ return sortName(x).localeCompare(sortName(y),"de")||nd(x,y); });
+  else if(sm==="subj") list.sort(function(x,y){ return subjNorm(x.subject).localeCompare(subjNorm(y.subject),"de")||nd(x,y); });
+  else if(sm==="unread") list.sort(function(x,y){ return ((un[x.id]?0:1)-(un[y.id]?0:1))||nd(x,y); });
+  else if(sm==="star") list.sort(function(x,y){ return ((y.starred?1:0)-(x.starred?1:0))||nd(x,y); });
+  else list.sort(nd);
+  MVC={k:key,t:now,v:list,act:act}; return list;
 }
-M.viewIds=function(){ return mailView().map(function(m){return m.id;}); };
-M.selectedIds=function(){ return Object.keys(UI.mpick).filter(function(id){ return UI.mpick[id]&&find(id); }); };
+function mvSet(){ var l=mailView(); if(!l._set){ var s={}; l.forEach(function(m){ s[m.id]=1; }); l._set=s; } return l._set; }
+/* ---------- Aufbau der Liste: Datums-Überschriften bzw. Absender-Gruppen, Unterhaltungs-Zeilen, aufgeklappte ältere Mails ---------- */
+UI.mgroup=UI.mgroup!=null?UI.mgroup:(F.ls("fsc_mgroup")||""); UI.msgOpen=UI.msgOpen||{};
+function grouping(){ return UI.mgroup==="sender"&&["outbox","drafts"].indexOf(UI.mf)<0; }
+function senderKeyOf(m){ var s=isSent(m)||m.outbox||m.draftLocal, raw=s?m.to:m.from; return mAddr(raw)||String(raw||"?").toLowerCase(); }
+function layout(list){
+  var thOn=threadingOn(), out=[], sm=sortMode(), dated=(sm==="new"||sm==="old")&&UI.mf!=="outbox", act=(MVC.v===list&&MVC.act)||{};
+  var rows=function(m,top){ var th=thOn&&!m.outbox&&!m.draftLocal?threadOf(m):[m], open=th.length>1&&UI.mthOpen===threadKey(m);
+    out.push({t:"row",m:m,top:top,o:{n:th.length,open:open,unread:th.some(function(x){ return !x.read&&!isSent(x); })}});
+    if(open){ out.push({t:"thbar",m:m,n:th.length}); th.forEach(function(x){ if(x.id!==m.id) out.push({t:"row",m:x,o:{child:true}}); }); } };
+  if(grouping()){ var gs={}, order=[]; list.forEach(function(m){ var k=senderKeyOf(m), g=gs[k]; if(!g){ g=gs[k]={k:k,m:m,list:[]}; order.push(g); } g.list.push(m); });
+    order.forEach(function(g){ var open=!!UI.msgOpen[g.k]; out.push({t:"sgrp",g:g,open:open,top:true}); if(open) g.list.forEach(function(m){ rows(m,false); }); }); }
+  else { var last=null; list.forEach(function(m){ if(dated){ var a=act[m.id], gl=grpLabel(a!=null?a:m.date); if(gl!==last){ out.push({t:"grp",label:gl}); last=gl; } } rows(m,true); }); }
+  return out; }
+/* Was gerade in der Ansicht ist (auch eingeklappte Absender-Gruppen und aufgeklappte ältere Mails) – Auswahl zählt nur das */
+function viewSet(){ var l=mailView(), k=UI.mthOpen+"|"+UI.mgroup+"|"+Object.keys(UI.msgOpen).filter(function(x){ return UI.msgOpen[x]; }).join(",");
+  if(VSC.mv===l&&VSC.k===k) return VSC.v; var s={}; l.forEach(function(m){ s[m.id]=1; }); layout(l).forEach(function(e){ if(e.t==="row") s[e.m.id]=1; }); VSC={mv:l,k:k,v:s}; return s; }
+M.viewIds=function(){ return layout(mailView()).filter(function(e){ return e.t==="row"; }).map(function(e){ return e.m.id; }); };
+M.selectedIds=function(){ var vs=viewSet(); return Object.keys(UI.mpick).filter(function(id){ return UI.mpick[id]&&vs[id]&&find(id); }); };
+/* Auswahl auf das Sichtbare kürzen (nach Suche, Filter …) */
+function prunePicks(){ var vs=viewSet(); Object.keys(UI.mpick).forEach(function(id){ if(!vs[id]) delete UI.mpick[id]; }); }
+function pickable(m){ return m&&!m.outbox&&!m.draftLocal; }
 function neighborId(ids){ var list=M.viewIds(), i=list.indexOf(UI.msel); if(i<0) return null; for(var k=i+1;k<list.length;k++) if(ids.indexOf(list[k])<0) return list[k]; for(var k2=i-1;k2>=0;k2--) if(ids.indexOf(list[k2])<0) return list[k2]; return null; }
 
 /* ---------- Formatierung ---------- */
@@ -435,7 +541,7 @@ function rowHtml(m,o){ o=o||{};
   if(rs&&rs.ans) ics+='<span title="Beantwortet'+(rs.date?" am "+esc(new Date(rs.date).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})):"")+'">'+ic("reply")+'</span>';
   if(rs&&rs.fwd) ics+='<span title="Weitergeleitet">'+ic("forward")+'</span>';
   if(m.attachments&&m.attachments.length) ics+='<span title="'+m.attachments.length+(m.attachments.length===1?" Anhang":" Anhänge")+'">'+ic("clip")+'</span>';
-  var fl=UI.mq&&!m.outbox&&!m.draftLocal?'<span class="tag grey">'+esc(isTrashed(m)?"Papierkorb":isSent(m)?"Gesendet":(m.folder||"INBOX")==="INBOX"?"Posteingang":folderName(m.folder,accOf(m)))+'</span>':(UI.mf!=="inbox"&&UI.mf.indexOf("f:")!==0&&!m.outbox&&!m.draftLocal&&(m.folder||"INBOX")!=="INBOX"&&!isSent(m)&&!isTrashed(m)&&!isSpam(m))?'<span class="tag grey">'+esc(folderName(m.folder,accOf(m)))+'</span>':'';
+  var fl=UI.mq&&!m.outbox&&!m.draftLocal?'<span class="tag grey" title="'+esc(DUPF[m.id]?"Liegt in: "+DUPF[m.id].join(", "):"")+'">'+esc(DUPF[m.id]?DUPF[m.id].join(" · "):fLabel(m))+'</span>':(UI.mf!=="inbox"&&UI.mf.indexOf("f:")!==0&&!m.outbox&&!m.draftLocal&&(m.folder||"INBOX")!=="INBOX"&&!isSent(m)&&!isTrashed(m)&&!isSpam(m))?'<span class="tag grey">'+esc(folderName(m.folder,accOf(m)))+'</span>':'';
   var canPick=!(m.outbox||m.draftLocal), picked=!!UI.mpick[m.id], qa="";
   if(canPick){
     if(isTrashed(m)) qa='<div class="mqa"><button type="button" data-act="mqa:restore|'+esc(m.id)+'" title="Wiederherstellen" aria-label="Wiederherstellen">'+ic("restore")+'</button><button type="button" class="dg" data-act="mqa:purge|'+esc(m.id)+'" title="Endgültig löschen" aria-label="Endgültig löschen">'+ic("trash")+'</button></div>';
@@ -447,10 +553,10 @@ function rowHtml(m,o){ o=o||{};
   var avBtn=canPick?av(nm,ad,"",' data-act="mpick:'+esc(m.id)+'" role="checkbox" aria-checked="'+picked+'" tabindex="0" title="Auswählen (X)"','<span class="ck">'+ic("check")+'</span>'):av(nm,ad);
   var thn=o.n>1?'<button type="button" class="thn'+(o.open?" on":"")+'" data-act="mthx:'+esc(m.id)+'" title="Unterhaltung mit '+o.n+' Mails '+(o.open?"zuklappen":"aufklappen")+'" aria-expanded="'+!!o.open+'">'+o.n+ic("chev")+'</button>':'';
   var whoT=m.draftLocal?"Entwurf":(sent?"An: ":"")+((nm&&ad&&nm!==ad)?nm+" <"+ad+">":(nm||ad||""));
-  return '<div class="mrow2'+(m.read&&!o.unread?"":" unread")+(UI.msel===m.id?" sel":"")+(picked?" picked":"")+(isTrashed(m)?" trashed":"")+(o.child?" thc":"")+(o.open?" thopen":"")+'" data-mid="'+esc(m.id)+'" tabindex="0"'+(UI.msel===m.id?' aria-current="true"':'')+(canPick?' draggable="true"':'')+'>'+avBtn+
+  return '<div class="mrow2'+(m.read&&!o.unread?"":" unread")+(UI.msel===m.id?" sel":"")+(picked?" picked":"")+(isTrashed(m)?" trashed":"")+(o.child?" thc":"")+(o.open?" thopen":"")+(UI.mcur===m.id?" kcur":"")+'" data-mid="'+esc(m.id)+'" tabindex="0"'+(UI.msel===m.id?' aria-current="true"':'')+(canPick?' draggable="true"':'')+'>'+avBtn+
     '<div class="mm"><div class="l1"><span class="who" title="'+esc(whoT)+'">'+who+'</span>'+accPill(m)+'<span class="when" title="'+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'">'+esc(fmtMailDate(m.date))+'</span></div>'+
     '<div class="l2"><span class="subj" title="'+esc(m.subject||"")+'">'+hl(m.subject||"(kein Betreff)")+'</span>'+fl+thn+'<span class="ics">'+ics+'</span>'+star+'</div>'+
-    (m.preview?'<div class="pre">'+esc(m.preview)+'</div>':'')+'</div>'+qa+'</div>';
+    (m.preview?'<div class="pre">'+hl(m.preview)+'</div>':'')+'</div>'+qa+'</div>';
 }
 function chipsHtml(list){
   var base=baseView(), f=UI.mf, cur=UI.mfilt||"all";
@@ -458,19 +564,27 @@ function chipsHtml(list){
   function chip(k,l,c,tt){ return '<button type="button" class="chip" data-act="mfilt:'+k+'" aria-pressed="'+(cur===k)+'"'+(tt?' title="'+tt+'" aria-label="'+tt+'"':'')+'>'+l+(c?' <span class="cn">'+c+'</span>':'')+'</button>'; }
   return chip("all","Alle")+chip("unread","Ungelesen",n.unread)+chip("star",'<span class="ci">'+ic("star")+'</span>',n.star,"Markiert")+chip("att",'<span class="ci">'+ic("clip")+'</span>',n.att,"Mit Anhang")+
     (f==="sent"||f==="outbox"||f==="drafts"?"":chip("open","Offen",n.open,"Noch nicht beantwortet"))+
+    /* Handy (Kopf der Liste ist dort ausgeblendet): Sortieren, Absender-Gruppen, Unterhaltungen als Chips */
+    (f!=="outbox"?'<button type="button" class="chip thchip'+(sortMode()!=="new"?" on":"")+'" data-act="msortm" aria-haspopup="menu" title="Sortieren" aria-label="Sortieren"><span class="ci">'+ic("sortab")+'</span></button>':'')+
+    (grpToggle()?'<button type="button" class="chip thchip" data-act="mgroup" aria-pressed="'+grouping()+'" title="Nach Absender gruppieren (an/aus)" aria-label="Nach Absender gruppieren"><span class="ci">'+ic("people")+'</span></button>':'')+
     (thToggle()?'<button type="button" class="chip thchip" data-act="mthreads" aria-pressed="'+!!UI.mthreads+'" title="Mails eines Themas als Unterhaltung zusammenfassen (an/aus)" aria-label="Unterhaltungen zusammenfassen"><span class="ci">'+ic("replyall")+'</span></button>':'');
 }
 function thToggle(){ return !UI.mq&&["sent","trash","spam","drafts","outbox"].indexOf(UI.mf)<0;
 }
-/* Kopf der Mailliste (PC): Ordnername, Anzahl, Werkzeuge */
+function grpToggle(){ return ["outbox","drafts"].indexOf(UI.mf)<0; }
+var SORTSHORT={"new":"Neueste",old:"Älteste",from:"Absender",subj:"Betreff",unread:"Ungelesen",star:"Markiert"};
+/* Kopf der Mailliste (PC): Auswahl-Kästchen mit Menü, Ordnername, Anzahl, Sortieren, Absender-Gruppen, Unterhaltungen */
 function listHead(list){
   var f=UI.mf, tools="", unread=list.filter(function(m){ return !m.read&&!m.outbox&&!m.draftLocal; }).length;
   if(f==="trash"&&list.length) tools='<button type="button" class="link bad-t" data-act="mempty">Papierkorb leeren</button>';
   else if(f==="spam"&&list.length) tools='<button type="button" class="link bad-t" data-act="mspamclear">Spam leeren</button>';
-  var pickable=list.filter(function(m){ return !m.outbox&&!m.draftLocal; }).length;
+  var pk=list.filter(pickable), np=pk.filter(function(m){ return UI.mpick[m.id]; }).length, st=!np?"false":np===pk.length?"true":"mixed";
   var t=UI.mq?"Suche":curFolderLabel()+(multiAcc()&&UI.macct!=="all"?" · "+accInfo(UI.macct).label:"");
-  return '<div class="mlh"><div class="mlh-t"><b title="'+esc(t)+'">'+esc(t)+'</b><span>'+list.length+(list.length===1?" Mail":" Mails")+(unread?" · "+unread+" ungelesen":"")+'</span></div>'+tools+
-    (pickable?'<button type="button" class="link" data-act="mbulk:all" title="Alle in dieser Liste auswählen">Alle auswählen</button>':'')+
+  var ck=pk.length?'<span class="mlh-ck"><button type="button" class="mlh-cb" data-act="mbulk:all" role="checkbox" aria-checked="'+st+'" title="'+(st==="true"?"Auswahl aufheben":"Alle in dieser Liste auswählen")+'" aria-label="Alle auswählen">'+(st==="true"?ic("check"):st==="mixed"?'<i></i>':'')+'</button><button type="button" class="mlh-cm" data-act="mselm" title="Auswählen: Alle, Keine, Gelesene, Ungelesene, Markierte" aria-label="Auswahl-Menü" aria-haspopup="menu">'+ic("chev")+'</button></span>':'';
+  var so=sortMode(), sl=SORTS.filter(function(x){ return x[0]===so; })[0][1];
+  var sort=f!=="outbox"&&list.length?'<button type="button" class="mlh-so'+(so!=="new"?" on":"")+'" data-act="msortm" aria-haspopup="menu" title="Sortieren: '+esc(sl)+'" aria-label="Sortieren: '+esc(sl)+'">'+ic("sortab")+'<span>'+esc(SORTSHORT[so])+'</span></button>':'';
+  return '<div class="mlh">'+ck+'<div class="mlh-t"><b title="'+esc(t)+'">'+esc(t)+'</b><span>'+list.length+(list.length===1?" Mail":" Mails")+(unread?" · "+unread+" ungelesen":"")+'</span></div>'+tools+sort+
+    (grpToggle()?'<button type="button" class="mlh-th" data-act="mgroup" aria-pressed="'+grouping()+'" title="'+(grouping()?"Nach Absender gruppiert – klicken für normale Liste":"Nach Absender gruppieren")+'" aria-label="Nach Absender gruppieren">'+ic("people")+'</button>':'')+
     (thToggle()?'<button type="button" class="mlh-th" data-act="mthreads" aria-pressed="'+!!UI.mthreads+'" title="'+(UI.mthreads?"Unterhaltungen: an – Mails eines Themas sind zusammengefasst":"Unterhaltungen: aus – jede Mail einzeln")+'" aria-label="Unterhaltungen zusammenfassen">'+ic("replyall")+'</button>':'')+'</div>';
 }
 function emptyHtml(){
@@ -487,15 +601,21 @@ function emptyHtml(){
   else if(!S.messages.length&&S.err){ e=["alert","Postfach nicht erreichbar",S.err]; act='<button type="button" class="btn" data-act="mretry">'+ic("refresh")+' Erneut versuchen</button>'; }
   return '<div class="mempty'+(S.loading&&!S.messages.length?" busy":"")+'"><span class="ei">'+ic(e[0])+'</span><b>'+esc(e[1])+'</b>'+(e[2]?'<span>'+esc(e[2])+'</span>':'')+(act?'<div class="ea">'+act+'</div>':'')+'</div>';
 }
+/* Absender-Gruppe (Ansicht „Nach Absender gruppieren“): Kopf mit Anzahl, klappbar, „auswählen“ */
+function sgrpHtml(e){ var g=e.g, m=g.m, s=isSent(m)||m.outbox||m.draftLocal, nm=s?(m.toName||m.to):(m.fromName||m.from), ad=mAddr(s?m.to:m.from), un=g.list.filter(function(x){ return !x.read; }).length;
+  return '<div class="msg'+(e.open?" open":"")+'"><button type="button" class="msg-h" data-act="msgx:'+esc(g.k)+'" aria-expanded="'+e.open+'" title="'+esc((nm||g.k)+(ad&&ad!==nm?" <"+ad+">":"")+" – "+g.list.length+" Mails")+'">'+ic("chev")+av(nm,ad)+'<span class="msg-n"><b>'+hl(nm||g.k)+'</b>'+(ad&&ad!==String(nm||"").toLowerCase()?'<small>'+esc(ad)+'</small>':'')+'</span><span class="msg-c'+(un?" hot":"")+'" title="'+g.list.length+' Mails'+(un?", "+un+" ungelesen":"")+'">'+g.list.length+'</span></button><button type="button" class="link msg-p" data-act="msgpick:'+esc(g.k)+'" title="Alle Mails dieses Absenders auswählen">auswählen</button></div>'; }
+/* aufgeklappte Unterhaltung: ausdrücklich alles auf einmal */
+function thbarHtml(e){ var id=esc(e.m.id);
+  return '<div class="mthbar" role="toolbar" aria-label="Ganze Unterhaltung"><span><span class="hide-m">Ganze </span>Unterhaltung ('+e.n+'):</span>'+(canArchive(e.m)?'<button type="button" data-act="mthact:archive|'+id+'">Archivieren</button><i>·</i>':'')+'<button type="button" data-act="mthact:move|'+id+'">Verschieben</button><i>·</i><button type="button" class="dg" data-act="mthact:trash|'+id+'">Löschen</button></div>'; }
 function listHtml(list){
   if(!list.length) return emptyHtml();
-  var out=[], last=null, grouped=UI.mf!=="outbox", shown=list.slice(0,UI.mshow);
-  var thOn=threadingOn();
-  shown.forEach(function(m){ if(grouped){ var g=grpLabel(m.date); if(g!==last){ out.push('<div class="mgrp">'+esc(g)+'</div>'); last=g; } }
-    var th=thOn&&!m.outbox&&!m.draftLocal?threadOf(m):[m], open=th.length>1&&UI.mthOpen===threadKey(m);
-    out.push(rowHtml(m,{n:th.length,open:open,unread:th.some(function(x){ return !x.read&&!isSent(x); })}));
-    if(open) th.forEach(function(x){ if(x.id!==m.id) out.push(rowHtml(x,{child:true})); }); });   /* aufgeklappt: ältere Mails der Unterhaltung darunter */
-  if(list.length>shown.length) out.push('<button type="button" class="more" data-act="mmore">Weitere '+Math.min(150,list.length-shown.length)+' von '+(list.length-shown.length)+' anzeigen</button>');
+  var ents=layout(list), out=[], tops=0, lim=UI.mshow, cut=false, hdr=null, total=grouping()?ents.filter(function(e){ return e.t==="sgrp"; }).length:list.length;
+  for(var i=0;i<ents.length;i++){ var e=ents[i];
+    if(e.t==="grp"){ hdr=e.label; continue; }
+    if(e.top){ if(tops>=lim){ cut=true; break; } tops++; if(hdr){ out.push('<div class="mgrp">'+esc(hdr)+'</div>'); hdr=null; } }
+    if(e.t==="sgrp") out.push(sgrpHtml(e)); else if(e.t==="thbar") out.push(thbarHtml(e)); else out.push(rowHtml(e.m,e.o)); }   /* aufgeklappt: ältere Mails der Unterhaltung darunter */
+  var rest=total-tops;
+  if(cut&&rest>0) out.push('<button type="button" class="more" data-act="mmore">Weitere '+Math.min(150,rest)+' von '+rest+' anzeigen</button>');
   else out.push(olderBtn());
   return out.join("");
 }
@@ -640,6 +760,23 @@ M.custItems=function(m){
   if(c.open.length) o.pay={label:"Zahlungseingang erfassen …",icon:"wallet",act:function(){ M.payIn(m,false); }};
   return o;
 };
+/* ---------- Absender-Aktionen (Rechtsklick, „…“ im Lesebereich): alle geladenen Mails dieses Absenders im selben Konto, ohne Papierkorb ---------- */
+function senderAddr(m){ return m&&!m.local&&!m.outbox&&!m.draftLocal&&!isSent(m)?mAddr(m.from):""; }
+function senderIds(m){ var a=senderAddr(m), acc=accOf(m); if(!a) return [];
+  return S.messages.filter(function(x){ return !x.local&&!x.outbox&&!x.draftLocal&&accOf(x)===acc&&!isTrashed(x)&&!isSent(x)&&!PURGE.ids[x.id]&&mAddr(x.from)===a; }).map(function(x){ return x.id; }); }
+function senderName(m){ var n=String(m.fromName||"").trim(); return n&&n.indexOf("@")<0?(n.length>28?n.slice(0,27)+"…":n):senderAddr(m); }
+/* „Alle von … auswählen“: Suche von:<Adresse> über alle Ordner, Treffer dieses Kontos ausgewählt (so ist die Auswahl auch sichtbar) */
+function selectSender(m){ var a=senderAddr(m), acc=accOf(m); if(!a) return;
+  UI.mq="von:"+a; UI.mfilt="all"; UI.mscope="all"; UI.msel=null; UI.mshow=150; UI.mpick={}; UI.mlistTop=0; if(window.innerWidth<=900) UI.msrch=true;
+  mailView().forEach(function(x){ if(pickable(x)&&accOf(x)===acc&&mAddr(x.from)===a) UI.mpick[x.id]=true; });
+  serverSearch(); F._forceRender=true; F.render(); var n=Object.keys(UI.mpick).length; F.toast(n+(n===1?" Mail":" Mails")+" von "+senderName(m)+" ausgewählt"); }
+function senderItems(m){ var a=senderAddr(m); if(!a) return []; var nm=senderName(m);
+  return [{label:"Alle von "+nm+" auswählen",icon:"check",act:function(){ selectSender(m); }},
+    {label:"Alle von "+nm+" verschieben …",icon:"folder",act:function(){ var l=senderIds(m); if(!l.length) return; var p=LASTXY||menuPos(null); M.showMoveMenu(p[0],p[1],l,{single:true}); }},
+    {label:"Alle von "+nm+" löschen",icon:"trash",danger:true,act:function(){ var l=senderIds(m); if(!l.length) return;
+      F.confirm(l.length+(l.length===1?" Mail":" Mails")+" von "+nm+" in den Papierkorb verschieben?","Löschen",function(){ trashMessages(l,{single:true}); },true); }},
+    {label:"Regel aus dieser Mail …",icon:"filter",act:function(){ if(M.ruleFrom) M.ruleFrom({from:a,name:"Mails von "+nm,account:multiAcc()?accOf(m):""}); else if(F.actions.mailrules) F.actions.mailrules(); }}]; }
+M.senderItems=senderItems; M.selectSender=selectSender;
 F.action("mlead",function(id){ var m=find(id)||M.cur(); if(m) M.leadFromMail(m); });
 F.action("minvopen",function(id){ var m=find(id)||M.cur(); if(m) M.payIn(m,true); });
 F.action("mpayin",function(id){ var m=find(id)||M.cur(); if(m) M.payIn(m,false); });
@@ -712,8 +849,10 @@ function readerHtml(){
 function bulkHtml(){
   var n=M.selectedIds().length; if(!n) return "";
   var b=function(op,icon,l,cls){ return '<button type="button" class="btn'+(cls?" "+cls:"")+'" data-act="mbulk:'+op+'">'+ic(icon)+'<span>'+l+'</span></button>'; };
+  /* im Papierkorb: Wiederherstellen und Endgültig löschen statt Archiv/Spam */
+  var tr=UI.mf==="trash";
   return '<div class="mbulk" role="toolbar" aria-label="Auswahl"><b>'+n+' ausgewählt</b>'+b("read","mailopen","Gelesen")+b("unread","mail","Ungelesen")+b("star","star","Markieren")+
-    (UI.mf!=="trash"?b("archive","archive","Archivieren"):'')+b("move","folder","Verschieben …")+b("spam","spam","Spam")+b("trash","trash","Löschen","danger")+
+    (tr?b("restore","restore","Wiederherstellen")+b("move","folder","Verschieben …")+b("purge","trash","Endgültig löschen","danger"):b("archive","archive","Archivieren")+b("move","folder","Verschieben …")+b("spam","spam","Spam")+b("trash","trash","Löschen","danger"))+
     '<span class="sp"></span><button type="button" class="btn" data-act="mbulk:all">Alle auswählen</button><button type="button" class="btn" data-act="mbulk:clear">'+F.svg("close")+'<span>Abwählen</span></button></div>';
 }
 /* Hinweis-Balken: Mail-Dienst gestört (F.D.mail.stale/error oder eigener Abruf) bzw. Konto nicht verbunden */
@@ -747,7 +886,7 @@ F.action("mbannerx",function(sig){ F.ls("fsc_mbanner_acc",sig); F.render(); });
 F.listen("click",'.mbanner [data-act^="conn"]',function(){ F.actions.msettings("mail"); });
 /* Handy: einmaliger Hinweis auf die Wisch-Gesten */
 function swipeTip(list){ if(!list.length||UI.mq||UI.mf==="outbox"||F.ls("fsc_mswipe_tip")) return "";
-  return '<div class="mtip">'+ic("swipe")+'<span><b>Tipp:</b> Mail nach links wischen löscht, nach rechts ändert gelesen/ungelesen. Lange drücken wählt mehrere aus.</span><button type="button" class="link" data-act="mtipx">Verstanden</button></div>'; }
+  return '<div class="mtip">'+ic("swipe")+'<span><b>Tipp:</b> '+esc(M.swipeDesc?M.swipeDesc():"Mail nach links wischen löscht, nach rechts ändert gelesen/ungelesen.")+' Lange drücken zeigt Aktionen.</span><button type="button" class="link" data-act="mswipecfg">Anpassen</button><button type="button" class="link" data-act="mtipx">Verstanden</button></div>'; }
 F.action("mtipx",function(){ F.ls("fsc_mswipe_tip",1); F.render(); });
 function subLine(){
   var accs=accounts(), bad=accs.filter(function(a){ return a.configured===false||a.ok===false; });
@@ -775,7 +914,7 @@ function vPost(){
   '</div>'+(UI.msel||M.selectedIds().length?'':'<button type="button" class="mfab lbl" data-act="compose" aria-label="Neue Mail">'+ic("edit")+'<span>Neue Mail</span></button>');
 }
 /* Breite der Mailliste am PC selbst ziehen (Wunsch Simon 20.10.2026): Griff am rechten Rand der Liste, Pfeiltasten ±20 px, Doppelklick = Standard; bleibt gespeichert */
-var MLW_MIN=240, MLW_READ=260;   // Mindestbreiten Liste bzw. Lesebereich
+var MLW_MIN=300, MLW_READ=260;   // Mindestbreiten Liste bzw. Lesebereich
 function listW(){ var w=UI.mlistW!=null?UI.mlistW:F.ls("fsc_mlist_w"); return w&&isFinite(w)?Math.round(w):0; }
 function listMax(box){ var f=box.querySelector(".mfold"), fw=f&&f.offsetParent?f.offsetWidth:0; return Math.max(MLW_MIN,box.clientWidth-fw-MLW_READ); }
 function setListW(box,w,save){ w=Math.round(Math.max(MLW_MIN,Math.min(listMax(box),w))); box.style.setProperty("--mlist-w",w+"px"); UI.mlistW=w; if(save) F.ls("fsc_mlist_w",w); return w; }
@@ -791,8 +930,8 @@ function mobileBar(c){
   var nsel=M.selectedIds().length;
   if(nsel) return '<div class="mapp sel"><button type="button" class="mapp-i" data-act="mbulk:clear" aria-label="Auswahl beenden">'+F.svg("close")+'</button><div class="mapp-t"><b>'+nsel+' ausgewählt</b><span>Antippen wählt weitere aus</span></div><button type="button" class="mapp-x" data-act="mbulk:all">Alle</button></div>'+
     '<div class="mselbar" role="toolbar" aria-label="Auswahl"><button type="button" data-act="mbulk:read">'+ic("mailopen")+'<span>Gelesen</span></button><button type="button" data-act="mbulk:star">'+ic("star")+'<span>Markieren</span></button>'+
-      (UI.mf!=="trash"?'<button type="button" data-act="mbulk:archive">'+ic("archive")+'<span>Archiv</span></button>':'')+
-      '<button type="button" data-act="mbulk:move">'+ic("folder")+'<span>Verschieben</span></button><button type="button" data-act="mbulk:spam">'+ic("spam")+'<span>Spam</span></button><button type="button" class="dg" data-act="mbulk:trash">'+ic("trash")+'<span>Löschen</span></button></div>';
+      (UI.mf==="trash"?'<button type="button" data-act="mbulk:restore">'+ic("restore")+'<span>Zurück</span></button><button type="button" data-act="mbulk:move">'+ic("folder")+'<span>Verschieben</span></button><button type="button" class="dg" data-act="mbulk:purge">'+ic("trash")+'<span>Endgültig</span></button></div>':
+      '<button type="button" data-act="mbulk:archive">'+ic("archive")+'<span>Archiv</span></button><button type="button" data-act="mbulk:move">'+ic("folder")+'<span>Verschieben</span></button><button type="button" data-act="mbulk:spam">'+ic("spam")+'<span>Spam</span></button><button type="button" class="dg" data-act="mbulk:trash">'+ic("trash")+'<span>Löschen</span></button></div>');
   var acc=UI.macct==="all"?(multiAcc()?"Alle Konten":(accounts()[0].user||S.account||"")):(accInfo(UI.macct).user||accInfo(UI.macct).label);
   var me=UI.macct==="all"?"FS":initials(accInfo(UI.macct).label,accInfo(UI.macct).user);
   var srch=UI.msrch||!!UI.mq;
@@ -831,7 +970,7 @@ M.render=function(){ F.render(); };
 /* ---------- Öffnen ---------- */
 M.open=function(id,opts){
   opts=opts||{};
-  UI.msel=id; UI.mscrollTo=id;
+  UI.msel=id; UI.mscrollTo=id; UI.mcur=null;
   var m=find(id);
   if(m&&!m.read&&!m.local){ M.setOv(m,{read:true}); M.action("seen",[m]); M.changed(); }
   if(opts.fromOutside){
@@ -857,22 +996,44 @@ F.action("mthx",function(id){ var m=find(id); if(!m) return; var k=threadKey(m);
 F.action("mthshow",function(id){ UI.mthShow[id]=!UI.mthShow[id]; F._forceRender=true; F.render(); });
 F.action("mthreads",function(){ UI.mthreads=!UI.mthreads; F.ls("fsc_mthreads",UI.mthreads); UI.mthOpen=null; F._forceRender=true; F.render(); F.toast(UI.mthreads?"Mails werden als Unterhaltungen zusammengefasst":"Jede Mail einzeln"); });
 F.listen("keydown",".mav[data-act]",function(el,e){ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); el.click(); } });
-F.listen("input","#msearch,#msearchm",function(el){ UI.mq=el.value; UI.mshow=150; serverSearch(); F.render(); });
-F.listen("keydown","#msearch,#msearchm",function(el,e){ if(e.key==="Escape"){ e.stopPropagation(); UI.mq=""; el.value=""; F.render(); var s=document.getElementById("msearch"); if(s) s.blur(); } });
+/* Suche: Liste erst nach 120 ms Tipp-Pause neu aufbauen (bei vielen Mails sonst zäh); eine neue Suche beginnt immer mit dem Filter „Alle“;
+   Auswahl wird auf die neuen Treffer gekürzt */
+var mqT=0;
+F.listen("input","#msearch,#msearchm",function(el){ if(!UI.mq&&el.value) UI.mfilt="all"; UI.mq=el.value; UI.mshow=150; clearTimeout(mqT); mqT=setTimeout(function(){ serverSearch(); prunePicks(); F.render(); },120); });
+F.listen("keydown","#msearch,#msearchm",function(el,e){ if(e.key==="Escape"){ e.stopPropagation(); clearTimeout(mqT); UI.mq=""; UI.msr=null; el.value=""; prunePicks(); F.render(); var s=document.getElementById("msearch"); if(s) s.blur(); } });
 F.listen("input","#mqr",function(el){ UI.mqr=el.value; UI.mqrFor=UI.msel; });
-F.action("msearchx",function(){ UI.mq=""; UI.msr=null; F.render(); var s=document.getElementById("msearch"); if(s) s.focus(); });
+F.action("msearchx",function(){ clearTimeout(mqT); UI.mq=""; UI.msr=null; prunePicks(); F.render(); var s=document.getElementById("msearch"); if(s) s.focus(); });
+F.action("mscope",function(){ UI.mscope=UI.mscope==="here"?"all":"here"; F.ls("fsc_mscope",UI.mscope); prunePicks(); F.render(); });
+/* alle Treffer (auch die aus der Postfach-Suche, sie stehen schon in der Liste) für Sammelaktionen auswählen */
+F.action("msrall",function(){ mailView().filter(pickable).forEach(function(m){ UI.mpick[m.id]=true; }); F.render(); });
+/* Sortieren (je Ordner gemerkt) */
+F.action("msortm",function(v,el){ var cur=sortMode(), p=menuPos(el);
+  M.ctx(p[0],p[1],SORTS.map(function(x){ return {label:(x[0]===cur?"✓ ":"")+x[1],act:function(){ SORTMAP[sortKey()]=x[0]; if(x[0]==="new") delete SORTMAP[sortKey()]; F.ls("fsc_msort",SORTMAP); UI.mlistTop=0; F._forceRender=true; F.render(); }}; }),"Sortieren"); });
+/* Nach Absender gruppieren (an/aus, gemerkt); Gruppen auf-/zuklappen, ganze Gruppe auswählen */
+F.action("mgroup",function(){ UI.mgroup=UI.mgroup==="sender"?"":"sender"; F.ls("fsc_mgroup",UI.mgroup); UI.mlistTop=0; F._forceRender=true; F.render(); F.toast(UI.mgroup?"Nach Absender gruppiert":"Normale Liste"); });
+F.action("msgx",function(k){ UI.msgOpen[k]=!UI.msgOpen[k]; F._forceRender=true; F.render(); });
+F.action("msgpick",function(k){ var l=mailView().filter(function(m){ return pickable(m)&&senderKeyOf(m)===k; }), on=l.length&&l.every(function(m){ return UI.mpick[m.id]; }); l.forEach(function(m){ if(on) delete UI.mpick[m.id]; else UI.mpick[m.id]=true; }); F.render(); });
+/* Auswahl-Menü am Kästchen im Listenkopf */
+function selectBy(kind){ var l=mailView().filter(pickable); UI.mpick={};
+  l.forEach(function(m){ if(kind==="all"||(kind==="read"&&m.read)||(kind==="unread"&&!m.read)||(kind==="star"&&m.starred)) UI.mpick[m.id]=true; }); F.render(); }
+M.selectBy=selectBy; M.selectAll=function(){ selectBy("all"); };
+F.action("mselm",function(v,el){ var p=menuPos(el);
+  M.ctx(p[0],p[1],[["all","Alle"],["none","Keine"],["read","Gelesene"],["unread","Ungelesene"],["star","Markierte"]].map(function(x){ return {label:x[1],act:function(){ selectBy(x[0]); }}; }),"Auswählen"); });
+/* Leiste über einer aufgeklappten Unterhaltung: ausdrücklich die ganze Unterhaltung */
+F.action("mthact",function(v,el){ var i=v.indexOf("|"), op=v.slice(0,i), id=v.slice(i+1); if(!find(id)) return;
+  if(op==="archive") archiveMessages([id],{conv:true}); else if(op==="trash") trashMessages([id],{conv:true}); else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],[id],{conv:true,el:el}); } });
 
 /* ---------- Navigation in der Ansicht ---------- */
 F.action("mfolder",function(k){ if(k!==UI.mf){ UI.mf=k; UI.mfilt="all"; UI.mpick={}; UI.msel=null; UI.mlistTop=0; UI.mshow=150; } F.closeModal(); F.render(); });
 F.action("macct",function(k){ if(k!==UI.macct){ UI.macct=k; UI.mpick={}; UI.msel=null; UI.mlistTop=0; if(UI.mf.indexOf("f:")===0) UI.mf="inbox"; } F.closeModal(); F.render(); });
-F.action("mfilt",function(k){ UI.mfilt=k; UI.mlistTop=0; F.render(); });
+F.action("mfilt",function(k){ UI.mfilt=k; UI.mlistTop=0; prunePicks(); F.render(); });
 F.action("mmore",function(){ UI.mshow+=150; F.render(); });
 F.action("mback",function(){ UI.msel=null; F._forceRender=true; F.render(); });
 F.action("mrel",function(id){ M.open(id,{fromOutside:!find(id)||M.folderKeyOf(find(id))!==UI.mf}); });
 F.action("msettings",function(k){ if(F.actions.settings) F.actions.settings(k||"mail"); else F.toast("Konten richtest du in den Einstellungen ein."); });
 F.action("mwebmail",function(){ window.open("https://webmail.world4you.com","_blank","noopener"); });
 F.action("mrefresh",function(){ F.toast("Postfach wird aktualisiert …"); M.loadFull().then(function(){ if(!S.err) F.toast("Postfach aktualisiert"); else F.toast(S.err,true); }); });
-F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">'+(multiAcc()?"Konten & Ordner":"Ordner")+'</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel({sheet:true})+'</nav><p class="muted small sheeth">Lange drücken auf einen Ordner: umbenennen, Unterordner, löschen …</p><button type="button" class="btn sheetrules" data-act="mailrules">'+ic("filter")+' Regeln – Mails automatisch sortieren</button>',"sheetdlg"); });
+F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">'+(multiAcc()?"Konten & Ordner":"Ordner")+'</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel({sheet:true})+'</nav><p class="muted small sheeth">Lange drücken auf einen Ordner: umbenennen, Unterordner, löschen …</p><button type="button" class="btn sheetrules" data-act="mailrules">'+ic("filter")+' Regeln – Mails automatisch sortieren</button><button type="button" class="btn sheetrules" data-act="mswipecfg">'+ic("swipe")+' Wischgesten</button>',"sheetdlg"); });
 F.action("mmailto",function(addr){ F.compose({to:addr}); });
 
 /* ---------- Ordner-Kontextmenü (Rechtsklick / langes Drücken am Handy) ---------- */
@@ -903,16 +1064,19 @@ function nameDialog(title,okLabel,val,acc,fn){
     fn(n,function(msg){ ok.disabled=false; er.textContent=msg; });
   });
 }
-function fCreate(acc,parent){
+/* cb(path) – z. B. „Neuer Ordner …“ im Verschieben-Menü verschiebt danach gleich dorthin; pre = vorgeschlagener Name */
+function fCreate(acc,parent,cb,pre){
   var pname=parent?(parent==="INBOX"?"Posteingang":folderName(parent,acc)):"";
-  nameDialog(parent?"Neuer Unterordner in „"+pname+"“":"Neuer Ordner"+(multiAcc()?" · "+(accInfo(acc).label||acc):""),"Anlegen","",acc,function(name,fail){
+  nameDialog(parent?"Neuer Unterordner in „"+pname+"“":"Neuer Ordner"+(multiAcc()?" · "+(accInfo(acc).label||acc):""),cb?"Anlegen & verschieben":"Anlegen","",acc,function(name,fail){
     folderApi({op:"create",account:acc,parent:parent||"",name:name}).then(function(j){
       if(!j||j.ok===false||j.error) return fail(ferr(j));
-      F.closeModal(); var d=fdelim(acc,parent||"");
-      if(j.path&&!fmeta(acc,j.path)) S.folders.push({account:acc,path:j.path,name:name,special:"",delim:d,total:0,unread:0});
+      F.closeModal(); var d=fdelim(acc,parent||""), path=j.path||((parent?parent+d:"")+name);
+      if(!fmeta(acc,path)) S.folders.push({account:acc,path:path,name:name,special:"",delim:d,total:0,unread:0});
+      if(cb){ M.changed(); cb(path); M.scheduleReload(800); return; }
       fdone("Ordner „"+name+"“ angelegt");
     });
   });
+  var inp=document.getElementById("mfnName"); if(inp&&pre) inp.value=String(pre).replace(/[\/\\.*%"]/g," ").trim().slice(0,80);
 }
 function fRename(acc,path){
   var old=folderName(path,acc);
@@ -981,13 +1145,17 @@ function fEmpty(kind){
   var rx=kind==="trash"?TRASHRX:SPAMRX, sp=kind==="trash"?"\\Trash":"\\Junk", lbl=kind==="trash"?"Papierkorb":"Spam";
   var list=scopeAccs().map(function(a){ return {acc:a,path:boxOf(a,rx,sp)}; }).filter(function(x){ return x.path; });
   if(!list.length){ F.toast("Kein "+lbl+"-Ordner gefunden",true); return; }
-  var n=0; list.forEach(function(x){ n+=inFolder(x.acc,x.path).length; });
-  F.confirm(lbl+" leeren? "+(n?n+" Mail(s) werden":"Alle Mails darin werden")+" endgültig gelöscht – das kann nicht rückgängig gemacht werden.","Endgültig leeren",function(){
-    var left=list.length, bad=null, del=0;
-    list.forEach(function(x){ folderApi({op:"empty",account:x.acc,path:x.path}).then(function(j){
-      if(!j||j.ok===false||j.error) bad=j; else { del+=j.deleted||0; S.messages=S.messages.filter(function(m){ return !(accOf(m)===x.acc&&(m.folder||"INBOX")===x.path); }); }
-      if(--left===0){ if(bad) F.toast(ferr(bad),true); else fdone(lbl+" geleert"+(del?" ("+del+" Mails)":"")); }
-    }); });
+  /* Anzahl aus den Ordner-Daten des Servers (dort stehen auch Mails, die das Cockpit nicht geladen hat), dazu lokal gelöschte, die noch unterwegs sind */
+  var n=0, accs=list.map(function(x){ return x.acc; }), pend=kind==="trash"?S.messages.filter(function(m){ return m.deleted&&!m.local&&!TRASHRX.test(m.folder||"")&&accs.indexOf(accOf(m))>-1; }):[];
+  list.forEach(function(x){ var fm=fmeta(x.acc,x.path), loc=inFolder(x.acc,x.path).length; n+=fm&&fm.total!=null&&isFinite(fm.total)?Math.max(+fm.total,loc):loc; }); n+=pend.length;
+  F.confirm(lbl+" leeren? "+(n?n+(n===1?" Mail wird":" Mails werden"):"Alle Mails darin werden")+" endgültig gelöscht – das kann nicht rückgängig gemacht werden.","Endgültig leeren",function(){
+    var run=function(){ var left=list.length, bad=null, del=0;
+      list.forEach(function(x){ folderApi({op:"empty",account:x.acc,path:x.path}).then(function(j){
+        if(!j||j.ok===false||j.error) bad=j; else { del+=j.deleted||0; S.messages=S.messages.filter(function(m){ return !(accOf(m)===x.acc&&((m.folder||"INBOX")===x.path||(kind==="trash"&&m.deleted))); }); S.folders.forEach(function(f){ if((f.account||primaryAcct())===x.acc&&f.path===x.path){ f.total=0; f.unread=0; } }); }
+        if(--left===0){ if(UI.mf===kind){ UI.msel=null; UI.mpick={}; } if(bad) F.toast(ferr(bad),true); else fdone(lbl+" geleert"+(del?" ("+del+" Mails)":"")); }
+      }); }); };
+    if(kind==="trash"){ if(PURGE.timer){ clearTimeout(PURGE.timer); PURGE.timer=null; } if(UNDO.ids.length){ flushUndo(); setTimeout(run,1500); return; } }   /* zuerst die noch nicht gesendeten Löschungen in den Papierkorb */
+    run();
   },true);
 }
 /* Menü für einen Ordner-Knopf aufbauen; null = kein Menü */
@@ -1042,7 +1210,7 @@ window.addEventListener("click",function(e){ if(Date.now()-lp.at<900&&e.target&&
 document.addEventListener("keydown",function(e){ if(e.key!=="Escape"||!(M.ctxOpen&&M.ctxOpen())) return; var c=document.querySelector(".mctx"); if(c&&c.contains(e.target)) return; e.stopPropagation(); document.body.click(); },true);
 M.folderMenu={create:fCreate,rename:fRename,move:fMove,del:fDelete,markRead:fMarkRead,empty:fEmpty};
 F.action("msrch",function(){ UI.msrch=!UI.msrch; if(UI.msrch) UI.msrchFocus=true; F.render(); });
-F.action("msrchx",function(){ UI.msrch=false; UI.mq=""; F.render(); });
+F.action("msrchx",function(){ UI.msrch=false; UI.mq=""; UI.msr=null; prunePicks(); F.render(); });
 /* Handy: weitere Aktionen als Blatt von unten */
 /* „…“ im Lesebereich: seltene Aktionen (PC) bzw. alles, was oben keinen Platz hat (Handy) */
 F.action("mxmore",function(v,el){
@@ -1062,6 +1230,7 @@ F.action("mxmore",function(v,el){
     if((mob||narrow)&&F.actions.kimsum){ its.push({sep:true},{label:"KI: Zusammenfassen",icon:"spark",act:function(){ F.actions.kimsum(m.id); }});
       if(!isSent(m)&&F.actions.kimreply) its.push({label:"KI: Antwort vorschlagen",icon:"spark",act:function(){ F.actions.kimreply(m.id); }}); }
     its.push({sep:true},{label:sp?"Kein Spam":"Als Spam",icon:sp?"inboxin":"spam",act:go(sp?"notspam":"spam")});
+    var si=senderItems(m); if(si.length) its.push({sep:true}); si.forEach(function(x){ its.push(x); });
   }
   its.push({label:"Drucken",icon:"print",act:go("print")},{label:"In Webmail öffnen",icon:"ext",act:function(){ F.actions.mwebmail(); }});
   var p=menuPos(el&&el.isConnected?el:null); M.ctx(p[0],p[1],its,"Weitere Aktionen");
@@ -1088,20 +1257,54 @@ function togglePick(id,range){
 }
 M.togglePick=togglePick;
 F.action("mpick",function(id,el,e){ togglePick(id,e&&e.shiftKey); });
+/* Tastatur/Kontextmenü: Auswahl oder einzelne Mail; read=null → umschalten (ist eine ungelesen, werden alle gelesen) */
+function readIds(ids,read){ var ms=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!ms.length) return; if(read==null) read=ms.some(function(m){ return !m.read; }); setRead(ms,read); }
+function starIds(ids){ var ms=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!ms.length) return; var on=!ms.every(function(m){ return m.starred; }); ms.forEach(function(m){ M.setOv(m,{starred:on}); }); M.action(on?"flag":"unflag",ms); M.changed(); F.render(); }
+M.readIds=readIds; M.starIds=starIds;
+
+/* ---------- Rückgängig (auch Taste Z): die letzte Aktion mit „Rückgängig“-Knopf ---------- */
+M.lastUndo=null;
+function undoToast(msg,fn){ var u={at:Date.now()}; u.fn=function(){ if(M.lastUndo===u) M.lastUndo=null; fn(); }; M.lastUndo=u; F.toast(msg,false,"Rückgängig",u.fn); }
+M.undoLast=function(){ var u=M.lastUndo; if(!u||Date.now()-u.at>120000){ F.toast("Nichts zum Rückgängigmachen"); return; } u.fn(); };
+function fname(path,acc){ return path==="INBOX"?"Posteingang":folderName(path,acc); }
 
 /* ---------- Verschieben, Spam ---------- */
-function moveMessages(ids,target,op,doneMsg){
-  op=op||"move"; if(op!=="spam") ids=withThread(ids); var msgs=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!msgs.length) return; var acc=accOf(msgs[0]);
+/* Kopie einer verschobenen Mail im Zielordner (dort neue UID): über die Message-ID, sonst Betreff + Datum */
+function copyIn(acc,folder,b){ return S.messages.filter(function(x){ return !x.local&&accOf(x)===acc&&(x.folder||"INBOX")===folder&&!pendingMove(x)&&(b.mid?msgKey(x.messageId)===b.mid:((x.subject||"")===b.subject&&x.date===b.date)); })[0]||null; }
+/* Rückgängig fürs Verschieben/Archivieren/Spam: sofort wieder an den alten Platz, dann am Server zurückverschieben */
+function moveBack(rec){
+  rec.back.forEach(function(b){ var m=find(b.id); if(m){ m.folder=b.from; if(OV[m.id]) delete OV[m.id].folder; } });
+  M.changed(); F.render(); F.toast("Wird zurückgeholt …");
+  rec.p.then(function(ok){ if(!ok) return;   /* am Server fehlgeschlagen → liegt ohnehin noch am alten Platz */
+    var left=rec.back.slice(), tries=0;
+    (function attempt(){ M.loadFull().then(function(){ var by={}, miss=[];
+      left.forEach(function(b){ var c=copyIn(rec.acc,rec.dest,b); if(c) (by[b.from]=by[b.from]||[]).push(c); else miss.push(b); });
+      Object.keys(by).forEach(function(fr){ M.action("move",by[fr],fr); by[fr].forEach(function(c){ M.setOv(c,{folder:fr}); }); });
+      left=miss; M.changed(); M.refresh();
+      if(left.length&&tries++<3){ setTimeout(attempt,2000); return; }
+      if(left.length) F.toast(left.length+(left.length===1?" Mail":" Mails")+" in „"+fname(rec.dest,rec.acc)+"“ nicht gefunden – bitte dort zurückverschieben",true);
+      else { F.toast("Rückgängig gemacht"); M.scheduleReload(); } }); })(); });
+}
+/* o: conv/single (siehe expandConv), pre = schon erweitert (Archivieren), noUndo */
+function moveMessages(ids,target,op,doneMsg,o){
+  op=op||"move"; o=o||{}; var x=o.pre?null:expandConv(ids,o); if(x) ids=x.ids;
+  var msgs=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!msgs.length) return; var acc=accOf(msgs[0]);
   if(target&&op==="move"&&target.indexOf("|")>-1){ var bi=target.indexOf("|"), tAcc=target.slice(0,bi); target=target.slice(bi+1); if(tAcc!==acc){ F.toast("Mails können nicht zwischen verschiedenen Konten verschoben werden",true); return; } }
   var other=msgs.filter(function(m){ return accOf(m)!==acc; }).length;
   msgs=msgs.filter(function(m){ return accOf(m)===acc; });
+  if(msgs.some(pendingMove)){ msgs=msgs.filter(function(m){ return !pendingMove(m); }); F.toast("Die Mail wird am Server noch verschoben – gleich nochmal versuchen",true); M.scheduleReload(1500); if(!msgs.length) return; }
   var dest=op==="spam"?spamPath(acc):target;
-  M.action(op,msgs,dest);
+  msgs=msgs.filter(function(m){ return m.deleted||(m.folder||"INBOX")!==dest; }); if(!msgs.length){ F.toast("Liegt bereits in „"+fname(dest,acc)+"“"); return; }
+  var back=msgs.map(function(m){ return {id:m.id,from:m.folder||"INBOX",mid:m.messageId?msgKey(m.messageId):"",subject:m.subject||"",date:m.date}; }), rec={acc:acc,dest:dest,back:back};
+  /* Mailserver meldet Fehler → Mails wieder an den alten Platz, nichts mehr „unterwegs“ */
+  rec.p=M.action(op,msgs,dest).then(function(ok){ if(!ok){ var n=0; back.forEach(function(b){ var m=find(b.id); if(m&&OV[m.id]&&("folder" in OV[m.id])){ m.folder=b.from; delete OV[m.id].folder; n++; } }); if(n){ M.changed(); F.render(); } } return ok; });
   var mids=msgs.map(function(m){return m.id;});
   var nxt=mids.indexOf(UI.msel)>-1?neighborId(mids):UI.msel;
   msgs.forEach(function(m){ M.setOv(m,{folder:dest,deleted:false}); delete UI.mpick[m.id]; });
   UI.msel=nxt; M.changed(); F.render(); M.scheduleReload();
-  F.toast((doneMsg||(op==="spam"?"Als Spam markiert":"Verschoben nach „"+(dest==="INBOX"?"Posteingang":folderName(dest,acc))+"“"))+(other?" – "+other+" Mail(s) aus anderem Konto übersprungen":""));
+  var msg=(doneMsg||cntTxt(o.pre||x,msgs.length,op==="spam"?"als Spam markiert":"verschoben nach „"+fname(dest,acc)+"“"))+(other?" – "+other+" Mail(s) aus anderem Konto übersprungen":"");
+  if(o.noUndo) F.toast(msg); else undoToast(msg,function(){ moveBack(rec); });
+  return rec;
 }
 M.moveMessages=moveMessages;
 /* ---------- Archivieren: in den Archiv-Ordner des Kontos (\\Archive oder „Archiv“); fehlt er, nach Rückfrage anlegen ---------- */
@@ -1111,29 +1314,77 @@ function archivePath(acc){ var k=S.ver+"|"+S.folders.length; if(ARC.k!==k) ARC={
   var mine=S.folders.filter(function(x){ return (x.account||primaryAcct())===acc; });
   var f=mine.filter(function(x){ return /\\Archive/i.test(x.special||""); })[0]||mine.filter(function(x){ return ARX.test(x.path); })[0]; return (ARC.m[acc]=f?f.path:""); }
 function canArchive(m){ if(!m||m.local||m.outbox||m.draftLocal||isTrashed(m)||isDraftBox(m)||isSpam(m)) return false; var p=archivePath(accOf(m)); return !p||(m.folder||"INBOX")!==p; }
-function archiveMessages(ids){
-  ids=withThread(ids); var msgs=ids.map(find).filter(canArchive);
+function archiveMessages(ids,o){
+  var x=expandConv(ids,o); ids=x.ids; var msgs=ids.map(find).filter(canArchive);
   if(!msgs.length){ var f0=find(ids[0]); if(f0&&!isTrashed(f0)&&archivePath(accOf(f0))===(f0.folder||"")) F.toast("Liegt bereits im Archiv"); return; }
   var acc=accOf(msgs[0]), ok=msgs.filter(function(m){ return accOf(m)===acc; }).map(function(m){ return m.id; }), p=archivePath(acc);
-  var n=ok.length, msg=(n>1?n+" Mails":"Mail")+" archiviert";
-  if(p){ moveMessages(ok,p,"move",msg); return; }
+  var n=ok.length, msg=cntTxt(x,n,"archiviert"), mo={pre:x};
+  if(p){ moveMessages(ok,p,"move",msg,mo); return; }
   F.confirm("Es gibt noch keinen Archiv-Ordner"+(multiAcc()?" im Konto „"+(accInfo(acc).label||acc)+"“":"")+". Ordner „Archiv“ anlegen und "+(n>1?"die "+n+" Mails":"die Mail")+" dorthin verschieben?","Anlegen & archivieren",function(){
     folderApi({op:"create",account:acc,parent:"",name:"Archiv"}).then(function(j){
-      if(j&&j.error==="exists"){ M.loadFull().then(function(){ var p2=archivePath(acc); if(p2) moveMessages(ok,p2,"move",msg); else F.toast("Archiv-Ordner nicht gefunden – bitte im Webmail prüfen",true); }); return; }
+      if(j&&j.error==="exists"){ M.loadFull().then(function(){ var p2=archivePath(acc); if(p2) moveMessages(ok,p2,"move",msg,mo); else F.toast("Archiv-Ordner nicht gefunden – bitte im Webmail prüfen",true); }); return; }
       if(!j||j.ok===false||j.error){ F.toast(ferr(j),true); return; }
       var path=j.path||"Archiv"; if(!fmeta(acc,path)) S.folders.push({account:acc,path:path,name:"Archiv",special:"",delim:fdelim(acc,""),total:0,unread:0});
-      moveMessages(ok,path,"move",msg);
+      moveMessages(ok,path,"move",msg,mo);
     });
   });
 }
 M.archive=archiveMessages; M.canArchive=canArchive;
-M.showMoveMenu=function(x,y,ids){
-  var first=find(ids[0]); if(!first) return; var acc=accOf(first), cur=first.folder||"INBOX";
-  var its=moveTargets(acc).filter(function(f){ return !(ids.length===1&&f.path===cur&&!first.deleted); }).map(function(f){ return {label:f.name,act:function(){ moveMessages(ids,f.path,"move"); }}; });
-  if(!its.length) its=[{label:"Keine weiteren Ordner",act:function(){}}];
-  setTimeout(function(){ M.ctx(x,y,its,"Verschieben nach"); },0);
+/* ---------- Verschieben-Menü (Wunsch Simon 13.11.2026): kleines Fenster am Knopf bzw. an der Maus (Handy: Blatt von unten), Suchfeld mit Fokus –
+   tippen filtert, Enter = erster Treffer, Pfeiltasten wählen; „Zuletzt verwendet“ je Konto, „Neuer Ordner …“, Unterordner als „Eltern › Kind“ ---------- */
+var MV=null, LASTXY=null, RECENT_KEY="fsc_mmove_recent";
+document.addEventListener("pointerdown",function(e){ LASTXY=[e.clientX,e.clientY]; if(MV&&MV.el&&!MV.el.contains(e.target)) mvClose(); },true);
+document.addEventListener("keydown",function(e){ if(MV&&e.key==="Escape"&&!(MV.el&&MV.el.contains(e.target))){ e.stopPropagation(); mvClose(); } },true);
+window.addEventListener("resize",function(){ if(MV&&window.innerWidth>900) mvClose(); });
+function recentGet(acc){ var o=F.ls(RECENT_KEY)||{}; return Array.isArray(o[acc])?o[acc]:[]; }
+function recentAdd(acc,path){ var o=F.ls(RECENT_KEY)||{}, l=recentGet(acc).filter(function(p){ return p!==path; }); l.unshift(path); o[acc]=l.slice(0,10); F.ls(RECENT_KEY,o); }
+function mvClose(){ if(!MV) return; var r=MV.ret; if(MV.el&&MV.el.parentNode) MV.el.parentNode.removeChild(MV.el); MV=null; if(r&&r.isConnected&&r.focus) try{ r.focus({preventScroll:true}); }catch(e){} }
+M.mvOpen=function(){ return !!MV; };
+function mvItems(){ var q=normS(MV.q).trim(), out=[];
+  if(!q){ var rec=recentGet(MV.acc).map(function(p){ return MV.all.filter(function(f){ return f.path===p; })[0]; }).filter(Boolean).slice(0,5);
+    if(rec.length){ out.push({hd:"Zuletzt verwendet"}); rec.forEach(function(f){ out.push({f:f}); }); out.push({hd:"Alle Ordner"}); }
+    MV.all.forEach(function(f){ out.push({f:f}); }); out.push({nw:true}); return out; }
+  var leaf=function(f){ return normS(f.name.split(" › ").pop()).indexOf(q)===0?0:1; };
+  MV.all.filter(function(f){ return normS(f.name).indexOf(q)>-1; }).sort(function(a,b){ return leaf(a)-leaf(b); }).forEach(function(f){ out.push({f:f}); });
+  out.push({nw:true,name:MV.q.trim()}); return out; }
+function mvPaint(){ if(!MV) return; var its=MV.items=mvItems(), n=its.filter(function(x){ return !x.hd; }).length, k=-1; MV.act=Math.max(0,Math.min(MV.act,n-1));
+  var h=its.map(function(x){ if(x.hd) return '<div class="mmv-g">'+esc(x.hd)+'</div>'; k++; var on=k===MV.act;
+    if(x.nw) return '<button type="button" class="mmv-i nw'+(on?" on":"")+'" data-mvi="'+k+'" role="option" aria-selected="'+on+'">'+ic("plus")+'<span>'+(x.name?"Neuer Ordner „"+esc(x.name)+"“ …":"Neuer Ordner …")+'</span></button>';
+    var parts=x.f.name.split(" › "), lf=parts.pop();
+    return '<button type="button" class="mmv-i'+(on?" on":"")+'" data-mvi="'+k+'" role="option" aria-selected="'+on+'" title="'+esc(x.f.name)+'">'+ic(x.f.path==="INBOX"?"inbox":"folder")+'<span>'+(parts.length?'<small>'+esc(parts.join(" › "))+' › </small>':'')+esc(lf)+'</span></button>'; }).join("");
+  var l=MV.el.querySelector(".mmv-l"); l.innerHTML=h; var a=l.querySelector(".mmv-i.on"); if(a&&a.scrollIntoView) a.scrollIntoView({block:"nearest"}); }
+function mvPick(k){ if(!MV) return; var x=MV.items.filter(function(y){ return !y.hd; })[k]; if(!x) return; var ids=MV.ids, acc=MV.acc, o=MV.o, q=MV.q.trim(); mvClose();
+  if(x.nw){ fCreate(acc,"",function(path){ recentAdd(acc,path); moveMessages(ids,path,"move",null,o); },q); return; }
+  recentAdd(acc,x.f.path); moveMessages(ids,x.f.path,"move",null,o); }
+/* am Knopf (anchor), sonst an x/y; ungültige Position (unsichtbarer Knopf, Tastatur) → neben der gewählten Zeile bzw. an der Maus statt am linken Rand */
+function mvPlace(el,x,y,anchor){
+  if(window.innerWidth<=900){ el.classList.add("sheet"); return; }
+  var w=el.offsetWidth||300, h=el.offsetHeight||320, r=anchor&&anchor.isConnected&&anchor.getBoundingClientRect?anchor.getBoundingClientRect():null, top=null;
+  if(r&&(r.width||r.height)){ x=r.left; y=r.bottom+4; top=r.top; }
+  else if(!(x>8&&y>8)){ var row=document.querySelector(".mrow2.sel")||document.querySelector(".mrow2.picked")||document.querySelector(".mrow2.kcur"), rr=row&&row.getBoundingClientRect();
+    if(rr&&rr.width){ x=rr.right-w-12; y=rr.top+8; } else if(LASTXY){ x=LASTXY[0]; y=LASTXY[1]; } else { x=(window.innerWidth-w)/2; y=120; } }
+  if(y+h>window.innerHeight-6) y=(top!=null?top:y)-h-4;
+  el.style.left=Math.round(Math.max(6,Math.min(x,window.innerWidth-w-6)))+"px"; el.style.top=Math.round(Math.max(6,Math.min(y,window.innerHeight-h-6)))+"px"; }
+/* o: el = Knopf, an dem das Menü hängt; conv/single wie bei moveMessages */
+M.showMoveMenu=function(x,y,ids,o){
+  o=o||{}; var first=find(ids[0]); if(!first) return; mvClose();
+  var acc=accOf(first), cur=first.folder||"INBOX", one=ids.length===1&&!first.deleted;
+  MV={ids:ids.slice(),acc:acc,all:moveTargets(acc).filter(function(f){ return !(one&&f.path===cur); }),q:"",act:0,o:{conv:!!o.conv,single:!!o.single},ret:document.activeElement};
+  var conv=!o.single&&expandConv(ids,o).conv, lbl=ids.length>1?ids.length+" Mails":(conv?"ganze Unterhaltung":"");
+  var el=document.createElement("div"); el.className="mmv"; el.setAttribute("role","dialog"); el.setAttribute("aria-label","Verschieben nach");
+  el.innerHTML='<div class="mmv-h"><b>Verschieben nach</b>'+(lbl?'<span>'+esc(lbl)+'</span>':'')+(multiAcc()?'<span>'+esc(accInfo(acc).label||acc)+'</span>':'')+'</div><div class="mmv-s">'+F.svg("search")+'<input type="text" class="mmv-q" placeholder="Ordner suchen … Enter = erster" autocomplete="off" spellcheck="false" aria-label="Ordner suchen"></div><div class="mmv-l" role="listbox" aria-label="Ordner"></div>';
+  document.body.appendChild(el); MV.el=el; mvPaint(); mvPlace(el,x,y,o.el);
+  var inp=el.querySelector(".mmv-q");
+  inp.addEventListener("input",function(){ if(!MV) return; MV.q=inp.value; MV.act=0; mvPaint(); });
+  el.addEventListener("keydown",function(e){ if(!MV) return; var n=MV.items.filter(function(z){ return !z.hd; }).length;
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); MV.act=(MV.act+(e.key==="ArrowDown"?1:-1)+n)%n; mvPaint(); }
+    else if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); mvPick(MV.act); }
+    else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); mvClose(); }
+    else if(e.key==="Tab"){ e.preventDefault(); inp.focus(); } });
+  el.addEventListener("click",function(e){ var b=e.target.closest("[data-mvi]"); if(!b) return; e.stopPropagation(); mvPick(+b.getAttribute("data-mvi")); });
+  if(!(window.matchMedia&&matchMedia("(hover:none)").matches)) try{ inp.focus({preventScroll:true}); }catch(e){}   /* am Handy keine Tastatur aufspringen lassen */
 };
-function menuPos(el){ var r=el?el.getBoundingClientRect():{left:window.innerWidth/2-100,bottom:140}; return [r.left,r.bottom+4]; }
+function menuPos(el){ var r=el&&el.getBoundingClientRect?el.getBoundingClientRect():null; if(!r||(!r.width&&!r.height)) r={left:window.innerWidth/2-130,bottom:140}; return [r.left,r.bottom+4]; }
 M.menuPos=menuPos;
 
 /* ---------- Papierkorb mit Rückgängig ---------- */
@@ -1179,24 +1430,35 @@ function beacon(){
   try{ fetch("/admin/api/mail-action",{method:"POST",headers:{"Content-Type":"application/json"},body:payload,keepalive:true,credentials:"same-origin"}); }catch(e){}
 }
 window.addEventListener("pagehide",beacon);
-document.addEventListener("visibilitychange",function(){ if(document.hidden&&UNDO.items.length) flushUndo(); });   // App weggewischt/gesperrt: sofort senden (Handy)
+document.addEventListener("visibilitychange",function(){ if(document.hidden&&UNDO.items.length) flushUndo(); if(document.hidden&&PURGE.timer) purgeFlush(); });   // App weggewischt/gesperrt: sofort senden (Handy)
 window.addEventListener("beforeunload",beacon);
-function trashMessages(ids){
-  ids=withThread(ids); var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); });
+/* Herkunftsordner gelöschter Mails merken (auch übers Neuladen hinweg – im Papierkorb hat die Mail dann eine neue ID) → Wiederherstellen dorthin */
+var TRF_KEY="fsc_mtrfrom";
+function trfSave(msgs){ var o=F.ls(TRF_KEY)||{}, now=Date.now(), n={};
+  msgs.forEach(function(m){ if(!m.messageId||m.local) return; var k=accOf(m)+"|"+msgKey(m.messageId), f=m.folder||"INBOX"; if(f==="INBOX"||TRASHRX.test(f)) delete o[k]; else o[k]=[f,now]; });
+  Object.keys(o).filter(function(k){ return now-o[k][1]<60*864e5; }).sort(function(a,b){ return o[b][1]-o[a][1]; }).slice(0,600).forEach(function(k){ n[k]=o[k]; }); F.ls(TRF_KEY,n); }
+function trashedFrom(m){ var acc=accOf(m), f=m.trashedFrom; if(!f&&m.messageId){ var e=(F.ls(TRF_KEY)||{})[acc+"|"+msgKey(m.messageId)]; f=e&&e[0]; }
+  if(!f||f==="INBOX"||TRASHRX.test(f)||SPAMRX.test(f)) return "INBOX";
+  return fmeta(acc,f)||S.messages.some(function(x){ return accOf(x)===acc&&x.folder===f&&!x.deleted; })?f:"INBOX"; }
+M.trashedFrom=trashedFrom;
+function trashMessages(ids,o){
+  var x=expandConv(ids,o); ids=x.ids; var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); });
   if(!msgs.length){ if(ids.some(function(id){ return !find(id); })){ F.toast("Die Mail hat sich inzwischen geändert – Liste wird aktualisiert",true); M.loadFull(); } return; }
   flushUndo();
   var mids=msgs.map(function(m){return m.id;});
   var nxt=mids.indexOf(UI.msel)>-1?neighborId(mids):UI.msel;
   var now=new Date().toISOString();
-  msgs.forEach(function(m){ M.setOv(m,{deleted:true,trashedAt:now,flushed:false}); delete UI.mpick[m.id]; });
+  trfSave(msgs);
+  msgs.forEach(function(m){ M.setOv(m,{deleted:true,trashedAt:now,flushed:false,trashedFrom:m.folder||"INBOX"}); delete UI.mpick[m.id]; });
   var locals=msgs.filter(function(m){ return m.local; });
   if(locals.length){ M.local=M.local.filter(function(l){ return locals.indexOf(l)<0; }); S.messages=S.messages.filter(function(m){ return locals.indexOf(m)<0; }); }
   UNDO.ids=mids; UNDO.items=items(msgs); pendSave(); UNDO.timer=setTimeout(flushUndo,window.innerWidth<=900?4000:6000);
   UI.msel=nxt; M.changed(); F.render();
-  F.toast((msgs.length>1?msgs.length+" Nachrichten":"Nachricht")+" gelöscht",false,"Rückgängig",function(){
-    if(UNDO.timer){ clearTimeout(UNDO.timer); UNDO.timer=null; }
-    var back=UNDO.ids.length?UNDO.ids:[]; pendDrop(UNDO.items); UNDO.ids=[]; UNDO.items=[];
-    if(!back.length){ F.toast("Schon an den Server übertragen – im Papierkorb wiederherstellen",true); return; }
+  undoToast(cntTxt(x,msgs.length,"gelöscht"),function(){
+    var back=UNDO.ids.filter(function(id){ return mids.indexOf(id)>-1; });
+    /* schon beim Server: aus dem Papierkorb zurück an den alten Platz */
+    if(!back.length){ var still=mids.filter(function(id){ var m=find(id); return m&&isTrashed(m); }); if(still.length){ restore(still); return; } F.toast("Schon an den Server übertragen – im Papierkorb wiederherstellen",true); return; }
+    if(UNDO.timer){ clearTimeout(UNDO.timer); UNDO.timer=null; } pendDrop(UNDO.items); UNDO.ids=[]; UNDO.items=[];
     back.forEach(function(id){ var m=find(id); if(m){ M.setOv(m,{deleted:false,trashedAt:null}); delete OV[id].deleted; } });
     if(back.length===1) UI.msel=back[0];
     M.changed(); F.render(); F.toast("Wiederhergestellt");
@@ -1221,43 +1483,40 @@ function restore(ids){
   if(pend.length){ UNDO.ids=UNDO.ids.filter(function(id){ return !pend.some(function(m){return m.id===id;}); }); UNDO.items=items(UNDO.ids.map(find).filter(Boolean)); pend.forEach(function(m){ M.setOv(m,{deleted:false,trashedAt:null}); delete OV[m.id].deleted; }); }
   var rest=msgs.filter(function(m){ return pend.indexOf(m)<0; });
   if(!rest.length){ M.changed(); F.render(); F.toast("Wiederhergestellt"); return; }
-  var done=0, ok=0;
+  var done=0, ok=0, tos={};
   rest.forEach(function(m){ resolveTrash(m,function(c){
     done++;
-    if(c){ ok++; M.action("move",[c],"INBOX"); M.setOv(c,{folder:"INBOX",deleted:false}); if(c!==m){ M.setOv(m,{deleted:false}); S.messages=S.messages.filter(function(x){ return x!==m; }); } }
+    /* zurück in den Ordner, aus dem sie gelöscht wurde (Rückfall: Posteingang) */
+    if(c){ ok++; var to=trashedFrom(m.trashedFrom?m:c); tos[to]=1; M.action("move",[c],to); M.setOv(c,{folder:to,deleted:false}); if(c!==m){ M.setOv(m,{deleted:false}); S.messages=S.messages.filter(function(x){ return x!==m; }); } }
     if(done===rest.length){ if(UI.msel&&rest.some(function(x){return x.id===UI.msel;})) UI.msel=null; M.changed(); F.render(); M.scheduleReload();
-      if(ok===rest.length) F.toast(ok>1?ok+" Nachrichten wiederhergestellt":"In den Posteingang wiederhergestellt"); else F.toast((rest.length-ok)+" Mail(s) im Papierkorb des Servers nicht gefunden – bitte aktualisieren und erneut versuchen",true); }
+      var tk=Object.keys(tos), where=tk.length===1?" in „"+fname(tk[0],accOf(rest[0]))+"“":"";
+      if(ok===rest.length) F.toast((ok>1?ok+" Nachrichten wiederhergestellt":"Wiederhergestellt")+where); else F.toast((rest.length-ok)+" Mail(s) im Papierkorb des Servers nicht gefunden – bitte aktualisieren und erneut versuchen",true); }
   }); });
 }
 M.restore=restore;
+/* Endgültig löschen: eine Mail ohne Rückfrage, aber 5 s „Rückgängig“ (erst danach an den Server); mehrere mit einer Rückfrage */
+var PURGE={timer:null,msgs:[],ids:{},v:0};
+function purgeNow(msgs,say){ var done=0;
+  msgs.forEach(function(m){ resolveTrash(m,function(c){
+    done++; if(c){ M.action("trash",[c]); S.messages=S.messages.filter(function(x){ return x!==c; }); }
+    S.messages=S.messages.filter(function(x){ return x!==m; });
+    if(done===msgs.length){ if(msgs.some(function(x){return x.id===UI.msel;})) UI.msel=null; M.changed(); F.render(); if(say) F.toast(msgs.length>1?msgs.length+" Nachrichten endgültig gelöscht":"Endgültig gelöscht"); }
+  }); }); }
+function purgeFlush(){ if(PURGE.timer){ clearTimeout(PURGE.timer); PURGE.timer=null; } var l=PURGE.msgs; PURGE.msgs=[]; PURGE.ids={}; PURGE.v++; if(l.length) purgeNow(l,false); }
 function purge(ids){
   var msgs=ids.map(find).filter(function(m){ return m&&isTrashed(m); }); if(!msgs.length) return;
-  F.confirm(msgs.length>1?msgs.length+" Nachrichten endgültig löschen?":"Nachricht endgültig löschen?","Endgültig löschen",function(){
-    var done=0;
-    msgs.forEach(function(m){ resolveTrash(m,function(c){
-      done++; if(c){ M.action("trash",[c]); S.messages=S.messages.filter(function(x){ return x!==c; }); }
-      S.messages=S.messages.filter(function(x){ return x!==m; });
-      if(done===msgs.length){ if(msgs.some(function(x){return x.id===UI.msel;})) UI.msel=null; M.changed(); F.render(); F.toast("Endgültig gelöscht"); }
-    }); });
-  },true);
+  if(msgs.length>1){ F.confirm(msgs.length+" Nachrichten endgültig löschen? Das kann nicht rückgängig gemacht werden.","Endgültig löschen",function(){ msgs.forEach(function(m){ delete UI.mpick[m.id]; }); purgeNow(msgs,true); },true); return; }
+  purgeFlush(); var m=msgs[0];
+  if(UI.msel===m.id) UI.msel=neighborId([m.id]); delete UI.mpick[m.id];
+  PURGE.msgs=[m]; PURGE.ids[m.id]=1; PURGE.v++; PURGE.timer=setTimeout(purgeFlush,5000);
+  M.changed(); F.render();
+  undoToast("Endgültig löschen …",function(){ if(!PURGE.ids[m.id]){ F.toast("Schon endgültig gelöscht",true); return; }
+    clearTimeout(PURGE.timer); PURGE.timer=null; PURGE.msgs=[]; PURGE.ids={}; PURGE.v++; UI.msel=m.id; M.changed(); F.render(); F.toast("Nicht gelöscht"); });
 }
 M.purge=purge;
-function emptyTrash(){
-  var n=S.messages.filter(function(m){ return isTrashed(m)&&acctOk(m); }).length; if(!n) return;
-  F.confirm("Papierkorb wirklich leeren? "+n+" Nachricht(en) werden endgültig gelöscht.","Papierkorb leeren",function(){
-    flushUndo();
-    var go=function(){
-      var tr=S.messages.filter(function(m){ return isTrashed(m)&&acctOk(m); }), srv=tr.filter(function(m){ return TRASHRX.test(m.folder||""); });
-      var byAcc={}; srv.forEach(function(m){ (byAcc[accOf(m)]=byAcc[accOf(m)]||[]).push(m); });
-      Object.keys(byAcc).forEach(function(k){ M.action("trash",byAcc[k]); });
-      S.messages=S.messages.filter(function(m){ return tr.indexOf(m)<0; });
-      UI.msel=null; UI.mpick={}; M.changed(); F.render(); F.toast("Papierkorb geleert"); M.scheduleReload(5000);
-    };
-    if(S.messages.some(function(m){ return m.deleted&&acctOk(m); })) setTimeout(function(){ M.loadFull().then(go); },1200); else go();
-  },true);
-}
-F.action("mempty",emptyTrash);
-F.action("mspamclear",function(){ var ids=mailView().filter(function(m){ return !m.outbox&&!m.draftLocal; }).map(function(m){return m.id;}); if(!ids.length) return; F.confirm(ids.length+" Spam-Nachricht(en) in den Papierkorb verschieben?","In den Papierkorb",function(){ trashMessages(ids); },true); });
+/* Papierkorb/Spam leeren: am Server (Ordner leeren), eine Rückfrage mit der Anzahl aus den Ordner-Daten */
+F.action("mempty",function(){ fEmpty("trash"); });
+F.action("mspamclear",function(){ fEmpty("spam"); });
 
 /* ---------- Schnellaktionen in der Liste ---------- */
 F.action("mqa",function(v,el,e){
@@ -1267,7 +1526,7 @@ F.action("mqa",function(v,el,e){
   else if(op==="archive") archiveMessages([m.id]);
   else if(op==="restore") restore([m.id]);
   else if(op==="purge") purge([m.id]);
-  else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],[m.id]); }
+  else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],[m.id],{el:el}); }
 });
 /* ---------- Mehrfachauswahl ---------- */
 F.action("mbulk",function(op,el){
@@ -1279,7 +1538,9 @@ F.action("mbulk",function(op,el){
   else if(op==="spam") moveMessages(ids,null,"spam");
   else if(op==="archive") archiveMessages(ids);
   else if(op==="trash"){ var tr=ids.filter(function(id){ return isTrashed(find(id)); }); if(tr.length===ids.length) purge(ids); else trashMessages(ids); }
-  else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],ids); }
+  else if(op==="restore") restore(ids);
+  else if(op==="purge") purge(ids);
+  else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],ids,{el:el}); }
 });
 
 /* ---------- Aktionen im Lesebereich ---------- */
@@ -1295,7 +1556,7 @@ F.action("mx",function(op,el){
   else if(op==="zahlung"&&F.payFromMail) F.payFromMail(m,null);
   else if(op==="rechnung"&&F.invoiceFromMail) F.invoiceFromMail(m,"");
   else if(op==="angebot"&&F.invoiceFromMail) F.invoiceFromMail(m,"offer");
-  else if(op==="move"){ var p=menuPos(el&&el.isConnected?el:null); M.showMoveMenu(p[0],p[1],[m.id]); }
+  else if(op==="move"){ var p=menuPos(el&&el.isConnected?el:null); M.showMoveMenu(p[0],p[1],[m.id],{el:el&&el.isConnected?el:null}); }
   else if(op==="spam") moveMessages([m.id],null,"spam");
   else if(op==="notspam") moveMessages([m.id],"INBOX","move");
   else if(op==="trash") trashMessages([m.id]);
@@ -1327,7 +1588,14 @@ function fdropTarget(el){ if(!fdrag) return null; var d=el.getAttribute("data-dr
 F.listen("dragover","[data-drop],.mfold .fdiv[data-facc]",function(el,e){ if(!fdrag||!fdropTarget(el)) return; e.preventDefault(); document.querySelectorAll(".dropok").forEach(function(b){ if(b!==el) b.classList.remove("dropok"); }); el.classList.add("dropok"); });
 F.listen("drop","[data-drop],.mfold .fdiv[data-facc]",function(el,e){ var t=fdropTarget(el); if(!fdrag||!t) return; e.preventDefault(); var x=fdrag; fdrag=null; el.classList.remove("dropok"); doMove(x.acc,x.path,t.parent); });
 document.addEventListener("dragend",function(){ fdrag=null; });
-F.listen("dragstart",'.mrow2[draggable="true"]',function(el,e){ var id=el.getAttribute("data-mid"); dragIds=UI.mpick[id]?M.selectedIds():[id]; el.classList.add("dragging"); try{ e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",dragIds.length+" Mail(s)"); }catch(x){} });
+/* Ziehen: eigenes Zugbild „3 Mails“; eine nicht ausgewählte Zeile zieht nur sich selbst (Hinweis), Ablegen hat „Rückgängig“ wie Verschieben */
+F.listen("dragstart",'.mrow2[draggable="true"]',function(el,e){ var id=el.getAttribute("data-mid"), sel=M.selectedIds(), inSel=!!UI.mpick[id]&&sel.indexOf(id)>-1, m=find(id);
+  dragIds=inSel?sel:[id]; el.classList.add("dragging");
+  var cx=dragIds.length===1?expandConv(dragIds):null, n=cx?cx.ids.length:dragIds.length, label=cx&&cx.conv?"Unterhaltung · "+n+" Mails":n>1?n+" Mails":"1 Mail", hint=!inSel&&sel.length?"nur diese – Auswahl ("+sel.length+") bleibt":"";
+  try{ e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",label);
+    var g=document.createElement("div"); g.className="mdragimg"; g.innerHTML='<b>'+esc(label)+'</b>'+(n===1&&m?'<span>'+esc(m.subject||"(kein Betreff)")+'</span>':'')+(hint?'<i>'+esc(hint)+'</i>':'');
+    document.body.appendChild(g); e.dataTransfer.setDragImage(g,16,16); setTimeout(function(){ if(g.parentNode) g.parentNode.removeChild(g); },0); }catch(x){}
+  if(hint) F.toast("Nur diese Mail wird gezogen – die "+sel.length+" ausgewählten bleiben"); });
 document.addEventListener("dragend",function(){ dragIds=null; document.querySelectorAll(".dropok,.dragging").forEach(function(b){ b.classList.remove("dropok","dragging"); }); });
 F.listen("dragover","[data-drop]",function(el,e){ if(!dragIds) return; e.preventDefault(); document.querySelectorAll(".dropok").forEach(function(b){ if(b!==el) b.classList.remove("dropok"); }); el.classList.add("dropok"); });
 F.listen("drop","[data-drop]",function(el,e){ if(!dragIds) return; e.preventDefault(); var dst=el.getAttribute("data-drop"), ids=dragIds; dragIds=null; el.classList.remove("dropok");
@@ -1374,7 +1642,8 @@ F.css([
 ".mb-a{display:flex;gap:6px;flex-wrap:wrap}.mb-a .btn svg{width:15px;height:15px}",
 ".mb-x{width:32px;height:32px;border:0;background:none;border-radius:8px;color:var(--ink-3);display:grid;place-items:center;flex:none}.mb-x:hover{background:var(--hover,var(--sunk));color:var(--ink)}.mb-x svg{width:15px;height:15px}",
 /* Drei Spalten: Ordner | Liste | Lesebereich */
-".mbox{display:grid;grid-template-columns:220px minmax(0,var(--mlist-w,370px)) minmax(0,1fr);gap:14px;align-items:start}",
+/* Liste breiter (Betreffs abgeschnitten bei 340 px, UI-Test 13.11.2026): Standard 440 px, per Griff verstellbar (gespeichert) */
+".mbox{display:grid;grid-template-columns:220px minmax(0,var(--mlist-w,440px)) minmax(0,1fr);gap:14px;align-items:start}",
 ".mlistp{position:relative}.mlist-rs{position:absolute;top:0;right:0;bottom:0;width:9px;cursor:col-resize;z-index:6;touch-action:none}.mlist-rs::after{content:\"\";position:absolute;top:0;bottom:0;right:0;width:2px;background:transparent;transition:background .15s}.mlist-rs:hover::after,.mlist-rs:focus-visible::after,.mrs-drag .mlist-rs::after{background:var(--glow)}.mlist-rs:focus-visible{outline:none}",
 "body.mrs-drag{cursor:col-resize;user-select:none;-webkit-user-select:none}body.mrs-drag iframe{pointer-events:none}",
 /* Ordnerspalte */
@@ -1403,18 +1672,24 @@ F.css([
 ".mlh-t b{font-size:15.5px;font-weight:700;letter-spacing:-.01em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
 ".mlh-t span{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}",
 ".mlh .link{white-space:nowrap;flex:none}",
-".mlh-th{width:32px;height:32px;border:1px solid var(--line);background:none;border-radius:9px;color:var(--ink-3);display:grid;place-items:center;flex:none}.mlh-th svg{width:16px;height:16px}",
-".mlh-th:hover{color:var(--ink);background:var(--hover,var(--sunk))}.mlh-th[aria-pressed=true]{color:var(--glow-ink);background:var(--sel);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}",
+".mlh-th,.mlh-so{width:32px;height:32px;border:1px solid var(--line);background:none;border-radius:9px;color:var(--ink-3);display:grid;place-items:center;flex:none}.mlh-th svg{width:16px;height:16px}",
+".mlh-th:hover,.mlh-so:hover{color:var(--ink);background:var(--hover,var(--sunk))}.mlh-th[aria-pressed=true],.mlh-so.on{color:var(--glow-ink);background:var(--sel);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}",
+".mlh-so{width:auto;display:inline-flex;gap:5px;padding:0 9px;font:600 12px/1 var(--f-body)}.mlh-so svg{width:15px;height:15px}",
+".mlh-ck{display:inline-flex;align-items:center;flex:none;border:1px solid var(--line);border-radius:9px;height:32px}.mlh-cb,.mlh-cm{border:0;background:none;color:var(--ink-3);display:grid;place-items:center;height:30px;cursor:pointer}.mlh-cb{width:30px;padding:0}.mlh-cm{width:20px;padding:0;border-left:1px solid var(--line)}.mlh-cm svg{width:12px;height:12px}.mlh-cb:hover,.mlh-cm:hover{color:var(--ink);background:var(--hover,var(--sunk))}",
+".mlh-cb::before{content:\"\";width:15px;height:15px;border:1.6px solid currentColor;border-radius:4px;grid-area:1/1}.mlh-cb svg,.mlh-cb i{grid-area:1/1;z-index:1}.mlh-cb svg{width:12px;height:12px;color:var(--on-glow)}.mlh-cb[aria-checked=true]::before{background:var(--info);border-color:var(--info)}.mlh-cb i{width:8px;height:2px;background:var(--info);border-radius:2px}.mlh-cb[aria-checked=mixed]{color:var(--info)}",
+".mchips .chip.thchip.on{color:var(--glow-ink);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}",
 "@media (min-width:901px){.mchips .chip.thchip{display:none}}",
-".mchips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:6px 12px 10px;border-bottom:1px solid var(--line)}",
+".mchips{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;align-items:center;padding:4px 12px 8px;border-bottom:1px solid var(--line)}.mchips::-webkit-scrollbar{display:none}.mchips .chip{flex:none}",
 ".mchips .chip{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 10px;background:transparent;border-color:var(--line)}",
 ".mchips .chip:hover{background:var(--hover,var(--sunk));color:var(--ink)}",
 ".mchips .chip[aria-pressed=true]{background:var(--sel);color:var(--ink);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}",
 ".mchips .cn{font-size:11.5px;opacity:.8;font-variant-numeric:tabular-nums}",
 ".mchips .ci svg{width:14px;height:14px;display:block}",
 ".mscroll{overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}",
-".msinfo{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}",
-".msinfo svg{width:14px;height:14px;opacity:.7}.msinfo .mu{color:var(--ink-3)}",
+/* Trefferzeile: eine Zeile, Rest gekürzt */
+".msinfo{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;padding:5px 12px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-2);white-space:nowrap;min-width:0;overflow:hidden}.msinfo>*{flex:none}.msinfo>.msq,.msinfo>.bad-t{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.msinfo>.msx{flex:1 1 0}.msinfo .link{padding:0 4px;font-size:12.5px}",
+".msc{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);background:var(--sunk);color:var(--ink-2);border-radius:99px;font:600 12px/1 var(--f-body);padding:3px 6px 3px 9px;cursor:pointer}.msc svg{width:11px;height:11px}.msc[aria-pressed=true],.msc.on{background:var(--sel);color:var(--ink);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}.msc.on{padding:3px 9px;cursor:default}",
+".msinfo svg{width:14px;height:14px;opacity:.7}.msinfo .msq{color:var(--ink-3)}",
 ".msinfo .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--glow);border-radius:50%;animation:msspin .8s linear infinite;vertical-align:-1px}",
 "@keyframes msspin{to{transform:rotate(360deg)}}",
 ".mrow2 mark{background:color-mix(in srgb,var(--warn) 38%,transparent);color:inherit;border-radius:3px;padding:0 1px}",
@@ -1428,6 +1703,18 @@ F.css([
 ".mrow2.dragging{opacity:.5}",
 ".mrow2.unread::before{content:'';position:absolute;left:6px;top:23px;width:7px;height:7px;border-radius:50%;background:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
 ".fmv{display:grid;gap:4px;max-height:50vh;overflow:auto}.fmv button{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 12px;text-align:left;color:var(--ink);cursor:pointer;min-height:42px}.fmv button:hover{border-color:var(--glow);background:var(--hover,var(--sunk))}.fmv svg{width:16px;height:16px;color:var(--ink-3);flex:none}.fmv span{overflow-wrap:anywhere}",
+/* Leiste über aufgeklappter Unterhaltung, Absender-Gruppen, Tastatur-Cursor, Zugbild */
+".mthbar{display:flex;align-items:center;gap:3px;flex-wrap:nowrap;white-space:nowrap;overflow:hidden;padding:3px 10px 5px 46px;background:var(--sunk);font-size:12.5px;color:var(--ink-3);border-bottom:1px solid var(--line)}.mthbar button{border:0;background:none;color:var(--info);font:600 12.5px/1.6 var(--f-body);padding:0 3px;cursor:pointer;border-radius:5px}.mthbar button:hover{background:var(--hover,var(--sunk));text-decoration:underline}.mthbar button.dg{color:var(--bad)}.mthbar i{font-style:normal;opacity:.6}",
+".msg{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);padding-right:10px}.msg.open{background:var(--sunk)}.msg-h{flex:1;min-width:0;display:flex;align-items:center;gap:9px;border:0;background:none;text-align:left;color:var(--ink);padding:8px 6px 8px 10px;cursor:pointer}.msg-h:hover{background:var(--hover,var(--sunk))}.msg-h>svg{width:14px;height:14px;flex:none;color:var(--ink-3);transform:rotate(-90deg);transition:transform .15s}.msg.open .msg-h>svg{transform:none}.msg-h .mav{width:28px;height:28px;font-size:11px}",
+".msg-n{flex:1;min-width:0;display:grid}.msg-n b{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.msg-n small{font-size:11.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.msg-c{flex:none;font:700 12px/1 var(--f-body);color:var(--ink-3);background:var(--sunk);border-radius:99px;padding:3px 8px;font-variant-numeric:tabular-nums}.msg-c.hot{background:var(--glow-soft);color:var(--glow-ink)}.msg-p{flex:none;font-size:12px}",
+".mrow2.kcur{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--info) 55%,transparent)}",
+".mdragimg{position:fixed;top:-200px;left:-200px;display:grid;gap:2px;max-width:260px;padding:8px 12px;border-radius:12px;background:linear-gradient(var(--panel),var(--panel)),var(--ground);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow-pop);font-size:13px}.mdragimg b{font-weight:700}.mdragimg span{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mdragimg i{font-style:normal;font-size:12px;color:var(--warn)}",
+/* Verschieben-Menü */
+".mmv{position:fixed;z-index:86;width:320px;max-width:calc(100vw - 12px);display:flex;flex-direction:column;max-height:min(460px,calc(100vh - 12px));background:linear-gradient(var(--panel),var(--panel)),var(--ground);border:1px solid var(--glass-line,var(--line));border-radius:14px;box-shadow:var(--glass-hi,0 0 0 0 transparent),var(--shadow-pop);padding:6px}",
+".mmv-h{display:flex;align-items:baseline;gap:8px;padding:5px 8px 6px;min-width:0}.mmv-h b{font-size:13.5px}.mmv-h span{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+".mmv-s{position:relative;margin:0 2px 6px}.mmv-s>svg{position:absolute;left:10px;top:50%;width:15px;height:15px;transform:translateY(-50%);color:var(--ink-3);pointer-events:none}.mmv-q{width:100%;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--field,var(--sunk));color:var(--ink);padding:0 10px 0 32px;font:inherit;font-size:14px;outline:none}.mmv-q:focus{border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
+".mmv-l{overflow-y:auto;display:grid;gap:1px;min-height:0;overscroll-behavior:contain}.mmv-g{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:700;padding:8px 10px 3px}",
+".mmv-i{display:flex;align-items:center;gap:9px;border:0;background:none;text-align:left;color:var(--ink);padding:7px 10px;min-height:34px;border-radius:9px;font-size:13.5px;cursor:pointer;min-width:0}.mmv-i svg{width:16px;height:16px;flex:none;color:var(--ink-3)}.mmv-i span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mmv-i small{color:var(--ink-3);font-size:12px}.mmv-i:hover,.mmv-i.on{background:var(--sel)}.mmv-i.on svg{color:var(--glow)}.mmv-i.nw{color:var(--info)}.mmv-i.nw svg{color:var(--info)}",
 ".mfold .fbtn[draggable=true]{cursor:grab}.mfold .fdiv.dropok{color:var(--glow);background:var(--glow-soft);border-radius:8px}",
 /* Unterhaltungen: Anzahl-Knopf in der Zeile, aufgeklappte ältere Mails eingerückt, Unterhaltung im Lesebereich */
 ".thn{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);background:var(--sunk);color:var(--ink-2);border-radius:99px;font:600 11.5px/1 var(--f-body);padding:3px 5px 3px 8px;margin-left:6px;flex:none;cursor:pointer;font-variant-numeric:tabular-nums}.thn svg{width:12px;height:12px;transition:transform .15s}.thn.on svg{transform:rotate(180deg)}.thn:hover{border-color:var(--glow);color:var(--glow-ink)}",
@@ -1546,9 +1833,9 @@ F.css([
 ".sheeth{margin:10px 2px 0}.sheetrules{width:100%;justify-content:center;margin-top:10px;min-height:44px}",
 /* Handy: Ordner-Chips und Wisch-Tipp nur am Handy */
 ".mapp,.mapp-s,.mselbar,.mfab,.mrbar,.msw-bg,.mptr,.mfstrip,.mtip{display:none}",
-"@media (max-width:1180px){.mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.mbox>.mfold{display:none}.fpill{display:inline-flex}}",
+"@media (max-width:1180px){.mbox{grid-template-columns:minmax(0,var(--mlist-w,420px)) minmax(0,1fr)}.mbox>.mfold{display:none}.fpill{display:inline-flex}}",
 /* Statusleiste rechts eingeblendet und Bildschirm unter ~1750 px: Ordner als Knopf, damit der Lesebereich breit genug bleibt */
-"@media (min-width:901px) and (max-width:1750px){.app.has-side .mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.app.has-side .mbox>.mfold{display:none}.app.has-side .fpill{display:inline-flex}}",
+"@media (min-width:901px) and (max-width:1750px){.app.has-side .mbox{grid-template-columns:minmax(0,var(--mlist-w,420px)) minmax(0,1fr)}.app.has-side .mbox>.mfold{display:none}.app.has-side .fpill{display:inline-flex}}",
 /* PC: eine Glas-Box mit drei Spalten, feine Trennlinien statt eigener Flächen */
 "@media (min-width:901px){",
 "  .mbox{gap:0;background:var(--m-bg);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:clip}",
@@ -1633,6 +1920,7 @@ F.css([
 "  .msw{position:relative;overflow:hidden}",
 "  .msw-bg{display:flex;position:absolute;inset:0;align-items:center;padding:0 24px;color:var(--on-glow);font-weight:700;font-size:14px;gap:10px}",
 "  .msw-bg.l{background:var(--m-red);justify-content:flex-end}.msw-bg.r{background:var(--m-blue);justify-content:flex-start}",
+"  .msw-bg.a-trash{background:var(--m-red)}.msw-bg.a-read{background:var(--m-blue)}.msw-bg.a-archive,.msw-bg.a-restore{background:var(--ok)}.msw-bg.a-move{background:var(--warn)}",
 "  .msw-bg svg{width:22px;height:22px;transition:transform .18s cubic-bezier(.2,.8,.2,1)}",
 "  .msw-bg.go svg{transform:scale(1.3)}",
 "  .msw-bg span{opacity:.7;transition:opacity .15s}.msw-bg.go span{opacity:1}",
@@ -1693,6 +1981,9 @@ F.css([
 "  .mctx{left:8px!important;right:8px;width:auto!important;max-width:none!important;background:color-mix(in srgb,var(--panel-solid,var(--panel)) 94%,transparent)!important;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:70vh;overflow-y:auto;border-radius:20px!important;padding:8px!important;box-shadow:0 0 0 100vmax rgb(0 0 0/.35)!important;animation:msheetb .2s cubic-bezier(.2,.8,.2,1)}",
 "  @keyframes msheetb{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}",
 "  .mctx button{width:100%;min-height:48px;padding:12px 14px!important;font-size:16px!important}",
+"  .mmv.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom,0px));width:auto;max-width:none;max-height:72vh;border-radius:20px;padding:8px;background:linear-gradient(var(--panel),var(--panel)),var(--ground);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 0 0 100vmax rgb(0 0 0/.45);z-index:90;animation:msheetb .2s cubic-bezier(.2,.8,.2,1)}",
+"  .mmv.sheet .mmv-i{min-height:46px;font-size:15.5px}.mmv.sheet .mmv-q{height:42px;font-size:16px}",
+"  .mthbar{padding-left:20px;background:none}.msg-h{padding:12px 6px 12px 16px}",
 "}",
 "@media (prefers-reduced-motion:reduce){.mrow2,.mfab,.msw-bg svg,.mptr,.mptr svg,.thn svg,.rcd svg,.mread.swback{transition:none!important}.dialog.sheetdlg,.mctx,.mempty.busy .ei svg,.mptr.spin svg,.msinfo .spin{animation:none!important}}"
 ].join("\n"));

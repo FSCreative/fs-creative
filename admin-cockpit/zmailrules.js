@@ -40,7 +40,11 @@ function paint(){ var b=document.getElementById("mrBox"); if(b) b.outerHTML=body
 F.action("mailrules",function(){ R.edit=null; R.prev=null; F.modal(body(),"wide"); load(); });
 F.action("mrnew",function(){ R.edit={name:"",active:true,cond:{},act:{},stop:false}; R.prev=null; paint(); });
 F.action("mredit",function(id){ var r=(R.list||[]).find(function(x){ return x.id===id; }); if(!r) return; R.edit=JSON.parse(JSON.stringify(r)); R.prev=null; paint(); });
-F.action("mrback",function(){ R.edit=null; paint(); });
+F.action("mrback",function(){ R.edit=null; paint(); if(R.list==null) load(); });
+/* „Regel aus dieser Mail …“ (Postfach: Rechtsklick bzw. „…“): neue Regel, Absender schon eingetragen – Aktion wählst du selbst */
+F.M=F.M||{}; F.M.ruleFrom=function(pre){ pre=pre||{}; R.list=R.list||null; R.prev=null;
+  R.edit={name:String(pre.name||"").slice(0,80),active:true,cond:{from:pre.from||"",account:pre.account||""},act:{},stop:false};
+  F.modal(body(),"wide"); var a=document.querySelector('#mrBox [data-mra="move"]'); if(a&&!(window.matchMedia&&matchMedia("(hover:none)").matches)) setTimeout(function(){ try{ a.focus(); }catch(e){} },60); };
 F.listen("input","[data-mrc],[data-mrn]",function(el){ if(!R.edit) return; if(el.hasAttribute("data-mrn")) R.edit.name=el.value; else R.edit.cond[el.getAttribute("data-mrc")]=el.value; });
 F.listen("change","[data-mrc]",function(el){ if(R.edit) R.edit.cond[el.getAttribute("data-mrc")]=el.value; });
 F.listen("change","[data-mrcb]",function(el){ if(R.edit) R.edit.cond[el.getAttribute("data-mrcb")]=el.checked; });
