@@ -4699,6 +4699,8 @@ module.exports = function (D) {
         const fm = await store.fileMeta(m[1]); const o = fm && fm.orderId && await store.getOrder(fm.orderId);
         if (!o || ["ordered", "in_production", "shipped", "delivered", "problem", "paid", "invoice_requested"].indexOf(o.status) < 0) return D.send(res, 404, "Not found");
         let buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
+        // Zusatzbestellung (pcextra): Datei genau so liefern, wie sie ist – nicht an Format/Seiten der ursprünglichen Bestellung anpassen
+        if (fm.pcExtra) return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '-x.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
         buf = await fitForPrint(buf, fm, o).catch(e => { log("Format vereinheitlichen", o.nr, e.message); return buf; });
         if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
@@ -6051,7 +6053,7 @@ module.exports = function (D) {
           const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
           const opts = b.options && typeof b.options === "object" ? Object.assign({}, b.options) : {}, ds = (Array.isArray(b.designs) ? b.designs : []).slice(0, 50);
           if (!ds.length) return J(res, 400, { ok: false, error: "Keine Dateien" });
-          const files = []; for (const d of ds) { const fm = await store.fileMeta(String(d.fileId || "")); if (!fm) return J(res, 400, { ok: false, error: "Datei " + d.fileId + " nicht gefunden" }); const n = Math.round(+d.copies); if (!(n > 0)) return J(res, 400, { ok: false, error: "Stückzahl fehlt" }); files.push({ id: (b.useSrc !== false && fm.src) || fm.id, copies: n, name: fm.name || "" }); }
+          const files = []; for (const d of ds) { const fm = await store.fileMeta(String(d.fileId || "")); if (!fm) return J(res, 400, { ok: false, error: "Datei " + d.fileId + " nicht gefunden" }); const n = Math.round(+d.copies); if (!(n > 0)) return J(res, 400, { ok: false, error: "Stückzahl fehlt" }); const fid = (b.useSrc !== false && fm.src) || fm.id; files.push({ id: fid, copies: n, name: fm.name || "" }); }
           const total = files.reduce((a, f) => a + f.copies, 0); opts.copies = total;
           const sh = shipOf(o), c = o.customer || {}, addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };
           if (b.dry === true) {   // nur Preis + Versand ansehen
@@ -6060,6 +6062,8 @@ module.exports = function (D) {
             const poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x))); const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); }; poss.sort((x, y) => cost(x) - cost(y));
             return J(res, 200, { ok: true, dry: true, product: pr && pr.prices ? pr.prices.salesPrice : null, ship: poss[0] ? cost(poss[0]) : null, delivery: poss[0] ? poss[0].deliveryDate : null, copies: total, address: [addr.firstName, addr.lastName, addr.fullstreet, addr.postcode, addr.city, addr.country].filter(Boolean).join(", ") });
           }
+          // Print.com darf nur Dateien abholen, die zu einer Bestellung gehören (/print-files prüft orderId) – Dateien dieser Bestellung zuordnen
+          for (const f of files) { const fm = await store.fileMeta(f.id); if (fm && (fm.orderId !== o.id || !fm.pcExtra)) { fm.orderId = o.id; fm.pcExtra = true; await store.putFile(fm); } }
           const base = cfg().publicUrl, sender = Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), ref = clip(String(b.ref || "Nachbestellung"), 60);
           const item = Object.assign({ sku, customerReference: clip(o.nr + " · " + ref, 120), options: opts }, files.length === 1 ? { fileUrl: pcFileUrl(base, files[0].id) } : { designs: files.map(f => ({ fileUrl: pcFileUrl(base, f.id), copies: f.copies })) },
             { fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: total }] });
