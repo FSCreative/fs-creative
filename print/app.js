@@ -2715,19 +2715,31 @@
   function vAddress() {
     var c = S.customer, co = S.ctype === "company";
     var uidHint = S.uidRes ? (S.uidRes.valid ? '<span class="hint ok">✓ gültig' + (S.uidRes.name ? " – " + esc(S.uidRes.name) : "") + "</span>" : '<span class="hint bad">' + esc(S.uidRes.why || "UID ungültig") + "</span>") : '<span class="hint">Mit gültiger UID: Kauf auf Rechnung möglich.</span>';
-    return '<div class="ps-layout"><div class="ps-panel"><h2>Lieferadresse &amp; Kontakt</h2><p class="sub">Wir liefern innerhalb Österreichs. Die Rechnung geht an diese Adresse.</p><form class="ps-form" id="psAddr" novalidate autocomplete="on">' + (S.me ? "" : '<p class="ps-acct-hint">Schon Kunde? <button type="button" class="ps-link" data-act="konto">Anmelden</button> – deine Adresse wird automatisch übernommen.</p>') +
+    return '<div class="ps-layout"><div class="ps-panel"><h2>Rechnungsadresse &amp; Kontakt</h2><p class="sub">Geliefert wird an diese Adresse – oder unten eine andere Lieferadresse angeben. Wir liefern innerhalb Österreichs.</p><form class="ps-form" id="psAddr" novalidate autocomplete="on">' + (S.me ? "" : '<p class="ps-acct-hint">Schon Kunde? <button type="button" class="ps-link" data-act="konto">Anmelden</button> – deine Adresse wird automatisch übernommen.</p>') +
       '<div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + !co + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + co + '">Firma</button></div>' +
       (co ? '<div class="ps-row2">' + field("company", "Firma *", c.company, 'autocomplete="organization" required') + '<div class="ps-field"><label for="uid">UID-Nummer</label><div class="ps-uidrow"><input id="uid" name="uid" value="' + esc(S.uid) + '" placeholder="z. B. ATU12345678" autocapitalize="characters"><button type="button" class="ps-btn small" data-act="uidcheck">Prüfen</button></div>' + uidHint + "</div></div>" : "") +
       '<div class="ps-row2">' + field("firstName", "Vorname *", c.firstName, 'autocomplete="given-name" required') + field("lastName", "Nachname *", c.lastName, 'autocomplete="family-name" required') + "</div>" +
       field("street", "Straße und Hausnummer *", c.street, 'autocomplete="street-address" required') +
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
+      shipBox() +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psCrOpt"' + (S.crOpt ? " checked" : "") + '><span>Falls ich nicht fertig bestelle: Erinnert mich per E-Mail an meinen Warenkorb (freiwillig – nach 1 und 5 Tagen und vor dem Löschen, jederzeit abbestellbar).</span></label>' +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psFbOpt"' + (S.fbOpt ? " checked" : "") + '><span>Nach der Lieferung darf ich einmal per E-Mail um eine kurze Bewertung gebeten werden (freiwillig).</span></label>' +
       acctBox() +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Zur Bestellübersicht & Checkout</button></div></div>' + cartAside() + "</div>";
   }
+  // Abweichende Lieferadresse (Simon 13.11.2026): Rechnung an die Adresse oben, Print.com liefert an diese – nur sie geht an Print.com
+  function shipBox() {
+    var s = S.ship || (S.ship = { on: false, country: "AT" });
+    return '<div class="ps-shipbox"><label class="ps-cb"><input type="checkbox" data-act="shipdiff"' + (s.on ? " checked" : "") + '><span><b>An eine andere Adresse liefern</b> – z. B. direkt an den Verein, das Lokal oder eine Filiale. Die Rechnung geht weiter an die Adresse oben.</span></label>' +
+      (s.on ? '<fieldset class="ps-shipf"><legend>Lieferadresse</legend>' + field("s_company", "Firma / Verein", s.company, 'autocomplete="shipping organization"') +
+        '<div class="ps-row2">' + field("s_firstName", "Vorname *", s.firstName, 'autocomplete="shipping given-name" required') + field("s_lastName", "Nachname *", s.lastName, 'autocomplete="shipping family-name" required') + "</div>" +
+        field("s_street", "Straße und Hausnummer *", s.street, 'autocomplete="shipping street-address" required') +
+        '<div class="ps-row2"><div class="ps-zipcity">' + field("s_zip", "PLZ *", s.zip, 'autocomplete="shipping postal-code" inputmode="numeric" required') + field("s_city", "Ort *", s.city, 'autocomplete="shipping address-level2" required') + '</div><div class="ps-field"><label for="s_country">Land *</label><select id="s_country" name="s_country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((s.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
+        field("s_phone", "Telefon vor Ort", s.phone, 'type="tel" autocomplete="shipping tel"', '<span class="hint">Für den Paketdienst – leer lassen, dann gilt deine Telefonnummer oben.</span>') + "</fieldset>" : "") + "</div>";
+  }
+  function shipOf() { var s = S.ship; return s && s.on ? { company: s.company || "", firstName: s.firstName || "", lastName: s.lastName || "", street: s.street || "", zip: s.zip || "", city: s.city || "", country: s.country || "AT", phone: s.phone || "" } : null; }
   function mockHtml() {
     var pv = S.previews;
     if ((!pv || !pv.length) && imgOk(S.prod.img)) return '<div class="ps-mock photo"><img src="' + esc(S.prod.img) + '" alt=""><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">' + (isLogo() ? "Logo-PDF ansehen" : "Druck-PDF ansehen") + '</a><span class="cap">Beispielfoto – dein Motiv ' + (isLogo() ? "wird wie hochgeladen platziert" : "siehst du im PDF") + "</span></div>"; var k = S.prod.key, round = /rund|round|kreis|circle/i.test(labelOf("shape") + " " + (S.sel.shape || ""));
@@ -2783,7 +2795,9 @@
     /* Bestellübersicht vor dem Bezahlen (Simon 09.11.2026): nummerierte Abschnitte, rechts mitlaufende Zusammenfassung mit dem Bestellknopf */
     var sec = function (nr, title, body, right) { return '<section class="ps-co-sec"><div class="ps-co-sh"><span class="ps-co-n">' + nr + '</span><h3>' + title + '</h3>' + (right || "") + '</div>' + body + '</section>'; };
     var who = [c.company, (c.firstName + " " + c.lastName).trim()].filter(Boolean), dl = lastDel ? deDate(lastDel) : "";
-    var addrCard = '<div class="ps-co-addr"><div class="ps-co-card"><span class="ps-co-k">Lieferadresse</span><b>' + who.map(esc).join("<br>") + '</b><span>' + esc(c.street) + "<br>" + esc(c.zip + " " + c.city) + '<br>Österreich</span></div>' +
+    var sp = shipOf(), sWho = sp ? [sp.company, (sp.firstName + " " + sp.lastName).trim()].filter(Boolean) : [];
+    var addrCard = '<div class="ps-co-addr"><div class="ps-co-card"><span class="ps-co-k">' + (sp ? "Rechnungsadresse" : "Liefer- &amp; Rechnungsadresse") + '</span><b>' + who.map(esc).join("<br>") + '</b><span>' + esc(c.street) + "<br>" + esc(c.zip + " " + c.city) + '<br>Österreich</span></div>' +
+      (sp ? '<div class="ps-co-card"><span class="ps-co-k">Lieferadresse</span><b>' + sWho.map(esc).join("<br>") + '</b><span>' + esc(sp.street) + "<br>" + esc(sp.zip + " " + sp.city) + "<br>Österreich" + (sp.phone ? "<br>Tel. " + esc(sp.phone) : "") + "</span></div>" : "") +
       '<div class="ps-co-card"><span class="ps-co-k">Kontakt</span><span>' + esc(c.email) + (c.phone ? "<br>" + esc(c.phone) : "") + (co && S.uid ? "<br>UID " + esc(S.uid) : "") + '</span></div>' +
       (dl ? '<div class="ps-co-card ps-co-del"><span class="ps-co-k">Voraussichtlich bei dir</span><b>' + esc(dl) + '</b><span class="ps-dnote">ggf. auch erst am darauffolgenden Werktag · Versand innerhalb Österreichs inklusive</span></div>' : "") + '</div>';
     return '<div class="ps-layout ps-co"><div class="ps-co-main"><div class="ps-panel ps-co-head"><h2>Bestellübersicht</h2><p class="sub">Noch einmal alles prüfen – gedruckt wird genau so, wie du es freigibst.</p></div>' +
@@ -2944,6 +2958,7 @@
         S.cart.push(j.item); cartSave(); S.view = ""; toast("„" + j.item.title + "“ liegt wieder im Warenkorb – Preis wird aktualisiert"); go(4); requoteCart(); try { history.pushState(null, "", "/print?warenkorb"); } catch (e) {} })
       .catch(function () { t.disabled = false; toast("Keine Verbindung", true); }); return; }
     if (k === "voucher") { var vi = document.getElementById("psVoucher"); S.voucher = v === "clear" ? "" : (vi ? vi.value.trim().toUpperCase() : ""); S.voucherErr = ""; S.voucherOk = ""; requoteCart(); render(); return; }
+    if (k === "shipdiff") { if (typeof saveAddr === "function") saveAddr(); S.ship = S.ship || { country: "AT" }; S.ship.on = !S.ship.on; render(); if (S.ship.on) setTimeout(function () { var e = document.getElementById("s_company"); if (e) e.focus(); }, 30); return; }
     if (k === "newacct") { if (S.step === 5 && typeof saveAddr === "function") saveAddr(); var pw0 = document.getElementById("psNewPw"); if (pw0) S.newPw = pw0.value; S.newAcct = !S.newAcct; render(); if (S.newAcct) setTimeout(function () { var q = document.getElementById("psNewPw"); if (q) q.focus(); pwMeter(); }, 0); return; }
     if (k === "uidcheck") return uidCheck();
     if (k === "next4") return nextAddr();
@@ -3302,6 +3317,7 @@
     var f = document.getElementById("psAddr"); if (!f) return;
     ["company", "firstName", "lastName", "street", "zip", "city", "country", "email", "phone"].forEach(function (k) { var el = f.elements[k]; if (el) S.customer[k] = el.value.trim(); });
     if (f.elements.uid) S.uid = f.elements.uid.value.replace(/[\s.\-]/g, "").toUpperCase();
+    if (S.ship && S.ship.on) ["company", "firstName", "lastName", "street", "zip", "city", "country", "phone"].forEach(function (k) { var el = f.elements["s_" + k]; if (el) S.ship[k] = el.value.trim(); });
   }
   function reprice() { if (S.step >= 4) requoteCart(); else if (S.prod) loadPrice(); }
   function uidCheck() {
@@ -3324,8 +3340,9 @@
     saveAddr(); var c = S.customer, bad = [], f = document.getElementById("psAddr");
     var req = { firstName: c.firstName, lastName: c.lastName, street: c.street && /\d/.test(c.street) ? c.street : "", zip: (c.country === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(c.zip || "") ? c.zip : "", city: c.city, email: /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(c.email || "") ? c.email : "", phone: /^[+0-9 ()\/-]{6,40}$/.test(c.phone || "") ? c.phone : "" };
     if (S.ctype === "company") req.company = c.company;
+    var sp = shipOf(); if (sp) { req.s_firstName = sp.firstName; req.s_lastName = sp.lastName; req.s_street = /\d/.test(sp.street) ? sp.street : ""; req.s_zip = (sp.country === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(sp.zip) ? sp.zip : ""; req.s_city = sp.city; if (sp.phone && !/^[+0-9 ()\/-]{6,40}$/.test(sp.phone)) req.s_phone = ""; }
     Object.keys(req).forEach(function (k) { var el = f.elements[k]; var ok = !!req[k]; if (el) el.setAttribute("aria-invalid", ok ? "false" : "true"); if (!ok) bad.push(k); });
-    var names = { firstName: "Vorname", lastName: "Nachname", street: "Straße und Hausnummer", zip: "PLZ", city: "Ort", email: "E-Mail", phone: "Telefon", company: "Firma" };
+    var names = { firstName: "Vorname", lastName: "Nachname", street: "Straße und Hausnummer", zip: "PLZ", city: "Ort", email: "E-Mail", phone: "Telefon", company: "Firma", s_firstName: "Vorname (Lieferadresse)", s_lastName: "Nachname (Lieferadresse)", s_street: "Straße (Lieferadresse)", s_zip: "PLZ (Lieferadresse)", s_city: "Ort (Lieferadresse)", s_phone: "Telefon vor Ort" };
     if (bad.length) { document.getElementById("psAddrErr").textContent = "Bitte prüfen: " + bad.map(function (k) { return names[k]; }).join(", "); var first = f.elements[bad[0]]; if (first) first.focus(); return; }
     if (!S.me && S.newAcct) { var pwe = document.getElementById("psNewPw"); if (pwe) S.newPw = pwe.value; var pi = pwIssue(S.newPw, c.email);
       if (pi) { document.getElementById("psAddrErr").textContent = "Passwort für das Kundenkonto: " + pi + "."; if (pwe) { pwe.setAttribute("aria-invalid", "true"); pwe.focus(); } return; } }
@@ -3347,7 +3364,7 @@
     if (!S.me && S.newAcct && pwIssue(S.newPw, S.customer.email)) { er.textContent = "Passwort für das Kundenkonto: " + pwIssue(S.newPw, S.customer.email) + " – bitte unter Lieferung anpassen."; return; }
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, coverId: x.coverId || undefined, coverToken: x.coverToken || undefined, expectedGross: x.price.gross, check: itemCheck(x), clientWarn: x.clientWarn || undefined, bleedOk: x.bleedOk || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
-      customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
+      customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), shipTo: shipOf() || undefined, payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
       check: S.check === "pro" || S.check === "graphic" ? S.check : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, origin: ORIGIN, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {
       S.busy = false;

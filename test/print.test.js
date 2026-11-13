@@ -474,9 +474,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/order", order({ expectedGross: 10 })); assert.strictEqual(r.status, 409); assert.strictEqual(r.j.price.gross, 38.4);
     assert.strictEqual((await post("/print/api/order", order({ customer: Object.assign({}, cust, { zip: "12" }) }))).status, 400);
     assert.strictEqual((await post("/print/api/order", order({ fileToken: "x" }))).status, 400);
+    const sb = await post("/print/api/order", order({ shipTo: { firstName: "Max", lastName: "Lieferung", street: "ohne Nummer", zip: "6793", city: "Gaschurn" } })); assert.strictEqual(sb.status, 400); assert.ok(/Lieferadresse/.test(sb.j.error), "abweichende Lieferadresse wird geprüft");
   });
   await t("Bestellung Mollie: Zahlung angelegt (Betrag vom Server), Weiterleitung; Datei nicht doppelt verwendbar", async () => {
-    const r = await post("/print/api/order", order()); assert.strictEqual(r.status, 200, JSON.stringify(r.j)); o1 = r.j;
+    const r = await post("/print/api/order", order({ shipTo: { company: "Vereinsheim Muster", firstName: "Max", lastName: "Lieferung", street: "Lieferweg 7", zip: "6793", city: "Gaschurn", country: "AT" } })); assert.strictEqual(r.status, 200, JSON.stringify(r.j)); o1 = r.j;
     assert.ok(/^https:\/\/mollie\.example\/checkout\/tr_test\d+$/.test(r.j.checkoutUrl));
     const pay = M.payments[r.j.checkoutUrl.split("/").pop()];
     assert.deepStrictEqual(pay.amount, { currency: "EUR", value: "38.40" }); assert.strictEqual(pay.metadata.orderId, r.j.orderId);
@@ -544,6 +545,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(b.deDuplicationId, o1.orderId); assert.strictEqual(b.items[0].sku, "businesscards"); assert.strictEqual(b.items[0].options.copies, 250); assert.strictEqual(b.items[0].options.printingmethod, "offset", "automatisch Offset, wo möglich");
     assert.strictEqual(b.items[0].fileOptions.isProduction, true); assert.strictEqual(b.items[0].approveDesign, true);
     assert.strictEqual(b.items[0].shipments[0].address.email, "maria@example.com"); assert.strictEqual(b.items[0].shipments[0].copies, 250);
+    // abweichende Lieferadresse (Simon 13.11.2026): an Print.com geht nur die Lieferadresse, Telefon der Bestellerin als Ersatz
+    const sa = b.items[0].shipments[0].address; assert.deepStrictEqual([sa.companyName, sa.firstName, sa.lastName, sa.fullstreet, sa.postcode, sa.city], ["Vereinsheim Muster", "Max", "Lieferung", "Lieferweg 7", "6793", "Gaschurn"]);
+    assert.ok(sa.telephone && !JSON.stringify(b).includes(cust.street), "Rechnungsadresse der Kundin geht nicht an Print.com");
     const fu = new URL(b.items[0].fileUrl); assert.strictEqual(fu.origin, "https://www.fs-creative.at");
     const f = await fetch(B + fu.pathname); assert.strictEqual(f.status, 200); assert.ok(Buffer.from(await f.arrayBuffer()).slice(0, 5).toString() === "%PDF-");
     assert.strictEqual((await fetch(B + fu.pathname.replace(/[a-f0-9]{40}\.pdf$/, "0".repeat(40) + ".pdf"))).status, 404, "falsche Signatur");

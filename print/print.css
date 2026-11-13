@@ -2440,3 +2440,7 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-upact[hidden]{display:none}
 .ps-upact span{width:100%;font-weight:600}
 .ps-upyes{background:#d93025;border-color:#d93025;color:#fff}
+/* Abweichende Lieferadresse an der Kasse (13.11.2026) */
+.ps-shipbox{margin:14px 0 4px}
+.ps-shipf{border:1px solid var(--ps-line);border-radius:14px;padding:12px 14px 4px;margin:10px 0 0}
+.ps-shipf legend{font-weight:700;padding:0 6px}

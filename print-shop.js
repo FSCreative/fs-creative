@@ -2215,7 +2215,7 @@ module.exports = function (D) {
   }
   const ACCT_HINT = "Mit einem Kundenkonto hast du alle Bestellungen, Rechnungen und Druckdaten an einem Ort und bestellst mit einem Klick nach – einfach Passwort festlegen.";
   const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.filter(l => l && l[1] && !/^(ohne|nein|keine?\b.*|none|unbedruckt)$/i.test(String(l[1]).trim()) && !/druckverfahren/i.test(l[0])).map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) + " (ggf. auch am darauffolgenden Werktag)" : "")],
-    ["Lieferadresse", [o.customer.company, o.customer.firstName + " " + o.customer.lastName, o.customer.street, o.customer.zip + " " + o.customer.city, COUNTRIES[o.customer.country]].filter(Boolean).join(", ")],
+    ["Lieferadresse", addrLine(shipOf(o))], ...(o.shipTo ? [["Rechnungsadresse", addrLine(o.customer)]] : []),
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
 
@@ -2432,6 +2432,23 @@ module.exports = function (D) {
     if (bad.length) throw Object.assign(new Error("Bitte prüfen: " + bad.join(", ")), { status: 400, fields: bad });
     return x;
   }
+  // Abweichende Lieferadresse (Simon 13.11.2026): Rechnung an customer, geliefert (und an Print.com übermittelt) wird an shipTo
+  function validShipTo(s, cust) {
+    if (!s || typeof s !== "object") return null;
+    const x = { company: clip(s.company, 120), firstName: clip(s.firstName, 60), lastName: clip(s.lastName, 60), street: clip(s.street, 120), zip: clip(s.zip, 10), city: clip(s.city, 80), country: String(s.country || "AT").toUpperCase(), phone: clip(s.phone, 40) };
+    if (!x.firstName && !x.lastName && !x.street && !x.zip && !x.city) return null;
+    const bad = [];
+    if (!x.firstName) bad.push("Vorname (Lieferadresse)"); if (!x.lastName) bad.push("Nachname (Lieferadresse)");
+    if (!x.street || !/\d/.test(x.street)) bad.push("Straße und Hausnummer (Lieferadresse)");
+    if (!COUNTRIES[x.country]) bad.push("Land der Lieferadresse (nur Österreich)"); else if (!PLZ[x.country].test(x.zip)) bad.push("PLZ (Lieferadresse)");
+    if (!x.city) bad.push("Ort (Lieferadresse)");
+    if (x.phone && !/^[+0-9 ()\/-]{6,40}$/.test(x.phone)) bad.push("Telefon vor Ort");
+    if (bad.length) throw Object.assign(new Error("Bitte prüfen: " + bad.join(", ")), { status: 400, fields: bad });
+    const same = ["company", "firstName", "lastName", "street", "zip", "city", "country"].every(k => String(x[k] || "").toLowerCase() === String((cust || {})[k] || "").toLowerCase());
+    return same ? null : x;   // gleich wie Rechnungsadresse → keine eigene Lieferadresse
+  }
+  const shipOf = o => o.shipTo || o.customer;   // wohin geliefert wird
+  const addrLine = a => [a.company, a.firstName + " " + a.lastName, a.street, a.zip + " " + a.city, COUNTRIES[a.country]].filter(Boolean).join(", ");
   async function createOrder(input) {   // eine Position (bisherige API /print/api/order)
     const r = await createCheckout(Object.assign({}, input, { items: [input] }));
     return r.priceChanged ? r : { order: r.orders[0], checkoutUrl: r.checkoutUrl, account: r.account };
@@ -2443,6 +2460,7 @@ module.exports = function (D) {
     const items = Array.isArray(input.items) ? input.items.slice(0, 30) : []; if (!items.length) throw Object.assign(new Error("Der Warenkorb ist leer"), { status: 400 });
     if (input.acceptTerms !== true || input.acceptFagg !== true || input.acceptProof !== true) throw Object.assign(new Error("Bitte AGB, den Hinweis zum Rücktrittsrecht und die geprüften Druckdaten bestätigen"), { status: 400 });
     const cust = validCustomer(input.customer); cust.feedbackOk = input.feedbackOk === true;   // freiwillig: nach der Lieferung per Mail um Feedback bitten
+    const shipTo = validShipTo(input.shipTo, cust);
     let uidRes = null;
     if (cust.type === "company" && cust.uid) { uidRes = await uidCheck(cust.uid); cust.uidValid = !!uidRes.valid; if (uidRes.uid) cust.uid = uidRes.uid; }
     const method = input.payment === "invoice" ? "invoice" : "mollie";
@@ -2452,6 +2470,7 @@ module.exports = function (D) {
     for (let i = 0; i < items.length; i++) {
       const it = Object.assign({}, items[i] || {}, { __disc: input.__disc || [] }), x = await prepItem(it, s, cust, method, uidRes, i, items.length);
       if (x.priceChanged) return { priceChanged: true, price: x.price, index: i };
+      if (shipTo && x.o) x.o.shipTo = shipTo;
       prepared.push(x);
     }
     // Konto: angemeldet → verknüpfen; sonst auf Wunsch gleich anlegen (Code per Mail)
@@ -2637,7 +2656,7 @@ module.exports = function (D) {
         const c = o.customer, sum = r2(sib.reduce((a, x) => a + (+x.price.gross || 0), 0)), net = r2(sib.reduce((a, x) => a + (+x.price.net || 0), 0));
         const rows = [].concat.apply([], sib.map((x, k) => [["Position " + (k + 1) + " · " + x.nr, x.product.title + " · " + x.copies.toLocaleString("de-AT") + " Stk. · " + eur(x.price.gross)],
           ["Ausführung", (x.labels || []).filter(l => l && l[1] && !/^(ohne|nein|keine?\b.*|none|unbedruckt)$/i.test(String(l[1]).trim()) && !/druckverfahren/i.test(l[0])).slice(0, 5).map(l => l[1]).join(" · ")]]))
-          .concat([["Lieferadresse", [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, COUNTRIES[c.country]].filter(Boolean).join(", ")],
+          .concat([["Lieferadresse", addrLine(shipOf(o))], ...(o.shipTo ? [["Rechnungsadresse", addrLine(c)]] : []),
             [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(sum) + (o.price.rate ? " (netto " + eur(net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
         const ok = await mail(c.email, "Bestellbestätigung " + sib[0].nr + " (+" + (sib.length - 1) + ") · FS Creative Druck", "Danke für deine Bestellung!",
           ["Hallo " + c.firstName + ",", "wir haben deine Bestellung mit " + sib.length + " Positionen erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung über alle Positionen bekommst du, sobald die Aufträge in Produktion gehen.") +
@@ -2754,7 +2773,7 @@ module.exports = function (D) {
       const c = o.customer, base = cfg().publicUrl;
       let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
       const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
-      const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
+      const sh = shipOf(o), addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };   // nur die Lieferadresse geht an Print.com
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
         billingAddress: billingFs(),
         items: motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(fbase, m.fileId),
@@ -5195,7 +5214,7 @@ module.exports = function (D) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
-      email: (o.customer && o.customer.email) || "", zip: o.customer.zip || "", city: o.customer.city || "", region: regionOf(o.customer.country, o.customer.zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
+      email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
   // Fortschritt für die Leiste im Cockpit: Schritte mit Zeitpunkt (aus dem Verlauf), Print.com-Rohstatus, Liefertermin, Tracking
@@ -5892,7 +5911,7 @@ module.exports = function (D) {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           const prod = await findProduct(o.product.key, null, true);
           if (!prod) throw new Error("Produkt nicht mehr im Katalog");
-          PRICE_CACHE.clear(); const buy = await purchase(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency }, o.customer.country, o.customer.zip);
+          PRICE_CACHE.clear(); const buy = await purchase(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency }, shipOf(o).country, shipOf(o).zip);
           o.price.liveCheck = { at: nowIso(), total: buy.total, product: buy.product, shipping: buy.shipping, margin: r2(o.price.net - buy.total) }; hist(o, "Einkaufspreis neu geprüft: " + eur(buy.total)); await store.putOrder(o);
           return J(res, 200, { ok: true, order: o });
         }
