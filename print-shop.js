@@ -6046,6 +6046,33 @@ module.exports = function (D) {
         }
         if (op === "payremind") { const n = await payReminderDue(id); return J(res, 200, { ok: n > 0, sent: n, error: n ? undefined : "Nicht gesendet (bezahlt, schon erinnert oder keine E-Mail)" }); }
         if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false, b.silent ? { silent: true, storno: "manual" } : null); return J(res, 200, { ok: true, order: o }); }
+        if (op === "pcextra") {   // Zusatz-/Ersatzbestellung bei Print.com zu einer Bestellung (Simon 13.11.2026: Aufkleber auf Bogen statt Konturschnitt) – Lieferadresse der Bestellung, Dateien aus dem Shop-Speicher
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
+          const opts = b.options && typeof b.options === "object" ? Object.assign({}, b.options) : {}, ds = (Array.isArray(b.designs) ? b.designs : []).slice(0, 50);
+          if (!ds.length) return J(res, 400, { ok: false, error: "Keine Dateien" });
+          const files = []; for (const d of ds) { const fm = await store.fileMeta(String(d.fileId || "")); if (!fm) return J(res, 400, { ok: false, error: "Datei " + d.fileId + " nicht gefunden" }); const n = Math.round(+d.copies); if (!(n > 0)) return J(res, 400, { ok: false, error: "Stückzahl fehlt" }); files.push({ id: (b.useSrc !== false && fm.src) || fm.id, copies: n, name: fm.name || "" }); }
+          const total = files.reduce((a, f) => a + f.copies, 0); opts.copies = total;
+          const sh = shipOf(o), c = o.customer || {}, addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };
+          if (b.dry === true) {   // nur Preis + Versand ansehen
+            const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", { sku, options: opts, deliveryPromise: 0 });
+            const sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku, options: opts, deliveryPromise: 0 }, address: { country: sh.country || "AT", postcode: sh.zip || "6793" }, numberOfDays: 21 }).catch(() => null);
+            const poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x))); const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); }; poss.sort((x, y) => cost(x) - cost(y));
+            return J(res, 200, { ok: true, dry: true, product: pr && pr.prices ? pr.prices.salesPrice : null, ship: poss[0] ? cost(poss[0]) : null, delivery: poss[0] ? poss[0].deliveryDate : null, copies: total, address: [addr.firstName, addr.lastName, addr.fullstreet, addr.postcode, addr.city, addr.country].filter(Boolean).join(", ") });
+          }
+          const base = cfg().publicUrl, sender = Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), ref = clip(String(b.ref || "Nachbestellung"), 60);
+          const item = Object.assign({ sku, customerReference: clip(o.nr + " · " + ref, 120), options: opts }, files.length === 1 ? { fileUrl: pcFileUrl(base, files[0].id) } : { designs: files.map(f => ({ fileUrl: pcFileUrl(base, f.id), copies: f.copies })) },
+            { fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: total }] });
+          const n0 = (o.pcExtra || []).length + 1, body = { deDuplicationId: o.id + "-x" + n0, customerReference: clip(o.nr + " · " + ref, 120), poNumber: clip(o.nr + " x" + n0, 60), billingAddress: billingFs(), items: [item] };
+          const j = await pcApi("POST", "/orders", body, { timeout: 60000 });
+          const r = j && j.order && typeof j.order === "object" && !Array.isArray(j.results) ? j.order : firstOf(j), its = Array.isArray(r.items) ? r.items : [];
+          const nr = String(r.orderNumber || (its[0] && its[0].orderNumber) || ""), sum = r2(its.reduce((a, i) => a + (+i.grandTotal || 0), 0) || +r.orderTotal || 0);
+          o.pcExtra = (o.pcExtra || []).concat([{ orderNumber: nr, at: nowIso(), sku, ref, total: sum || null, copies: total, files: files.map(f => f.id) }]);
+          hist(o, "Zusatzbestellung bei Print.com (" + ref + ")" + (nr ? " – Auftrag " + nr : "") + (sum ? " · Einkauf " + eur(sum) : "") + " · " + files.length + " Datei(en), " + total + " Stk.");
+          if (sum > 0) { if (b.replacePurchase === true) setActualPurchase(o, sum, "ersetzt die bisherige Print.com-Position"); else setActualPurchase(o, r2((+(o.price.purchase && o.price.purchase.total) || 0) + sum), "inkl. Zusatzbestellung"); }
+          stamp(o); await store.putOrder(o);
+          return J(res, 200, { ok: true, orderNumber: nr, total: sum, order: o });
+        }
         if (op === "payinfo") {   // Details einer abgebrochenen Zahlung nachträglich bei Mollie abrufen (ganzer Warenkorb)
           const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
           if (!(o0.payment && o0.payment.mollieId)) return J(res, 400, { ok: false, error: "Keine Mollie-Zahlung" });

@@ -1138,6 +1138,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pi = await admin("/admin/api/print/op", { op: "payinfo", id: r.j.orderId, confirm: true }); assert.ok(pi.ok && /keine Zahlart gewählt.*nach 19 Min/.test(pi.info.text), JSON.stringify(pi));
     const st = await admin("/admin/api/print/state"); assert.ok(/keine Zahlart gewählt/.test((st.orders.find(x => x.id === r.j.orderId) || {}).payFail), "Cockpit-Liste");
   });
+  await t("Zusatzbestellung bei Print.com (pcextra): Lieferadresse der Bestellung, Dateien als designs, Einkauf ersetzt", async () => {
+    const up = await upload(await pdfOf(89, 59, 2), "ex.pdf", BC), up2 = await upload(await pdfOf(89, 59, 2), "ex2.pdf", BC);
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: up.j.fileId, fileToken: up.j.token, expectedGross: 38.4 })] }, { customer: Object.assign({}, cust, { email: "extra@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true }), { "x-forwarded-for": "203.0.113.79" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); const id = r.j.orderId, sku = (await admin("/admin/api/print/order?id=" + id)).order.product.sku;
+    const ds = [{ fileId: up.j.fileId, copies: 3 }, { fileId: up2.j.fileId, copies: 2 }], n0 = M.orders.length;
+    const dry = await admin("/admin/api/print/op", { op: "pcextra", id, confirm: true, dry: true, sku, options: { size: "85x55" }, designs: ds }); assert.ok(dry.ok && dry.dry && dry.copies === 5, JSON.stringify(dry)); assert.strictEqual(M.orders.length, n0, "dry bestellt nichts");
+    const ex = await admin("/admin/api/print/op", { op: "pcextra", id, confirm: true, sku, options: { size: "85x55" }, designs: ds, ref: "Aufkleber auf Bogen", replacePurchase: true }); assert.ok(ex.ok && /^\d+$/.test(ex.orderNumber), JSON.stringify(ex));
+    const it = M.orders[M.orders.length - 1].items[0]; assert.strictEqual(it.options.copies, 5); assert.deepStrictEqual(it.designs.map(d => d.copies), [3, 2]); assert.strictEqual(it.shipments[0].address.postcode, cust.zip);
+    assert.ok(ex.order.pcExtra.length === 1 && /Zusatzbestellung bei Print\.com/.test(JSON.stringify(ex.order.history)));
+  });
   await t("Beidseitig: Rückseite als eigenes Bild/PDF → 2-seitige Druck-PDF (alle beidseitigen Produkte; gefalzt = Innenseite); einseitig nicht möglich", async () => {
     const back = async (f, buf, name) => { const r = await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token }, body: buf }); return { status: r.status, j: await r.json() }; };
     const fr = await upload(png(1060, 700, [200, 30, 30]), "vorne.png", BC); assert.strictEqual(fr.j.needBack, true, JSON.stringify(fr.j));
