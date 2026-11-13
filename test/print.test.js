@@ -977,6 +977,18 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "canceled"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     r = await post("/print/api/checkout", Object.assign({ items: [item] }, base)); assert.strictEqual(r.status, 200, "nach abgebrochener Zahlung wieder bestellbar: " + JSON.stringify(r.j));
   });
+  await t("„Zahlung nachgewiesen“ im Warenkorb: alle Positionen bleiben bestellt (kein Rücksprung auf „bezahlt“), Rechnung ohne „online bezahlt“; Korrektur „fixup“", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "transfer@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "self" };
+    const u1 = await upload(await pdfOf(89, 59, 2), "tr1.pdf", BC), u2 = await upload(await pdfOf(89, 59, 2), "tr2.pdf", BC), n0 = M.orders.length, inv0 = sevMock.state.invoices.length;
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 }), Object.assign({}, BC, { fileId: u2.j.fileId, fileToken: u2.j.token, expectedGross: 38.4 })] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const tr = await admin("/admin/api/print/op", { op: "transferok", id: r.j.orders[0].id, confirm: true, note: "Beleg" }); assert.strictEqual(tr.ok, true, JSON.stringify(tr));
+    assert.strictEqual(M.orders.length, n0 + 1, "ein Print.com-Auftrag"); assert.strictEqual(M.orders[M.orders.length - 1].items.length, 2);
+    const st = await Promise.all(r.j.orders.map(async x => (await (await fetch(B + "/print/api/order/" + x.id + "?t=" + x.token)).json()).order.status));
+    assert.deepStrictEqual(st, ["ordered", "ordered"], "beide Positionen bestellt");
+    const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.ok(sevMock.state.invoices.length > inv0); assert.ok(!/online bezahlt/.test(JSON.stringify(inv)), "Überweisung offen → kein „online bezahlt“");
+    const fx = await admin("/admin/api/print/op", { op: "fixup", id: r.j.orders[1].id, confirm: true, invoice: { id: "9999", nr: "RE-TEST" }, graphicFee: true }); assert.strictEqual(fx.ok, true, JSON.stringify(fx));
+    assert.ok(fx.orders.every(x => x.invoice === "RE-TEST" && x.status === "ordered")); assert.strictEqual(Math.round(fx.orders.reduce((a, x) => a + x.gross, 0) * 100) / 100, 96.8, "+20 € Grafikaufbereitung");
+  });
   await t("Druckdaten ablehnen: Mail-Vorschau, Senden, Bestellen gesperrt, Kunde lädt neue Datei hoch (Prüfung wie im Shop), danach wieder bestellbar", async () => {
     const base = { customer: Object.assign({}, cust, { email: "redo@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     const u1 = await upload(await pdfOf(89, 59, 2), "r1.pdf", BC);
