@@ -466,6 +466,13 @@ const TOKEN_IN_URL = new Set();
 const JSON_STATUS = new Map();
 const statsKey = url => String(url || "").split("?")[0];
 function jsonStatus(url) { return JSON_STATUS.get(statsKey(url)) || null; }
+// Letzter guter Stand je Plattform-Statistik (Simon 13.11.2026: kochdu fehlte in der Finanzübersicht nach einem Aussetzer) –
+// antwortet die Plattform einmal nicht rechtzeitig, zeigt das Cockpit bis zu 6 h den letzten Stand (mit _staleAt) statt die Kachel wegzulassen
+const STATS_GOOD = new Map();
+function keepGood(key, d) {
+  if (d) { STATS_GOOD.set(key, { at: Date.now(), d }); return d; }
+  const h = STATS_GOOD.get(key); return h && Date.now() - h.at < 6 * 3600e3 ? Object.assign({}, h.d, { _staleAt: new Date(h.at).toISOString() }) : null;
+}
 async function getJSON(url, token) {
   const hit = JSON_MEMO.get(url);
   if (hit && Date.now() - hit.at < 25000) return hit.p;
@@ -496,8 +503,8 @@ function yearParam(year) { return year ? "&year=" + encodeURIComponent(year) : "
 function statsErrCode(url) { const st = jsonStatus(url); return st && st.auth ? "unauthorized" : st && st.timeout ? "timeout" : "keine_antwort"; }
 async function kantineurStats(year) {
   if (!KANTINEUR.token) return null;
-  const d = await getJSON(KANTINEUR.url + yearParam(year).replace(/^&/, "?"), KANTINEUR.token);
-  if (!d || d.error) return null;
+  const d = keepGood("kantineur:" + year, await getJSON(KANTINEUR.url + yearParam(year).replace(/^&/, "?"), KANTINEUR.token).then(x => x && !x.error ? x : null));
+  if (!d) return null;
   return Object.assign({
     fetchedAt: d.fetchedAt,
     revenueGrossCents: (d.revenue && d.revenue.grossCents) || 0,
@@ -613,9 +620,7 @@ setInterval(() => { if (MAIL.url && MAIL.token && PRINT && PRINT.linkFromMails) 
 })();
 async function blitzdingsStats(year) {
   if (!BLITZ.token) return null;
-  const d = await getJSON(BLITZ.url + yearParam(year).replace(/^&/, "?"), BLITZ.token);
-  if (!d || d.error) return null;
-  return d;
+  return keepGood("blitzdings:" + year, await getJSON(BLITZ.url + yearParam(year).replace(/^&/, "?"), BLITZ.token).then(x => x && !x.error ? x : null));
 }
 // Blitzdings-Cockpit-API (Verfügbarkeit, Katalog, Buchung anlegen). Basis aus BLITZDINGS_STATS_URL abgeleitet
 // (…/api/stats → …/api/cockpit) oder explizit BLITZDINGS_COCKPIT_URL; Token BLITZDINGS_COCKPIT_TOKEN, sonst der Stats-Token.
@@ -829,9 +834,7 @@ function blitzReportReconcile(bookings, bill, sev) {
 async function kochduStats(year) {
   if (!KOCHDU.token) return null;
   const q = yearParam(year) + (Date.now() < KOCHDU_FRESH_UNTIL ? "&fresh=1" : "");
-  const d = await getJSON(KOCHDU.url + q.replace(/^&/, "?"), KOCHDU.token);
-  if (!d || d.error) return null;
-  return d;
+  return keepGood("kochdu:" + year, await getJSON(KOCHDU.url + q.replace(/^&/, "?"), KOCHDU.token).then(x => x && !x.error ? x : null));
 }
 // kochdu-Provisionen je Tag (Wunsch Simon 29.10.2026, Kachel auf „Heute“): kochdu liefert nur Jahressummen – kurz nach Mitternacht (Wien)
 // den Stand merken (Bar-Gebühren offen + verrechnet, Online-Provisionen). Vortag = heute − gestern, montags Freitag bis Sonntag.

@@ -56,7 +56,7 @@ function copyApp() {
 }
 async function startServer(dir, env) {
   const port = 5900 + Math.floor(Math.random() * 600);
-  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x", CHAT_OFF_FROM: "1", CHAT_OFF_TO: "1" }, env);
+  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x", CHAT_OFF_FROM: "1", CHAT_OFF_TO: "1", CHAT_OFF_HOUR: "24" }, env);
   ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN", "RAILWAY_API_TOKEN", "CF_API_TOKEN", "DATABASE_URL", "MAIL_API_URL", "MAIL_API_TOKEN", "RAILWAY_GIT_COMMIT_SHA", "KI_MONTHLY_LIMIT_EUR"].forEach((k) => { if (!(k in env)) delete e[k]; });
   const srv = cp.spawn(process.execPath, ["server.js"], { cwd: dir, env: e, stdio: ["ignore", "pipe", "pipe"] });
   srv.out = ""; srv.stdout.on("data", (d) => (srv.out += d)); srv.stderr.on("data", (d) => (srv.out += d));
@@ -337,7 +337,16 @@ async function startServer(dir, env) {
     assert.ok(/T = \["mail", "lead", "fin", "chat"(, "mkt")?(, "wa")?\]/.test(fs.readFileSync(path.join(ROOT, "server.js"), "utf8")), "Push-Thema chat am Server erlaubt");
   });
 
-  srv.kill(); mock.server.close();
+  srv.kill(); await sleep(300);
+  await t("Ab 18:00 Uhr (hier: Grenze 0 Uhr) immer offline – auch wenn der Schalter an ist", async () => {
+    const s2 = await startServer(dir, { CHAT_OFF_HOUR: "0" });
+    try {
+      const a = async (body) => (await fetch(s2.base + "/admin/api/chat/status", { method: "POST", headers: { "Content-Type": "application/json", cookie: COOKIE }, body: JSON.stringify(body) })).json();
+      assert.strictEqual((await a({ online: true, manual: true })).online, false, "Schalter an, aber nach der Grenze offline");
+      assert.ok(/ab 18:00 Uhr ist der Chat immer offline/i.test(fs.readFileSync(path.join(ROOT, "admin-cockpit", "zchat.js"), "utf8")), "Hinweis im Cockpit");
+    } finally { s2.kill(); }
+  });
+  mock.server.close();
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   console.log(fails.join("\n"));
   console.log("\nChat: " + pass + " bestanden, " + fail + " fehlgeschlagen");
