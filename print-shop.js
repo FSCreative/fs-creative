@@ -2680,9 +2680,13 @@ module.exports = function (D) {
       await store.putOrder(o);
     }
     const s = await settings();
-    const direct = o.check === "self" && !(o.fileChecks || []).some(c => c.level === "error") && !(o.clientChecks || []).some(t => /wird sichtbar unscharf/.test(t));
+    const directOf = x => x.check === "self" && !(x.fileChecks || []).some(c => c.level === "error") && !(x.clientChecks || []).some(t => /wird sichtbar unscharf/.test(t));
     // Profi-Datencheck bezahlt → nie automatisch senden, Simon prüft persönlich (Bestellung D-261104-33V2 ging trotz „pro“ direkt raus)
-    if (((s.autoSend && o.check !== "pro" && o.check !== "graphic" && !o.cover) || (direct && !o.cover)) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
+    const autoOk = x => ((s.autoSend && x.check !== "pro" && x.check !== "graphic" && !x.cover) || (directOf(x) && !x.cover)) && x.status === "paid";
+    // Warenkorb (Simon 13.11.2026): nur gemeinsam – erst wenn alle Positionen bezahlt und automatisch freigebbar sind; sonst gibt Simon den ganzen Warenkorb im Cockpit frei
+    let go = autoOk(o);
+    if (go && isGroup(o)) { const sib = await siblingsOf(o); go = sib.length >= (o.groupSize || 1) && sib.every(x => (x.printcom && x.printcom.orderNumber) || autoOk(x)); }
+    if (go) { try { await placeOrder(o.id, directOf(o) ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
   // Status der Rechnung in der Buchhaltung ("100" Entwurf, "200" offen, "750" teilbezahlt, "1000" bezahlt); "" = unbekannt (alter Server/keine Antwort)
@@ -2730,6 +2734,15 @@ module.exports = function (D) {
     if (out !== buf) memo(FITTED, k, out);
     return out;
   }
+  // Eigene Umschlag-Datei (Notizblock-Deckblatt, Durchschreibesatz …): Print.com erwartet EINE PDF – Seite 1 = Umschlag, danach das Innenleben (Simon 13.11.2026, BASE45)
+  const COVERED = new Map();
+  async function withCover(buf, o) {
+    const k = o.id + ":" + o.cover.fileId + ":" + buf.length; if (COVERED.has(k)) return COVERED.get(k);
+    const cv = await store.fileData(o.cover.fileId); if (!cv) throw new Error("Umschlag-Datei fehlt");
+    const { PDFDocument } = require("pdf-lib"), out = await PDFDocument.create(), c = await PDFDocument.load(cv, { ignoreEncryption: true }), inn = await PDFDocument.load(buf, { ignoreEncryption: true });
+    (await out.copyPages(c, c.getPageIndices())).forEach(pg => out.addPage(pg)); (await out.copyPages(inn, inn.getPageIndices())).forEach(pg => out.addPage(pg));
+    const r = Buffer.from(await out.save({ useObjectStreams: false })); memo(COVERED, k, r); return r;
+  }
   // Querformat-Datei für ein Hochformat (oder umgekehrt, z. B. A5 quer bei „A5“): Print.com setzt die Seite sonst ungedreht und verkleinert ins Format
   // (Bestellung D-261104-33V2) → Seiten drehen: Vorderseiten 90°, Rückseiten 270° (Wenden wie beim Querformat üblich, Rückseite steht nicht auf dem Kopf)
   const ROTATED = new Map();
@@ -2762,59 +2775,83 @@ module.exports = function (D) {
   const motifSplit = o => Array.isArray(o.motifs) && o.motifs.length > 1 && String((o.pcOptions || {}).printingmethod || "") === "offset";
   const motifDesigns = (o, base) => Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => ({ fileUrl: pcFileUrl(base, m.fileId), copies: m.copies })) : null;
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
+  // Positionen einer Bestellung für Print.com (Datei-Links, Motive, Varianten, Lieferadresse)
+  async function pcItemsOf(o) {
+    if (!(o.status === "paid" || o.status === "invoice_requested" || (o.status === "problem" && !o.printcom.orderNumber))) throw new Error(o.nr + ": Status „" + (STATUS_DE[o.status] || o.status) + "“ – kann nicht bestellt werden");
+    if (o.redo && o.redo.status === "open") throw new Error(o.nr + ": wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
+    const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error(o.nr + ": Druckdatei fehlt");
+    const c = o.customer, base = cfg().publicUrl;
+    let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
+    const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
+    const sh = shipOf(o), addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };   // nur die Lieferadresse geht an Print.com
+    const sender = Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) });
+    const items = motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(fbase, m.fileId),
+        fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: m.copies }] })) : [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
+        // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
+        motifDesigns(o, fbase) ? { designs: motifDesigns(o, fbase) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, fm ? { fileUrl: pcFileUrl(fbase, fm.id) } : {}), fm ? { fileOptions: { isProduction: true }, approveDesign: true } : {}, {
+        senderAddress: sender, shipments: [{ address: addr, copies: o.copies }] })];
+    // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit)
+    const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wish = pw && pm && pw > today() ? { deliveryDate: pw, method: pm } : null;
+    if (wish) items.forEach(it => Object.assign(it.shipments[0], wish));
+    return { o, fm, items, wish };
+  }
+  // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen).
+  // Warenkorb (Simon 13.11.2026): alle noch nicht bestellten Positionen gehen zusammen als EIN Print.com-Auftrag – nie einzeln (sonst zwei Aufträge, doppelter Versand)
   async function placeOrder(id, by) {
-    if (LOCK.has(id)) throw new Error("Wird gerade gesendet");
-    LOCK.add(id);
+    const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
+    let list = [o0];
+    if (isGroup(o0)) { const sib = await siblingsOf(o0); list = sib.filter(x => !(x.printcom && x.printcom.orderNumber) && x.status !== "rejected"); if (!list.some(x => x.id === o0.id)) list = [o0]; }
+    if (list.some(x => LOCK.has(x.id))) throw new Error("Wird gerade gesendet");
+    list.forEach(x => LOCK.add(x.id));
     try {
-      const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
-      if (!(o.status === "paid" || o.status === "invoice_requested" || (o.status === "problem" && !o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – kann nicht bestellt werden");
-      if (o.redo && o.redo.status === "open") throw new Error("Wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
-      const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error("Druckdatei fehlt");
-      const c = o.customer, base = cfg().publicUrl;
-      let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
-      const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
-      const sh = shipOf(o), addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };   // nur die Lieferadresse geht an Print.com
-      const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
-        billingAddress: billingFs(),
-        items: motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(fbase, m.fileId),
-          fileOptions: { isProduction: true }, approveDesign: true, senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: m.copies }] })) : [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
-          // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
-          motifDesigns(o, fbase) ? { designs: motifDesigns(o, fbase) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, fm ? { fileUrl: pcFileUrl(fbase, fm.id) } : {}), fm ? { fileOptions: { isProduction: true }, approveDesign: true } : {}, {
-          senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: o.copies }] })] };
-      // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
-      const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
-      if (wishOk) body.items.forEach(it => Object.assign(it.shipments[0], { deliveryDate: pw, method: pm }));
+      const parts = []; for (const o of list) parts.push(await pcItemsOf(o));
+      const base = cfg().publicUrl, multi = list.length > 1, nrs = list.map(x => x.nr);
+      const body = { deDuplicationId: multi ? o0.groupId : o0.id, customerReference: clip(multi ? nrs.join(" + ") : o0.nr, 120), poNumber: clip(multi ? nrs[0] + " +" + (nrs.length - 1) : o0.nr, 60),
+        webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o0.id) + "/" + encodeURIComponent(o0.id), billingAddress: billingFs(), items: [].concat.apply([], parts.map(x => x.items)) };
+      const fail = async e => { for (const o of list) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen" + (multi ? " (Warenkorb " + nrs.join(", ") + ")" : "") + ": " + e.message); await store.putOrder(o); } };
+      const anyWish = parts.some(x => x.wish);
       let j;
       try { j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
-      catch (e) { if (!wishOk || e.status !== 400) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; } body.items.forEach(it => { delete it.shipments[0].deliveryDate; delete it.shipments[0].method; }); hist(o, "Wunsch-Liefertag " + pw + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt"); j = null; }
+      catch (e) { if (!anyWish || e.status !== 400) { await fail(e); throw e; }
+        body.items.forEach(it => { delete it.shipments[0].deliveryDate; delete it.shipments[0].method; });
+        parts.filter(x => x.wish).forEach(x => hist(x.o, "Wunsch-Liefertag " + x.wish.deliveryDate + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt")); j = null; }
       try { if (!j) j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
-      catch (e) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
-      const r = firstOf(j);
-      o.printcom = { orderNumber: String(r.orderNumber || (r.items && r.items[0] && r.items[0].orderNumber) || ""), at: nowIso(), by: by || "Cockpit", total: +r.orderTotal || +r.grandTotal || null, status: String((r.items && r.items[0] && r.items[0].status) || r.status || "") };
-      o.status = "ordered"; stamp(o); hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + (motifSplit(o) ? " Motive als eigene Positionen (Offsetdruck)" : " Motive als eigene Designs") : ""));
-      if (needsBack(fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
-      if (!o.printcom.orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
-      await store.putOrder(o);
-      // Rechnung fertigstellen und an den Kunden senden – außer sie ist schon fertiggestellt (z. B. von Hand unter Finanzen gesendet): dann kein zweites Mal
-      // Status unbekannt (alter Server, Buchhaltung antwortet nicht) → wie bisher senden
-      if (o.invoice.group && o.invoice.id && !o.invoice.sentAt && D.sendInvoice) { await sendGroupInvoice(o); return o; }
-      const invSt = o.invoice.id && !o.invoice.sentAt && !o.invoice.group && D.sendInvoice ? await invoiceStatusOf(o.invoice.id) : "";
-      if (o.invoice.id && !o.invoice.group && !o.invoice.sentAt && D.sendInvoice && INV_SENT.indexOf(invSt) > -1) {
-        o.invoice.sentAt = nowIso(); o.invoice.draft = false; o.invoice.sentBefore = true;
-        if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
-        hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "war bereits versendet – nicht erneut gesendet");
-        await store.putOrder(o);
-      } else if (o.invoice.id && !o.invoice.group && !o.invoice.sentAt && D.sendInvoice) {
-        try { await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + o.nr + " · FS Creative",
-          "Hallo " + o.customer.firstName + ",\n\ndein Druckauftrag " + o.nr + " ist jetzt in Produktion. Anbei die Rechnung" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
-          o.invoice.sentAt = nowIso(); o.invoice.draft = false;
-          if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
-          hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
-        } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Rechnung senden fehlgeschlagen: " + e.message); }
+      catch (e) { await fail(e); throw e; }
+      const r = firstOf(j), rItems = Array.isArray(r.items) ? r.items : [];
+      const orderNumber = String(r.orderNumber || (rItems[0] && rItems[0].orderNumber) || "");
+      for (const x of parts) {
+        const o = x.o, it = rItems.find(i => i && String(i.customerReference || "").indexOf(o.nr) === 0) || rItems[0];
+        o.printcom = { orderNumber, at: nowIso(), by: by || "Cockpit", total: multi ? null : (+r.orderTotal || +r.grandTotal || null), status: String((it && it.status) || r.status || ""), group: multi ? list.map(y => y.id) : undefined };
+        o.status = "ordered"; stamp(o); hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (orderNumber ? " – Auftrag " + orderNumber : "") + (multi ? " · ganzer Warenkorb in einem Auftrag (" + nrs.join(", ") + ")" : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + (motifSplit(o) ? " Motive als eigene Positionen (Offsetdruck)" : " Motive als eigene Designs") : ""));
+        if (needsBack(x.fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
+        if (o.cover && o.cover.fileId) hist(o, "Umschlag als Seite 1 in die Druckdatei für Print.com übernommen");
+        if (!orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
         await store.putOrder(o);
       }
-      return o;
-    } finally { LOCK.delete(id); }
+      let grpInvSent = false;
+      for (const x of parts) {
+        const o = x.o;
+        // Rechnung fertigstellen und an den Kunden senden – außer sie ist schon fertiggestellt (z. B. von Hand unter Finanzen gesendet): dann kein zweites Mal
+        // Status unbekannt (alter Server, Buchhaltung antwortet nicht) → wie bisher senden
+        if (o.invoice.group && o.invoice.id && !o.invoice.sentAt && D.sendInvoice) { if (!grpInvSent) { grpInvSent = true; await sendGroupInvoice(o); } continue; }
+        const invSt = o.invoice.id && !o.invoice.sentAt && !o.invoice.group && D.sendInvoice ? await invoiceStatusOf(o.invoice.id) : "";
+        if (o.invoice.id && !o.invoice.group && !o.invoice.sentAt && D.sendInvoice && INV_SENT.indexOf(invSt) > -1) {
+          o.invoice.sentAt = nowIso(); o.invoice.draft = false; o.invoice.sentBefore = true;
+          if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+          hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "war bereits versendet – nicht erneut gesendet");
+          await store.putOrder(o);
+        } else if (o.invoice.id && !o.invoice.group && !o.invoice.sentAt && D.sendInvoice) {
+          try { await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + o.nr + " · FS Creative",
+            "Hallo " + o.customer.firstName + ",\n\ndein Druckauftrag " + o.nr + " ist jetzt in Produktion. Anbei die Rechnung" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
+            o.invoice.sentAt = nowIso(); o.invoice.draft = false;
+            if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+            hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
+          } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Rechnung senden fehlgeschlagen: " + e.message); }
+          await store.putOrder(o);
+        }
+      }
+      return list.find(x => x.id === o0.id) || o0;
+    } finally { list.forEach(x => LOCK.delete(x.id)); }
   }
   async function rejectOrder(id, reason, refund, opt) {   // opt.silent: keine Mail an den Kunden (Storno telefonisch vereinbart / automatisch), opt.storno: "manual" | "auto"
     opt = opt || {};
@@ -2930,7 +2967,8 @@ module.exports = function (D) {
     // Antwort laut Doku { results: [order] }; robust: sonst das erste Objekt mit Status/Positionen irgendwo in der Antwort nehmen
     const findOrder = (v, d) => { if (!v || typeof v !== "object" || d > 4) return null; if (!Array.isArray(v) && (v.status || Array.isArray(v.items)) && (v.orderNumber || v.items || v.id)) return v; for (const k of Object.keys(v)) { const f = findOrder(v[k], d + 1); if (f) return f; } return null; };
     let r = firstOf(raw); if (!r.status && !Array.isArray(r.items)) r = findOrder(raw, 0) || r;
-    const items = Array.isArray(r.items) ? r.items : [];
+    const items0 = Array.isArray(r.items) ? r.items : [], mine = items0.filter(i => i && String(i.customerReference || "").indexOf(o.nr) === 0);
+    const items = mine.length ? mine : items0;   // Warenkorb in einem Auftrag: nur die eigenen Positionen
     const st = String((items[0] && (items[0].status || items[0].orderItemStatus)) || r.status || r.orderStatus || "").toUpperCase();
     if (!st && !o.printcom.rawNoted) { o.printcom.rawNoted = true; hist(o, "Print.com-Statusabruf ohne Status – Antwort: " + clip(JSON.stringify(raw), 500)); }
     const tracks = [], info = [], addT = (url, code, carrier) => { url = String(url || ""); if (!/^https?:\/\//.test(url) || tracks.indexOf(url) > -1) return; tracks.push(url); info.push({ url, code: clip(code || "", 60), carrier: clip(carrier || carrierOf(url), 40) }); };
@@ -4606,6 +4644,7 @@ module.exports = function (D) {
         if (!o || ["ordered", "in_production", "shipped", "delivered", "problem", "paid", "invoice_requested"].indexOf(o.status) < 0) return D.send(res, 404, "Not found");
         let buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
         buf = await fitForPrint(buf, fm, o).catch(e => { log("Format vereinheitlichen", o.nr, e.message); return buf; });
+        if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
@@ -4665,6 +4704,7 @@ module.exports = function (D) {
         await readBody(req, 20000).catch(() => null);
         if (!sigOk("pchook", m[2], m[1])) return D.send(res, 404, "Not found");
         const o = await store.getOrder(m[2]); if (o) await pollOrder(o).catch(e => log("Print.com-Webhook:", e.message));   // Inhalt egal – Status selbst abrufen
+        if (o && o.printcom && Array.isArray(o.printcom.group)) for (const gid of o.printcom.group) { if (gid === o.id) continue; const x = await store.getOrder(gid); if (x) await pollOrder(x).catch(e => log("Print.com-Webhook:", e.message)); }
         return D.send(res, 200, "ok");
       }
       if (p.indexOf("/print/newsletter/") === 0 || p === "/print/api/newsletter") { const r = await nlMod().handlePublic(req, res, p, u, ipOf(req), J, readJson, sameOrigin); if (r !== false) return; }
@@ -5870,8 +5910,10 @@ module.exports = function (D) {
         if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bestätigung fehlt" });
         const id = String(b.id || ""); const op = String(b.op || "");
         if (op === "place") { const o0 = await store.getOrder(id);
-          if (o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" });
-          const o = await placeOrder(id, "Cockpit" + (b.force === true && o0 && o0.check === "graphic" && !(o0.proof && o0.proof.status === "approved") ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
+          const grp = o0 && isGroup(o0) ? (await siblingsOf(o0)).filter(x => !(x.printcom && x.printcom.orderNumber) && x.status !== "rejected") : (o0 ? [o0] : []);
+          const open = grp.filter(x => x.check === "graphic" && !(x.proof && x.proof.status === "approved"));
+          if (open.length && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: open.length === 1 && grp.length === 1 ? "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" : "Im Warenkorb sind die aufbereiteten Druckdaten noch nicht freigegeben: " + open.map(x => x.nr).join(", ") + " – bestellt wird immer der ganze Warenkorb in einem Auftrag" });
+          const o = await placeOrder(id, "Cockpit" + (b.force === true && open.length ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
         if (op === "transferok") { const o = await transferOk(id, b.note); return J(res, 200, { ok: true, order: o }); }
         if (op === "redo") {   // Druckdaten ablehnen: { reason, send } – ohne send nur Vorschau der Kundenmail
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");

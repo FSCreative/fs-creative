@@ -960,7 +960,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "81.80", "Profi-Datencheck nur für eine Position");
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     const [s3, s4] = await Promise.all(r.j.orders.map(async x => (await (await fetch(B + "/print/api/order/" + x.id + "?t=" + x.token)).json()).order));
-    assert.strictEqual(s3.status, "paid", "Position mit Profi-Check wartet"); assert.strictEqual(s4.status, "ordered", "Position ohne Check direkt bestellt"); assert.strictEqual(M.orders.length, nPc + 2);
+    // Warenkorb wird nur als Ganzes bestellt (Simon 13.11.2026): Position 2 wartet mit, bis Simon den Warenkorb freigibt – dann EIN Print.com-Auftrag mit beiden Positionen
+    assert.strictEqual(s3.status, "paid", "Position mit Profi-Check wartet"); assert.strictEqual(s4.status, "paid", "Position ohne Check wartet auf den ganzen Warenkorb"); assert.strictEqual(M.orders.length, nPc + 1);
+    const pl = await admin("/admin/api/print/op", { op: "place", id: s3.id, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl));
+    assert.strictEqual(M.orders.length, nPc + 2, "ein Auftrag für den ganzen Warenkorb"); const gb = M.orders[M.orders.length - 1]; assert.strictEqual(gb.items.length, 2, "beide Positionen im selben Auftrag");
+    assert.deepStrictEqual(gb.items.map(i => i.customerReference).sort(), [s3.nr, s4.nr].sort());
+    const s4b = (await (await fetch(B + "/print/api/order/" + r.j.orders[1].id + "?t=" + r.j.orders[1].token)).json()).order; assert.strictEqual(s4b.status, "ordered", "zweite Position mitbestellt");
     assert.strictEqual(sevMock.state.invoices.length, nInv + 1, "eine Sammelrechnung für den Warenkorb");
     const ginv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(ginv.invoicePosSave.length, 3, JSON.stringify(ginv.invoicePosSave.map(x => x.name)));
   });
@@ -1239,12 +1244,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       // Warenkorb mit 2 Positionen: EINE Sammelrechnung – gesendet erst, wenn beide Positionen bei Print.com bestellt sind, sentAt an beiden
       status = "100"; const gi = { id: "8810", group: "GUNIT1", orders: ["D-UNIT-11", "D-UNIT-12"] };
       mk("PUNIT11", gi, { groupId: "GUNIT1", groupSize: 2 }); mk("PUNIT12", gi, { groupId: "GUNIT1", groupSize: 2 });
+      // ganzer Warenkorb in EINEM Print.com-Auftrag (Simon 13.11.2026) → beide bestellt, genau eine Rechnungsmail
       const s0 = sent.length, g1 = await PS.placeOrder("PUNIT11", "Test");
-      assert.strictEqual(sent.length, s0, "erste Position bestellt → Sammelrechnung noch nicht senden"); assert.ok(!g1.invoice.sentAt);
-      assert.ok(g1.history.some(h => /sobald alle Positionen bestellt sind \(offen: D-UNIT-12\)/.test(h.what)), JSON.stringify(g1.history));
-      const g2 = await PS.placeOrder("PUNIT12", "Test");
       assert.strictEqual(sent.length, s0 + 1, "genau eine Rechnungsmail für den Warenkorb"); assert.strictEqual(sent[s0][0], "8810"); assert.ok(/D-UNIT-11 \(\+1\)/.test(sent[s0][2]), sent[s0][2]);
-      assert.ok(g2.invoice.sentAt); assert.ok(JSON.parse(fs.readFileSync(path.join(od, "PUNIT11.json"), "utf8")).invoice.sentAt, "sentAt auch an der ersten Position");
+      const g2 = JSON.parse(fs.readFileSync(path.join(od, "PUNIT12.json"), "utf8")); assert.strictEqual(g2.status, "ordered", "zweite Position mitbestellt"); assert.deepStrictEqual(g1.printcom.group, ["PUNIT11", "PUNIT12"]);
+      assert.ok(g1.invoice.sentAt); assert.ok(g2.invoice.sentAt, "sentAt auch an der zweiten Position");
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
   });
   await t("Warenkorb-Erinnerung: 1 Tag, 5 Tage, nach 10 Tagen „wird gelöscht“ mit Nicht-löschen; nach 14 Tagen weg, behalten bis 3 Monate; Druckdaten bleiben solange", async () => {
