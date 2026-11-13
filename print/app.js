@@ -2723,9 +2723,7 @@
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
       shipBox() +
-      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
-      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psCrOpt"' + (S.crOpt ? " checked" : "") + '><span>Falls ich nicht fertig bestelle: Erinnert mich per E-Mail an meinen Warenkorb (freiwillig – nach 1 und 5 Tagen und vor dem Löschen, jederzeit abbestellbar).</span></label>' +
-      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psFbOpt"' + (S.fbOpt ? " checked" : "") + '><span>Nach der Lieferung darf ich einmal per E-Mail um eine kurze Bewertung gebeten werden (freiwillig).</span></label>' +
+      '<p class="ps-dsnote">Mit deiner E-Mail-Adresse gilt unsere <a href="/datenschutz#ds-druckshop" target="_blank" rel="noopener">Datenschutzerklärung</a>: Bestellst du nicht fertig, erinnern wir dich per Mail an deinen Warenkorb, und nach der Lieferung bitten wir dich einmal um eine kurze Bewertung. Den Erinnerungen kannst du in jeder Mail mit einem Klick widersprechen, der Bewertungsbitte per Antwort.</p>' +
       acctBox() +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Zur Bestellübersicht & Checkout</button></div></div>' + cartAside() + "</div>";
   }
@@ -2809,6 +2807,7 @@
       (co ? '' : '<!--') + '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label>" + (co ? "" : "-->") + "</fieldset>"))) +
       sec(5, "Bestätigen", acct + '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format ' + (n > 1 ? "aller " + n + " Positionen " : "") + "geprüft und gebe die Daten so zum Druck frei.</span></label>" +
       '<label class="ps-cb"><input type="checkbox" data-acc="terms"' + (S.accept.terms ? " checked" : "") + '><span>Ich akzeptiere die <a href="/print/agb" target="_blank" rel="noopener">AGB</a> und habe die <a href="/datenschutz" target="_blank" rel="noopener">Datenschutzerklärung</a> gelesen.</span></label>' +
+      '<label class="ps-cb ps-nlopt"><input type="checkbox" data-nl' + (S.nlOpt ? " checked" : "") + '><span><b>Freiwillig:</b> Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar).</span></label>' +
       '<label class="ps-cb"><input type="checkbox" data-acc="fagg"' + (S.accept.fagg ? " checked" : "") + '><span>Ich nehme zur Kenntnis, dass bei Waren, die nach meinen Vorgaben angefertigt bzw. bedruckt werden, <b>kein Rücktrittsrecht</b> besteht (§ 18 Abs. 1 Z 3 FAGG).</span></label>' +
       '<div class="ps-err" id="psOrderErr" role="alert">' + esc(S.err) + '</div><div class="ps-nav"><button type="button" class="ps-btn" data-go="5">Zurück</button><button type="button" class="ps-btn primary ps-co-go" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : (S.payment === "invoice" ? "Zahlungspflichtig bestellen" : "Zahlungspflichtig bestellen & bezahlen")) + "</button></div>" +
       '<p class="ps-terms">Mit dem Klick bestellst du verbindlich. Der Vertrag kommt mit unserer Bestellbestätigung per E-Mail zustande' + (S.payment === "invoice" ? ", bei Rechnungskauf mit der Freigabe" : "") + ".</p>") +
@@ -3004,6 +3003,7 @@
     if (t.name === "check") { S.check = ckNorm(t.value); S.cart.forEach(function (x) { delete x.check; }); cartSave(true); render(); return; }
     if (t.name === "icheck") { var cx = S.cart.filter(function (x) { return x.id === t.getAttribute("data-id"); })[0]; if (cx) { cx.check = ckNorm(t.value); if (S.cart.every(function (x) { return itemCheck(x) === cx.check; })) { S.check = cx.check; S.cart.forEach(function (x) { delete x.check; }); } cartSave(true); render(); } return; }
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
+    if (t.hasAttribute("data-nl")) { S.nlOpt = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
     if (e.target && e.target.id === "psNewPw") { S.newPw = e.target.value; e.target.removeAttribute("aria-invalid"); var ae = document.getElementById("psAddrErr"); if (ae && /^Passwort/.test(ae.textContent)) ae.textContent = ""; pwMeter(); return; }
@@ -3347,10 +3347,7 @@
     if (!S.me && S.newAcct) { var pwe = document.getElementById("psNewPw"); if (pwe) S.newPw = pwe.value; var pi = pwIssue(S.newPw, c.email);
       if (pi) { document.getElementById("psAddrErr").textContent = "Passwort für das Kundenkonto: " + pi + "."; if (pwe) { pwe.setAttribute("aria-invalid", "true"); pwe.focus(); } return; } }
     if (S.ctype === "company" && S.uid && !S.uidRes) { uidCheck(); }
-    var nlo = document.getElementById("psNlOpt"); S.nlOpt = !!(nlo && nlo.checked);
-    var cro = document.getElementById("psCrOpt"); S.crOpt = !!(cro && cro.checked); cartRemind();
-    var fbo = document.getElementById("psFbOpt"); S.fbOpt = !!(fbo && fbo.checked);
-    if (S.nlOpt && !S.nlSent) { S.nlSent = true; api("/print/api/newsletter", { email: c.email, consent: true, source: "Kasse" }).catch(function () {}); }
+    S.crOpt = true; S.fbOpt = true; cartRemind();   // Warenkorb-Erinnerung + Bewertungsbitte laut Datenschutzerklärung (Simon 13.11.2026), in jeder Mail abbestellbar
     requoteCart(); go(6);
   }
 
@@ -3362,6 +3359,7 @@
     if (!S.payment) { show("Bitte eine Zahlungsart wählen."); return; }
     if (S.cart.some(function (x) { return !x.price; })) { show("Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."); return; }
     if (!S.me && S.newAcct && pwIssue(S.newPw, S.customer.email)) { er.textContent = "Passwort für das Kundenkonto: " + pwIssue(S.newPw, S.customer.email) + " – bitte unter Lieferung anpassen."; return; }
+    if (S.nlOpt && !S.nlSent) { S.nlSent = true; api("/print/api/newsletter", { email: S.customer.email, consent: true, source: "Kasse" }).catch(function () {}); }
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, coverId: x.coverId || undefined, coverToken: x.coverToken || undefined, expectedGross: x.price.gross, check: itemCheck(x), clientWarn: x.clientWarn || undefined, bleedOk: x.bleedOk || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), shipTo: shipOf() || undefined, payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
