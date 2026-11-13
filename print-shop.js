@@ -5573,10 +5573,24 @@ module.exports = function (D) {
         const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true));
         if (!items.length) return J(res, 400, { ok: false, error: "Keine Positionen mit Datei" });
         for (const x of items) { if (x.noFile) continue; const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
-        const all = await crGet(), id = "c" + crypto.randomBytes(9).toString("hex");
-        all.push({ id, at: nowIso(), keep: nowIso(), email: "", firstName: "", items, link: true, note: clip(b.note, 120) }); await crSet(all);
+        const all = await crGet();
+        // replace: alte Warenkorb-Links (Kurzlink-ID, /print/l/…, ?wk=… oder Warenkorb-ID) überschreiben – bereits verschickte Links zeigen dann den neuen Stand (Simon 13.11.2026)
+        const repl = [], shorts = await shortGet();
+        for (const raw of (Array.isArray(b.replace) ? b.replace : b.replace ? [b.replace] : []).slice(0, 20)) {
+          let s = String(raw || "").trim(); const sm = s.match(/\/print\/l\/([a-z0-9]{4,12})/i) || s.match(/^([a-z0-9]{4,12})$/i);
+          if (sm && shorts[sm[1].toLowerCase()]) s = shorts[sm[1].toLowerCase()].u;
+          const wm = s.match(/[?&]wk=([a-z0-9]+)/i) || s.match(/^(c[0-9a-f]{18})$/i), r = wm && all.find(x => x.id === wm[1] && x.link);
+          if (!r) return J(res, 400, { ok: false, error: "Alter Warenkorb-Link nicht gefunden: " + String(raw).slice(0, 80) });
+          if (repl.indexOf(r) < 0) repl.push(r);
+        }
+        const note = clip(b.note, 120);
+        repl.forEach(r => { r.items = items; r.at = nowIso(); r.keep = nowIso(); r.replaced = nowIso(); if (note) r.note = note; });
+        let id;
+        if (repl.length) id = repl[0].id;
+        else { id = "c" + crypto.randomBytes(9).toString("hex"); all.push({ id, at: nowIso(), keep: nowIso(), email: "", firstName: "", items, link: true, note }); }
+        await crSet(all);
         const url = cfg().publicUrl + "/print?wk=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(sig("cartrem", id));
-        return J(res, 200, { ok: true, id, url, short: await shortMake(url).catch(() => url) });
+        return J(res, 200, { ok: true, id, url, short: await shortMake(url).catch(() => url), replaced: repl.map(r => r.id) });
       }
       if (p === "/admin/api/print/short" && req.method === "POST") { try { const sb = await readJson(req, 20000); return J(res, 200, { ok: true, url: await shortMake(sb.url) }); } catch (e) { return J(res, 400, { ok: false, error: e.message }); } }
       if (p === "/admin/api/print/staffel") {   // Staffel-Prüfung: GET = Stand, POST {op:"run"} = neu prüfen (Hintergrund, ca. 2 s je Menge)

@@ -329,6 +329,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/file/bleed", { fileId: upOk.fileId, token: upOk.token, mode: "mirror" })).status, 400, "hat schon Beschnitt");
     const txt = await upload(Buffer.from("hallo welt ".repeat(30)), "x.txt", BC); assert.strictEqual(txt.status, 415);
   });
+  await t("Warenkorb-Link: neuer Link bzw. alte Links (Kurzlink, ID) mit neuem Stand überschreiben", async () => {
+    const it = n => ({ product: "visitenkarten", sel: BC, copies: n, fileId: upOk.fileId, fileToken: upOk.token, fileName: "karte.pdf" });
+    const a = await admin("/admin/api/print/cartlink", { items: [it(100)], note: "Testkunde A" }); assert.ok(a.ok && /\/print\/l\//.test(a.short), JSON.stringify(a));
+    const b = await admin("/admin/api/print/cartlink", { items: [it(250)] }); assert.ok(b.ok && b.id !== a.id);
+    const load = async (x) => { const q = new URL(x.url).searchParams; return (await (await fetch(B + "/print/api/cartremind?id=" + q.get("wk") + "&t=" + q.get("t"))).json()); };
+    const c = await admin("/admin/api/print/cartlink", { items: [it(500)], replace: [a.short.split("/").pop(), b.id] });
+    assert.ok(c.ok && c.id === a.id && c.short === a.short, JSON.stringify(c)); assert.deepStrictEqual(c.replaced, [a.id, b.id]);
+    for (const x of [a, b]) { const j = await load(x); assert.ok(j.ok && j.link && j.items.length === 1 && j.items[0].copies === 500, JSON.stringify(j)); }
+    const bad = await admin("/admin/api/print/cartlink", { items: [it(500)], replace: ["zzzzzz"] }); assert.ok(!bad.ok && /nicht gefunden/.test(bad.error));
+    const j = await load(a); assert.strictEqual(j.items[0].copies, 500, "fehlgeschlagenes Überschreiben ändert nichts");
+  });
   await t("Upload Bild: dpi wird geprüft, Bild wird in PDF mit exakter Größe gewandelt", async () => {
     const low = await upload(png(200, 133, [200, 30, 30]), "logo.png", BC); assert.strictEqual(low.status, 200, JSON.stringify(low.j));
     assert.ok(low.j.checks.some(c => /dpi/.test(c.text) && c.level !== "ok"), JSON.stringify(low.j.checks));
