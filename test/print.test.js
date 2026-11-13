@@ -1149,6 +1149,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const it = M.orders[M.orders.length - 1].items[0]; assert.strictEqual(it.options.copies, 5); assert.deepStrictEqual(it.designs.map(d => d.copies), [3, 2]); assert.strictEqual(it.shipments[0].address.postcode, cust.zip);
     assert.ok(ex.order.pcExtra.length === 1 && /Zusatzbestellung bei Print\.com/.test(JSON.stringify(ex.order.history)));
     for (const d of it.designs) { const fr = await fetch(B + new URL(d.fileUrl).pathname); assert.strictEqual(fr.status, 200, "Print.com kann die Datei abholen"); }
+    const sw = await admin("/admin/api/print/op", { op: "swapitem", id, confirm: true, orderNumber: ex.orderNumber, title: "Aufkleber auf Bogen", sku: "sticker-sheets", copies: 31, unit: "Bögen", labels: [["Format", "A4"]] });
+    assert.ok(sw.ok && sw.order.printcom.orderNumber === ex.orderNumber && sw.order.product.title === "Aufkleber auf Bogen" && sw.order.copies === 31 && sw.order.status === "ordered", JSON.stringify(sw).slice(0, 300));
+    assert.ok(/umgestellt auf Ersatzbestellung/.test(JSON.stringify(sw.order.history)) && sw.order.pcExtra[0].merged);
   });
   await t("Beidseitig: Rückseite als eigenes Bild/PDF → 2-seitige Druck-PDF (alle beidseitigen Produkte; gefalzt = Innenseite); einseitig nicht möglich", async () => {
     const back = async (f, buf, name) => { const r = await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token }, body: buf }); return { status: r.status, j: await r.json() }; };

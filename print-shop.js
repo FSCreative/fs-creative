@@ -6048,6 +6048,21 @@ module.exports = function (D) {
         }
         if (op === "payremind") { const n = await payReminderDue(id); return J(res, 200, { ok: n > 0, sent: n, error: n ? undefined : "Nicht gesendet (bezahlt, schon erinnert oder keine E-Mail)" }); }
         if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false, b.silent ? { silent: true, storno: "manual" } : null); return J(res, 200, { ok: true, order: o }); }
+        if (op === "swapitem") {   // Position im Cockpit auf eine Ersatzbestellung umstellen (Simon 13.11.2026: Nicole – Aufkleber auf Bogen statt Konturschnitt): Produkt, Menge, Print.com-Auftrag, Einkauf
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          const nr = String(b.orderNumber || "").trim(); if (!/^\d{6,14}$/.test(nr)) return J(res, 400, { ok: false, error: "Print.com-Auftragsnummer ungültig" });
+          const ex = (o.pcExtra || []).find(x => x.orderNumber === nr); const old = { product: o.product && o.product.title, copies: o.copies, pc: o.printcom && o.printcom.orderNumber };
+          if (b.title) o.product = Object.assign({}, o.product, { title: clip(String(b.title), 80) }, b.sku ? { sku: String(b.sku).slice(0, 80) } : {});
+          if (+b.copies > 0) o.copies = Math.round(+b.copies);
+          if (b.unit) o.unit = clip(String(b.unit), 20);
+          if (Array.isArray(b.labels)) o.labels = b.labels.filter(l => Array.isArray(l) && l.length >= 2).slice(0, 14).map(l => [clip(String(l[0]), 60), clip(String(l[1]), 120)]);
+          o.printcom = Object.assign({}, o.printcom, { orderNumber: nr, at: (ex && ex.at) || nowIso(), by: "Cockpit (Ersatzbestellung)", status: "", group: undefined, replaced: old.pc || undefined });
+          if (["paid", "invoice_requested", "problem"].indexOf(o.status) > -1) o.status = "ordered";
+          if (+b.purchase > 0 || (ex && ex.total)) setActualPurchase(o, +b.purchase > 0 ? +b.purchase : ex.total, "Ersatzbestellung " + nr);
+          if (ex) ex.merged = true;
+          hist(o, "Position umgestellt auf Ersatzbestellung " + nr + ": " + (o.product && o.product.title) + ", " + o.copies + " " + (o.unit || "Stk.") + " (vorher " + old.product + ", " + old.copies + " Stk." + (old.pc ? ", Auftrag " + old.pc : "") + ")");
+          stamp(o); await store.putOrder(o); return J(res, 200, { ok: true, order: o });
+        }
         if (op === "pcextra") {   // Zusatz-/Ersatzbestellung bei Print.com zu einer Bestellung (Simon 13.11.2026: Aufkleber auf Bogen statt Konturschnitt) – Lieferadresse der Bestellung, Dateien aus dem Shop-Speicher
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
