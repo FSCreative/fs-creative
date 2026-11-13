@@ -5942,6 +5942,12 @@ module.exports = function (D) {
             }
             if (b.invoice && b.invoice.id) { const old = x.invoice && x.invoice.nr; x.invoice = Object.assign({}, x.invoice, { id: String(b.invoice.id), nr: clip(b.invoice.nr, 30), draft: false, sentAt: (x.invoice && x.invoice.sentAt) || nowIso(), replaced: old || undefined }); hist(x, "Rechnung " + (b.invoice.nr || b.invoice.id) + " ersetzt " + (old || "die bisherige Rechnung")); }
           }
+          // prices: { "<Bestellnr>": { gross, urgency? } } – tatsächlich bestellter Preis (z. B. Standard statt Express); Marge um den Netto-Unterschied angepasst
+          const pr = b.prices && typeof b.prices === "object" ? b.prices : {};
+          for (const x of grp) { const q = pr[x.nr]; if (!q || !(+q.gross > 0)) continue;
+            const fee = (x.price.checkFee ? x.price.checkFee.gross : 0) + (x.price.designFee ? x.price.designFee.gross : 0), rate = x.price.rate || 0, oldNet = x.price.net;
+            const gross = r2(+q.gross + fee), net = r2(gross / (1 + rate / 100)); x.price.gross = gross; x.price.net = net; x.price.vat = r2(gross - net); x.price.margin = r2((x.price.margin || 0) + net - oldNet);
+            if (q.urgency) x.urgency = String(q.urgency); hist(x, "Preis im Cockpit auf den tatsächlich bestellten Stand gesetzt: " + eur(+q.gross) + (q.urgency ? " (" + (URGENCY_DE[q.urgency] || q.urgency) + ")" : "")); }
           if (b.graphicFee === true && !grp.some(x => x.price.checkFee && x.price.checkFee.kind === "graphic")) {
             const x = grp.find(y => !y.noFile) || grp[0], rate = x.price.rate || 0, gross = GRAPHIC_CHECK_GROSS, net = r2(gross / (1 + rate / 100)), vat = r2(gross - net);
             x.price.checkFee = { gross, net, vat, kind: "graphic" }; x.price.gross = r2(x.price.gross + gross); x.price.net = r2(x.price.net + net); x.price.vat = r2(x.price.vat + vat); x.price.margin = r2((x.price.margin || 0) + net);
