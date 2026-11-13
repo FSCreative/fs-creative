@@ -2677,12 +2677,15 @@ module.exports = function (D) {
     try { const tb = p0.getTrimBox(); np.setTrimBox(tb.x, tb.y, tb.width, tb.height); } catch (e) {}
     try { const bb = p0.getBleedBox(); np.setBleedBox(bb.x, bb.y, bb.width, bb.height); } catch (e) {}
     const out = Buffer.from(await d.save({ useObjectStreams: false }));
-    PADDED.set(k, out); if (PADDED.size > 40) PADDED.delete(PADDED.keys().next().value);
+    memo(PADDED, k, out);
     return out;
   }
   // Querformat-Datei für ein Hochformat (oder umgekehrt, z. B. A5 quer bei „A5“): Print.com setzt die Seite sonst ungedreht und verkleinert ins Format
   // (Bestellung D-261104-33V2) → Seiten drehen: Vorderseiten 90°, Rückseiten 270° (Wenden wie beim Querformat üblich, Rückseite steht nicht auf dem Kopf)
   const ROTATED = new Map();
+  // Zwischenspeicher für aufbereitete Druckdateien: höchstens 40 Einträge und zusammen 2 GB (Dateien bis 500 MB, 13.11.2026)
+  function memo(map, k, buf) { map.set(k, buf); let tot = 0; for (const v of map.values()) tot += v.length;
+    while (map.size > 40 || (map.size > 1 && tot > 2e9)) { const k0 = map.keys().next().value; tot -= map.get(k0).length; map.delete(k0); } }
   async function rotateForPrint(buf, fm, o) {
     const sz = o && o.size, b = +(o && o.bleed) || 0;
     if (!sz || !(sz.w > 0) || !(sz.h > 0) || Math.abs(sz.w - sz.h) < 3 || (Array.isArray(o.pageMap) && o.pageMap.length) || /^(textile|promo)$/.test((o.product && o.product.kind) || "")) return buf;
@@ -2698,11 +2701,12 @@ module.exports = function (D) {
       pg.setRotation(degrees((rot + (i % 2 ? 270 : 90)) % 360)); changed = true;
     });
     const out = changed ? Buffer.from(await d.save({ useObjectStreams: false })) : buf;
-    ROTATED.set(k, out); if (ROTATED.size > 40) ROTATED.delete(ROTATED.keys().next().value);
+    if (out !== buf) memo(ROTATED, k, out);
     return out;
   }
   // Absender-Aufkleber mit unserem Logo (Glühbirne) – wie die Absenderadresse „mit Logo“ im Print.com-Konto; ohne Bild nimmt Print.com die Adresse ohne Logo
   const senderLogo = base => process.env.PRINT_SENDER_LOGO_URL || base + "/logos/absender-logo.png";
+  const BIG_FILE = 80e6;   // ab hier holt Print.com die Druckdatei direkt über Railway (RAILWAY_PUBLIC_DOMAIN), nicht über Cloudflare
   const pcFileUrl = (base, id) => base + "/print-files/" + id + "/" + sig("pcfile", id) + ".pdf";
   // Offsetdruck + mehrere Motive (ältere Bestellungen): je Motiv eigene Position im selben Auftrag statt „designs“
   const motifSplit = o => Array.isArray(o.motifs) && o.motifs.length > 1 && String((o.pcOptions || {}).printingmethod || "") === "offset";
@@ -2717,13 +2721,15 @@ module.exports = function (D) {
       if (o.redo && o.redo.status === "open") throw new Error("Wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
       const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error("Druckdatei fehlt");
       const c = o.customer, base = cfg().publicUrl;
+      let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
+      const fbase = big && process.env.RAILWAY_PUBLIC_DOMAIN ? "https://" + process.env.RAILWAY_PUBLIC_DOMAIN : base;
       const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
         billingAddress: billingFs(),
-        items: motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(base, m.fileId),
+        items: motifSplit(o) ? o.motifs.map((m, i) => ({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (i + 1), 120), options: Object.assign({}, o.pcOptions, { copies: m.copies }), fileUrl: pcFileUrl(fbase, m.fileId),
           fileOptions: { isProduction: true }, approveDesign: true, senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: m.copies }] })) : [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
           // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
-          motifDesigns(o, base) ? { designs: motifDesigns(o, base) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, fm ? { fileUrl: pcFileUrl(base, fm.id) } : {}), fm ? { fileOptions: { isProduction: true }, approveDesign: true } : {}, {
+          motifDesigns(o, fbase) ? { designs: motifDesigns(o, fbase) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, fm ? { fileUrl: pcFileUrl(fbase, fm.id) } : {}), fm ? { fileOptions: { isProduction: true }, approveDesign: true } : {}, {
           senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: o.copies }] })] };
       // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
       const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
