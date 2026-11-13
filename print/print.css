@@ -2434,3 +2434,9 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-opfc{min-height:36px;padding:6px 12px;border-radius:999px;border:1px solid var(--ps-line2);background:var(--ps-card);color:inherit;font:inherit;font-size:13.5px;font-weight:500;cursor:pointer}
 .ps-opfc small{color:var(--text-faint);font-size:12px;margin-left:2px}
 .ps-opfc.on{background:#0a84ff;border-color:#0a84ff;color:#fff}.ps-opfc.on small{color:rgba(255,255,255,.8)}
+/* Upload-Fenster: Abbrechen nur über Button (mit Rückfrage), 13.11.2026 */
+.ps-uphint{opacity:.8}
+.ps-upact{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin-top:12px}
+.ps-upact[hidden]{display:none}
+.ps-upact span{width:100%;font-weight:600}
+.ps-upyes{background:#d93025;border-color:#d93025;color:#fff}

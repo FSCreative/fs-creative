@@ -288,6 +288,34 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/price", BC, { origin: "https://evil.example" })).status, 403);
     assert.strictEqual((await post("/print/api/price", BC, { origin: B })).status, 200);
   });
+  await t("Upload in Stücken (bis 500 MB): Start, Stücke der Reihe nach (falsche Stelle → 409), dann normaler Upload mit Verweis; Verweis nur einmal gültig", async () => {
+    const pdf = await pdfOf(89, 59, 2), half = Math.floor(pdf.length / 2), SH = { "x-print-shop": "1" };
+    assert.strictEqual((await fetch(B + "/print/api/chunk", { method: "POST", headers: Object.assign({ "x-upload-size": String(600e6) }, SH) })).status, 413, "über 500 MB abgelehnt");
+    assert.strictEqual((await fetch(B + "/print/api/chunk", { method: "POST", headers: { "x-upload-size": "1000" } })).status, 403, "nur vom Shop");
+    const c = await (await fetch(B + "/print/api/chunk", { method: "POST", headers: Object.assign({ "x-upload-size": String(pdf.length) }, SH) })).json(); assert.ok(c.ok && c.id && c.k, JSON.stringify(c));
+    const put = (off, body, k) => fetch(B + "/print/api/chunk/" + c.id + "?k=" + (k || c.k) + "&off=" + off, { method: "PUT", headers: Object.assign({ "content-type": "application/octet-stream" }, SH), body });
+    assert.strictEqual((await put(0, pdf.subarray(0, half), "0".repeat(32))).status, 404, "falscher Schlüssel");
+    let r = await put(0, pdf.subarray(0, half)); assert.strictEqual((await r.json()).got, half);
+    r = await put(0, pdf.subarray(0, half)); assert.strictEqual(r.status, 409); assert.strictEqual((await r.json()).got, half, "doppelt geschickt → weiter ab got");
+    const st = await (await fetch(B + "/print/api/chunk/" + c.id + "?k=" + c.k, { headers: SH })).json(); assert.strictEqual(st.got, half);
+    r = await put(half, pdf.subarray(half)); assert.strictEqual((await r.json()).got, pdf.length);
+    const fin = h => fetch(B + "/print/api/upload", { method: "POST", headers: Object.assign({ "x-file-name": "karte.pdf", "x-print-config": encodeURIComponent(JSON.stringify(BC)), "x-print-chunk": c.id, "x-print-chunk-key": c.k }, SH, h || {}) });
+    const u = await fin(); const j = await u.json(); assert.strictEqual(u.status, 200, JSON.stringify(j)); assert.strictEqual(j.pages, 2); assert.strictEqual(j.blocked, false);
+    assert.strictEqual((await fin()).status, 400, "Verweis nach Gebrauch ungültig");
+  });
+  await t("Speed: Shop-Dateien mit aktueller Version 1 Jahr zwischenspeicherbar, Brotli, ETag → 304; ohne/alte Version nicht", async () => {
+    const html = await (await fetch(B + "/print")).text(), v = (html.match(/\/print\/app\.js\?v=([\w.-]+)/) || [])[1]; assert.ok(v && v !== "2", "Version im Link");
+    assert.ok(new RegExp("/print/print\\.css\\?v=" + v).test(html), "CSS mit gleicher Version");
+    for (const p of ["/print/app.js", "/print/print.css"]) {
+      const r = await fetch(B + p + "?v=" + v, { headers: { "accept-encoding": "br, gzip" } }); assert.strictEqual(r.status, 200);
+      assert.ok(/immutable/.test(r.headers.get("cache-control")) && /31536000/.test(r.headers.get("cache-control")), p + " " + r.headers.get("cache-control"));
+      assert.strictEqual(r.headers.get("content-encoding"), "br"); const et = r.headers.get("etag"); assert.ok(et);
+      assert.ok((await r.text()).length > 1000, "Inhalt entpackt");
+      const r2 = await fetch(B + p + "?v=" + v, { headers: { "accept-encoding": "br", "if-none-match": et } }); assert.strictEqual(r2.status, 304);
+    }
+    assert.ok(!/immutable/.test((await fetch(B + "/print/app.js?v=alt123")).headers.get("cache-control")), "alte Version nicht ewig");
+    assert.ok(!/immutable/.test((await fetch(B + "/print/app.js")).headers.get("cache-control")), "ohne Version nicht ewig");
+  });
   let upOk;
   await t("Upload PDF: passende Größe inkl. Beschnitt + 2 Seiten → ok; falsches Format → Fehler; Nicht-PDF/Bild → 415", async () => {
     const r = await upload(await pdfOf(89, 59, 2), "karte.pdf", BC); assert.strictEqual(r.status, 200, JSON.stringify(r.j));

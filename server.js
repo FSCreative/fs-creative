@@ -304,14 +304,30 @@ function renderIndex(baseHtml, route, live) {
 }
 
 const zlib = require("zlib");
+// Komprimiert ausliefern (Speed 13.11.2026): Brotli wenn möglich (≈15–20 % kleiner als gzip), sonst gzip. Ergebnis wird je Inhalt gemerkt
+// (vorher wurde z. B. app.js bei jedem Aufruf neu gepackt); ETag + 304, damit „no-cache“-Dateien beim erneuten Prüfen nicht neu geladen werden.
+// Gemerkt/ETag nur für ausdrücklich zwischenspeicherbare Antworten (public/no-cache/max-age, nicht no-store/private – API-Antworten sind meist einmalig).
+const GZC = new Map();
 function sendGz(req, res, status, body, type, headers) {
   const ae = String(req.headers["accept-encoding"] || "");
-  if (/\bgzip\b/.test(ae) && body && body.length > 1024) {
-    const gz = zlib.gzipSync(Buffer.isBuffer(body) ? body : Buffer.from(String(body)), { level: 6 });
-    res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8", "Content-Encoding": "gzip", "Vary": "Accept-Encoding" }, headers || {}));
-    return res.end(gz);
+  const buf = body == null ? null : Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+  if (!buf || buf.length <= 1024) return send(res, status, body, type, headers);
+  const h = Object.assign({ "Content-Type": type || "text/plain; charset=utf-8", "Vary": "Accept-Encoding" }, headers || {});
+  const cc = String(h["Cache-Control"] || ""), cacheable = status === 200 && /public|no-cache|max-age/i.test(cc) && !/no-store|private/i.test(cc);
+  let tag = "";
+  if (cacheable) {
+    tag = '"' + crypto.createHash("sha1").update(buf).digest("base64").replace(/[^\w]/g, "").slice(0, 22) + '"';
+    if (!h.ETag) h.ETag = tag;
+    if (String(req.headers["if-none-match"] || "").split(/\s*,\s*/).some(t => t.replace(/^W\//, "") === h.ETag)) { res.writeHead(304, { ETag: h.ETag, "Cache-Control": h["Cache-Control"] || "no-cache", Vary: "Accept-Encoding" }); return res.end(); }
   }
-  return send(res, status, body, type, headers);
+  const enc = /\bbr\b/.test(ae) ? "br" : /\bgzip\b/.test(ae) ? "gzip" : "";
+  if (!enc) return send(res, status, buf, h["Content-Type"], h);
+  const key = cacheable && buf.length < 4e6 ? enc + tag + buf.length : ""; let z = key && GZC.get(key);
+  if (!z) {
+    z = enc === "br" ? zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: key ? 9 : 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } }) : zlib.gzipSync(buf, { level: 6 });
+    if (key) { GZC.set(key, z); if (GZC.size > 300) GZC.delete(GZC.keys().next().value); }
+  }
+  h["Content-Encoding"] = enc; res.writeHead(status, h); return res.end(z);
 }
 // ---- ZIP (ohne Abhängigkeiten, "stored" – Anhänge sind meist schon komprimiert) ----
 const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
@@ -5419,7 +5435,7 @@ const server = http.createServer((req, res) => {
     // Druckshop-Produktbilder über unseren Server (Bild-Proxy nur für images.ctfassets.net) – print-bild.js
     if (p.indexOf("/print/bild/") === 0) return void guard(res, PRINT_BILD.handle(req, res, u, p, send));
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
-    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/merchant.xml" || p === "/print/weihnachten" || p === "/print/weihnachten/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0 || /^\/print\/[a-z0-9]+(-[a-z0-9]+)*\/?$/.test(p) || /^\/print\/l\/[a-z0-9]{4,12}\/?$/i.test(p) || /^\/print\/[a-z0-9]+(-[a-z0-9]+)*\.md$/.test(p) || /^\/print\/ratgeber\/[a-z0-9-]+\/?$/.test(p)) {   // + sprechende Produktadressen /print/<slug>
+    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/print.css" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/merchant.xml" || p === "/print/weihnachten" || p === "/print/weihnachten/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0 || /^\/print\/[a-z0-9]+(-[a-z0-9]+)*\/?$/.test(p) || /^\/print\/l\/[a-z0-9]{4,12}\/?$/i.test(p) || /^\/print\/[a-z0-9]+(-[a-z0-9]+)*\.md$/.test(p) || /^\/print\/ratgeber\/[a-z0-9-]+\/?$/.test(p)) {   // + sprechende Produktadressen /print/<slug>
       return void guard(res, PRINT.handlePublic(req, res, u, p));
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)

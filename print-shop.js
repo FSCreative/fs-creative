@@ -19,7 +19,8 @@ const MM_PT = 72 / 25.4;
 // nur Österreich: Print.com liefert direkt aus den NL – bei Lieferung nach DE wäre es kein ig. Erwerb in AT mehr (Dreiecksgeschäft bzw. DE-Registrierung)
 const COUNTRIES = { AT: "Österreich" };
 const PLZ = { AT: /^\d{4}$/, DE: /^\d{5}$/ };
-const MAX_UPLOAD = 100 * 1000 * 1000;   // Druckdateien max. 100 MB (Simon 13.11.2026; Cloudflare nimmt je Anfrage höchstens 100 MB an)
+const MAX_UPLOAD = 500 * 1000 * 1000;   // Druckdateien max. 500 MB (Simon 13.11.2026) – über 16 MB kommen sie in Stücken (/print/api/chunk), weil Cloudflare je Anfrage höchstens 100 MB annimmt
+const CHUNK_MAX = 16 * 1048576;          // ein Stück (der Browser schickt 8 MB)
 const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", uid: "ATU82622967", email: "simon@fs-creative.at", phone: "+43 664 1430620" };
 
 // Kategorien = Print.com-Produktbaum (Hauptgruppe/Untergruppe als Slug, Namen aus dem Print.com-CMS). Ohne Angabe von Print.com: Stichwort-Regeln als Ersatz.
@@ -327,7 +328,11 @@ module.exports = function (D) {
     async putFile(meta, buf) { if (useDb()) { await (await db()).query("insert into print_file(id,meta,data) values($1,$2::jsonb,$3) on conflict(id) do update set meta=excluded.meta, data=coalesce(excluded.data, print_file.data)", [meta.id, JSON.stringify(meta), buf || null]); return meta; }
       const d = path.join(FDIR(), "files"); if (buf) fs.writeFileSync(path.join(d, meta.id + ".pdf"), buf); wrJson(path.join(d, meta.id + ".json"), meta); return meta; },
     async fileMeta(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select meta from print_file where id=$1", [id]); return r.rows[0] ? r.rows[0].meta : null; } return rdJson(path.join(FDIR(), "files", id + ".json")); },
-    async fileData(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select data from print_file where id=$1", [id]); return r.rows[0] ? r.rows[0].data : null; } try { return fs.readFileSync(path.join(FDIR(), "files", id + ".pdf")); } catch (e) { return null; } },
+    async fileData(id) { if (!okId(id)) return null; if (useDb()) { const c = await db(), r0 = await c.query("select octet_length(data) as n, case when octet_length(data) <= 128000000 then data end as data from print_file where id=$1", [id]);
+      const n = r0.rows[0] && r0.rows[0].n; if (n == null) return null; if (r0.rows[0].data) return r0.rows[0].data;
+      /* große Dateien (bis 500 MB) in 64-MB-Stücken lesen: am Stück käme der Wert als Hex-Text mit doppelter Größe – über 1 GB schafft weder Postgres noch Node */
+      const parts = [], P = 64 * 1048576; for (let off = 0; off < +n; off += P) { const r = await c.query("select substring(data from $2 for $3) as d from print_file where id=$1", [id, off + 1, P]); if (!r.rows[0] || !r.rows[0].d) return null; parts.push(r.rows[0].d); }
+      return Buffer.concat(parts); } try { return fs.readFileSync(path.join(FDIR(), "files", id + ".pdf")); } catch (e) { return null; } },
     async listFiles() { if (useDb()) { const r = await (await db()).query("select meta from print_file"); return r.rows.map(x => x.meta); } const d = path.join(FDIR(), "files"); return fs.readdirSync(d).filter(f => /\.json$/.test(f)).map(f => rdJson(path.join(d, f))).filter(Boolean); },
     async delFile(id) { if (!okId(id)) return; if (useDb()) { await (await db()).query("delete from print_file where id=$1", [id]); return; } ["pdf", "json"].forEach(x => { try { fs.unlinkSync(path.join(FDIR(), "files", id + "." + x)); } catch (e) {} }); },
     // nur Bestellungen mit Rechnung, nur die nötigen Felder (für invoiceIndex – schont die Datenbank)
@@ -4394,6 +4399,44 @@ module.exports = function (D) {
   }
   async function readJson(req, max) { if (req.__json) return req.__json; const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
+  // ── Upload in Stücken (Simon 13.11.2026, bis 500 MB): POST /print/api/chunk (X-Upload-Size) → id+k; PUT /print/api/chunk/<id>?k=&off= je Stück (der Reihe nach,
+  //    nach Abbruch weiter ab „got“); danach der normale Upload-Aufruf ohne Body mit X-Print-Chunk/X-Print-Chunk-Key. Stücke liegen auf der Platte (tmp), nicht im Speicher.
+  const CHUNKS = new Map(), CH_DIR = path.join(require("os").tmpdir(), "fs-print-chunks");
+  const chunkFile = id => path.join(CH_DIR, id + ".part");
+  function chunkDrop(id) { CHUNKS.delete(id); fs.promises.unlink(chunkFile(id)).catch(() => {}); }
+  function chunkSweep() { const old = Date.now() - 3 * 3600e3; for (const [id, c] of CHUNKS) if (c.at < old) chunkDrop(id); }
+  setInterval(chunkSweep, 15 * 60e3).unref();
+  try { fs.rmSync(CH_DIR, { recursive: true, force: true }); } catch (e) {}   // Reste vom letzten Start
+  function chunkFree() { try { const st = fs.statfsSync(CH_DIR); return st.bavail * st.bsize; } catch (e) { return null; } }
+  function chunkGet(id, k) { const c = /^c[0-9a-f]{24}$/.test(String(id)) && CHUNKS.get(id); return c && /^[0-9a-f]{32}$/.test(String(k || "")) && crypto.timingSafeEqual(Buffer.from(c.k), Buffer.from(String(k))) ? c : null; }
+  function chunkInit(ip, size) {
+    if (!(size > 0)) throw bad("Dateigröße fehlt");
+    if (size > MAX_UPLOAD) throw Object.assign(new Error("Datei zu groß (max. " + Math.floor(MAX_UPLOAD / 1e6) + " MB)"), { status: 413 });
+    chunkSweep(); fs.mkdirSync(CH_DIR, { recursive: true });
+    let mine = 0, all = 0; for (const c of CHUNKS.values()) { all += c.size; if (c.ip === ip) mine += c.size; }
+    if (mine + size > 2 * MAX_UPLOAD) throw Object.assign(new Error("Es laufen schon große Uploads – bitte erst diese fertig hochladen"), { status: 429 });
+    const free = chunkFree(); if (free != null && free - (all + size) < 1024 * 1048576) throw Object.assign(new Error("Gerade sehr viel los – bitte in ein paar Minuten erneut versuchen"), { status: 503 });
+    const id = "c" + crypto.randomBytes(12).toString("hex"), k = crypto.randomBytes(16).toString("hex");
+    fs.writeFileSync(chunkFile(id), ""); CHUNKS.set(id, { k, ip, size, got: 0, at: Date.now(), busy: false });
+    return { id, k, chunk: 8 * 1048576 };
+  }
+  async function chunkPut(req, c, id, off) {
+    if (c.busy) { req.resume(); return { status: 409, got: c.got }; }
+    if (off !== c.got) { req.resume(); return { status: 409, got: c.got }; }
+    c.busy = true;
+    try { const buf = await readBody(req, CHUNK_MAX); if (!buf.length || c.got + buf.length > c.size) return { status: 400, error: "Stück passt nicht zur Datei" };
+      await fs.promises.appendFile(chunkFile(id), buf); c.got += buf.length; c.at = Date.now(); return { status: 200, got: c.got };
+    } finally { c.busy = false; }
+  }
+  // Datei eines Uploads: aus den Stücken (X-Print-Chunk) oder wie bisher direkt aus dem Body
+  async function uploadBody(req, max) {
+    const id = req.headers["x-print-chunk"]; if (!id) return readBody(req, max);
+    req.resume(); const c = chunkGet(String(id), req.headers["x-print-chunk-key"]);
+    if (!c) throw bad("Upload abgelaufen – bitte die Datei erneut hochladen");
+    if (c.got !== c.size || c.busy) throw bad("Upload unvollständig – bitte erneut versuchen");
+    if (c.size > max) throw Object.assign(new Error("Datei zu groß (max. " + Math.floor(max / 1e6) + " MB)"), { status: 413 });
+    try { return await fs.promises.readFile(chunkFile(String(id))); } finally { chunkDrop(String(id)); }
+  }
   const J0 = J;
   const feedId = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8);   // wie im Merchant-Feed
   // Freigabe vor dem Druck (Datencheck mit Grafikaufbereitung bzw. nach Datenaustausch durch Simon): aufbereitete Datei + Stand der Freigabe
@@ -4433,6 +4476,7 @@ module.exports = function (D) {
   }
   // Version aus dem Inhalt der Shop-Dateien: beim Umschalten eines Deploys kann eine Anfrage noch beim alten Server landen – der liefert dann seine
   // (alte) Datei nur unter seiner eigenen Version aus, für fremde Versionen ohne Zwischenspeichern (siehe unten), sonst bliebe alter Code stundenlang im Cache
+  const ASSET_BUF = {};   // Shop-Dateien einmal je Start lesen (ändern sich nur mit Deploy)
   const ASSET_V = (() => { try { const h = crypto.createHash("sha1"); ["print/app.js", "print/print.css", "print/designer.js", "print/templates.js", "print.html"].forEach(f => { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (e) {} }); return h.digest("hex").slice(0, 12); }
     catch (e) { return String(process.env.RAILWAY_GIT_COMMIT_SHA || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12); } })();
   // Aktionsbanner in der Kopfzeile: aktiver Gutschein mit banner:true bzw. WILLKOMMEN10 (endet automatisch mit Ablauf/Deaktivierung im Cockpit)
@@ -4509,10 +4553,11 @@ module.exports = function (D) {
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
-      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js") {
-        let js = ""; try { js = fs.readFileSync(path.join(__dirname, "print", p.slice(7))); } catch (e) { return D.send(res, 404, "Not found"); }
+      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/print.css") {
+        let js = ""; try { js = ASSET_BUF[p] || (ASSET_BUF[p] = fs.readFileSync(path.join(__dirname, "print", p.slice(7)))); } catch (e) { return D.send(res, 404, "Not found"); }
         const vq = u && u.searchParams ? u.searchParams.get("v") : "";
-        return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": !vq || vq === ASSET_V || vq === "2" ? "no-cache" : "no-store" });
+        /* Speed 13.11.2026: mit aktueller Versionsnummer (= Prüfsumme der Dateien) darf Cloudflare/der Browser die Datei 1 Jahr behalten – jeder Deploy hat einen neuen Link */
+        return D.sendGz(req, res, 200, js, p.slice(-4) === ".css" ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8", { "Cache-Control": vq && vq === ASSET_V ? "public, max-age=31536000, immutable" : !vq || vq === "2" ? "no-cache" : "no-store" });
       }
       // Eigene Kontaktseite des Druckshops (Wunsch Simon 05.11.2026): Chat, Telefon, Mail und Formular (Anfrage landet wie gewohnt unter Leads, Thema „Druck“)
       if ((p === "/print/kontakt" || p === "/print/kontakt/") && (req.method === "GET" || req.method === "HEAD")) {
@@ -4780,6 +4825,24 @@ module.exports = function (D) {
         let d = null; try { d = JSON.parse(Buffer.from(buf).toString("utf8")); } catch (e) {}
         return J(res, 200, { ok: true, draft: d });
       }
+      if (p === "/print/api/chunk" && req.method === "POST") {
+        req.resume(); if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (limited("chunkinit", ip, 300, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" });
+        return J(res, 200, Object.assign({ ok: true }, chunkInit(ip, parseInt(String(req.headers["x-upload-size"] || ""), 10))));
+      }
+      const chm = p.match(/^\/print\/api\/chunk\/(c[0-9a-f]{24})$/);
+      if (chm) {
+        if (!sameOrigin(req)) { req.resume(); return J(res, 403, { ok: false, error: "forbidden" }); }
+        const c = chunkGet(chm[1], u.searchParams.get("k"));
+        if (!c) { req.resume(); return J(res, 404, { ok: false, error: "Upload abgelaufen – bitte die Datei erneut hochladen" }); }
+        if (req.method === "GET") return J(res, 200, { ok: true, got: c.got, size: c.size });
+        if (req.method === "DELETE") { req.resume(); chunkDrop(chm[1]); return J(res, 200, { ok: true }); }
+        if (req.method === "PUT") {
+          if (limited("chunk", ip, 6000, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" }); }
+          const r = await chunkPut(req, c, chm[1], parseInt(String(u.searchParams.get("off") || ""), 10));
+          return J(res, r.status, r.status === 200 ? { ok: true, got: r.got } : { ok: false, got: r.got, error: r.error || "Stück an falscher Stelle" });
+        }
+      }
       // Druckfreigabe durch den Kunden (nur mit gültigem Bestell-Link): „Freigeben“ oder „Änderung wünschen“ mit Text – Simon bekommt Push und Mail, bestellt wird von ihm
       const rum = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/reupload$/);
       if (rum && req.method === "POST") {   // neue Druckdatei nach „Druckdaten abgelehnt“ (Body = Datei, ?t=Bestell-Token&motif=i)
@@ -4790,7 +4853,7 @@ module.exports = function (D) {
         const mi = parseInt(String(u.searchParams.get("motif") || ""), 10), motif = rp.motifs && mi >= 0 && mi < rp.motifs ? mi : rp.motifs ? 0 : -1;
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druckdaten")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
+        try { const buf = await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
           meta = await handleUpload(buf, name, { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, motifs: rp.motifs || undefined });
         } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht verarbeitet werden" }); } finally { rel(); }
         const view = fileView(meta);
@@ -4953,7 +5016,7 @@ module.exports = function (D) {
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druck")), 120).replace(/[\\/:*?"<>|]/g, "_");
         await uploadTarget(input).catch(e => { req.resume(); throw e; });
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
+        try { const buf = await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
         if (input.cover && meta && !meta.cover) { meta.cover = true; await store.putFile(meta); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
@@ -4976,7 +5039,7 @@ module.exports = function (D) {
         if (!base || base.orderId || (fm && fm.orderId) || base.kind !== "upload" || !base.size || (+base.sides || 1) !== 2) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "rueckseite")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await addBackSide(base, buf, sb ? sb.name : name); } finally { rel(); }
+        try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await addBackSide(base, buf, sb ? sb.name : name); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/page" && req.method === "POST") {   // einzelne Seite ersetzen (Body = Datei; Header X-Print-File/X-Print-Token/X-Print-Page = 1 … Seitenzahl)
@@ -4986,7 +5049,7 @@ module.exports = function (D) {
         if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !((+fm.pages || 1) >= 2) || !(pg >= 1 && pg <= +fm.pages)) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "seite")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await replacePage(fm, pg - 1, buf, sb ? sb.name : name); } finally { rel(); }
+        try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await replacePage(fm, pg - 1, buf, sb ? sb.name : name); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/reorder" && req.method === "POST") {   // Seiten per Drag & Drop umsortieren: { fileId, token, order: [1,0,2,…] }
@@ -5045,7 +5108,7 @@ module.exports = function (D) {
       if (p === "/print/api/design") {
         if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;   // Platz in der Warteschlange vor dem Einlesen (große Anfragen nicht alle gleichzeitig im Speicher)
-        try { const b = await readJson(req, MAX_UPLOAD); meta = await handleDesign(b); } finally { rel(); }
+        try { const b = await readJson(req, 100e6); meta = await handleDesign(b); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/draft") {
@@ -5520,7 +5583,7 @@ module.exports = function (D) {
         if (isLogo(prod)) { req.resume(); return J(res, 400, { ok: false, error: "Für Textilien/Werbeartikel bitte das Logo direkt im Shop hochladen – Angebot mit Druckdatei geht bei Drucksachen" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "gestaltung.pdf")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot(); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
+        try { const buf = await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
         meta.briefId = br.id; meta.keepUntil = new Date(Date.now() + 120 * 864e5).toISOString(); await store.putFile(meta);
         return J(res, 200, Object.assign({ ok: true, product: prod.title }, fileView(meta)));
       }
@@ -5540,7 +5603,7 @@ module.exports = function (D) {
         if (!fm || !fm.size) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "seite")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
+        try { const buf = await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
           const pages = +fm.pages || 1; if (!(pg >= 1 && pg <= pages + 1)) return J(res, 400, { ok: false, error: "Diese Seite gibt es nicht" });
           meta = pg === pages + 1 ? await addBackSide(fm, buf, name) : await replacePage(fm, pg - 1, buf, name);
         } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Seite konnte nicht übernommen werden" }); } finally { rel(); }
@@ -5588,7 +5651,7 @@ module.exports = function (D) {
         const ref = await store.fileMeta(Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs[0].fileId : o.fileId); if (!ref || !ref.size) { req.resume(); return J(res, 400, { ok: false, error: "Für diesen Auftrag nicht möglich" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "datei")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD), type = sniff(buf); if (!type) return J(res, 415, { ok: false, error: "Nur PDF, JPG oder PNG" });
+        try { const buf = await uploadBody(req, MAX_UPLOAD), type = sniff(buf); if (!type) return J(res, 415, { ok: false, error: "Nur PDF, JPG oder PNG" });
           let pdf = buf; if (type !== "pdf") pdf = (await withPdf(() => placeFile(buf, type, ref.size, +ref.bleed || 0, { mode: "fill" }, 1))).pdf; else { const info = await pdfInfoX(buf); if (info.encrypted) return J(res, 400, { ok: false, error: "Die PDF ist geschützt" }); }
           const info2 = await pdfInfoX(pdf); meta = await newFile("pool", name.replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, { product: ref.product, sel: ref.sel, size: ref.size, bleed: ref.bleed, sides: ref.sides, pages: info2.pages || 1 }, [], { orderId: o.id });
         } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht abgelegt werden" }); } finally { rel(); }
@@ -5670,7 +5733,7 @@ module.exports = function (D) {
         const mi = u.searchParams.get("motif"), motif = mi != null && mi !== "" && Array.isArray(o.motifs) && o.motifs.length > 1 ? parseInt(mi, 10) : -1;
         if (motif !== -1 && !(motif >= 0 && motif < o.motifs.length)) { req.resume(); return J(res, 400, { ok: false, error: "Motiv unbekannt" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druckdaten.pdf")), 120).replace(/[\\/:*?"<>|]/g, "_");
-        const buf = await readBody(req, MAX_UPLOAD); if (sniff(buf) !== "pdf") return J(res, 415, { ok: false, error: "Bitte eine druckfertige PDF hochladen" });
+        const buf = await uploadBody(req, MAX_UPLOAD); if (sniff(buf) !== "pdf") return J(res, 415, { ok: false, error: "Bitte eine druckfertige PDF hochladen" });
         const oldId = motif > -1 ? o.motifs[motif].fileId : o.fileId, old = await store.fileMeta(oldId) || {};
         const target = { product: old.product || o.product.key, sel: old.sel, size: old.size, bleed: old.bleed, sides: old.sides, multi: false };
         const info = await pdfInfoX(buf); if (info.encrypted) return J(res, 400, { ok: false, error: "Die PDF ist verschlüsselt/geschützt" }); target.pages = info.pages;
