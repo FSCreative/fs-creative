@@ -550,7 +550,7 @@
   var PDESC = { "fut-cards": "Deine eigene Fußball-Spielerkarte im Ultimate-Team-Look (FC 27) – mit Foto, Rating und Namen, 20 × 30 cm auf stabiler Forex-Platte.", "vinyl-cut-letters": "Einzeln aus Folie geschnittene Buchstaben, Zahlen und Logos in vielen Farben – mit Übertragungsfolie zum einfachen Aufkleben, bis zu 8 Jahre haltbar.",
     "doming-stickers": "Gel-Aufkleber mit 3D-Effekt – geliefert auf Bögen: mehrere pro Bogen, einzeln zum Abziehen (nicht einzeln geschnitten)." };
   function fixLabels(list) { (list || []).forEach(function (p) { if (PDESC[p.key]) p.desc = PDESC[p.key];
-    (p.props || []).forEach(function (pr) { if (pr.slug === "number_of_contour_lines") { pr.title = "Anzahl Konturen (Schnittformen)"; pr.options.forEach(function (o) { o.name = o.slug + (o.slug === "1" ? " Kontur" : " Konturen"); o.desc = CONTOUR_HELP; delete o.more; }); }
+    (p.props || []).forEach(function (pr) { if (pr.slug === "number_of_contour_lines") { pr.title = "Anzahl Konturen (Schnittformen)"; pr.options.forEach(function (o) { o.name = /^\d+$/.test(o.slug) ? o.slug + (o.slug === "1" ? " Kontur" : " Konturen") : /^no|none|geen/i.test(o.slug) ? "Keine Kontur" : String(o.name || o.slug).replace(/_/g, " "); o.desc = CONTOUR_HELP; delete o.more; }); }
     });
     (p.props || []).forEach(function (pr) { plainLbl(pr); var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
 
@@ -835,6 +835,7 @@
       for (var i = 0; i < A_FMT.length; i++) if (Math.abs(a - A_FMT[i][0]) <= 2 && Math.abs(b - A_FMT[i][1]) <= 2) return A_FMT[i][2];
       return Math.abs(a - b) <= 2 ? "quadratisch" : ""; }
     if (pr.slug === "material") { var g = n.match(/(\d{2,4})\s*g/), w = g ? +g[1] : 0; if (!w) return "";
+      if (/folie|film|vinyl|polyme|monome|jelly|tako|pvc|\bpp\b|_pp_|static|\bdot\b|teslin|synaps|magnet/i.test(n)) return "";   // Folien: Grammatur ≠ Papierstärke („fest, wie dünner Karton“ bei YUPOJelly war falsch, 14.11.2026)
       var t = w <= 90 ? "dünn wie Prospektpapier" : w <= 120 ? "etwas fester als Druckerpapier" : w <= 170 ? "typische Flyer-Stärke" : w <= 250 ? "fest, wie dünner Karton" : w <= 350 ? "steif wie eine Postkarte" : "sehr steif, wie eine dicke Visitenkarte";
       var f = /gl(ä|a)nz|gloss/i.test(n) ? "glänzend, Farben leuchten" : /matt|silk|satin/i.test(n) ? "matt, edel und beschreibbar" : /ungestrichen|offset|natur|recycl/i.test(n) ? "natürlich, gut beschreibbar" : "";
       return t + (f ? " · " + f : ""); }
