@@ -180,17 +180,21 @@ M.changed=function(){
 };
 M.setOv=function(m,fields){ Object.assign(m,fields); if(m.local) return; OV[m.id]=Object.assign(OV[m.id]||{},fields,{at:Date.now()}); };
 M.refresh=function(){ if(F.current==="post") F.render(); else F.renderNav(); (M.refreshHooks||[]).forEach(function(h){ try{ h(); }catch(e){} }); };
+/* Fingerabdruck des sichtbaren Stands: Abrufe ohne echte Änderung bauen die Ansicht nicht neu – sonst lädt die offene Mail neu, springt nach oben und die Markierung zum Kopieren geht verloren (Simon 14.11.2026) */
+function viewSig(){ return S.messages.map(function(m){ return [m.id,m.folder,m.read?1:0,m.starred?1:0,m.deleted?1:0,m.answered?1:0,m.forwarded?1:0,m.subject,m.date,(m.preview||"").length,(m.body||"").length,(m.attachments||[]).length].join("|"); }).join("\n")+"#"+S.err+"#"+(S.srvFlag?(S.srvFlag.stale?1:0)+S.srvFlag.error:"")+"#"+S.folders.length+"#"+S.accounts.length; }
+M.viewSig=viewSig;
 /* Zustand des Mail-Dienstes: meldet der Server „alter Stand“/Fehler (stale/error), merken – mit Zeitpunkt, damit der neuere Abruf gewinnt */
 function srvFlags(md){ if(md&&("stale" in md||"error" in md)) S.srvFlag={stale:!!md.stale,error:typeof md.error==="string"?md.error:"",at:Date.now()}; }
 M.loadFull=function(){
   if(M._lf) return M._lf; S.loading=true;
+  var sig0=viewSig(), wasLoaded=S.full;
   M._lf=F.api("/admin/api/mail?fresh=1").then(function(md){
     var d={mail:md}; S.loading=false; M._lf=null;
     if(md&&Array.isArray(md.messages)){ S.err=""; S.etag=md.etag||""; srvFlags(md); ingest(md,true);
       /* Der Server puffert den Abruf ~20 s: solange Verschiebungen noch nicht sichtbar sind, später erneut laden */
       if(Object.keys(OV).some(function(k){ return "folder" in OV[k]; })) M.scheduleReload(12000); }
     else S.err=md&&md.error==="mail_not_available"?"Der Mail-Dienst antwortet gerade nicht.":"Postfach konnte nicht geladen werden.";
-    M.refresh(); return d;
+    var lr=S.lrend; S.lrend=false; if(!wasLoaded||lr||viewSig()!==sig0) M.refresh(); return d;
   }).catch(function(){ S.loading=false; M._lf=null; S.err="Keine Verbindung zum Server."; M.refresh(); });
   return M._lf;
 };
@@ -201,7 +205,7 @@ setInterval(function(){
   POLL_BUSY=true;
   F.api("/admin/api/mail?etag="+encodeURIComponent(S.etag||"")).then(function(md){
     POLL_BUSY=false;
-    if(md&&!md.same&&Array.isArray(md.messages)){ S.etag=md.etag||""; srvFlags(md); ingest(md,true); M.refresh(); }
+    if(md&&!md.same&&Array.isArray(md.messages)){ var sig0=viewSig(); S.etag=md.etag||""; srvFlags(md); ingest(md,true); if(viewSig()!==sig0) M.refresh(); }
   }).catch(function(){ POLL_BUSY=false; });
 },4000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden&&S.full&&Date.now()-S.fullAt>10000) M.loadFull(); });
@@ -892,7 +896,7 @@ function subLine(){
   var accs=accounts(), bad=accs.filter(function(a){ return a.configured===false||a.ok===false; });
   var s=(multiAcc()?accs.length+" Konten":(accs[0].user||S.account||"Postfach"))+(bad.length?" · "+bad.map(function(a){return a.label;}).join(", ")+" nicht verbunden":"");
   s+=" · "+(S.fetchedAt?"aktualisiert "+(relTime(S.fetchedAt)||new Date(S.fetchedAt).toLocaleString("de-AT")):"noch kein Abruf");
-  if(S.loading) s+=" · lädt …"; if(S.err) s+=" · "+S.err;
+  if(S.loading){ s+=" · lädt …"; S.lrend=true; } if(S.err) s+=" · "+S.err;
   return esc(s);
 }
 function vPost(){
@@ -936,7 +940,7 @@ function mobileBar(c){
   var me=UI.macct==="all"?"FS":initials(accInfo(UI.macct).label,accInfo(UI.macct).user);
   var srch=UI.msrch||!!UI.mq;
   return '<div class="mapp"><button type="button" class="mapp-av" data-act="mfoldsheet" aria-label="Konten und Ordner wechseln" title="Konten und Ordner"><span>'+esc(me)+'</span>'+(c.inboxUnread&&UI.mf!=="inbox"?'<i></i>':'')+'</button>'+
-    '<button type="button" class="mapp-t" data-act="mfoldsheet" aria-haspopup="dialog"><b>'+esc(UI.mq?"Suche":curFolderLabel())+' '+ic("chev")+'</b><span>'+esc(acc)+(c.inboxUnread?' · '+c.inboxUnread+' ungelesen':'')+(S.loading?' · lädt …':'')+'</span></button>'+
+    '<button type="button" class="mapp-t" data-act="mfoldsheet" aria-haspopup="dialog"><b>'+esc(UI.mq?"Suche":curFolderLabel())+' '+ic("chev")+'</b><span>'+esc(acc)+(c.inboxUnread?' · '+c.inboxUnread+' ungelesen':'')+(S.loading?(S.lrend=true,' · lädt …'):'')+'</span></button>'+
     '<button type="button" class="mapp-i'+(srch?" on":"")+'" data-act="msrch" aria-label="Suchen" aria-pressed="'+srch+'">'+F.svg("search")+'</button></div>'+
     (srch?'<div class="mapp-s"><div class="msearch">'+F.svg("search")+'<input class="f" id="msearchm" data-keepfocus="msearchm" type="search" enterkeyhint="search" placeholder="In allen Ordnern suchen" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'"></div><button type="button" class="mapp-x" data-act="msrchx">Abbrechen</button></div>':'');
 }

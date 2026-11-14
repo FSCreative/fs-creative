@@ -4308,8 +4308,10 @@ async function handleAdmin(req, res, u, p) {
     const raw = await mailSnapshot(), m = mailVisible(raw), fl = mailFlags();   // stale/error: alter Stand bzw. Grund (z. B. Mail-Dienst antwortet nicht)
     if (!m) return send(res, 503, JSON.stringify({ error: "mail_not_available", detail: fl.error || MAIL_SNAP.err || "" }), TYPES[".json"], { "Cache-Control": "no-store" });
     const known = u.searchParams.get("etag") || "";
-    if (known && m.etag && known === m.etag && m === raw) return send(res, 200, JSON.stringify(Object.assign({ same: true, etag: m.etag }, fl)), TYPES[".json"], { "Cache-Control": "no-store" });
-    return sendGz(req, res, 200, JSON.stringify(fl.stale || fl.error ? Object.assign({}, m, fl) : m), TYPES[".json"], { "Cache-Control": "no-store" });
+    // ETag inkl. der gerade von Regeln ausgeblendeten Mails – vorher galt „gefiltert“ immer als geändert, das Cockpit lud alle 4 s neu (Vorschau sprang nach oben, Markierung weg)
+    const et0 = raw.etag || MAIL_SNAP.etag || "", et = !et0 ? "" : m === raw ? et0 : et0 + ":h" + crypto.createHash("sha1").update(raw.messages.filter(x => MAIL_RULES.hidden(x.id)).map(x => x.id).join(",")).digest("hex").slice(0, 10);
+    if (known && et && known === et) return send(res, 200, JSON.stringify(Object.assign({ same: true, etag: et }, fl)), TYPES[".json"], { "Cache-Control": "no-store" });
+    return sendGz(req, res, 200, JSON.stringify(Object.assign({}, m, { etag: et }, fl.stale || fl.error ? fl : {})), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   // Skikaiser-Steuerung (Namen, App-Einstellungen, Rangliste, Fehler): leitet an POST <App-Backend>/v1/stats/<was> weiter, Token bleibt am Server
   if (p === "/admin/api/skikaiser/steuer" && req.method === "POST") {

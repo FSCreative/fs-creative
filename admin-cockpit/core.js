@@ -225,7 +225,8 @@ FSC.render = function(){
   var inner=FSC.scrollSnap(main);
   /* Eingabefeld mit Fokus (z. B. Suche) wird nicht ersetzt, sondern das lebende Feld zurückgesetzt – sonst verschluckt das Handy beim schnellen Tippen Buchstaben (Simon 14.11.2026) */
   var live=keep&&main.contains(ae)&&/^(INPUT|TEXTAREA)$/.test(ae.tagName)?ae:null;
-  main.innerHTML=html; try{ if(v.after) v.after(); }catch(e){ console.error(e); }
+  var frs=samev?FSC.framesKeep(main):null;
+  main.innerHTML=html; if(frs) FSC.framesPut(main,frs); try{ if(v.after) v.after(); }catch(e){ console.error(e); }
   if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){
     if(live&&q!==live&&q.tagName===live.tagName&&q.type===live.type){ var sS=live.selectionStart,sE=live.selectionEnd; ["placeholder","class","aria-label"].forEach(function(a){ var x=q.getAttribute(a); if(x!=null&&live.getAttribute(a)!==x) live.setAttribute(a,x); }); q.replaceWith(live); live.focus({preventScroll:true}); try{ live.setSelectionRange(sS,sE); }catch(e){} }
     else { q.focus({preventScroll:true}); try{ q.setSelectionRange(selS,selS); }catch(e){} } } }
@@ -233,6 +234,30 @@ FSC.render = function(){
   window.scrollTo(0,y);
   if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh();
   if(FSC.renderSide) try{ FSC.renderSide(); }catch(e){ console.error(e); }   // Statusleiste rechts (zside.js)
+};
+/* Geöffnete Mail (iframe.mframe) beim Neuaufbau behalten: sonst lädt sie neu, springt nach oben und die Markierung zum Kopieren ist weg (Simon 14.11.2026).
+   Chrome/Edge: moveBefore verschiebt das iframe ohne Neuladen. Sonst (Safari): Höhe übernehmen, nach dem Laden Scrollstand + Markierung wiederherstellen. */
+FSC.framesKeep = function(main){
+  var olds=[].slice.call(main.querySelectorAll("iframe.mframe")); if(!olds.length) return null;
+  var mv=typeof main.moveBefore==="function", park=null;
+  if(mv){ park=document.getElementById("__fpark"); if(!park){ park=document.createElement("div"); park.id="__fpark"; park.setAttribute("aria-hidden","true"); park.style.cssText="position:fixed;left:-10000px;top:0;width:900px;height:10px;overflow:hidden;visibility:hidden"; document.body.appendChild(park); } }
+  return olds.map(function(f){
+    var r={f:f,src:f.getAttribute("srcdoc"),h:f.style.height||"",mv:mv,park:park,st:0,sel:null};
+    if(!mv){ try{ var d=f.contentDocument, se=d.scrollingElement||d.documentElement; r.st=se.scrollTop; var g=d.getSelection(); if(g&&g.rangeCount&&!g.isCollapsed){ var rg=g.getRangeAt(0); r.sel={a:FSC._npath(d.body,rg.startContainer),ao:rg.startOffset,b:FSC._npath(d.body,rg.endContainer),bo:rg.endOffset}; } }catch(e){} }
+    else { try{ park.moveBefore(f,null); }catch(e){ r.mv=false; } }
+    return r; });
+};
+FSC._npath = function(root,n){ var p=[]; while(n&&n!==root){ var i=0,c=n; while((c=c.previousSibling)) i++; p.unshift(i); n=n.parentNode; } return n===root?p:null; };
+FSC._nget = function(root,p){ var n=root; for(var i=0;i<p.length&&n;i++) n=n.childNodes[p[i]]; return n; };
+FSC.framesPut = function(main,frs){
+  [].slice.call(main.querySelectorAll("iframe.mframe")).forEach(function(n){
+    var src=n.getAttribute("srcdoc"), r=frs.filter(function(x){ return !x.used&&x.src===src; })[0]; if(!r) return; r.used=true;
+    if(r.mv){ try{ ["class","style","title"].forEach(function(a){ var v=n.getAttribute(a); if(v!=null) r.f.setAttribute(a,v); }); if(r.h&&!n.style.height) r.f.style.height=r.h; n.parentNode.moveBefore(r.f,n); n.remove(); return; }catch(e){} }
+    if(r.h) n.style.height=r.h;
+    n.addEventListener("load",function(){ try{ var d=n.contentDocument, se=d.scrollingElement||d.documentElement; if(r.st) se.scrollTop=r.st;
+      if(r.sel&&r.sel.a&&r.sel.b){ var a=FSC._nget(d.body,r.sel.a), b=FSC._nget(d.body,r.sel.b); if(a&&b){ var rg=d.createRange(); rg.setStart(a,r.sel.ao); rg.setEnd(b,r.sel.bo); var g=d.getSelection(); g.removeAllRanges(); g.addRange(rg); } } }catch(e){} },{once:true});
+  });
+  frs.forEach(function(r){ if(r.mv&&!r.used&&r.f.parentNode&&r.f.parentNode.id==="__fpark") r.f.remove(); });
 };
 FSC.go = function(id){ FSC._forceRender=true; FSC.current=id; try{ history.replaceState(null,"","#"+id); }catch(e){} FSC.closeDrawer(); FSC.closeModal(); FSC.render(); window.scrollTo(0,0); };
 
