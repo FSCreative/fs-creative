@@ -223,8 +223,12 @@ FSC.render = function(){
   if(samev&&html===FSC._lastHtml&&main.firstChild){ if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh(); if(FSC.renderSide) try{ FSC.renderSide(); }catch(e){} return; }
   FSC._lastView=v.id; FSC._lastHtml=html; document.body.setAttribute("data-view",v.id);
   var inner=FSC.scrollSnap(main);
+  /* Eingabefeld mit Fokus (z. B. Suche) wird nicht ersetzt, sondern das lebende Feld zurückgesetzt – sonst verschluckt das Handy beim schnellen Tippen Buchstaben (Simon 14.11.2026) */
+  var live=keep&&main.contains(ae)&&/^(INPUT|TEXTAREA)$/.test(ae.tagName)?ae:null;
   main.innerHTML=html; try{ if(v.after) v.after(); }catch(e){ console.error(e); }
-  if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){ q.focus({preventScroll:true}); try{ q.setSelectionRange(selS,selS); }catch(e){} } }
+  if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){
+    if(live&&q!==live&&q.tagName===live.tagName&&q.type===live.type){ var sS=live.selectionStart,sE=live.selectionEnd; ["placeholder","class","aria-label"].forEach(function(a){ var x=q.getAttribute(a); if(x!=null&&live.getAttribute(a)!==x) live.setAttribute(a,x); }); q.replaceWith(live); live.focus({preventScroll:true}); try{ live.setSelectionRange(sS,sE); }catch(e){} }
+    else { q.focus({preventScroll:true}); try{ q.setSelectionRange(selS,selS); }catch(e){} } } }
   if(samev) FSC.scrollRestore(main,inner);
   window.scrollTo(0,y);
   if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh();

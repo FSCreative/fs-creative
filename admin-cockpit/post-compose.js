@@ -194,6 +194,20 @@ function host(){ var h=document.getElementById("mcompose"); if(!h){ h=document.c
 function $(id){ return document.getElementById(id); }
 function composeAcct(){ var s=$("mcFrom"); return (s&&s.value)||C.account||M.primaryAcct(); }
 function accList(){ var a=M.accounts().filter(function(x){ return x.configured!==false; }); return a.length?a:M.accounts(); }
+function tbi(d){ return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>'; }
+var TBI={ul:'<circle cx="4.5" cy="6.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17.5" r="1.3" fill="currentColor" stroke="none"/><path d="M9 6.5h11M9 12h11M9 17.5h11"/>',
+  ol:'<path d="M10 6.5h10M10 12h10M10 17.5h10"/><path d="M3.5 5l1.5-1v5M3.2 14.2c.3-.8 2.6-1 2.6.4 0 1.2-2.6 2-2.6 3.4h2.8" stroke-width="1.6"/>',
+  q:'<path d="M5 6v12M9 8h11M9 12h11M9 16h7"/>',
+  link:'<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+  clr:'<path d="M5 6h11M10.5 6l-3 12M14 14l6 6M20 14l-6 6"/>'};
+/* Handy: Fenster an den sichtbaren Bereich über der Tastatur anpassen (iOS verkleinert sonst nichts) */
+function vvFit(){ var h=document.getElementById("mcompose"), vv=window.visualViewport; if(!h) return;
+  if(!C.open||!vv||!(window.matchMedia&&matchMedia("(max-width:900px)").matches)){ h.style.height=""; h.style.top=""; h.classList.remove("kb"); return; }
+  h.style.height=Math.round(vv.height)+"px"; h.style.top=Math.round(vv.offsetTop)+"px"; h.classList.toggle("kb",vv.height<window.innerHeight-140); }
+if(window.visualViewport){ visualViewport.addEventListener("resize",vvFit); visualViewport.addEventListener("scroll",vvFit); }
+/* Formatleiste zeigt an, was am Cursor aktiv ist */
+document.addEventListener("selectionchange",function(){ if(!C.open) return; var b=document.getElementById("mcBody"); if(!b||!b.contains(document.activeElement)&&document.activeElement!==b) return;
+  document.querySelectorAll("#mcompose .mctb [data-cmd]").forEach(function(x){ var c=x.getAttribute("data-cmd"); if(!/^(bold|italic|underline|insertUnorderedList|insertOrderedList)$/.test(c)) return; var on=false; try{ on=document.queryCommandState(c); }catch(e){} x.classList.toggle("on",on); x.setAttribute("aria-pressed",on?"true":"false"); }); });
 function openCompose(title,to,subj,bodyHtml,opts){
   opts=opts||{};
   if(C.open){ saveIfMeaningful(true); }
@@ -221,9 +235,9 @@ function openCompose(title,to,subj,bodyHtml,opts){
       '<div class="mcf"><label for="mcSubj">Betreff</label><input class="f" id="mcSubj" autocomplete="off" value="'+esc(subj||"")+'"></div>'+
     '</div>'+
     '<div class="mced-wrap"><div class="mctb" role="toolbar" aria-label="Formatierung">'+
-      '<button type="button" data-cmd="bold" title="Fett (⌘B)"><b>F</b></button><button type="button" data-cmd="italic" title="Kursiv (⌘I)"><i>K</i></button><button type="button" data-cmd="underline" title="Unterstrichen (⌘U)"><u>U</u></button><span class="tsep"></span>'+
-      '<button type="button" data-cmd="insertUnorderedList" title="Aufzählung">• Liste</button><button type="button" data-cmd="insertOrderedList" title="Nummerierung">1. Liste</button><button type="button" data-cmd="formatBlock" data-arg="blockquote" title="Zitat">Zitat</button><button type="button" data-cmd="createLink" title="Link einfügen">Link</button><span class="tsep"></span>'+
-      '<button type="button" data-cmd="removeFormat" title="Formatierung entfernen">Format entfernen</button></div>'+
+      '<button type="button" data-cmd="bold" title="Fett (⌘B)" aria-label="Fett"><b class="tg">B</b></button><button type="button" data-cmd="italic" title="Kursiv (⌘I)" aria-label="Kursiv"><i class="tg">I</i></button><button type="button" data-cmd="underline" title="Unterstrichen (⌘U)" aria-label="Unterstrichen"><u class="tg">U</u></button><span class="tsep"></span>'+
+      '<button type="button" data-cmd="insertUnorderedList" title="Aufzählung" aria-label="Aufzählung">'+tbi(TBI.ul)+'<span class="tl">Liste</span></button><button type="button" data-cmd="insertOrderedList" title="Nummerierung" aria-label="Nummerierung">'+tbi(TBI.ol)+'<span class="tl">Nummern</span></button><button type="button" data-cmd="formatBlock" data-arg="blockquote" title="Zitat" aria-label="Zitat">'+tbi(TBI.q)+'<span class="tl">Zitat</span></button><button type="button" data-cmd="createLink" title="Link einfügen" aria-label="Link einfügen">'+tbi(TBI.link)+'<span class="tl">Link</span></button><span class="tsep"></span>'+
+      '<button type="button" data-cmd="removeFormat" title="Formatierung entfernen" aria-label="Formatierung entfernen">'+tbi(TBI.clr)+'<span class="tl">Format entfernen</span></button></div>'+
       '<div class="mclink" id="mcLink" hidden><input class="f" id="mcLinkUrl" placeholder="https://…" aria-label="Link-Adresse"><button type="button" class="btn primary" data-act="mclinkok">Einfügen</button><button type="button" class="btn" data-act="mclinkx">Abbrechen</button></div>'+
       '<div id="mcBody" class="mced" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Nachricht"></div></div>'+
     '<input type="file" id="mcFile" multiple hidden>'+
@@ -237,7 +251,7 @@ function openCompose(title,to,subj,bodyHtml,opts){
   '</div>';
   $("mcBody").innerHTML=html;
   ["mcTo","mcCc","mcBcc"].forEach(rcPaint);
-  h.hidden=false; document.body.classList.add("mc-open");
+  h.hidden=false; document.body.classList.add("mc-open"); vvFit();
   renderAtts();
   if(opts.fwdFrom) loadFwdAtts(opts.fwdFrom);
   C.initial=sigNow();
@@ -284,7 +298,7 @@ function saveIfMeaningful(silent){
   var d=data(), sigLen=htmlToText(getSig(composeAcct()).html).replace(/\s+/g,"").length;
   if(dirty()&&(d.to||d.subject||d.text.replace(/\s+/g,"").length>sigLen+2)) saveDraft(silent);
 }
-function hide(){ clearTimeout(C.autoT); C.open=false; var h=host(); h.hidden=true; h.innerHTML=""; document.body.classList.remove("mc-open"); if(F.current==="post") F.render(); }
+function hide(){ clearTimeout(C.autoT); C.open=false; vvFit(); var h=host(); h.hidden=true; h.innerHTML=""; document.body.classList.remove("mc-open"); if(F.current==="post") F.render(); }
 function closeCompose(){ if(!C.open) return; saveIfMeaningful(false); hide(); }
 M.closeCompose=closeCompose;
 M.composeOpen=function(){ return C.open; };
@@ -471,7 +485,9 @@ F.css([
 ".mced-wrap{display:grid;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}",
 ".mced-wrap:focus-within{border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
 ".mctb{display:flex;flex-wrap:wrap;gap:2px;padding:5px;background:var(--panel-solid,var(--sunk));border-bottom:1px solid var(--line)}",
-".mctb button{border:0;background:none;border-radius:8px;padding:4px 10px;min-height:32px;font-size:13px;color:var(--ink-2);white-space:nowrap}",
+".mctb button{border:0;background:none;border-radius:8px;padding:4px 10px;min-height:32px;font-size:13px;color:var(--ink-2);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}",
+".mctb button svg{width:17px;height:17px;flex:none}.mctb .tg{font-size:15px;font-family:Georgia,serif;min-width:12px;text-align:center}",
+".mctb button.on{background:var(--sel,var(--sunk));color:var(--ink)}",
 ".mctb button:hover{background:var(--hover,var(--sunk));color:var(--ink)}",
 ".mctb .tsep{width:1px;background:var(--line);margin:4px 4px;flex:none}",
 ".mclink{display:flex;gap:6px;padding:6px;background:var(--panel-solid,var(--sunk));border-bottom:1px solid var(--line)}",
@@ -495,21 +511,41 @@ F.css([
 ".mcac button[aria-selected=true],.mcac button:hover{background:var(--hover,var(--sunk))}",
 ".att.bad{border-color:var(--bad);color:var(--bad)}",
 "@media (max-width:900px){",
-"  #mcompose{padding:0;place-items:stretch}",
-"  #mcompose .mcd{width:100%;max-width:none;max-height:100%;height:100%;border-radius:0;border:0;padding:calc(10px + env(safe-area-inset-top,0px)) 14px calc(14px + env(safe-area-inset-bottom,0px));animation:none}",
+/* Handy (Simon 14.11.2026): Vollbild wie eine Mail-App – Felder als Zeilen mit Haarlinien, Text randlos, Formatleiste mit Symbolen direkt über der Tastatur */
+"  #mcompose{padding:0;place-items:stretch;align-items:stretch;inset:0 0 auto 0;height:100dvh}",
+"  #mcompose .mcd{width:100%;max-width:none;max-height:none;height:100%;border-radius:0;border:0;padding:0;gap:0;display:flex;flex-direction:column;overflow:hidden;animation:none;background:var(--panel-solid,var(--panel))}",
 "  #mcompose .mcd:before{display:none}",
-"  .mchead .mcx{order:-1;width:44px;height:44px;border-radius:50%}",
-"  .mchead h2{font-size:17px}",
-"  #mcSaved{display:none}",
-"  .mcsend-top{display:inline-flex;min-height:44px;padding:0 18px;border-radius:99px;font-size:15px}",
+"  #mcompose .mcd>*{flex:none}",
+"  .mchead{padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;gap:8px;border-bottom:1px solid var(--line)}",
+"  .mchead .mcx{order:-1;width:40px;height:40px;border-radius:50%;background:var(--sunk);border:0}",
+"  .mchead h2{font-size:17px;font-weight:700}",
+"  #mcSaved{display:inline;font-size:12px}",
+"  .mcsend-top{display:inline-flex;min-height:40px;padding:0 16px;border-radius:99px;font-size:15px;font-weight:700}",
+"  .mcfields{gap:0;padding:0 16px}",
+"  .mcf{grid-template-columns:54px minmax(0,1fr) auto;gap:6px;min-height:50px;border-bottom:1px solid var(--line)}",
+"  .mcf>label{font-weight:500;color:var(--ink-3);font-size:14.5px}",
+"  .mcin,.mcf>select.f,.mcf>#mcSubj{border:0!important;background:none!important;box-shadow:none!important;padding-left:0;min-height:46px;font-size:16px}",
+"  .mcin input.f{font-size:16px}",
+"  .mcchip{min-height:32px;font-size:14.5px}.mcchip button{width:30px;height:30px}",
+"  .mced-wrap{flex:1 1 auto!important;min-height:0;display:flex;flex-direction:column;border:0;border-radius:0;box-shadow:none!important;background:#fff}",
+"  .mced{flex:1 1 auto;min-height:0;max-height:none;padding:16px;font-size:16px;line-height:1.55;-webkit-overflow-scrolling:touch}",
+"  .mctb{order:3;flex:none;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:4px;padding:6px 10px;min-height:52px;align-items:center;border-top:1px solid var(--line);border-bottom:0;background:var(--panel-solid,var(--sunk))}",
+"  .mctb::-webkit-scrollbar{display:none}",
+"  .mctb button{flex:none;width:44px;height:40px;min-height:40px;padding:0;justify-content:center;border-radius:10px;color:var(--ink)}",
+"  .mctb button:active,.mctb button.on{background:var(--sel,var(--sunk))}",
+"  .mctb button svg{width:21px;height:21px}.mctb .tg{font-size:18px}.mctb .tl{display:none}",
+"  .mctb .tsep{height:24px;align-self:center;margin:0 2px}",
+"  .mclink{order:2;border-top:1px solid var(--line);border-bottom:0}.mclink .f{font-size:16px}",
+"  #mcAtts{padding:8px 16px 0}#mcAtts:empty{display:none}",
+"  #mcErr:empty{display:none}#mcErr{padding:8px 16px}",
+"  .mcsig{margin:8px 12px}",
+"  #mcompose .foot{display:flex;flex-wrap:nowrap;justify-content:space-between;gap:8px;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));margin:0;border-top:1px solid var(--line);background:var(--panel-solid,var(--panel))}",
+"  #mcompose .foot>.row{flex-wrap:nowrap;gap:8px;align-items:center}",
+"  #mcompose .foot .btn{min-height:42px;border-radius:99px;padding:0 14px}",
+"  #mcompose .foot .btn.icon{flex:none;width:42px;padding:0;justify-content:center}",
 "  .mcd .foot .mcsend-bot{display:none}",
-"  #mcompose .foot{background:var(--panel-solid,var(--panel))}",
-"  #mcompose .foot .btn.icon{flex:none;width:46px;padding:0;justify-content:center}",
-"  .mced{min-height:42vh;max-height:none}",
-"  .mcf{grid-template-columns:50px minmax(0,1fr) auto}",
-"  .mcin{min-height:46px}",
-"  .mcchip{min-height:32px;font-size:14px}.mcchip button{width:30px;height:30px}",
-"  .mctb{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.mctb::-webkit-scrollbar{display:none}.mctb button{flex:none;min-height:38px}",
+/* Tastatur offen: Fußleiste weg, damit Text und Formatleiste Platz haben */
+"  #mcompose.kb .foot,#mcompose.kb #mcAtts{display:none}",
 "}"
 ].join("\n"));
 })();

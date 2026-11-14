@@ -999,7 +999,7 @@ F.listen("keydown",".mav[data-act]",function(el,e){ if(e.key===" "||e.key==="Ent
 /* Suche: Liste erst nach 120 ms Tipp-Pause neu aufbauen (bei vielen Mails sonst zäh); eine neue Suche beginnt immer mit dem Filter „Alle“;
    Auswahl wird auf die neuen Treffer gekürzt */
 var mqT=0;
-F.listen("input","#msearch,#msearchm",function(el){ if(!UI.mq&&el.value) UI.mfilt="all"; UI.mq=el.value; UI.mshow=150; clearTimeout(mqT); mqT=setTimeout(function(){ serverSearch(); prunePicks(); F.render(); },120); });
+F.listen("input","#msearch,#msearchm",function(el){ if(!UI.mq&&el.value) UI.mfilt="all"; UI.mq=el.value; UI.mshow=150; clearTimeout(mqT); mqT=setTimeout(function(){ serverSearch(); prunePicks(); F.render(); },(window.matchMedia&&matchMedia("(hover:none)").matches)?320:120); });
 F.listen("keydown","#msearch,#msearchm",function(el,e){ if(e.key==="Escape"){ e.stopPropagation(); clearTimeout(mqT); UI.mq=""; UI.msr=null; el.value=""; prunePicks(); F.render(); var s=document.getElementById("msearch"); if(s) s.blur(); } });
 F.listen("input","#mqr",function(el){ UI.mqr=el.value; UI.mqrFor=UI.msel; });
 F.action("msearchx",function(){ clearTimeout(mqT); UI.mq=""; UI.msr=null; prunePicks(); F.render(); var s=document.getElementById("msearch"); if(s) s.focus(); });
@@ -1984,6 +1984,22 @@ F.css([
 "  .mmv.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom,0px));width:auto;max-width:none;max-height:72vh;border-radius:20px;padding:8px;background:linear-gradient(var(--panel),var(--panel)),var(--ground);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 0 0 100vmax rgb(0 0 0/.45);z-index:90;animation:msheetb .2s cubic-bezier(.2,.8,.2,1)}",
 "  .mmv.sheet .mmv-i{min-height:46px;font-size:15.5px}.mmv.sheet .mmv-q{height:42px;font-size:16px}",
 "  .mthbar{padding-left:20px;background:none}.msg-h{padding:12px 6px 12px 16px}",
+/* Lesen modern (14.11.2026): Absender kompakt, KI- und Lead-Knöpfe in einer wischbaren Zeile, Mail als Karte */
+"  .rin{gap:14px}",
+"  .rsubj{font-size:21px;line-height:1.25;font-weight:750}",
+"  .rtags{margin-top:-6px}",
+"  .rsender{grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:center;padding:10px 12px;border-radius:16px;background:var(--sunk)}",
+"  .rsender .rn{font-size:15.5px;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis}",
+"  .rsender .raddr{font-size:13px;font-weight:500;color:var(--ink-3);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;text-align:left;padding:0}",
+"  .rsender .rto{font-size:12.5px;color:var(--ink-3)}",
+"  .rdate{font-size:12.5px;color:var(--ink-3)}",
+"  .rin .rcust,.rin .kibar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding:0 16px;gap:8px;-webkit-overflow-scrolling:touch}",
+"  .rcust::-webkit-scrollbar,.kibar::-webkit-scrollbar{display:none}",
+"  .rcust{margin-top:-4px}.rcust>*,.kibar>*{flex:none}",
+"  .kibar .kibar-t{margin-right:0;padding:0 2px}",
+"  .rin .kibar .btn{min-height:38px;padding:0 14px;font-size:14px;font-weight:600;border-radius:99px;background:color-mix(in srgb,var(--glow) 12%,var(--sunk));border-color:color-mix(in srgb,var(--glow) 30%,transparent);color:var(--ink)}",
+"  .rin .kibar .btn.icon{width:38px;padding:0}",
+"  .mframe{border-radius:16px;box-shadow:0 1px 0 var(--line),0 0 0 1px var(--line)}",
 "}",
 "@media (prefers-reduced-motion:reduce){.mrow2,.mfab,.msw-bg svg,.mptr,.mptr svg,.thn svg,.rcd svg,.mread.swback{transition:none!important}.dialog.sheetdlg,.mctx,.mempty.busy .ei svg,.mptr.spin svg,.msinfo .spin{animation:none!important}}"
 ].join("\n"));
