@@ -544,6 +544,9 @@ F.css([
 "  #mcompose .foot .btn{min-height:42px;border-radius:99px;padding:0 14px}",
 "  #mcompose .foot .btn.icon{flex:none;width:42px;padding:0;justify-content:center}",
 "  .mcd .foot .mcsend-bot{display:none}",
+"  #mcompose .foot [data-act=mcattach]{font-size:0;width:42px;padding:0;justify-content:center;flex:none}#mcompose .foot [data-act=mcattach] svg{width:19px;height:19px}",
+"  #mcompose .foot label.small{font-size:14px}",
+"  .mctb{gap:2px;padding:6px 8px}.mctb button{width:38px}",
 /* Tastatur offen: Fußleiste weg, damit Text und Formatleiste Platz haben */
 "  #mcompose.kb .foot,#mcompose.kb #mcAtts{display:none}",
 "}"
