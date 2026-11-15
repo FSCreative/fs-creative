@@ -6108,6 +6108,27 @@ module.exports = function (D) {
         }
         if (op === "poll") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); return J(res, 200, { ok: true, order: await pollOrder(o) }); }
         if (op === "pollAll") return J(res, 200, { ok: true, polled: await pollAll() });
+        // Liefertermin ändern, solange der Auftrag in Prüfung ist (Simon 15.11.2026: „falls der Kunde das wünscht“) – days: mögliche Tage frisch von Print.com, wish: Tag setzen (date "" = frühester Termin)
+        if (op === "days" || op === "wish") {
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          if (!REVIEW[o.status] && !(o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) throw new Error("Schon bei Print.com bestellt – der Liefertermin lässt sich hier nicht mehr ändern");
+          if (!o.pcOptions) throw new Error("Für diese Bestellung gibt es keine Print.com-Angaben");
+          const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
+          const sh = shipOf(o); if (op === "days") PRICE_CACHE.delete(JSON.stringify([o.product.sku, o.pcOptions, sh.country, sh.zip || ""]));   // Liste immer frisch; „wish“ nutzt dann genau diesen Stand
+          const buy = await purchase0(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency, fresh: true }, sh.country, sh.zip);
+          const days = (buy.days || []).filter(x => x.d > today()), cur = (o.price && (o.price.wish || o.price.deliveryDate)) || "", pu = (o.price && o.price.purchase) || {};
+          if (op === "days") return J(res, 200, { ok: true, days, current: cur, earliest: buy.deliveryDate, shipNow: +pu.shipping || 0 });
+          const want = String(b.date || "") || buy.deliveryDate, day = days.find(x => x.d === want);
+          if (!day) throw new Error("Dieser Liefertag ist bei Print.com nicht (mehr) möglich – bitte neu laden");
+          const oldTotal = +pu.total || 0, prodCost = pu.product != null ? +pu.product : r2(oldTotal - (+pu.shipping || 0)), total = r2(prodCost + day.ship);
+          o.price.purchase = Object.assign({}, pu, { shipping: day.ship, total, method: day.method, carrier: day.carrier, deliveryDate: day.d, wish: day.d === buy.deliveryDate ? undefined : day.d });
+          if (day.d === buy.deliveryDate) delete o.price.wish; else o.price.wish = day.d;
+          o.price.deliveryDate = day.d;
+          if (!pu.actual) o.price.margin = r2((o.price.margin || 0) - (total - oldTotal));
+          hist(o, "Liefertermin im Cockpit geändert: " + (cur ? deDate(cur) : "–") + " → " + deDate(day.d) + " (Versand im Einkauf " + eur(day.ship) + (Math.abs(total - oldTotal) > 0.004 ? ", Marge " + (total > oldTotal ? "−" : "+") + eur(Math.abs(total - oldTotal)) : "") + ")" + (b.by ? " · " + clip(b.by, 40) : ""));
+          stamp(o); await store.putOrder(o);
+          return J(res, 200, { ok: true, order: o });
+        }
         if (op === "requote") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           const prod = await findProduct(o.product.key, null, true);

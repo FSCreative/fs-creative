@@ -546,6 +546,23 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { redirect: "manual" })).status, 302);
     const f = await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE } }); assert.strictEqual(f.headers.get("content-type"), "application/pdf");
   });
+  await t("Cockpit: Liefertermin in Prüfung ändern (days/wish) und wieder auf frühesten Termin", async () => {
+    const iso = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10), d1 = iso(6), d2 = iso(9);
+    M.possOf = u => [{ carrier: "DPD", method: "DPD_B2C", deliveryDate: d1, pickupDate: iso(4), urgency: u, price: { base: 5, cost: 5, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 2, allowedDeliveryPromises: [0] },
+      { carrier: "UPS", method: "UPS_STANDARD", deliveryDate: d2, pickupDate: iso(4), urgency: u, price: { base: 7, cost: 7, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 2, allowedDeliveryPromises: [0] }];
+    try {
+      const m0 = (await admin("/admin/api/print/order?id=" + o1.orderId)).order.price.margin;
+      const dy = await admin("/admin/api/print/op", { op: "days", id: o1.orderId, confirm: true }); assert.strictEqual(dy.ok, true, JSON.stringify(dy));
+      assert.deepStrictEqual(dy.days.map(x => x.d), [d1, d2]); assert.strictEqual(dy.earliest, d1);
+      const w = await admin("/admin/api/print/op", { op: "wish", id: o1.orderId, date: d2, confirm: true }); assert.strictEqual(w.ok, true, JSON.stringify(w));
+      assert.strictEqual(w.order.price.wish, d2); assert.strictEqual(w.order.price.deliveryDate, d2); assert.strictEqual(w.order.price.purchase.method, "UPS_STANDARD");
+      assert.strictEqual(Math.round((m0 - w.order.price.margin) * 100) / 100, 2, "2 € Mehrversand gehen von der Marge ab");
+      assert.ok(w.order.history.some(h => /Liefertermin im Cockpit geändert/.test(JSON.stringify(h))));
+      assert.strictEqual((await admin("/admin/api/print/op", { op: "wish", id: o1.orderId, date: iso(30), confirm: true })).ok, false, "nicht angebotener Tag");
+      const back = await admin("/admin/api/print/op", { op: "wish", id: o1.orderId, date: "", confirm: true }); assert.strictEqual(back.ok, true);
+      assert.strictEqual(back.order.price.wish, undefined); assert.strictEqual(back.order.price.deliveryDate, d1); assert.strictEqual(back.order.price.margin, m0);
+    } finally { delete M.possOf; }
+  });
   await t("Cockpit „Bei Print.com bestellen“: nur mit Bestätigung; POST /orders mit FS-Creative-Rechnungsadresse und signierter Datei-URL; Rechnung gesendet", async () => {
     assert.strictEqual((await admin("/admin/api/print/op", { op: "place", id: o1.orderId })).ok, false);
     const r = await admin("/admin/api/print/op", { op: "place", id: o1.orderId, confirm: true }); assert.strictEqual(r.ok, true, JSON.stringify(r));
