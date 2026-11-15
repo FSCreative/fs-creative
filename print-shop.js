@@ -4651,6 +4651,30 @@ module.exports = function (D) {
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
     return xmasNav(html);
   }
+  // ── Link-Vorschaubilder (print-og.js): Produkt = Print.com-Bild + Logo, Kategorie = beliebtestes Produkt, sonst Bestseller-Collage ──
+  let OGM = null;
+  const ogMod = () => OGM || (OGM = require("./print-og.js")({ render: require("./mkt-render.js"), dir: path.join(DATA_DIR, "print-shop", "og"), logoFile: path.join(__dirname, "logos", "druckshop-logo.svg"), log }));
+  async function ogImage(kind, id) {
+    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), groups = publicGroups(pub);
+    const byPop = l => l.slice().sort((a, b) => (b.best ? 1 : 0) - (a.best ? 1 : 0) || (+b.pop || 0) - (+a.pop || 0));
+    const best = byPop(pub.filter(x => x.img)).slice(0, 4).map(x => x.img);
+    const all = { id: "all", kicker: "Online-Druckerei", title: "Online drucken in Österreich", sub: "Flyer, Visitenkarten, Banner, Textilien & mehr – Preis sofort online", imgs: best };
+    if (kind === "p") { const x = pub.find(y => y.key === id); if (!x) return ogMod().get(all);
+      const sub = clip(String(x.desc || "").replace(/\s+/g, " ").trim(), 70);
+      return ogMod().get({ id: "p-" + id, kicker: x.cat && x.cat.mainName ? x.cat.mainName : "", title: x.title, sub: (sub ? sub + " · " : "") + "Preis sofort online", imgs: x.img ? [x.img] : best }); }
+    if (kind === "c") { const [m, su] = String(id).split("~"), g = groups.find(x => x.slug === m), sg = g && su ? g.subs.find(x => x.slug === su) : null; if (!g) return ogMod().get(all);
+      const list = byPop(pub.filter(x => x.cat && x.cat.main === g.slug && (!sg || x.cat.sub === sg.slug))), top = list.find(x => x.img);
+      return ogMod().get({ id: "c-" + id, kicker: sg ? g.name : "Kategorie", title: sg ? sg.name : g.name, sub: list.length + " Produkte online drucken – Preis sofort, Versand inklusive", imgs: top ? [top.img] : best }); }
+    return ogMod().get(all);
+  }
+  // og:image der Seite auf das passende Vorschaubild setzen (+ Größe, Twitter/X)
+  function ogTag(html, src) {
+    const url = SITE + src;
+    html = html.replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(url));
+    if (html.indexOf('property="og:image:width"') < 0) html = html.replace(/(<meta property="og:image" content="[^"]*"\s*\/?>)/, '$1\n<meta property="og:image:width" content="1200" />\n<meta property="og:image:height" content="630" />');
+    if (/<meta name="twitter:image"/.test(html)) html = html.replace(/(<meta name="twitter:image" content=")[^"]*/, "$1" + escH(url)); else html = html.replace(/(<meta name="twitter:card"[^>]*>)/, '$1\n<meta name="twitter:image" content="' + escH(url) + '" />');
+    return html;
+  }
   async function shopPage(req, res, preview, u, pathKey, appUrl) {
     let html = ""; try { html = printHtmlRaw(); } catch (e) { return D.send(res, 404, "Not found"); }
     html = shell(html, preview);
@@ -4661,6 +4685,8 @@ module.exports = function (D) {
     else if (u && u.searchParams && !String(u.search || "").replace(/^\?/, "")) { try { html = await homeSeo(html); } catch (e) { log("Start-SEO:", e.message); } }   // /print ohne Abfrage: Startseite
     else if (u && u.searchParams && u.searchParams.has("produkte")) { const km = String(u.searchParams.get("kategorie") || ""), ks = String(u.searchParams.get("unter") || "");
       if (/^[\w-]{0,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks)) { try { html = await catSeo(html, km, ks); } catch (e) { log("Kategorie-SEO:", e.message); } } }
+    { const km = u && u.searchParams ? String(u.searchParams.get("kategorie") || "") : "", ks = u && u.searchParams ? String(u.searchParams.get("unter") || "") : "";
+      html = ogTag(html, pk && /^[\w-]+$/.test(pk) ? "/print/og/p/" + pk + ".jpg" : km && /^[\w-]{1,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks) ? "/print/og/c/" + km + (ks ? "~" + ks : "") + ".jpg" : "/print/og/all.jpg"); }
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   // Öffentliche Fehlermeldungen ohne Partnernamen (Simon: Print.com darf für Kunden nie sichtbar sein)
@@ -4672,6 +4698,11 @@ module.exports = function (D) {
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
     if (gated && !open && !admin && !view) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
     if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
+    // Link-Vorschaubild (og:image): /print/og/p/<produkt>.jpg, /print/og/c/<kategorie>[~<unter>].jpg, /print/og/all.jpg (Simon 15.11.2026)
+    { const om = p.match(/^\/print\/og\/(?:(p|c)\/([\w~-]{1,120})|(all))\.jpg$/); if (om && (req.method === "GET" || req.method === "HEAD")) {
+      let f = null; try { f = await ogImage(om[3] ? "all" : om[1], om[2] || ""); } catch (e) { log("OG-Bild:", e.message); }
+      if (!f) return D.send(res, 302, "", "text/plain", { Location: SITE + "/og-image.png", "Cache-Control": "public, max-age=600" });
+      return D.send(res, 200, fs.readFileSync(f), /\.png$/.test(f) ? "image/png" : "image/jpeg", { "Cache-Control": "public, max-age=86400" }); } }
     // Kurzlink /print/l/<id> → gespeicherte Shop-Adresse (Wunsch Simon 06.11.2026: Angebots-Links kürzen)
     { const sm = p.match(/^\/print\/l\/([a-z0-9]{4,12})\/?$/i); if (sm && (req.method === "GET" || req.method === "HEAD")) { const all = await shortGet(), x = all[sm[1].toLowerCase()];
       return D.send(res, 302, "", "text/plain", { Location: x ? x.u : "/print", "Cache-Control": "no-store" }); } }

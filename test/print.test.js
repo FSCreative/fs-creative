@@ -1418,6 +1418,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.ok(!sent.some(m => /nein@|ohne@|pfb07|pfb09|pfb10/.test(m.to)), "ohne Zustimmung, schon bewertet, nicht versendet oder zu alt → keine Mail");
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
   });
+  await t("Link-Vorschaubild: Produkt-, Kategorie- und Startseite verweisen auf /print/og/…, Bild wird erzeugt", async () => {
+    const ph = await (await fetch(B + "/print/visitenkarten")).text();
+    assert.ok(ph.includes('property="og:image" content="https://www.fs-creative.at/print/og/p/visitenkarten.jpg"'), "Produkt-Vorschaubild");
+    assert.ok(ph.includes('property="og:image:width" content="1200"') && ph.includes('name="twitter:image"'));
+    const ch = await (await fetch(B + "/print?produkte&kategorie=outdoor-advertising")).text(); assert.ok(/og\/c\/outdoor-advertising\.jpg/.test(ch), "Kategorie-Vorschaubild");
+    const hh = await (await fetch(B + "/print")).text(); assert.ok(/og\/all\.jpg/.test(hh), "allgemeines Vorschaubild");
+    const r = await fetch(B + "/print/og/all.jpg", { redirect: "manual" });
+    assert.ok(r.status === 200 && /image\//.test(r.headers.get("content-type")) || r.status === 302, "Bild oder Rückfall auf og-image.png: " + r.status);
+    const bad = await fetch(B + "/print/og/p/gibt-es-nicht.jpg", { redirect: "manual" }); assert.ok(bad.status === 200 || bad.status === 302);
+  });
   await t("Herkunft der Bestellung: Kanal aus Vorseite, Kampagne oder App; Einstieg ohne fremde Parameter; Region aus der PLZ", async () => {
     const tdir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-or-"));
     try {
