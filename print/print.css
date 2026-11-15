@@ -1385,8 +1385,8 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 .ps-cv-oth a{font-size:13px;padding:6px 10px}
 .ps-cv-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px}
 .ps-cv-n{font-size:13px;color:var(--text-faint);margin:0 6px 0 0}
-.ps-fchip{border:1px solid var(--ps-line2);background:var(--surface);color:var(--text-dim);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;min-height:34px}
-.ps-fchip[aria-pressed="true"]{border-color:var(--accent);color:var(--text);box-shadow:0 0 0 1px var(--accent) inset}
+.ps-fchip,.ps .ps-fchip{border:1px solid var(--ps-line2);background:var(--surface);color:var(--text-dim);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer;min-height:34px}
+.ps-fchip[aria-pressed="true"],.ps .ps-fchip[aria-pressed="true"]{border-color:var(--accent);color:var(--text);box-shadow:0 0 0 1px var(--accent) inset}
 .ps-cv-sort{margin-left:auto;font-size:13px;color:var(--text-faint);display:flex;align-items:center;gap:6px}
 .ps-cv-sort select{border:1px solid var(--ps-line2);background:var(--ps-field);color:var(--text);border-radius:9px;padding:6px 8px;font:inherit;font-size:13px}
 @media(max-width:1100px){.ps-pcs.row{grid-template-columns:repeat(4,minmax(0,1fr))}.ps-pcs.row>:nth-child(n+9){display:none}}
@@ -1402,6 +1402,9 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
   .ps-pcs.row>*{flex:0 0 44%;scroll-snap-align:start}.ps-pcs.row>:nth-child(n+9){display:flex}
   .ps-povg{grid-template-columns:1fr}
   .ps-cv-sort{margin-left:0}
+  /* Filter am Handy: eine wischbare Zeile wie die Unterkategorien darüber (statt umbrechender, ungleich großer Knöpfe) */
+  .ps-cv-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.ps-cv-bar::-webkit-scrollbar{display:none}
+  .ps-cv-bar .ps-cv-n{display:none}.ps-cv-bar .ps-fchip,.ps-cv-sort{flex:none;white-space:nowrap}
 }
 /* Feedback nach der Bestellung */
 .ps-fb{margin:18px auto 6px;max-width:460px;padding:16px 18px;border:1px solid var(--ps-line2);border-radius:16px;background:var(--ps-card);text-align:center}
@@ -2395,15 +2398,15 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-stu-help .g{color:#1d8f3c;font-weight:600}.ps-stu-help .r{color:#d1281c;font-weight:600}
 @media (max-width:900px){.ps-stu-mid{display:block}.ps-stu-help{padding:8px 12px;font-size:13px}}
 /* Umschlag-Feld im Studio (Notizblock mit Deckblatt) */
-.ps-cv{display:block;padding:14px;border-radius:16px;border:2px dashed #f0a020;background:#fff8ec}
-.ps-cv.ok{border:1px solid var(--ps-line2);background:var(--ps-card)}
-.ps-cv-h{display:grid;gap:2px;margin:0 0 10px}.ps-cv-h small{color:var(--text-dim,#5f6778)}
-.ps-cv-b{display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;align-items:start}
-.ps-cv-b p{margin:0 0 6px;font-size:13.5px}
-.ps-cv-sk{width:72px;height:auto}
-.ps-cv .ps-drop.small{margin-top:6px}
+.ps-cov{display:block;padding:14px;border-radius:16px;border:2px dashed #f0a020;background:#fff8ec}
+.ps-cov.ok{border:1px solid var(--ps-line2);background:var(--ps-card)}
+.ps-cov-h{display:grid;gap:2px;margin:0 0 10px}.ps-cov-h small{color:var(--text-dim,#5f6778)}
+.ps-cov-b{display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;align-items:start}
+.ps-cov-b p{margin:0 0 6px;font-size:13.5px}
+.ps-cov-sk{width:72px;height:auto}
+.ps-cov .ps-drop.small{margin-top:6px}
 .ps-ok-t{color:#1d8f3c;font-weight:600}
-.ps-cv-b>div{min-width:0}.ps-cv-b p{overflow-wrap:anywhere}
+.ps-cov-b>div{min-width:0}.ps-cov-b p{overflow-wrap:anywhere}
 .ps-feerows{display:grid;gap:4px;margin:0 0 10px;padding:0 0 10px;border-bottom:1px solid var(--ps-line2);font-size:14px}.ps-feerows>div{display:flex;justify-content:space-between;gap:10px}
 
 /* Warenkorb: Zusammenfassung bei der Summe + Lieferzeit-Pop-up (Simon 12.11.2026) */
