@@ -2970,6 +2970,7 @@
     if (k === "next4") return nextAddr();
     if (k === "order") return order();
     if (k === "retrypay") return retryPay(v);
+    if (k === "ldz") return ldzPick(v);
   });
   root.addEventListener("change", function (e) {
     if (e.target.id === "psAdjS") { adjApply({ scale: +e.target.value / 100 }); return; }
@@ -3472,7 +3473,38 @@
     if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
     root.innerHTML = '<div class="ps-panel ps-status st-' + k + '" data-oid="' + esc(id) + '" data-t="' + esc(t) + '" data-st="' + esc(o.status) + '" data-sig="' + esc(liveSig(o)) + '">' + h + "</div>";
     headUpdate();   // Bestellseite: in der Handy-Leiste nicht „Start“ markieren
-    if ((location.hash === "#freigabe" || location.hash === "#konto" || location.hash === "#neu") && !S.pfScrolled) { var pfx = document.getElementById(location.hash.slice(1)); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); var pw = pfx.querySelector('input[type="password"]'); if (pw) pw.focus({ preventScroll: true }); }, 150); } }   // aus der Mail: Freigabe bzw. „Kundenkonto anlegen“
+    if ((location.hash === "#freigabe" || location.hash === "#konto" || location.hash === "#neu" || location.hash === "#lieferzeit") && !S.pfScrolled) { var pfx = document.getElementById(location.hash.slice(1)); if (pfx) { S.pfScrolled = true; setTimeout(function () { pfx.scrollIntoView({ block: "start", behavior: "smooth" }); var pw = pfx.querySelector('input[type="password"]'); if (pw) pw.focus({ preventScroll: true }); }, 150); } }   // aus der Mail: Freigabe bzw. „Kundenkonto anlegen“
+  }
+  // Lieferzeit nach Druckdaten-Korrektur (Simon 15.11.2026): aktuellen Termin zeigen, ändern; Aufpreis je nach Zahlart auf die Rechnung bzw. per Online-Zahlung
+  function ldzHtml(o, id, t) {
+    if (!o.redate && !(o.extras || []).length && !o.extraOpen) return "";
+    var ex = (o.extras || []).map(function (x) { return "<li>" + esc(x.label) + " · " + eur(o.business ? x.net : x.gross) + (x.paid ? " · bezahlt" : "") + "</li>"; }).join("");
+    return '<div class="ps-pfx ps-ldz" id="lieferzeit"><h3>🚚 Lieferzeit</h3><p>Voraussichtliche Lieferung: <b>' + (o.deliveryDate ? esc(dDue(o.deliveryDate)) : "wird nach der Prüfung festgelegt") + "</b></p>" +
+      (o.extraOpen ? '<p class="pd-muted">Die Zahlung für den Aufpreis ist noch offen – sobald sie eingegangen ist, gilt der neue Termin.</p>' : "") + (ex ? '<ul class="ps-ldz-x">' + ex + "</ul>" : "") +
+      (o.redate ? '<p class="pd-muted">Weil die Druckdaten neu gekommen sind, kann sich der Termin verschoben haben. Du kannst ihn hier anpassen – auch schneller, gegen Aufpreis.</p><button type="button" class="ps-btn small" data-act="ldz:' + esc(id) + "|" + esc(t) + '">Lieferzeit ändern</button>' : "") + "</div>";
+  }
+  function ldzPick(v) {
+    var a = String(v).split("|"), id = a[0], t = a[1], base = "/print/api/order/" + encodeURIComponent(id) + "/lieferzeit?t=" + encodeURIComponent(t);
+    var back = document.activeElement, ov = document.createElement("div"); ov.className = "ps-pop ps-daypop"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Lieferzeit ändern");
+    ov.innerHTML = '<div class="ps-pop-c ps-daypop-c"><div class="ps-daypop-h"><div><b>Lieferzeit ändern</b><small>Tippe auf einen Tag</small></div><button type="button" class="ps-pv-x" data-dpx aria-label="Schließen">✕</button></div><div class="ps-daypop-b"><span class="ps-spin"></span> Liefertermine werden geladen …</div></div>';
+    document.body.appendChild(ov); document.documentElement.classList.add("ps-noscroll");
+    var close = function () { document.removeEventListener("keydown", key); ov.remove(); document.documentElement.classList.remove("ps-noscroll"); if (back && back.focus) back.focus(); };
+    var key = function (e) { if (e.key === "Escape") close(); }; document.addEventListener("keydown", key);
+    var J = null, bx = ov.querySelector(".ps-daypop-b");
+    ov.addEventListener("click", function (e) { if (e.target === ov || e.target.closest("[data-dpx]")) { close(); return; }
+      var c = e.target.closest("[data-ld]"); if (!c || !J) return; var d = c.getAttribute("data-ld"), x = J.days.filter(function (y) { return y.d === d; })[0]; if (!x || x.current) return;
+      var go = function () { bx.innerHTML = '<span class="ps-spin"></span> Wird übernommen …';
+        api(base, { d: d }).then(function (r) { if (!r || !r.ok) { bx.innerHTML = '<p class="ps-err">' + esc((r && r.error) || "Das hat nicht geklappt – bitte erneut versuchen.") + "</p>"; return; }
+          if (r.checkoutUrl) { location.href = r.checkoutUrl; return; }
+          close(); toast("Lieferzeit geändert: " + dDue(d)); if (r.order) renderStatus(r.order, id, t); }); };
+      if (!(x.extra > 0.004)) { go(); return; }
+      bx.innerHTML = '<p>Neuer Termin <b>' + esc(dDue(d)) + "</b>" + (x.u !== "standard" ? " (" + esc(x.urgency) + ")" : "") + '.</p><p>Aufpreis: <b>' + eur(x.extra) + "</b>" + (J.business ? " netto" : " inkl. USt") + ".</p><p class=\"pd-muted\">" +
+        (J.pay === "invoice" ? "Der Aufpreis kommt auf deine Rechnung." : "Du bezahlst den Aufpreis gleich online – der neue Termin gilt, sobald die Zahlung eingegangen ist. Die Rechnung dazu bekommst du per Mail.") + '</p><div class="btn-row"><button type="button" class="ps-btn" data-ldback>Zurück</button><button type="button" class="ps-btn primary" data-ldok>' + (J.pay === "invoice" ? "Termin übernehmen" : "Weiter zur Zahlung") + "</button></div>";
+      bx.querySelector("[data-ldok]").onclick = go; bx.querySelector("[data-ldback]").onclick = function () { show(); }; });
+    var show = function () { if (!J.days.length) { bx.innerHTML = '<p class="pd-muted">Gerade sind keine Liefertermine abrufbar – bitte später erneut oder melde dich bei uns.</p>'; return; }
+      bx.innerHTML = (J.current && !J.curOk ? '<p class="ps-err">Der bisherige Termin (' + esc(dDue(J.current)) + ") ist nicht mehr möglich – bitte wähle einen neuen.</p>" : "") + '<p class="pd-muted">Preise ' + (J.business ? "netto" : "inkl. USt") + ', Versand inklusive.</p><div class="ps-ldz-l">' +
+        J.days.map(function (x) { return '<button type="button" class="ps-ldz-d' + (x.current ? " on" : "") + '" data-ld="' + esc(x.d) + '"' + (x.current ? ' aria-current="true"' : "") + "><span><b>" + esc(dDue(x.d)) + "</b>" + (x.u !== "standard" ? ' <em class="ps-ldz-u">' + esc(x.urgency) + "</em>" : "") + "</span><span>" + (x.current ? "aktuell" : x.extra > 0.004 ? "+ " + eur(x.extra) : "ohne Aufpreis") + "</span></button>"; }).join("") + "</div>"; };
+    api(base, null, "GET").then(function (j) { if (!j || !j.ok) { bx.innerHTML = '<p class="ps-err">' + esc((j && j.error) || "Liefertermine konnten nicht geladen werden.") + "</p>"; return; } J = j; show(); });
   }
   // Druckdaten abgelehnt (Wunsch Simon 10.11.2026): Grund anzeigen und neue Datei hochladen – gleiche Prüfung wie im Shop, ersetzt die Druckdatei der Bestellung
   function redoHtml(o, id, t) {
@@ -3480,7 +3512,7 @@
     var files = (o.files || []).map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ");
     var up = function (lab) { return r.canUpload ? '<div class="ps-redo-u">' + (r.motifs ? '<label class="ps-lbl">Motiv <select class="ps-redo-m">' + Array.apply(null, Array(r.motifs)).map(function (_, i) { return '<option value="' + i + '">Motiv ' + (i + 1) + "</option>"; }).join("") + "</select></label>" : "") +
       '<label class="ps-btn primary ps-redo-b">' + lab + '<input type="file" accept="' + ACC_UP + '" data-redoup hidden></label><span class="pd-muted">PDF, JPG oder PNG · max. 500 MB</span></div><div class="ps-redo-p" hidden><span class="ps-spin"></span> <span>Datei wird hochgeladen und geprüft …</span></div><div class="ps-redo-c"></div><p class="ps-err" role="alert" hidden></p>' : ""; };
-    if (r.status === "uploaded") return '<div class="ps-pfx ok" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>✓ Neue Druckdaten sind angekommen</h3><p>Danke! Wir prüfen sie und geben den Auftrag dann in den Druck. Bei Fragen melden wir uns.</p><p>' + files + "</p>" + (r.canUpload ? "<details><summary>Doch eine andere Datei hochladen</summary>" + up("Andere Datei wählen") + "</details>" : "") + "</div>";
+    if (r.status === "uploaded") return ldzHtml(o, id, t) + '<div class="ps-pfx ok" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>✓ Neue Druckdaten sind angekommen</h3><p>Danke! Wir prüfen sie und geben den Auftrag dann in den Druck. Bei Fragen melden wir uns.</p><p>' + files + "</p>" + (r.canUpload ? "<details><summary>Doch eine andere Datei hochladen</summary>" + up("Andere Datei wählen") + "</details>" : "") + "</div>";
     return '<div class="ps-pfx warn" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte neue Druckdaten hochladen</h3><p>Wir haben deine Druckdaten angesehen – so können wir sie leider noch nicht drucken lassen.</p>' +
       (r.reason ? '<p class="ps-pfx-n"><b>Grund:</b> ' + esc(r.reason) + "</p>" : "") + (files ? "<p>Bisherige Datei: " + files + "</p>" : "") + up("Neue Datei hochladen") + "</div>";
   }
@@ -3628,7 +3660,7 @@
   }
   // Status leise aktualisieren: alle ~2 min, nur bei sichtbarem Tab und offenen Bestellungen; wer gerade tippt oder bewertet, wird nicht gestört
   var LIVE = { at: 0 }, LIVE_OPEN = ["paid", "invoice_requested", "ordered", "in_production", "shipped", "problem"];
-  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0, o.proof ? o.proof.status + o.proof.sentAt : "", o.redo ? o.redo.status + o.redo.sentAt + o.redo.uploadedAt : ""].join("|"); }
+  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.deliveryDate || "", (o.extras || []).length, o.extraOpen ? 1 : 0, o.redate ? 1 : 0, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0, o.proof ? o.proof.status + o.proof.sentAt : "", o.redo ? o.redo.status + o.redo.sentAt + o.redo.uploadedAt : ""].join("|"); }
   function liveBusy() {
     var a = document.activeElement; if (a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
     if (root.querySelector('.ps-fb[data-r], .ps-fb [aria-pressed="true"]')) return true;

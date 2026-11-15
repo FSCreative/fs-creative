@@ -2599,7 +2599,7 @@ module.exports = function (D) {
     const c = o.customer, mot = Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs : null;
     const posName = (withNr ? o.nr + " · " : "") + o.product.title + " – " + o.copies + " Stück" + (mot ? " (" + mot.length + " Motive)" : "");
     const posText = (mot ? ["Motive: " + mot.map(m => "Motiv " + m.motif + " × " + m.copies + " Stk.").join(", ")] : []).concat(o.labels.map(l => l[0] + ": " + l[1])).concat(["Lieferzeit: " + (URGENCY_DE[o.urgency] || o.urgency), "inkl. Versand nach " + COUNTRIES[c.country]]).join("\n");
-    return [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []);
+    return [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0) - (o.extras || []).reduce((a, x) => a + x.gross, 0)), taxRate: o.price.rate }].concat((o.extras || []).filter(x => x.inMain).map(x => ({ name: (withNr ? o.nr + " · " : "") + x.label, text: "Geänderte Lieferzeit: " + (URGENCY_DE[x.u] || x.u) + ", Lieferung voraussichtlich " + deDate(x.d), qty: 1, priceGross: x.gross, taxRate: x.rate }))).concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []);
   }
   const paidOnline = o => o.payment.method === "mollie" && o.payment.status === "paid" && !!o.payment.mollieId;   // „Zahlung nachgewiesen“ (transfer_ok) = Überweisung, noch nicht bezahlt
   function invHead(o, nrs) {
@@ -2957,10 +2957,96 @@ module.exports = function (D) {
   }
   const PAY_ST_DE = { canceled: "abgebrochen", expired: "abgelaufen", failed: "fehlgeschlagen" };
   // Mollie-Webhook: nie dem Inhalt trauen, sondern die Zahlung bei Mollie abrufen
+  // ───────── Lieferzeit ändern (Simon 15.11.2026): Kunde nach Druckdaten-Korrektur auf der Bestellseite, Simon im Cockpit ─────────
+  // Aufpreis = Kundenpreis des gewählten Tags − Preis des bisherigen Termins (oder, falls der nicht mehr geht, des günstigsten Tags der bisherigen Stufe).
+  // Kunde: Rechnungskauf → Position im Rechnungsentwurf, Mollie → eigene Zahlung (Termin gilt erst nach Zahlungseingang); Cockpit → eigene Rechnung, sofort gesendet.
+  const canRedate = o => !!o && (!!REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) && !!o.pcOptions && !isLogoKind(o);
+  const custRedate = o => canRedate(o) && !!o.redo && o.redo.status === "uploaded";
+  async function dayChoices(o) {
+    const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
+    const sh = shipOf(o), cust = Object.assign({}, o.customer, { disc: [] }), urgs = (prod.urgency || []).map(u => u.slug).filter(Boolean);
+    if (!urgs.length) urgs.push(o.urgency || "standard");
+    const pm = o.pcOptions && o.pcOptions.printingmethod ? String(o.pcOptions.printingmethod) : undefined;
+    const rs = await Promise.all(urgs.map(async u => { try {
+      const n = normalizeSel(prod, { sel: o.sel, copies: o.copies, urgency: u, custom: o.custom, pm, wish: "" }); n.fresh = true;
+      return { u, n, q: await quote(prod, n, sh.country, sh.zip, cust) }; } catch (e) { return null; } }));
+    const by = {};
+    rs.filter(Boolean).forEach(({ u, n, q }) => (q.days || []).forEach(dd => { if (!(dd.d > today())) return; const pd = ((q.purchase && q.purchase.days) || []).find(x => x.d === dd.d); if (!pd) return;
+      const c = { d: dd.d, u, net: dd.net, gross: dd.gross, ship: pd.ship, method: pd.method, carrier: pd.carrier, product: q.purchase.product, def: q.purchase.def || q.purchase.deliveryDate, pcOpts: n.pcOpts, labels: n.labels };
+      if (!by[dd.d] || c.gross < by[dd.d].gross - 0.004) by[dd.d] = c; }));
+    const days = Object.values(by).sort((a, b) => a.d.localeCompare(b.d)), curD = (o.price && (o.price.wish || o.price.deliveryDate)) || "";
+    const cur = days.find(x => x.d === curD) || null, cheap = l => l.slice().sort((a, b) => a.gross - b.gross)[0] || null;
+    const base = cur || cheap(days.filter(x => x.u === (o.urgency || "standard"))) || cheap(days);
+    days.forEach(x => { x.extraGross = base ? Math.max(0, r2(x.gross - base.gross)) : 0; x.current = !!cur && x.d === cur.d; });
+    return { days, current: curD, curOk: !!cur };
+  }
+  function applyChoice(o, ch, by) {
+    const pu = (o.price && o.price.purchase) || {}, oldTotal = +pu.total || 0, total = r2(ch.product + ch.ship), from = (o.price.wish || o.price.deliveryDate || ""), fromU = o.urgency;
+    o.urgency = ch.u; o.pcOptions = ch.pcOpts; if (Array.isArray(ch.labels) && ch.labels.length) o.labels = ch.labels;
+    o.price.purchase = Object.assign({}, pu, { product: ch.product, shipping: ch.ship, total, method: ch.method, carrier: ch.carrier, deliveryDate: ch.d, wish: ch.d === ch.def ? undefined : ch.d });
+    if (ch.d === ch.def) delete o.price.wish; else o.price.wish = ch.d;
+    o.price.deliveryDate = ch.d;
+    if (!pu.actual) o.price.margin = r2((o.price.margin || 0) - (total - oldTotal));
+    hist(o, "Liefertermin geändert (" + by + "): " + (from ? deDate(from) : "–") + (fromU !== ch.u ? " · " + (URGENCY_DE[fromU] || fromU) : "") + " → " + deDate(ch.d) + " · " + (URGENCY_DE[ch.u] || ch.u) + " (Einkauf " + eur(total) + (Math.abs(total - oldTotal) > 0.004 ? ", " + (total > oldTotal ? "+" : "−") + eur(Math.abs(total - oldTotal)) : "") + ")");
+  }
+  function newExtra(o, ch, by) { const rate = o.price.rate || 0, gross = r2(ch.extraGross), net = r2(gross / (1 + rate / 100));
+    return { id: "X" + rnd(8), kind: "lieferzeit", label: (ch.u !== "standard" ? (URGENCY_DE[ch.u] || ch.u) + "-Zuschlag" : "Aufpreis Liefertermin") + " – Lieferung " + deDate(ch.d), gross, net, vat: r2(gross - net), rate, by, at: nowIso(), d: ch.d, u: ch.u, status: "open" }; }
+  function bookExtra(o, ex) { o.extras = (o.extras || []).concat([ex]); o.price.gross = r2(o.price.gross + ex.gross); o.price.net = r2(o.price.net + ex.net); o.price.vat = r2(o.price.vat + ex.vat); o.price.margin = r2((o.price.margin || 0) + ex.net); }
+  // Rechnungsentwurf mit dem Aufpreis neu anlegen (nur solange er nicht versendet ist) – true = Aufpreis steht jetzt in der Hauptrechnung
+  async function redraft(o) {
+    if (!o.invoice || !o.invoice.id || !o.invoice.draft || o.invoice.sentAt || o.invoice.deleted || !D.deleteInvoice || !D.createInvoice) return false;
+    if (INV_SENT.indexOf(await invoiceStatusOf(o.invoice.id)) > -1) return false;
+    const oldId = String(o.invoice.id), grp = isGroup(o) ? await siblingsOf(o) : [o];
+    await D.deleteInvoice(oldId);
+    for (const x of grp) if (x.invoice && String(x.invoice.id) === oldId) x.invoice = {};
+    if (isGroup(o)) await makeGroupInvoice(o, grp); else await makeInvoice(o);
+    if (!(o.invoice && o.invoice.id)) return false;
+    hist(o, "Rechnungsentwurf mit Aufpreis neu angelegt" + (o.invoice.nr ? " (" + o.invoice.nr + ")" : "")); return true;
+  }
+  // eigene Rechnung für einen Aufpreis anlegen und sofort an den Kunden senden
+  async function extraInvoice(o, ex, paid) {
+    if (!D.createInvoice) throw new Error("Buchhaltung nicht verbunden");
+    const what = ex.label.split(" – ")[0];
+    const r = await D.createInvoice(Object.assign(invHead(o, [o.nr]), { header: "Rechnung " + what + " · Druckauftrag " + o.nr, reference: o.nr,
+      headText: "Aufpreis für die geänderte Lieferzeit Ihres Druckauftrags " + o.nr + "." + (paid && ex.mollieId ? " Bezahlt online – Mollie " + ex.mollieId + "." : ""),
+      footText: (o.price.taxNote ? o.price.taxNote + "\n" : "") + (paid ? "Der Betrag wurde bereits online bezahlt." : "Zahlbar innerhalb von 14 Tagen ohne Abzug."), timeToPay: paid ? 0 : 14,
+      items: [{ name: ex.label, text: o.product.title + " – " + o.copies + " Stück · Lieferzeit " + (URGENCY_DE[ex.u] || ex.u), qty: 1, priceGross: ex.gross, taxRate: ex.rate }] }));
+    ex.invoice = { id: r.id, nr: r.nr || "", at: nowIso() }; hist(o, "Rechnung für " + what + " angelegt" + (r.nr ? " (" + r.nr + ")" : "") + ": " + eur(ex.gross));
+    if (D.sendInvoice) {
+      await D.sendInvoice(r.id, o.customer.email, "Rechnung " + what + " zu deinem Druckauftrag " + o.nr + " · FS Creative",
+        "Hallo " + o.customer.firstName + ",\n\nanbei die Rechnung für die geänderte Lieferzeit deines Druckauftrags " + o.nr + " (Lieferung voraussichtlich " + deDate(ex.d) + ")" + (paid ? " – bereits bezahlt." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
+      ex.invoice.sentAt = nowIso(); if (!ex.invoice.nr && D.invoiceNr) { try { ex.invoice.nr = (await D.invoiceNr(r.id)) || ""; } catch (e) {} }
+      hist(o, "Rechnung " + (ex.invoice.nr || "") + " für " + what + " an den Kunden gesendet");
+    }
+  }
+  async function extraPayment(o, ex) {
+    const c = cfg();
+    const pay = await mollie("POST", "/payments", { amount: { currency: "EUR", value: ex.gross.toFixed(2) }, description: "FS Creative Druck " + o.nr + " Lieferzeit",
+      redirectUrl: c.publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + sig("order", o.id) + "#lieferzeit", webhookUrl: c.publicUrl + "/print/mollie-webhook",
+      metadata: { orderId: o.id, extraId: ex.id }, locale: "de_AT" });
+    ex.mollieId = String(pay.id || ""); ex.status = String(pay.status || "open");
+    return (pay._links && pay._links.checkout && pay._links.checkout.href) || "";
+  }
+  async function extraWebhook(pay, md) {
+    const o = await store.getOrder(String(md.orderId || "")); if (!o) return;
+    const ex = (o.extrasPending || []).find(x => x.id === md.extraId); if (!ex || ex.mollieId !== String(pay.id)) return;
+    const st = String(pay.status || ""), amt = pay.amount && parseFloat(pay.amount.value);
+    if (st !== "paid") { if (ex.status !== st) { ex.status = st; hist(o, "Zahlung Lieferzeit-Aufpreis " + pay.id + ": " + st); await store.putOrder(o); } return; }
+    if (!(Math.abs(amt - ex.gross) < 0.005)) { ex.status = "mismatch"; hist(o, "Zahlung " + pay.id + " (Lieferzeit) mit falschem Betrag " + (pay.amount && pay.amount.value)); await store.putOrder(o); return; }
+    const ch = ex.choice; delete ex.choice; ex.status = "paid"; ex.paidAt = String(pay.paidAt || nowIso());
+    o.extrasPending = (o.extrasPending || []).filter(x => x.id !== ex.id); if (!o.extrasPending.length) delete o.extrasPending;
+    const ok = canRedate(o) && ch;
+    if (ok) applyChoice(o, ch, "Kunde, nach Zahlung"); else hist(o, "Lieferzeit-Aufpreis " + eur(ex.gross) + " bezahlt, aber der Auftrag ist schon bestellt – bitte Termin klären bzw. erstatten");
+    bookExtra(o, ex); await store.putOrder(o);
+    try { await extraInvoice(o, ex, true); } catch (e) { hist(o, "Rechnung für den Aufpreis fehlgeschlagen: " + clip(e.message, 160)); }
+    await store.putOrder(o);
+    if (D.push) D.push("lead", { title: "Lieferzeit geändert: " + o.nr, body: (ok ? "Neuer Termin " + deDate(ch.d) + " · " : "Achtung, schon bestellt · ") + eur(ex.gross) + " Aufpreis bezahlt", url: "/admin#print", tag: "redate-" + o.id }).catch(() => {});
+  }
   async function mollieWebhook(paymentId) {
     if (!/^tr_[A-Za-z0-9]{4,40}$/.test(paymentId)) return;
     const pay = await mollie("GET", "/payments/" + paymentId);
     const md = (pay && pay.metadata) || {};
+    if (md.extraId) return extraWebhook(pay, md);   // Aufpreis Lieferzeit
     if (md.groupId) {   // Warenkorb: eine Zahlung für mehrere Bestellungen
       const ids = String(md.orderIds || "").split(",").filter(Boolean).slice(0, 30), orders = [];
       for (const id of ids) { const x = await store.getOrder(id); if (x && x.groupId === md.groupId && (x.payment.attempts || [x.payment.mollieId]).indexOf(paymentId) > -1) orders.push(x); }
@@ -4607,7 +4693,7 @@ module.exports = function (D) {
   const orderFiles = o => (Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map((m, i) => ({ id: m.fileId, label: "Motiv " + (i + 1) })) : o.fileId ? [{ id: o.fileId, label: "Druckdaten" }] : []).filter(f => f.id).map(f => ({ url: fileLink(f.id), label: f.label }));
   const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
-    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o), redo: redoPublic(o), files: orderFiles(o),
+    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(), proof: proofPublic(o), redo: redoPublic(o), files: orderFiles(o), redate: custRedate(o), extras: (o.extras || []).map(x => ({ label: x.label, gross: x.gross, net: x.net, paid: x.status === "paid" })), extraOpen: (o.extrasPending || []).some(x => x.status === "open"),
     canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
     trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!foundOf(o) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
@@ -5118,6 +5204,35 @@ module.exports = function (D) {
         const grp = o.groupId ? (await store.listOrders()).filter(x => x.groupId === o.groupId && !x.customerId) : [o];
         for (const x of grp.length ? grp : [o]) { x.customerId = c.id; hist(x, "Als Kundenkonto gespeichert (" + c.id + ")"); await store.putOrder(x); }
         return J(res, 200, { ok: true, accountCreated: !c.verified, email: c.email });
+      }
+      // Lieferzeit nach Druckdaten-Korrektur selbst wählen (Simon 15.11.2026): GET = mögliche Tage mit Aufpreis, POST {d} = übernehmen bzw. Aufpreis zahlen
+      const ldm = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/lieferzeit$/);
+      if (ldm) {
+        if (!sigOk("order", ldm[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
+        if (req.method === "POST" && !sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (limited("redate", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
+        const o = await store.getOrder(ldm[1]); if (!o) return J(res, 404, { ok: false, error: "not_found" });
+        if (!custRedate(o)) return J(res, 409, { ok: false, error: canRedate(o) ? "Die Lieferzeit kannst du ändern, sobald die neuen Druckdaten hochgeladen sind" : "Der Auftrag ist schon in Produktion – bitte melde dich bei uns" });
+        const C = await dayChoices(o), biz = o.customer && o.customer.type === "company", rate = o.price.rate || 0;
+        if (req.method === "GET") return J(res, 200, { ok: true, current: C.current, curOk: C.curOk, business: biz, pay: o.payment.method,
+          days: C.days.map(x => ({ d: x.d, u: x.u, urgency: URGENCY_DE[x.u] || x.u, extra: biz ? r2(x.extraGross / (1 + rate / 100)) : x.extraGross, current: x.current })) });
+        if (req.method !== "POST") return J(res, 405, { ok: false, error: "method" });
+        const bd = await readJson(req, 2000), ch = C.days.find(x => x.d === String(bd.d || ""));
+        if (!ch) return J(res, 400, { ok: false, error: "Dieser Liefertag ist nicht mehr möglich – bitte wähle einen anderen" });
+        if (ch.current) return J(res, 200, { ok: true, order: orderPublic(o) });
+        const note = t => { if (D.push) D.push("lead", { title: "Lieferzeit geändert: " + o.nr, body: t, url: "/admin#print", tag: "redate-" + o.id }).catch(() => {}); };
+        if (ch.extraGross <= 0.004) { applyChoice(o, ch, "Kunde"); stamp(o); await store.putOrder(o); note("Neuer Termin " + deDate(ch.d) + " (" + (URGENCY_DE[ch.u] || ch.u) + "), ohne Aufpreis"); return J(res, 200, { ok: true, order: orderPublic(o) }); }
+        if (o.payment.method === "invoice") {
+          applyChoice(o, ch, "Kunde"); const ex = newExtra(o, ch, "Kunde"); ex.inMain = true; bookExtra(o, ex);
+          let inMain = false; try { inMain = await redraft(o); } catch (e) { hist(o, "Rechnungsentwurf mit Aufpreis fehlgeschlagen: " + clip(e.message, 160)); }
+          if (!inMain) { ex.inMain = false; try { await extraInvoice(o, ex, false); } catch (e) { hist(o, "Rechnung für den Aufpreis fehlgeschlagen: " + clip(e.message, 160)); } }
+          stamp(o); await store.putOrder(o); note("Neuer Termin " + deDate(ch.d) + " · Aufpreis " + eur(ex.gross) + (inMain ? " auf der Rechnung" : " als eigene Rechnung"));
+          return J(res, 200, { ok: true, order: orderPublic(o) });
+        }
+        const ex = newExtra(o, ch, "Kunde"); ex.choice = ch; const url = await extraPayment(o, ex);
+        o.extrasPending = [ex]; hist(o, "Kunde wählt Liefertermin " + deDate(ch.d) + " (" + (URGENCY_DE[ch.u] || ch.u) + ") – Aufpreis " + eur(ex.gross) + " über Mollie " + ex.mollieId + " offen"); await store.putOrder(o);
+        if (!url) return J(res, 502, { ok: false, error: "Zahlung konnte nicht gestartet werden – bitte später erneut" });
+        return J(res, 200, { ok: true, checkoutUrl: url });
       }
       m = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})(\/pay)?$/);
       if (m) {
@@ -6140,25 +6255,21 @@ module.exports = function (D) {
         if (op === "poll") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); return J(res, 200, { ok: true, order: await pollOrder(o) }); }
         if (op === "pollAll") return J(res, 200, { ok: true, polled: await pollAll() });
         // Liefertermin ändern, solange der Auftrag in Prüfung ist (Simon 15.11.2026: „falls der Kunde das wünscht“) – days: mögliche Tage frisch von Print.com, wish: Tag setzen (date "" = frühester Termin)
+        // Liefertermin im Cockpit ändern, solange der Auftrag in Prüfung ist – alle Lieferstufen, Aufpreis für den Kunden; charge=true → eigene Rechnung, sofort gesendet
         if (op === "days" || op === "wish") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
-          if (!REVIEW[o.status] && !(o.status === "problem" && !(o.printcom && o.printcom.orderNumber))) throw new Error("Schon bei Print.com bestellt – der Liefertermin lässt sich hier nicht mehr ändern");
-          if (!o.pcOptions) throw new Error("Für diese Bestellung gibt es keine Print.com-Angaben");
-          const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
-          const sh = shipOf(o); if (op === "days") PRICE_CACHE.delete(JSON.stringify([o.product.sku, o.pcOptions, sh.country, sh.zip || ""]));   // Liste immer frisch; „wish“ nutzt dann genau diesen Stand
-          const buy = await purchase0(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency, fresh: true }, sh.country, sh.zip);
-          const days = (buy.days || []).filter(x => x.d > today()), cur = (o.price && (o.price.wish || o.price.deliveryDate)) || "", pu = (o.price && o.price.purchase) || {};
-          if (op === "days") return J(res, 200, { ok: true, days, current: cur, earliest: buy.deliveryDate, shipNow: +pu.shipping || 0 });
-          const want = String(b.date || "") || buy.deliveryDate, day = days.find(x => x.d === want);
-          if (!day) throw new Error("Dieser Liefertag ist bei Print.com nicht (mehr) möglich – bitte neu laden");
-          const oldTotal = +pu.total || 0, prodCost = pu.product != null ? +pu.product : r2(oldTotal - (+pu.shipping || 0)), total = r2(prodCost + day.ship);
-          o.price.purchase = Object.assign({}, pu, { shipping: day.ship, total, method: day.method, carrier: day.carrier, deliveryDate: day.d, wish: day.d === buy.deliveryDate ? undefined : day.d });
-          if (day.d === buy.deliveryDate) delete o.price.wish; else o.price.wish = day.d;
-          o.price.deliveryDate = day.d;
-          if (!pu.actual) o.price.margin = r2((o.price.margin || 0) - (total - oldTotal));
-          hist(o, "Liefertermin im Cockpit geändert: " + (cur ? deDate(cur) : "–") + " → " + deDate(day.d) + " (Versand im Einkauf " + eur(day.ship) + (Math.abs(total - oldTotal) > 0.004 ? ", Marge " + (total > oldTotal ? "−" : "+") + eur(Math.abs(total - oldTotal)) : "") + ")" + (b.by ? " · " + clip(b.by, 40) : ""));
+          if (!canRedate(o)) throw new Error(o.pcOptions && !isLogoKind(o) ? "Schon bei Print.com bestellt – der Liefertermin lässt sich hier nicht mehr ändern" : "Für diese Bestellung lässt sich der Liefertermin hier nicht ändern");
+          const C = await dayChoices(o), pu = (o.price && o.price.purchase) || {};
+          const pub = x => ({ d: x.d, u: x.u, urgency: URGENCY_DE[x.u] || x.u, ship: x.ship, buy: r2(x.product + x.ship), extraGross: x.extraGross, extraNet: r2(x.extraGross / (1 + (o.price.rate || 0) / 100)), current: x.current });
+          if (op === "days") return J(res, 200, { ok: true, days: C.days.map(pub), current: C.current, curOk: C.curOk, earliest: C.days[0] ? C.days[0].d : "", buyNow: +pu.total || 0, business: o.customer && o.customer.type === "company" });
+          const ch = C.days.find(x => x.d === String(b.date || "")) || (!b.date && C.days.find(x => x.u === (o.urgency || "standard")));
+          if (!ch) throw new Error("Dieser Liefertag ist bei Print.com nicht (mehr) möglich – bitte neu laden");
+          applyChoice(o, ch, "Cockpit" + (b.by ? ", " + clip(b.by, 40) : ""));
+          let warn = "";
+          if (b.charge === true && ch.extraGross > 0.004) { const ex = newExtra(o, ch, "Cockpit"); bookExtra(o, ex); await store.putOrder(o);
+            try { await extraInvoice(o, ex, false); } catch (e) { warn = "Termin geändert, aber die Rechnung für den Aufpreis ist fehlgeschlagen: " + clip(e.message, 160); hist(o, warn); } }
           stamp(o); await store.putOrder(o);
-          return J(res, 200, { ok: true, order: o });
+          return J(res, 200, { ok: true, order: o, warn });
         }
         if (op === "requote") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");

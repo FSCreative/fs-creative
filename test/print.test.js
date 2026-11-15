@@ -557,7 +557,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       const w = await admin("/admin/api/print/op", { op: "wish", id: o1.orderId, date: d2, confirm: true }); assert.strictEqual(w.ok, true, JSON.stringify(w));
       assert.strictEqual(w.order.price.wish, d2); assert.strictEqual(w.order.price.deliveryDate, d2); assert.strictEqual(w.order.price.purchase.method, "UPS_STANDARD");
       assert.strictEqual(Math.round((m0 - w.order.price.margin) * 100) / 100, 2, "2 € Mehrversand gehen von der Marge ab");
-      assert.ok(w.order.history.some(h => /Liefertermin im Cockpit geändert/.test(JSON.stringify(h))));
+      assert.ok(w.order.history.some(h => /Liefertermin geändert \(Cockpit/.test(JSON.stringify(h))));
       assert.strictEqual((await admin("/admin/api/print/op", { op: "wish", id: o1.orderId, date: iso(30), confirm: true })).ok, false, "nicht angebotener Tag");
       const back = await admin("/admin/api/print/op", { op: "wish", id: o1.orderId, date: "", confirm: true }); assert.strictEqual(back.ok, true);
       assert.strictEqual(back.order.price.wish, undefined); assert.strictEqual(back.order.price.deliveryDate, d1); assert.strictEqual(back.order.price.margin, m0);
@@ -1045,6 +1045,54 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const od = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(od.order.fileId, okU.j.file.fileId, "Druckdatei der Bestellung ersetzt"); assert.ok(od.order.fileHistory.some(h => h.by === "Kunde"));
     const pl2 = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.strictEqual(pl2.ok, true, JSON.stringify(pl2));
     assert.strictEqual((await ru(await pdfOf(89, 59, 2), "spaet.pdf")).status, 409, "nach dem Bestellen kein Upload mehr");
+  });
+  await t("Lieferzeit nach Druckdaten-Korrektur: Kunde wählt Tag – Mollie-Aufpreis erst nach Zahlung, Rechnungskauf auf der Rechnung, Cockpit mit eigener Rechnung", async () => {
+    const iso = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10), d1 = iso(6), d2 = iso(8);
+    M.possOf = u => [{ carrier: "DPD", method: "DPD_B2C", deliveryDate: d1, pickupDate: iso(4), urgency: u, price: { base: 5, cost: 5, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 2, allowedDeliveryPromises: [0] },
+      { carrier: "UPS", method: "UPS_EXPRESS", deliveryDate: d2, pickupDate: iso(4), urgency: u, price: { base: 15, cost: 15, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 1, allowedDeliveryPromises: [0] }];
+    const mk = async (email, payment) => {
+      const u1 = await upload(await pdfOf(89, 59, 2), "l1.pdf", BC);
+      const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, { customer: Object.assign({}, cust, payment === "invoice" ? { type: "company", company: "Lieferzeit GmbH", uid: "ATU12345678" } : {}, { email }), payment, acceptTerms: true, acceptFagg: true, acceptProof: true }), { "x-forwarded-for": "203.0.113.77" });
+      assert.strictEqual(r.status, 200, JSON.stringify(r.j)); const id = r.j.orderId || r.j.orders[0].id, tok = r.j.token || r.j.orders[0].token;
+      if (payment === "mollie") { const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid }); }
+      return { id, tok };
+    };
+    const redo = async (id, tok) => {
+      assert.strictEqual((await admin("/admin/api/print/op", { op: "redo", id, reason: "Beschnitt fehlt – bitte ergänzen.", send: true, confirm: true })).ok, true);
+      const LZ = "/print/api/order/" + id + "/lieferzeit?t=" + tok;
+      assert.strictEqual((await (await fetch(B + LZ)).json()).ok, false, "erst nach dem Upload");
+      const up = await fetch(B + "/print/api/order/" + id + "/reupload?t=" + tok, { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": "neu.pdf" }), body: await pdfOf(89, 59, 2) }).then(x => x.json()); assert.strictEqual(up.ok, true, JSON.stringify(up));
+      return LZ;
+    };
+    try {
+      // Mollie: Aufpreis über eigene Zahlung, Termin erst nach Zahlungseingang
+      const A = await mk("lz-mollie@example.com", "mollie"), LZ = await redo(A.id, A.tok);
+      const g = await (await fetch(B + LZ)).json(); assert.strictEqual(g.ok, true, JSON.stringify(g)); assert.deepStrictEqual(g.days.map(x => x.d), [d1, d2]);
+      const x2 = g.days.find(x => x.d === d2); assert.ok(x2.extra > 0, "schnellerer Tag kostet Aufpreis"); assert.strictEqual(g.days[0].extra, 0);
+      assert.strictEqual((await post(LZ, { d: iso(40) })).j.ok, false, "nicht angebotener Tag");
+      const pz = await post(LZ, { d: d2 }); assert.ok(pz.j.ok && pz.j.checkoutUrl, JSON.stringify(pz.j));
+      let od = (await admin("/admin/api/print/order?id=" + A.id)).order; assert.notStrictEqual(od.price.deliveryDate, d2, "vor der Zahlung unverändert"); assert.strictEqual(od.extrasPending.length, 1);
+      const inv0 = sevMock.state.invoices.length, ml0 = sevMock.state.invoiceMails.length, pid2 = pz.j.checkoutUrl.split("/").pop();
+      M.payments[pid2].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid2 });
+      od = (await admin("/admin/api/print/order?id=" + A.id)).order;
+      assert.strictEqual(od.price.deliveryDate, d2); assert.strictEqual(od.price.wish, d2); assert.strictEqual(od.price.purchase.method, "UPS_EXPRESS"); assert.ok(!od.extrasPending);
+      assert.strictEqual(od.extras.length, 1); assert.strictEqual(od.extras[0].status, "paid"); assert.strictEqual(od.extras[0].gross, x2.extra);
+      assert.strictEqual(sevMock.state.invoices.length, inv0 + 1, "eigene Rechnung für den Aufpreis"); assert.strictEqual(sevMock.state.invoiceMails.length, ml0 + 1, "sofort gesendet");
+      const xi = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(xi.invoicePosSave.length, 1); assert.ok(/Lieferung/.test(JSON.stringify(xi.invoicePosSave[0])));
+      const pub = (await (await fetch(B + "/print/api/order/" + A.id + "?t=" + A.tok)).json()).order; assert.strictEqual(pub.extras.length, 1); assert.strictEqual(pub.deliveryDate, d2);
+      // Rechnungskauf: Aufpreis kommt als Position in den (neu angelegten) Rechnungsentwurf
+      const Bo = await mk("lz-rechnung@example.com", "invoice"), LZ2 = await redo(Bo.id, Bo.tok);
+      const inv1 = (await admin("/admin/api/print/order?id=" + Bo.id)).order.invoice.id, del0 = sevMock.state.deletedInvoices.length;
+      const pr = await post(LZ2, { d: d2 }); assert.strictEqual(pr.j.ok, true, JSON.stringify(pr.j)); assert.ok(!pr.j.checkoutUrl);
+      const ob = (await admin("/admin/api/print/order?id=" + Bo.id)).order; assert.strictEqual(ob.price.deliveryDate, d2); assert.strictEqual(ob.extras[0].inMain, true);
+      assert.ok(ob.invoice.id && String(ob.invoice.id) !== String(inv1), "Entwurf neu angelegt"); assert.strictEqual(sevMock.state.deletedInvoices.length, del0 + 1);
+      const mi = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.ok(mi.invoicePosSave.some(p => /Lieferung/.test(JSON.stringify(p))), JSON.stringify(mi.invoicePosSave.map(p => p.name)));
+      const sum = mi.invoicePosSave.reduce((a, p) => a + (+p.price || 0) * (+p.quantity || 1), 0); assert.ok(Math.abs(sum - ob.price.gross) < 0.02 || Math.abs(sum - ob.price.net) < 0.02, "Rechnung = Gesamtpreis: " + sum + " / " + ob.price.gross);
+      // Cockpit: zurück auf d1 ohne Aufpreis, dann wieder d2 mit eigener Rechnung
+      const c1 = await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d1, confirm: true }); assert.strictEqual(c1.ok, true, JSON.stringify(c1)); assert.strictEqual(c1.order.price.deliveryDate, d1);
+      const ml1 = sevMock.state.invoiceMails.length, c2 = await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d2, charge: true, confirm: true });
+      assert.strictEqual(c2.ok, true, JSON.stringify(c2)); assert.ok(!c2.warn, c2.warn); assert.strictEqual(c2.order.extras.length, 2); assert.ok(c2.order.extras[1].invoice && c2.order.extras[1].invoice.sentAt); assert.strictEqual(sevMock.state.invoiceMails.length, ml1 + 1);
+    } finally { delete M.possOf; }
   });
   await t("Zahlungsnachweis: Überweisung unterwegs → in Arbeit; Geld kommt später an → keine zweite Bestätigung/Rechnung", async () => {
     const base = { customer: Object.assign({}, cust, { email: "ueberweisung@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };

@@ -2453,3 +2453,12 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-shipf{border:1px solid var(--ps-line);border-radius:14px;padding:12px 14px 4px;margin:10px 0 0}
 .ps-shipf legend{font-weight:700;padding:0 6px}
 .ps-dsnote{font-size:13px;color:var(--text-dim);margin:12px 0 4px;line-height:1.5}
+
+/* Lieferzeit nach Druckdaten-Korrektur (Bestellseite) */
+.ps-ldz{border:1px solid var(--ps-line2);background:var(--ps-card)}
+.ps-ldz-x{margin:6px 0;padding-left:18px;font-size:14px}
+.ps-ldz-l{display:grid;gap:6px;max-height:52vh;overflow:auto;margin-top:8px}
+.ps-ldz-d{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--ps-line2);background:var(--ps-field);color:var(--text);border-radius:12px;padding:11px 14px;font:inherit;font-size:14.5px;cursor:pointer}
+.ps-ldz-d:hover{border-color:var(--accent)}.ps-ldz-d.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;cursor:default}
+.ps-ldz-d>span:last-child{color:var(--text-dim);font-size:13.5px;white-space:nowrap}
+.ps-ldz-u{font-style:normal;font-size:11.5px;font-weight:700;background:#ffd21f;color:#1a1a1a;border-radius:999px;padding:2px 8px;margin-left:6px}
