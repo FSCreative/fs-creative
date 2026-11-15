@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const V = "og4";   // bei Layout-Änderung erhöhen → alle Bilder neu
+const V = "og5";   // bei Layout-Änderung erhöhen → alle Bilder neu
 const W = 1200, H = 630, LW = 660;
 
 module.exports = function createOg(o) {
@@ -38,7 +38,7 @@ module.exports = function createOg(o) {
       ? h("div", { width: LW, height: H, flexWrap: "wrap", background: "#ffffff" }, pics.slice(0, 4).map(p => img(p, { width: LW / 2, height: H / 2, objectFit: "cover" })))
       : pics.length ? h("div", { width: LW, height: H, background: "#ffffff" }, img(pics[0], { width: LW, height: H, objectFit: "cover" }))
         : h("div", { width: LW, height: H, background: "linear-gradient(135deg,#1fb6ff 0%,#e5197d 55%,#ffd21f 100%)" });
-    const t = String(spec.title || ""), fs0 = t.length <= 16 ? 66 : t.length <= 26 ? 56 : t.length <= 40 ? 46 : 38;
+    const t = String(spec.title || ""), lw = Math.max(1, ...t.split(/\s+/).map(w => w.length)), fs0 = Math.max(30, Math.min(t.length <= 16 ? 66 : t.length <= 26 ? 56 : t.length <= 40 ? 46 : 38, Math.floor(430 / (lw * 0.64))));   // längstes Wort muss in die Spalte passen
     const right = h("div", { width: W - LW, height: H, flexDirection: "column", justifyContent: "space-between", padding: "52px 52px 46px", background: "#0f1117", position: "relative" },
       h("div", { position: "absolute", left: 0, top: 0, width: W - LW, height: 8, background: "linear-gradient(90deg,#1fb6ff,#e5197d,#ffd21f)" }),
       logo() ? img(logo(), { width: 330, height: Math.round(330 * (o.logoRatio || 690 / 2170)) }) : h("div", { color: "#fff", fontFamily: "Poppins", fontWeight: 800, fontSize: 40 }, "FS Druckshop"),
