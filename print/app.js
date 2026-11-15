@@ -1565,11 +1565,14 @@
     el.innerHTML = ps.length ? '<h3 class="ps-grp-h">✨ Passend zu deiner Suche <span>' + esc(r.hint || "Vorschläge unserer KI") + '</span></h3><div class="ps-pcs">' + ps.map(cardSm).join("") + "</div>" : "";
     if (ps.length && typeof fromObserve === "function") fromObserve();
   }
+  // Sortieren als Knopf (natives Auswahlfeld unsichtbar darüber) – Kategorien und Suchtreffer gleich (Simon 15.11.2026)
+  function sortBtn() { var SL = { pop: "Beliebt", neu: "Neu", az: "A–Z" }, so = SL[S.sort] ? S.sort : "pop";
+    return '<label class="ps-cv-sort"><span class="ps-cv-sl">Sortieren</span><span class="ps-cv-sv" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg><b>' + SL[so] + '</b></span><select data-sort aria-label="Sortieren">' + Object.keys(SL).map(function (k) { return '<option value="' + k + '"' + (k === so ? " selected" : "") + ">" + SL[k] + "</option>"; }).join("") + "</select></label>"; }
   function gridHtml() {
     var qq = S.q.trim();
     if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, ql); }));
       if (l.length < 6 && qq.length >= 3) setTimeout(function () { aiKick(qq, l.map(function (p) { return p.key; })); }, 0);   // wenig Treffer → KI-Suche ergänzt
-      return (l.length ? '<p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + '<div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
+      return (l.length ? '<div class="ps-cv-bar ps-qbar"><p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + sortBtn() + '</div><div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
       : '<p class="pd-muted" id="psNone" style="padding:20px 0">Keine direkten Treffer – ' + (qq.length >= 3 ? "unsere KI sucht passende Produkte …" : 'probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.') + "</p>") + '<div id="psAi"></div>'; }
     var g = S.group && grpOf(S.group);
     if (!g) {   // Übersicht: Bestseller + Kategorien mit Unterkategorien
@@ -1590,8 +1593,8 @@
       subs2.map(function (x) { return catA(g.slug, x.slug, "", esc(x.name) + "<span>" + x.n + "</span>", ' aria-current="' + (sub === x) + '"'); }).join("") +
       '<div class="ps-cv-oth"><small>Weitere Kategorien</small>' + visGroups().filter(function (x) { return x !== g; }).map(function (x) { return catA(x.slug, "", "", esc(x.name)); }).join("") + "</div></nav>";
     var chip = function (k, t, n) { return n ? '<button type="button" class="ps-fchip" data-flt="' + k + '" aria-pressed="' + !!f[k] + '">' + t + "</button>" : ""; };
-    var bar = '<div class="ps-cv-bar"><span class="ps-cv-n">' + l2.length + " Produkt" + (l2.length === 1 ? "" : "e") + "</span>" + chip("best", "★ Bestseller", base.some(function (p) { return p.best; })) + chip("neu", "Neu", base.some(isNew)) + chip("des", "Online-Designer", base.some(function (p) { return p.designer; })) +
-      '<label class="ps-cv-sort">Sortieren <select data-sort aria-label="Sortieren"><option value="pop"' + ((S.sort || "pop") === "pop" ? " selected" : "") + '>Beliebt</option><option value="neu"' + (S.sort === "neu" ? " selected" : "") + '>Neu</option><option value="az"' + (S.sort === "az" ? " selected" : "") + ">A–Z</option></select></label></div>";
+    var bar = '<div class="ps-cv-bar"><span class="ps-cv-n">' + l2.length + " Produkt" + (l2.length === 1 ? "" : "e") + '</span><div class="ps-cv-chips">' + chip("best", "★ Bestseller", base.some(function (p) { return p.best; })) + chip("neu", "Neu", base.some(isNew)) + chip("des", "Online-Designer", base.some(function (p) { return p.designer; })) + "</div>" +
+      sortBtn() + "</div>";
     return '<div class="ps-cv">' + side + '<div class="ps-cv-main">' + cgTop + bar + (l2.length ? '<div class="ps-pcs">' + l2.map(cardSm).join("") + "</div>" : '<p class="pd-muted" style="padding:20px 0">Keine Produkte mit diesen Filtern – <button type="button" class="ps-link" data-flt="">Filter zurücksetzen</button>.</p>') + "</div></div>";
   }
   // Bekleidung wie beim Druckpartner (Wunsch Simon 05.11.2026): „Kleidung nach Typ“ und „Kleidung nach Marke“ mit Bildern und Produktlisten aus dessen CMS (Stand 05.11.2026)
@@ -2970,7 +2973,7 @@
   });
   root.addEventListener("change", function (e) {
     if (e.target.id === "psAdjS") { adjApply({ scale: +e.target.value / 100 }); return; }
-    if (e.target.hasAttribute && e.target.hasAttribute("data-sort")) { S.sort = e.target.value; var gs = document.getElementById("psGrid"); if (gs) { gs.innerHTML = gridHtml(); fromObserve(); } return; }
+    if (e.target.hasAttribute && e.target.hasAttribute("data-sort")) { S.sort = e.target.value; var gs = document.getElementById("psGrid"); if (gs) { gs.innerHTML = gridHtml(); fromObserve(); } else render(); return; }
     var t = e.target;
     if (t.name && t.name.indexOf("prop:") === 0) { setProp(t.name.slice(5), t.value); return; }
     if (t.matches("select[data-prop]")) { setProp(t.getAttribute("data-prop"), t.value); return; }
