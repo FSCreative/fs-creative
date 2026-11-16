@@ -799,7 +799,8 @@
     var rows = p.props.map(function (pr) { var o = pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; if (!o || NONE_RX.test(String(o.name).trim())) return ""; var d = txt(o.desc) || glossOf(pr, o), im = imgOk(o.img) ? o.img : "";
       return '<div class="ps-si">' + (im ? '<img src="' + esc(im) + '" alt="" loading="lazy">' : '<span class="ps-si-ic" aria-hidden="true">✓</span>') + '<div><span class="ps-si-k">' + esc(pr.title) + "</span><b>" + esc(/color/.test(pr.slug) ? colName(o.name) : o.name) + "</b>" + (d ? "<p>" + esc(d.length > 220 ? d.slice(0, 217) + " …" : d) + "</p>" : "") +
         (d.length > 220 || im ? '<button type="button" class="ps-link" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(o.slug) + '">Mehr Infos</button>' : "") + "</div></div>"; }).filter(Boolean);
-    return rows.length ? '<details class="ps-selinfo"><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div>" + wfHtml("soft") + "</details>" : "";
+    var rq = reqHtml(false);   // Druckdaten-Anforderungen auch schon bei der Ausführung (Simon 16.11.2026)
+    return rows.length ? '<details class="ps-selinfo"><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div>" + wfHtml("soft") + rq + "</details>" : rq;
   }
   // Eigene Infotexte, wenn Print.com keine Beschreibung liefert (Papiere, Grammaturen, Veredelungen, Großformat-Materialien)
   var GLOSS = [
@@ -2159,6 +2160,7 @@
   // Sicherheitsabstand: Produktwert, bei Tunnelsaum Tunnelbreite + 1 cm (wie Server safeFor)
   function sleeveCm() { var m = 0; Object.keys(S.sel || {}).forEach(function (k) { var x = /^sleeve_(\d+)_?cm$/.exec(String(S.sel[k])); if (x) m = Math.max(m, +x[1]); }); return m; }
   function safeOf() { if (S.prod.imprint) return 0; var sl = sleeveCm(); return Math.max(+S.prod.safe || 3, sl ? sl * 10 + 10 : 0); }
+  function reqList(l, cls) { return l.length ? '<ul class="ps-req-l' + cls + '">' + l.map(function (x) { return '<li' + (x[3] ? ' class="' + x[3] + '"' : "") + '><span class="ri" aria-hidden="true">' + x[0] + "</span><div><b>" + x[1] + "</b><span>" + x[2] + "</span></div></li>"; }).join("") + "</ul>" : ""; }
   function reqHtml(open) {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = safeOf(), dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
     if (!sz) return "";
@@ -2215,7 +2217,9 @@
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
     return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + unit(fileW) + " × " + unit(fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
       '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + '<figcaption><span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>" + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
-      '<ul class="ps-req-l">' + items.map(function (x) { return '<li' + (x[3] ? ' class="' + x[3] + '"' : "") + '><span class="ri" aria-hidden="true">' + x[0] + "</span><div><b>" + x[1] + "</b><span>" + x[2] + "</span></div></li>"; }).join("") + "</ul></div>" +
+      reqList(items.filter(function (x) { return x[3] !== "wide"; }), "") + "</div>" +
+      // lange Hinweise (Ausführung, Herstellerangaben) über die volle Breite in zwei Spalten – sonst bleibt links unter der Skizze alles leer (Simon 16.11.2026)
+      reqList(items.filter(function (x) { return x[3] === "wide"; }), " ps-req-w") +
       '<details class="ps-req-pro"><summary>Für Profis</summary><ul><li>Farbprofil: ISO Coated v2 / PSO Coated v3 (Bogen), Gesamtfarbauftrag max. 300 %</li><li>Große schwarze Flächen als Tiefschwarz (z. B. 40/30/30/100), Text in reinem Schwarz (0/0/0/100)</li><li>Hintergründe und randabfallende Bilder immer bis in den Beschnitt ziehen</li><li>Transparenzen reduzieren bzw. PDF/X-4 verwenden, Überdrucken nur bewusst einsetzen</li><li>Technische Sonderfarben (Weiß, Konturschnitt, Perforation, Bohrung, Veredelung …): <a href="/print/sonderfarben.ase" download>Farbpalette (.ase)</a> für Illustrator, InDesign &amp; Affinity · <a href="/print/hilfe#sonderfarben" target="_blank" rel="noopener">Übersicht</a></li>' + (sd === 2 ? "<li>Vorder- und Rückseite gleich ausgerichtet (Kopf an Kopf)</li>" : "") + "</ul></details>" +
       wfHtml("soft") + '<p class="ps-req-f">Jede Datei prüfen wir beim Hochladen automatisch – du siehst sofort eine Vorschau mit allen Rändern. Unsicher? Wähle an der Kasse den Profi-Datencheck, dann sieht sich ein Profi deine Daten vor dem Druck persönlich an.</p></details>';
   }

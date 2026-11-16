@@ -1904,6 +1904,13 @@ module.exports = function (D) {
      Nur für Bild-Uploads (JPG/PNG mit Platzierung) – die Auflösung prüft der Server am Original. PDFs und andere Dateien: weiter die volle Datei. */
   const pvOk = m => !!(m && m.kind === "upload" && (m.original === "jpg" || m.original === "png") && m.src && m.place && !m.front && !m.bleedFix);
   const pvId = id => id + "pv", pxId = id => id + "px";
+  // kurzer Zwischenspeicher für große Druckdateien (Studio holt sie in vielen kleinen Teilstücken) – höchstens ~350 MB, 10 Minuten
+  const FBUF = new Map();
+  async function fileBufCached(id) { const now = Date.now(), c = FBUF.get(id); if (c && now - c.at < 600e3) { c.at = now; return c.buf; }
+    const buf = await store.fileData(id); if (!buf) return buf; const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+    if (b.length > 2e6 && b.length < 250e6) { FBUF.set(id, { buf: b, at: now }); let tot = 0; const l = [...FBUF.entries()].sort((x, y) => y[1].at - x[1].at);
+      for (const [k, v] of l) { tot += v.buf.length; if (tot > 350e6 || now - v.at > 600e3) FBUF.delete(k); } }
+    return b; }
   async function previewPdf(m) {
     if (!pvOk(m)) return null;
     const hit = await store.fileData(pvId(m.id)).catch(() => null); if (hit) return hit;
@@ -5904,13 +5911,19 @@ module.exports = function (D) {
         if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }
         const sm = sid ? await store.fileMeta(sid).catch(() => null) : null, pxb = sid && u.searchParams.get("px") === "1" ? await store.fileData(pxId(sid)).catch(() => null) : null;   // px=1: leichte JPEG-Vorschau des Originals fürs Studio
         if (pxb) return D.send(res, 200, pxb, "image/jpeg", { "Cache-Control": "private, max-age=3600" });
-        const buf = await store.fileData(sid || fidQ || o.fileId);
+        const buf = await fileBufCached(sid || fidQ || o.fileId);
         if (!buf || (wantSrc && !sid)) return D.send(res, 404, "Datei nicht gefunden");
         const ext = sid ? ({ jpg: "jpg", jpeg: "jpg", png: "png", pdf: "pdf" }[String((sm && sm.original) || "pdf").toLowerCase().replace(/^image\//, "")] || "pdf") : "pdf";
         const ct = ext === "jpg" ? "image/jpeg" : ext === "png" ? "image/png" : "application/pdf";
         const base = String((sid ? sm && sm.name : fm && fm.name) || "druck").replace(/\.(pdf|jpe?g|png)$/i, "").replace(/[^\wäöüÄÖÜß ()+.-]+/g, "_").slice(0, 80);
         const fn = o.nr + " – " + base + (sid ? " (Original)" : "") + "." + ext, dl = u.searchParams.get("dl") === "1" || !!sid;
-        return D.send(res, 200, buf, ct, { "Content-Disposition": (dl ? "attachment" : "inline") + "; filename=\"" + o.nr + "." + ext + "\"; filename*=UTF-8''" + encodeURIComponent(fn), "Cache-Control": "private, no-store" });
+        const fh = { "Content-Disposition": (dl ? "attachment" : "inline") + "; filename=\"" + o.nr + "." + ext + "\"; filename*=UTF-8''" + encodeURIComponent(fn), "Cache-Control": "private, no-store", "Accept-Ranges": "bytes" };
+        // Teilabruf (Range) für die PDF-Ansicht im Studio: pdf.js holt nur die Teile, die es für die sichtbare Seite braucht (Simon 16.11.2026: 20–160-MB-Dateien luden ewig)
+        const rg = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || "").trim());
+        if (rg && !dl && (rg[1] || rg[2])) { const len = buf.length; let a = rg[1] ? +rg[1] : Math.max(0, len - +rg[2]), z = rg[1] && rg[2] ? Math.min(len - 1, +rg[2]) : len - 1;
+          if (a >= len || a > z) return D.send(res, 416, "", ct, { "Content-Range": "bytes */" + len });
+          return D.send(res, 206, buf.subarray(a, z + 1), ct, Object.assign(fh, { "Content-Range": "bytes " + a + "-" + z + "/" + len, "Content-Length": String(z - a + 1) })); }
+        return D.send(res, 200, buf, ct, Object.assign(fh, { "Content-Length": String(buf.length) }));
       }
       if (p === "/admin/api/print/brief-file" && req.method === "GET") {
         const id = String(u.searchParams.get("id") || ""), m = /^f[a-f0-9]{24}$/.test(id) ? await store.fileMeta(id) : null; if (!m || m.kind !== "brief") return D.send(res, 404, "Nicht gefunden – die Datei wurde nach Ablauf der Aufbewahrung gelöscht");

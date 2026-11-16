@@ -356,7 +356,7 @@ function prdPvGet(oid,fid,k){ var key=fid+"-"+k; if(PRD_MEM[key]) return Promise
 function prdPvKeep(key,val){ PRD_MEM[key]=val; if(!window.caches) return;
   caches.open("pr-pv-1").then(function(c){ return c.put("/__prpv/"+key,new Response(JSON.stringify(val),{headers:{"Content-Type":"application/json"}})).then(function(){ return c.keys(); }).then(function(ks){ ks.slice(0,Math.max(0,ks.length-120)).forEach(function(q){ c.delete(q); }); }); }).catch(function(){}); }
 /* PDF einmal rendern (höchstens 2 Seiten) → { np, k, pages:[{u: JPEG-Data-URL, wmm}] } */
-function prdMake(url,cssW,k){ return prdPdf().then(function(L){ return L.getDocument({url:url,withCredentials:true}).promise; }).then(function(doc){ var n=Math.min(doc.numPages,2), np=doc.numPages, out=[];
+function prdMake(url,cssW,k){ return prdPdf().then(function(L){ return L.getDocument({url:url,withCredentials:true,disableAutoFetch:true,disableStream:true,rangeChunkSize:524288}).promise; }).then(function(doc){ var n=Math.min(doc.numPages,2), np=doc.numPages, out=[];
   var one=function(i){ if(i>n){ try{ doc.destroy(); }catch(e){} return {np:np,k:k,pages:out}; }
     return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(2,Math.max(0.2,cssW/v0.width*Math.min(2,window.devicePixelRatio||1))), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
       return pg.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise.then(function(){ out.push({u:cv.toDataURL("image/jpeg",0.85),wmm:Math.round(v0.width/72*25.4*100)/100}); cv.width=cv.height=0; return one(i+1); }); }); };
@@ -458,7 +458,7 @@ document.addEventListener("wheel",function(e){ if(!(e.metaKey||e.ctrlKey)) retur
 function sdPosShow(){ sdToolsSync(sdPl()); }
 /* Weiße Streifen am Rand der Datei messen (Simon 11.11.2026: „Rand spiegeln“ spiegelte einen weißen Rand mit): je Seite und Kante, in mm ab dem Endformat.
    Nur echte Streifen (0,2 mm bis 6 mm) – ist der Rand breiter weiß, ist das Motiv wohl bewusst weiß hinterlegt → nichts ändern. */
-function prInsets(oid,fid,size,bleed){ return prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(oid,fid,false),withCredentials:true}).promise; }).then(function(doc){ var out=[], n=Math.min(doc.numPages,8);
+function prInsets(oid,fid,size,bleed){ return prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(oid,fid,false),withCredentials:true,disableAutoFetch:true,disableStream:true,rangeChunkSize:524288}).promise; }).then(function(doc){ var out=[], n=Math.min(doc.numPages,8);
   var one=function(i){ if(i>n) return Promise.resolve(out); return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(6,1400/v0.width), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height); var x=cv.getContext("2d",{willReadFrequently:true}); x.fillStyle="#fff"; x.fillRect(0,0,cv.width,cv.height);
     return pg.render({canvasContext:x,viewport:vp}).promise.then(function(){ var W=cv.width, H=cv.height, wmm=v0.width/72*25.4, hmm=v0.height/72*25.4, pxmm=W/wmm, d=x.getImageData(0,0,W,H).data;
       var bl=size&&bleed&&((Math.abs(wmm-(size.w+2*bleed))<2&&Math.abs(hmm-(size.h+2*bleed))<2)||(Math.abs(wmm-(size.h+2*bleed))<2&&Math.abs(hmm-(size.w+2*bleed))<2))?bleed:0;
@@ -987,7 +987,7 @@ function sdMi(d){ return d.motif==null?"":d.motif; }
 function sdClose(){ if(SDQ&&SDQ.b){ clearTimeout(SDQ.t); var pend=SDQ.b; SDQ.b=null; F.api("/admin/api/print/fit",{body:pend}); } var el=document.getElementById("sdStudio"); if(el) el.remove(); load(true); document.removeEventListener("keydown",sdKey); document.documentElement.style.overflow=""; var oid=SD.j&&SD.j.order.id; SD.j=null; if(oid) openOrder(oid); }
 function sdKey(e){ if(e.key==="Escape") sdClose(); }
 /* pdf.js-Dokumente je Datei zwischenspeichern (Studio blättert viel) */
-function sdPdf(fid,pv){ var k=fid+(pv?":pv":""); if(SD.cache[k]) return SD.cache[k]; var o=SD.j.order; SD.cache[k]=prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(o.id,fid,pv),withCredentials:true}).promise; }); SD.cache[k].catch(function(){ delete SD.cache[k]; }); return SD.cache[k]; }
+function sdPdf(fid,pv){ var k=fid+(pv?":pv":""); if(SD.cache[k]) return SD.cache[k]; var o=SD.j.order; SD.cache[k]=prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(o.id,fid,pv),withCredentials:true,disableAutoFetch:true,disableStream:true,rangeChunkSize:524288}).promise; }); SD.cache[k].catch(function(){ delete SD.cache[k]; }); return SD.cache[k]; }
 /* eine Seite in ein Element zeichnen (optional mit Rändern) */
 function sdDraw(doc,n,box,maxW,d,edges){ return doc.getPage(n).then(function(pg){ var v0=pg.getViewport({scale:1}), s=Math.min(3,maxW*(window.devicePixelRatio||1)/v0.width), vp=pg.getViewport({scale:s}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
   return pg.render({canvasContext:cv.getContext("2d"),viewport:vp,background:"rgba(0,0,0,0)"}).promise.then(function(){ var tw=(d.size||{}).w, th=(d.size||{}).h, bl=+d.bleed||0, wmm=v0.width/72*25.4, b=tw&&(Math.abs(wmm-(tw+2*bl))<2||Math.abs(wmm-(th+2*bl))<2)?bl:0;
@@ -999,7 +999,7 @@ function sdDraw(doc,n,box,maxW,d,edges){ return doc.getPage(n).then(function(pg)
     var clip=document.createElement("div"); clip.className="stu-clip"; clip.appendChild(cv); box.appendChild(clip); ov.className="stu-ov"; box.appendChild(ov); box.style.position="relative"; box._mm=wmm; return {b:b}; }); }); }
 /* kleines Vorschaubild einer Seite: gespeichertes JPEG laden, sonst einmal rendern (PDF danach freigeben) und speichern */
 var SDT={};
-function sdThumbDoc(fid){ if(SDT[fid]) return SDT[fid]; var o=SD.j.order; SDT[fid]={n:0,p:prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(o.id,fid,false),withCredentials:true}).promise; })}; return SDT[fid]; }
+function sdThumbDoc(fid){ if(SDT[fid]) return SDT[fid]; var o=SD.j.order; SDT[fid]={n:0,p:prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(o.id,fid,false),withCredentials:true,disableAutoFetch:true,disableStream:true,rangeChunkSize:524288}).promise; })}; return SDT[fid]; }
 function sdThumbDone(fid){ var t=SDT[fid]; if(!t) return; t.n--; if(t.n<=0){ t.p.then(function(doc){ try{ doc.destroy(); }catch(e){} }); delete SDT[fid]; } }
 function sdThumb(fid,p,box){ var o=SD.j.order, url="/admin/api/print/thumb?id="+encodeURIComponent(o.id)+"&fid="+encodeURIComponent(fid)+"&p="+p, im=new Image(); im.alt=""; im.decoding="async";
   im.onload=function(){ box.innerHTML=""; box.appendChild(im); };

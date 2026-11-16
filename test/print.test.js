@@ -552,6 +552,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.strictEqual((await admin("/admin/api/print/thumb?id=" + o1.orderId + "&fid=fremdeDatei123")).ok, false); }
     assert.strictEqual((await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { redirect: "manual" })).status, 302);
     const f = await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE } }); assert.strictEqual(f.headers.get("content-type"), "application/pdf");
+    { const full = Buffer.from(await (await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE } })).arrayBuffer());   // Teilabruf fürs Studio (pdf.js lädt nur nötige Teile)
+      const pr = await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE, range: "bytes=0-99" } }); assert.strictEqual(pr.status, 206); assert.strictEqual(pr.headers.get("content-range"), "bytes 0-99/" + full.length);
+      assert.ok(Buffer.from(await pr.arrayBuffer()).equals(full.subarray(0, 100))); }
   });
   await t("Cockpit: Liefertermin in Prüfung ändern (days/wish) und wieder auf frühesten Termin", async () => {
     const iso = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10), d1 = iso(6), d2 = iso(9);
