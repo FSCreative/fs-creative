@@ -12,11 +12,21 @@ module.exports = function (D) {
   async function load() {
     if (RULES) return RULES;
     RULES = (await getMeta("mailRules").catch(() => null)) || [];
-    SEEN = new Set(((await getMeta("mailRulesSeen").catch(() => null)) || []).slice(-6000));
+    SEEN = new Set(((await getMeta("mailRulesSeen").catch(() => null)) || []).slice(-SEEN_MAX));
     return RULES;
   }
   async function saveRules() { await setMeta("mailRules", RULES); }
-  async function saveSeen() { await setMeta("mailRulesSeen", Array.from(SEEN).slice(-6000)); }
+  // Simon 16.11.2026: höchstens 2000 Kennungen speichern (vorher 6000) – Mails, die noch im Posteingang liegen, bleiben immer drin,
+  // sonst gälten sie nach einem Neustart wieder als neu; dazu die zuletzt gesehenen bis zur Grenze
+  const SEEN_MAX = 2000;
+  async function saveSeen(snap) {
+    let arr = Array.from(SEEN);
+    if (arr.length > SEEN_MAX) {
+      const cur = new Set(inbox(snap).map(m => m.id)), keep = arr.filter(id => cur.has(id)), rest = arr.filter(id => !cur.has(id));
+      arr = rest.slice(-Math.max(0, SEEN_MAX - keep.length)).concat(keep); SEEN = new Set(arr);
+    }
+    await setMeta("mailRulesSeen", arr);
+  }
   const terms = s => String(s || "").split(/[;,\n]/).map(x => x.trim().toLowerCase()).filter(Boolean);
   function matches(r, m) {
     const c = r.cond || {}; let any = false;
@@ -72,7 +82,7 @@ module.exports = function (D) {
         }
       }
       for (const k of Object.keys(ops)) { if (k.indexOf("move:") === 0) await run({ move: ops[k] }); else await run({ [k]: ops[k] }); }
-      await saveSeen(); if (hits) await saveRules();
+      await saveSeen(snap); if (hits) await saveRules();
       last = { at: new Date().toISOString(), applied: hits, error: "" };
     } catch (e) { last = { at: new Date().toISOString(), applied: 0, error: String(e.message || e).slice(0, 200) }; console.error("Mail-Regeln:", e.message); }
     finally { busy = false; if (again) { const a = again; again = null; setImmediate(() => tick(a === true ? undefined : a)); } }
@@ -101,7 +111,7 @@ module.exports = function (D) {
       const snap = await snapshot(); const hit = inbox(snap).filter(m => matches(r, m));
       if (op === "preview") return { count: hit.length, sample: hit.slice(0, 8).map(m => ({ from: m.fromName || m.from, subject: m.subject, date: m.date })) };
       const n = await run(plan(r, hit)); const i = RULES.findIndex(x => x.id === r.id); if (i > -1) { RULES[i].hits = (RULES[i].hits || 0) + hit.length; RULES[i].lastHit = new Date().toISOString(); await saveRules(); }
-      hit.forEach(m => SEEN.add(m.id)); await saveSeen(); return { count: hit.length, affected: n };
+      hit.forEach(m => SEEN.add(m.id)); await saveSeen(snap); return { count: hit.length, affected: n };
     }
     throw new Error("unbekannte Aktion");
   }

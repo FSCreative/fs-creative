@@ -15,6 +15,14 @@ const BUILD = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYME
 
 // Persistenter Speicher (Railway-Volume unter /data, sonst ROOT als Fallback).
 const DATA_DIR = (() => { try { fs.mkdirSync("/data", { recursive: true }); return "/data"; } catch (e) { return ROOT; } })();
+// Letzte Läufe schwerer Hintergrund-Jobs (Simon 16.11.2026): überstehen Deploys, damit nicht jeder Neustart alles auf einmal neu anstößt
+const JOB_FILE = path.join(DATA_DIR, "job-stamps.json");
+let JOB_AT = null;
+function jobLast(name) { if (!JOB_AT) { try { JOB_AT = JSON.parse(fs.readFileSync(JOB_FILE, "utf8")) || {}; } catch (e) { JOB_AT = {}; } } return +JOB_AT[name] || 0; }
+function jobDue(name, ms) { return Date.now() - jobLast(name) >= ms; }
+function jobDone(name) { jobLast(name); JOB_AT[name] = Date.now(); try { fs.writeFileSync(JOB_FILE, JSON.stringify(JOB_AT)); } catch (e) {} }
+// nächster Lauf: frühestens minDelay, sonst wenn das Intervall seit dem letzten (gespeicherten) Lauf um ist
+function jobDelay(name, ms, minDelay) { return Math.max(minDelay, ms - (Date.now() - jobLast(name))); }
 const TODOS_FILE = path.join(DATA_DIR, "todos.json");
 function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 // Auftragsmanagement: Aufträge (Projekte) und Aufgaben mit Status, Priorität, Frist, Checkliste, Kommentaren – im Datenspeicher wie To-Dos
@@ -36,11 +44,13 @@ const PRINT_STEPS = ["Druckdaten geprüft & freigegeben", "Bei Print.com bestell
 // Bestehende Druckaufgaben bleiben gespeichert (nichts gelöscht), werden aber über auftraegeView() ausgeblendet.
 const PRINT_TASKS = false;
 const auftraegeView = A => A ? Object.assign({}, A, { projects: (A.projects || []).filter(p => p.id !== PRINT_PJ), tasks: (A.tasks || []).filter(t => !t.print && t.projectId !== PRINT_PJ) }) : A;
-function printTaskSync(o) {
-  if (!PRINT_TASKS) return false;
+// eine Bestellung → Aufgabe; A = gelesene Aufträge (Simon 16.11.2026: Abgleich liest/schreibt auftraege nur noch EINMAL je Lauf, printTaskSyncMany)
+function printTaskSync(o) { if (!PRINT_TASKS) return false; const A = readAuftraege(); if (!printTaskApply(A, o)) return false; writeAuftraege(A); return true; }
+function printTaskSyncMany(list) { if (!PRINT_TASKS || !list || !list.length) return 0; const A = readAuftraege(); let n = 0; for (const o of list) { try { if (printTaskApply(A, o)) n++; } catch (e) { console.error("Aufträge (Druck):", e.message); } } if (n) writeAuftraege(A); return n; }
+function printTaskApply(A, o) {
   if (!o || !o.id || !o.status) return false;
   const col = o.status === "problem" ? (o.pcOrder ? "arbeit" : "pruefung") : PRINT_COL[o.status]; if (!col) return false;
-  const A = readAuftraege(), now = Date.now();
+  const now = Date.now();
   let t = A.tasks.find(x => x.print && x.print.id === o.id);
   if (!t && (!PRINT_NEW[o.status] || A.printSkip.indexOf(o.id) > -1)) return false;
   const num = v => isFinite(+v) && v !== null && v !== "" ? +v : null;
@@ -66,7 +76,7 @@ function printTaskSync(o) {
   }
   if (JSON.stringify(t.print) !== JSON.stringify(info)) { t.print = info; changed = true; }
   if (!changed) return false;
-  t.updated = now; writeAuftraege(A); return true;
+  t.updated = now; return true;
 }
 // To-Dos gibt es nicht mehr (Wunsch Simon 20.10.2026): alles läuft über Aufgaben in „Aufträge“. Einmalig: offene To-Dos → Aufgaben (ohne Auftrag),
 // vorher komplette Sicherung nach todos-archiv.json; danach ist todos.json leer. Anfragen (id lead_…) behalten die Verknüpfung zur Kundenakte (leadId).
@@ -454,7 +464,10 @@ function loginFailed(ip) {
   }
 }
 
-// Kurzzeit-Cache (25 s): mehrere offene Tabs/Polls lösen nicht jeweils eigene Abrufe bei den Plattformen aus.
+// Kurzzeit-Cache: mehrere offene Tabs/Polls lösen nicht jeweils eigene Abrufe bei den Plattformen aus.
+// Simon 16.11.2026: gute Antworten 5 min (vorher 25 s), Fehler weiter nur 25 s; nach Änderungen leert forgetStats() den Stand der Plattform.
+const JSON_MEMO_OK = 5 * 60e3, JSON_MEMO_ERR = 25e3;
+let JSON_FORCE_AT = 0;   // „Aktualisieren“ im Cockpit (force=1): Stände älter als 25 s neu holen (wie früher)
 const JSON_MEMO = new Map();
 // Nach Änderungen (Verrechnen, Bezahlt) die zwischengespeicherten Statistiken dieser Plattform verwerfen
 function forgetStats(baseUrl) { for (const k of Array.from(JSON_MEMO.keys())) if (k.indexOf(baseUrl) === 0) JSON_MEMO.delete(k); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
@@ -475,7 +488,7 @@ function keepGood(key, d) {
 }
 async function getJSON(url, token) {
   const hit = JSON_MEMO.get(url);
-  if (hit && Date.now() - hit.at < 25000) return hit.p;
+  if (hit && Date.now() - hit.at < (hit.bad || hit.at < JSON_FORCE_AT ? JSON_MEMO_ERR : JSON_MEMO_OK)) return hit.p;
   const p = (async () => {
     // 7,5 s: endet sicher vor dem 8-s-Limit von cockpitBuild (sonst kam die späte Antwort erst beim nächsten Aufbau an)
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 7500);
@@ -494,8 +507,9 @@ async function getJSON(url, token) {
       return j; }
     catch (e) { note(lost(e)); return null; } finally { clearTimeout(t); }
   })();
-  JSON_MEMO.set(url, { at: Date.now(), p });
-  if (JSON_MEMO.size > 200) { const now = Date.now(); for (const [k, v] of JSON_MEMO) if (now - v.at > 60000) JSON_MEMO.delete(k); }
+  const ent = { at: Date.now(), p, bad: false }; JSON_MEMO.set(url, ent);
+  p.then(j => { if (!j || j.error) ent.bad = true; }, () => { ent.bad = true; });
+  if (JSON_MEMO.size > 200) { const now = Date.now(); for (const [k, v] of JSON_MEMO) if (now - v.at > JSON_MEMO_OK) JSON_MEMO.delete(k); }
   return p;
 }
 function yearParam(year) { return year ? "&year=" + encodeURIComponent(year) : ""; }
@@ -539,9 +553,9 @@ let MAIL_SNAP = { at: 0, etag: "", data: null, p: null, err: "", errAt: 0, okAt:
 let ON_NEW_MAIL = null;   // Mail-Regeln sofort bei neuen Mails (gesetzt unten)
 async function mailSnapshot() {
   if (!MAIL.url || !MAIL.token) return null;
-  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 2000) return MAIL_SNAP.data;   // kurz puffern (2 s – neue Mails sollen so schnell wie in Outlook erscheinen); Nachfragen sind dank ETag/304 billig
+  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 10000) return MAIL_SNAP.data;   // kurz puffern (10 s, Simon 16.11.2026 – vorher 2 s); „fresh=1“ und Mail-Aktionen setzen at = 0
   if (MAIL_SNAP.p) return MAIL_SNAP.p;
-  const bad = msg => { if (!MAIL_SNAP.err) MAIL_SNAP.errAt = Date.now(); MAIL_SNAP.err = msg; return MAIL_SNAP.data; };
+  const bad = msg => { if (!MAIL_SNAP.err) MAIL_SNAP.errAt = Date.now(); MAIL_SNAP.err = msg; try { if (typeof CONN !== "undefined" && CONN.suspect) CONN.suspect("mail"); } catch (e) {} return MAIL_SNAP.data; };
   const good = () => { MAIL_SNAP.err = ""; MAIL_SNAP.errAt = 0; MAIL_SNAP.okAt = Date.now(); };
   MAIL_SNAP.p = (async () => {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
@@ -566,7 +580,8 @@ function mailFlags() {
   if (Date.now() - MAIL_SNAP.errAt < 90e3) return { stale: false, error: "" };
   return { stale: true, error: MAIL_SNAP.err + (MAIL_SNAP.okAt ? " – angezeigt wird der Stand von " + hm(MAIL_SNAP.okAt) + " Uhr" : "") };
 }
-// Mail-Regeln (Outlook-artig): laufen sofort, wenn der Mailserver einen neuen Stand liefert, und zur Sicherheit alle 2 Minuten
+// Mail-Regeln (Outlook-artig): laufen sofort, wenn der Mailserver einen neuen Stand liefert (ON_NEW_MAIL in mailSnapshot).
+// Der eigene 2-Minuten-Takt entfällt (Simon 16.11.2026): der Push-Takt (mailTick, jede Minute) holt den Stand ohnehin, jede Änderung löst ON_NEW_MAIL aus.
 const MAIL_RULES = require("./mail-rules.js")({
   getMeta: k => process.env.DATABASE_URL ? FIN.init().then(() => FIN.getMeta(k)) : Promise.resolve(null),
   setMeta: (k, v) => process.env.DATABASE_URL ? FIN.init().then(() => FIN.setMeta(k, v)) : Promise.resolve(),
@@ -575,22 +590,25 @@ const MAIL_RULES = require("./mail-rules.js")({
     if (!items || !items.length) return;
     const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/action"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, op, items, target }), signal: AbortSignal.timeout(30000) });
     if (!r.ok) throw new Error("Mailserver " + r.status);
-    MAIL_SNAP.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+    MAIL_SNAP.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale();
   },
 });
-setInterval(() => { if (MAIL.url && MAIL.token) MAIL_RULES.tick(); }, 2 * 60 * 1000);
+// ohne Datenbank kein Push-Takt (und keine gespeicherten Regeln) – dann wie bisher alle 2 Minuten selbst nachsehen
+setInterval(() => { if (MAIL.url && MAIL.token && !process.env.DATABASE_URL) MAIL_RULES.tick(); }, 2 * 60 * 1000);
 ON_NEW_MAIL = d => MAIL_RULES.tick(d).catch(() => {});
 // Stand ohne Mails, die eine Regel gerade wegräumt (Postfach im Cockpit, Push) – sonst blitzen sie kurz im Posteingang auf
 const mailVisible = m => { if (!m || !Array.isArray(m.messages) || !m.messages.some(x => MAIL_RULES.hidden(x.id))) return m; return Object.assign({}, m, { messages: m.messages.filter(x => !MAIL_RULES.hidden(x.id)) }); };
 // Morgens (ab 7:30 Wiener Zeit, einmal pro Tag) Push an alle Geräte: was heute fällig bzw. überfällig ist (Aufträge + To-Dos)
 const DIGEST_FILE = path.join(DATA_DIR, "digest.json");
+let DIGEST_DAY = "";
 function dailyDigest() {
   if (!process.env.DATABASE_URL) return;
   const hm = new Intl.DateTimeFormat("de-AT", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()), day = viennaToday();
   if (hm < "07:30") return;
+  if (DIGEST_DAY === day) return;   // im Speicher (Simon 16.11.2026 – vorher alle 5 min die Datei gelesen)
   let last = ""; try { last = JSON.parse(fs.readFileSync(DIGEST_FILE, "utf8")).day || ""; } catch (e) {}
-  if (last === day) return;
-  try { fs.writeFileSync(DIGEST_FILE, JSON.stringify({ day })); } catch (e) { return; }
+  if (last === day) { DIGEST_DAY = day; return; }
+  try { fs.writeFileSync(DIGEST_FILE, JSON.stringify({ day })); DIGEST_DAY = day; } catch (e) { return; }
   const A = auftraegeView(readAuftraege()), open = A.tasks.filter(t => t.status !== "erledigt" && t.due && t.due <= day), over = open.filter(t => t.due < day);
   if (!open.length) return;
   const parts = [];
@@ -720,15 +738,21 @@ function kochduFreshSoon() { if (!KOCHDU.token) return; KOCHDU_FRESH_UNTIL = Dat
 // (vor dieser Version) meldet das Cockpit nur auf Simons Klick („an Blitzdings melden“). Doppelrechnungen werden nur angezeigt – nie gemeldet, nie storniert.
 const BLITZ_REPORT_FILE = path.join(DATA_DIR, "blitz-invoice-report.json");
 const BLITZ_ID = /^[A-Za-z0-9_-]{1,64}$/;
+// Stand im Speicher (Simon 16.11.2026): Datei nur neu lesen, wenn sie sich geändert hat (mtime/Größe) – ein Abgleich las sie sonst für jede Meldung neu.
+// Alle Aufrufer arbeiten auf demselben Objekt und speichern über blitzReportSave (ein Prozess) – nichts geht verloren.
+let BLITZ_REPORT_MEMO = null;
+function blitzReportStat() { try { const st = fs.statSync(BLITZ_REPORT_FILE); return st.mtimeMs + ":" + st.size; } catch (e) { return ""; } }
 function blitzReportState() {
+  const sig = blitzReportStat(); if (BLITZ_REPORT_MEMO && sig && BLITZ_REPORT_MEMO.sig === sig) return BLITZ_REPORT_MEMO.o;
   let o = {}; try { o = JSON.parse(fs.readFileSync(BLITZ_REPORT_FILE, "utf8")) || {}; } catch (e) { o = {}; }
   ["q", "done", "dup", "revoked"].forEach(k => { o[k] = o[k] && typeof o[k] === "object" ? o[k] : {}; });   // revoked: Meldung im Cockpit zurückgenommen (B7)
   if (!o.since) { o.since = new Date().toISOString(); blitzReportSave(o); }   // ab hier gilt „neu“ (wird von selbst gemeldet)
+  else BLITZ_REPORT_MEMO = { sig, o };
   return o;
 }
 function blitzReportSave(o) {
   try { const ks = Object.keys(o.done); if (ks.length > 3000) ks.sort((a, b) => String(o.done[a]).localeCompare(String(o.done[b]))).slice(0, ks.length - 3000).forEach(k => { delete o.done[k]; });
-    fs.writeFileSync(BLITZ_REPORT_FILE, JSON.stringify(o)); } catch (e) { console.error("Blitzdings-Meldung speichern:", e.message); }
+    fs.writeFileSync(BLITZ_REPORT_FILE, JSON.stringify(o)); BLITZ_REPORT_MEMO = { sig: blitzReportStat(), o }; } catch (e) { BLITZ_REPORT_MEMO = null; console.error("Blitzdings-Meldung speichern:", e.message); }
 }
 function blitzReportQueue(bookingId, invoiceId, nr, again) {
   bookingId = String(bookingId || ""); invoiceId = String(invoiceId || "");
@@ -1152,6 +1176,9 @@ function buildIcs(ev, uid) {
 }
 
 let PRIV_CACHE = { at: 0, data: null, p: null };
+// Simon 16.11.2026: iCloud-Kalender 10 min puffern (vorher 45 s); Cockpit/Heute holt nur −7 … +60 Tage (PRIV_SHORT), der volle Bereich nur für die Kalender-Seite
+const PRIV_TTL = 10 * 60e3;
+let PRIV_SHORT = { at: 0, data: null, p: null };
 let ICAL_LIST = { at: 0, key: "", cals: null };
 async function icloudAllCals(c) {
   const key = c.user + "|" + c.calUrl;
@@ -1162,21 +1189,23 @@ async function icloudAllCals(c) {
   ICAL_LIST = { at: Date.now(), key, cals };
   return cals;
 }
-async function privateCalendar(force) {
+async function privateCalendar(force, short) {
   const c = icloudCfg();
   if (!c.user || !c.pass || !c.calUrl) return { configured: false, events: [] };
-  if (!force && PRIV_CACHE.data && Date.now() - PRIV_CACHE.at < 45000) return PRIV_CACHE.data;
-  if (PRIV_CACHE.p) return PRIV_CACHE.p;
-  PRIV_CACHE.p = (async () => {
-    const now = Date.now(), fromMs = now - 62 * 864e5, toMs = now + 400 * 864e5;
+  if (!short && force) PRIV_SHORT.at = 0;   // erzwungener voller Abruf (nach Änderungen) → kurzer Stand gilt danach als veraltet
+  const C = short ? PRIV_SHORT : PRIV_CACHE, setC = v => { if (short) PRIV_SHORT = v; else PRIV_CACHE = v; };
+  if (!force && C.data && Date.now() - C.at < PRIV_TTL) return C.data;
+  if (C.p) return C.p;
+  C.p = (async () => {
+    const now = Date.now(), fromMs = now - (short ? 7 : 62) * 864e5, toMs = now + (short ? 60 : 400) * 864e5;
     const f = d => icsDt(new Date(d));
     const body = '<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="' + f(fromMs) + '" end="' + f(toMs) + '"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>';
     try {
       // alle Kalender des Kontos (nicht nur den gewählten) – Fehler einzelner Kalender überspringen
       const cals = c.allCals === false ? [{ url: c.calUrl, name: c.calName, color: c.calColor }] : await icloudAllCals(c);
       const r = await dav("REPORT", c.calUrl, { user: c.user, pass: c.pass, depth: 1, body });
-      if (r.status === 401 || r.status === 403) return { configured: true, calName: c.calName, error: "login_failed", events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
-      if (r.status >= 400) return { configured: true, calName: c.calName, error: "http_" + r.status, events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
+      if (r.status === 401 || r.status === 403) return { configured: true, calName: c.calName, error: "login_failed", events: (C.data && C.data.events) || [] };
+      if (r.status >= 400) return { configured: true, calName: c.calName, error: "http_" + r.status, events: (C.data && C.data.events) || [] };
       const events = [];
       const take = (text, cal) => { for (const blk of xmlResponses(text)) {
         const href = ((blk.match(/<(?:[\w-]+:)?href[^>]*>([^<]+)</i) || [])[1] || "").trim();
@@ -1190,13 +1219,13 @@ async function privateCalendar(force) {
       const res2 = await Promise.all(others.map(x => dav("REPORT", x.url, { user: c.user, pass: c.pass, depth: 1, body }).then(rr => ({ rr, x })).catch(() => null)));
       res2.forEach(o => { if (o && o.rr && o.rr.status < 400) take(o.rr.text, o.x); });
       const out = { configured: true, calName: c.calName, calColor: c.calColor, user: c.user, fetchedAt: new Date().toISOString(), events };
-      PRIV_CACHE = { at: Date.now(), data: out, p: null };
+      setC({ at: Date.now(), data: out, p: null });
       return out;
     } catch (e) {
-      return { configured: true, calName: c.calName, error: String(e && e.message || e).slice(0, 160), events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
-    } finally { PRIV_CACHE.p = null; }
+      return { configured: true, calName: c.calName, error: String(e && e.message || e).slice(0, 160), events: (C.data && C.data.events) || [] };
+    } finally { C.p = null; }
   })();
-  return PRIV_CACHE.p;
+  return C.p;
 }
 async function privateCalWrite(op, payload) {
   const c = icloudCfg();
@@ -1248,10 +1277,13 @@ async function privateCalWrite(op, payload) {
   return privateCalendar(true);
 }
 
-function privateCalQuick() {
+// short = nur −7 … +60 Tage (Cockpit/Heute); ist der volle Stand frisch, wird er mitbenutzt
+function privateCalQuick(short) {
   const c = icloudCfg(); if (!c.user || !c.pass || !c.calUrl) return Promise.resolve({ configured: false, events: [] });
-  if (PRIV_CACHE.data) { if (Date.now() - PRIV_CACHE.at > 45000) privateCalendar(false).catch(() => {}); return Promise.resolve(PRIV_CACHE.data); }
-  return Promise.race([privateCalendar(false), new Promise(r => setTimeout(() => r(null), 7000))]);
+  if (short && PRIV_CACHE.data && Date.now() - PRIV_CACHE.at < PRIV_TTL) return Promise.resolve(PRIV_CACHE.data);
+  const C = short ? PRIV_SHORT : PRIV_CACHE;
+  if (C.data) { if (Date.now() - C.at > PRIV_TTL) privateCalendar(false, short).catch(() => {}); return Promise.resolve(C.data); }
+  return Promise.race([privateCalendar(false, short), new Promise(r => setTimeout(() => r(null), 7000))]);
 }
 // Kalender-Termine (Outlook/CalDAV) über die Mail-API, falls dort ein CalDAV-Server konfiguriert ist.
 async function calendarEvents() {
@@ -1437,18 +1469,18 @@ function keepRailway(d) {
   if (r && r.configured !== false && Date.now() - RW_ERR_LOG > 3600e3) { RW_ERR_LOG = Date.now(); console.error("Websites: Railway liefert keine Projekte (" + (r.error || "leer") + ") – noch kein gespeicherter Stand"); }
   return d;
 }
+// ADMIN_SEEN setzen nur echte Cockpit-Anfragen (Simon 16.11.2026) – sonst hielten cockpitBuild/SEO-Tick die Hintergrund-Aktualisierung ewig am Laufen
 async function sitesSnapshot(force) {
-  ADMIN_SEEN = Date.now();
   if (!CF.token && !RW.token) return { fetchedAt: new Date().toISOString(), configured: false, totals: {}, sites: [], railway: { configured: false, projects: [] } };
   if (SITES_CACHE.data && !force) {
-    if ((Date.now() - SITES_CACHE.at) > 2 * 60 * 1000) refreshSites();   // veraltet: sofort alten Stand liefern, im Hintergrund neu holen
+    if ((Date.now() - SITES_CACHE.at) > 10 * 60 * 1000) refreshSites();   // veraltet nach 10 min (Simon 16.11.2026, vorher 2 min): sofort alten Stand liefern, im Hintergrund neu holen
     return SITES_CACHE.data;
   }
   return (await refreshSites()) || SITES_CACHE.data || { fetchedAt: new Date().toISOString(), configured: true, error: "load_failed", totals: {}, sites: [] };
 }
-// Hintergrund: beim Start vorwärmen, danach alle 5 Min (nur solange die Admin in der letzten Stunde benutzt wurde)
+// Hintergrund: beim Start vorwärmen, danach alle 15 Min (nur solange die Admin in der letzten Stunde benutzt wurde; Simon 16.11.2026, vorher 5 Min)
 setTimeout(() => { refreshSites(); }, 25000);   // erst nach dem Umschalten auf den neuen Container (sonst meldet sich die eigene Seite als offline)
-setInterval(() => { if (Date.now() - ADMIN_SEEN < 60 * 60 * 1000) refreshSites(); }, 5 * 60 * 1000);
+setInterval(() => { if (Date.now() - ADMIN_SEEN < 60 * 60 * 1000) refreshSites(); }, 15 * 60 * 1000);
 
 // ── Railway: alle Projekte mit Services, Deploy-Status und Domains ──
 const RW = { token: process.env.RAILWAY_API_TOKEN || "", workspace: process.env.RAILWAY_WORKSPACE_ID || "1e0fd4ca-38db-4393-9b78-9e418fca8445" };
@@ -1662,7 +1694,7 @@ async function finApi(req, res, u, p) {
     if (idem) { console.log("fin-api", who, "Idempotency-Key: bestehende Rechnung", idem.objects.invoice.id); return J(200, idem); }
     const r = await sev(req.method, path, { query, body });
     if (kind === "list" && r && Array.isArray(r.objects)) r.objects = r.objects.filter(o => finApiOwns(who, o));
-    if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
+    if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale(); }   // nur veraltet (Simon 16.11.2026)
     return J(200, r);
   } catch (e) { return J(e.status && e.status < 600 ? e.status : 500, { error: { message: String(e.message || e).slice(0, 300) } }); }
 }
@@ -1722,7 +1754,9 @@ function sevName(c) { if (!c) return ""; return String(c.name || [c.surename, c.
 function sevDateDE(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : iso; }
 function viennaToday() { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date()); }
 function notePid(v) { const m = String(v || "").match(/(?:^|\s)Mollie\s+(tr_[A-Za-z0-9]{4,40})(?![A-Za-z0-9_])/); return m ? m[1] : undefined; }
-let SEV_CACHE = { at: 0, data: null, p: null };
+// SEV_CACHE.at = 0 heißt „veraltet“; SEV_INV merkt den Zeitpunkt (Simon 16.11.2026: Serien-Änderungen bündeln, siehe sevSnapshot)
+let SEV_INV = 0, SEV_T = null;
+const SEV_CACHE = { _at: 0, data: null, p: null, get at() { return this._at; }, set at(v) { if (!v) SEV_INV = Date.now(); this._at = v; } };
 let SEV_META = { at: 0, data: null };
 // Vollständige Liste: eigene Buchhaltung liegt im Speicher → alles auf einmal, sonst seitenweise (sevAll)
 function sevList(pth, q, max) {
@@ -1796,9 +1830,14 @@ async function sevBuild() {
   return out;
 }
 async function sevSnapshot(force) {
-  const fresh = SEV_CACHE.data && (Date.now() - SEV_CACHE.at < 3 * 60 * 1000);
-  if (fresh && !force) return SEV_CACHE.data;
-  if (!SEV_CACHE.p) { const pr = sevBuild().then(d => { SEV_CACHE = { at: Date.now(), data: d, p: null }; return d; }).catch(e => { SEV_CACHE.p = null; console.error("sevdesk snapshot:", e && e.message); throw e; }); pr.catch(() => {}); SEV_CACHE.p = pr; }
+  const C = SEV_CACHE, fresh = C.data && (Date.now() - C._at < 3 * 60 * 1000);
+  if (fresh && !force) return C.data;
+  // Simon 16.11.2026: nach Änderungen (oft ~20 kurz hintereinander) noch 5 s den letzten Stand liefern und erst danach EINMAL neu bauen
+  if (!force && C.data && !C.p && Date.now() - SEV_INV < 5000) {
+    if (!SEV_T) { SEV_T = setTimeout(() => { SEV_T = null; sevSnapshot().catch(() => {}); }, Math.max(100, 5000 - (Date.now() - SEV_INV) + 50)); if (SEV_T.unref) SEV_T.unref(); }
+    return C.data;
+  }
+  if (!C.p) { const t0 = Date.now(); const pr = sevBuild().then(d => { C.data = d; C._at = t0 >= SEV_INV ? Date.now() : 0; C.p = null; return d; }).catch(e => { C.p = null; console.error("sevdesk snapshot:", e && e.message); throw e; }); pr.catch(() => {}); C.p = pr; }
   if (SEV_CACHE.data && !force) return SEV_CACHE.data;            // alte Daten sofort, neue im Hintergrund
   return SEV_CACHE.p;
 }
@@ -2113,7 +2152,7 @@ async function offerEnsureLead(id, email) {
     if (cid) l.contactId = cid;
     leads.push(l); created = true;
   }
-  fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); try { COCKPIT_MEMO.at = 0; } catch (e) {}
+  fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); try { COCKPIT_MEMO.stale(); } catch (e) {}
   return { id: l.id, created, name: l.company || l.name };
 }
 // Angebot → Rechnung (Entwurf) über /Invoice/Factory/createInvoiceFromOrder (ganze Summe als Schlussrechnung)
@@ -2282,18 +2321,22 @@ async function recurringInvoiceSend(invoiceId) {
   SEV_CACHE.at = 0; return { to: to.replace(/^[^@]+/, "…") };
 }
 setTimeout(finRecurringTick, 60 * 1000); setInterval(finRecurringTick, 60 * 60 * 1000);
+// Mahnlauf schon heute gelaufen → Stand im Speicher (Simon 16.11.2026: nicht mehr stündlich aus der Datenbank lesen)
+let DUN_DAY = "";
 // Einmal täglich ab 08:00 (Wien): Mahnlauf (nur Vorschläge – gesendet wird nach Freigabe) und Abgleich USt-Zahlungen ans Finanzamt (Vorschlag)
 async function finDailyTick() {
   if (!FIN_STATE.local) return;
   const h = +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }).format(new Date()); if (h < 8) return;
-  try { const st = await dunState(), today = viennaToday(); if (st.lastRun === today) return; st.lastRun = today; await FIN.setMeta("dunning", st);
-    await FIN_LOCAL.load(); const pr = dunProposals(st); st.lastCount = pr.length;
-    if (st.settings.enabled && pr.length) console.log("Mahnlauf:", pr.length, "Mahnungen zur Freigabe");   // nie automatisch senden
-    await FIN.setMeta("dunning", Object.assign(await dunState(), { lastRun: today, lastCount: st.lastCount }));
-  } catch (e) { console.error("Mahnlauf:", e.message); }
+  const today = viennaToday();
+  if (DUN_DAY !== today) try { const st = await dunState(); DUN_DAY = today;
+    if (st.lastRun !== today) { st.lastRun = today; await FIN.setMeta("dunning", st);
+      await FIN_LOCAL.load(); const pr = dunProposals(st); st.lastCount = pr.length;
+      if (st.settings.enabled && pr.length) console.log("Mahnlauf:", pr.length, "Mahnungen zur Freigabe");   // nie automatisch senden
+      await FIN.setMeta("dunning", Object.assign(await dunState(), { lastRun: today, lastCount: st.lastCount })); }
+  } catch (e) { DUN_DAY = ""; console.error("Mahnlauf:", e.message); }
   try { const n = await uvaAutoPay(); if (n) console.log("UVA:", n, "Zahlung(en) ans Finanzamt zur Prüfung vorgeschlagen"); } catch (e) { console.error("UVA-Zahlungen:", e.message); }
 }
-setTimeout(finDailyTick, 90 * 1000); setInterval(finDailyTick, 60 * 60 * 1000);
+setTimeout(finDailyTick, 150 * 1000); setInterval(finDailyTick, 60 * 60 * 1000);   // Start gestaffelt (Simon 16.11.2026: nicht gleichzeitig mit PRINT.tick nach 90 s)
 // ── Automatischer Mahnlauf: überfällige Rechnungen bekommen nach X Tagen die nächste Stufe; Simon gibt frei (oder „automatisch senden“) ──
 // Gebühren je Stufe, kumulativ (jede Stufe kommt zu den offenen Gebühren dazu): Firmen (UID oder Firmenkontakt) 0/10/30 € (= 40 €), Privat 0/5/5 €.
 // Firmen: Pauschale bis 40 € nach § 458 UGB; Privat nur angemessene tatsächliche Kosten (§ 1333 ABGB). Mahngebühren = Schadenersatz → 0 %, nicht in der UVA.
@@ -2354,7 +2397,7 @@ async function dunSend(st, list) {
 const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook, mailSignature: () => mailSignature(), firm: () => FIN_STATE.firm || {},
   // Kartenzahlung ohne Zahlername: Händler aus dem Buchungstext („E-COMM 24,00 AT K1 01.10. 08:35 WORLD4YOU INTERNET“ → „World4you Internet“)
   cardName: p => { try { const c = FIN_RULES.card(p); return c && c.merchant ? c.merchant.replace(/[*]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase().replace(/(^|[\s\-\/])([a-zäöü])/g, (m, x, y) => x + y.toUpperCase()) : ""; } catch (e) { return ""; } },
-  snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
+  snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale(); } });
 
 // ── Abrechnung: Preise, Website-Einstellungen, letzte Rechnungen (FS Creative, kochdu, VALUERO) ──
 const BILLING_FILE = path.join(DATA_DIR, "billing.json");
@@ -3280,7 +3323,10 @@ async function huettengaudiStats(year) {
 // Kantineur: laufende Abos (MRR, live). kochdu, VALUERO, Skikaiser, Hüttengaudi: Prognose, die nur alle 14 Tage neu berechnet wird.
 const FORECAST_FILE = path.join(DATA_DIR, "forecast.json");
 function readForecast() { try { return JSON.parse(fs.readFileSync(FORECAST_FILE, "utf8")) || {}; } catch (e) { return {}; } }
-function writeForecast(o) { try { fs.writeFileSync(FORECAST_FILE, JSON.stringify(o)); } catch (e) {} }
+// nur schreiben, wenn sich etwas geändert hat (Simon 16.11.2026 – vorher bei jedem Cockpit-Aufbau)
+let FORECAST_LAST = null;
+function writeForecast(o) { try { const t = JSON.stringify(o); if (FORECAST_LAST === null) { try { FORECAST_LAST = fs.readFileSync(FORECAST_FILE, "utf8"); } catch (e) { FORECAST_LAST = ""; } }
+  if (t === FORECAST_LAST) return; fs.writeFileSync(FORECAST_FILE, t); FORECAST_LAST = t; } catch (e) {} }
 function kochduCumCents(ko) { const t = (ko && ko.totals) || {}; return (+t.barOpenCents || 0) + (+t.barSettledCents || 0) + (+t.onlineProvisionCents || 0); }
 // Tägliche Stände merken, damit die kochdu-Prognose auf echten Zuwächsen der letzten Wochen beruht
 function forecastSnapshot(fc, today, ko) {
@@ -3352,7 +3398,7 @@ async function incomeForecast(ctx) {
   const koLive = curYear && ko && ko.trend && ko.totals ? kochduForecast(fc, ko, today) : null;
   ["kochdu", "valuero", "skikaiser", "huettengaudi"].forEach(key => { const s = key === "kochdu" && koLive ? koLive : (fc.sources && fc.sources[key]); if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser", huettengaudi: "Hüttengaudi" }[key], live: false }, s)); });
   // Druckshop: Marge der Bestellungen im Monatsschnitt (live)
-  const pr = curYear && PRINT && PRINT.incomeStats ? await withTimeout(PRINT.incomeStats(), 4000, null).catch(() => null) : null;
+  const pr = curYear && PRINT && PRINT.incomeStats ? await withTimeout(printIncomeCached(), 4000, null).catch(() => null) : null;
   if (pr && pr.monthly > 0) lines.push({ key: "druckshop", label: "Druckshop", monthly: pr.monthly, basis: "Marge der Bestellungen, Schnitt der letzten " + pr.days + " Tage (" + pr.orders + " Bestellungen, Umsatz netto ca. " + String(Math.round(pr.revenueMonthly)).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " € pro Monat)", live: true });
   const hosting = round2((sites || []).filter(s => s.active && !s.own).reduce((a, s) => a + (s.incomeYear || 0), 0) / 12);
   if (hosting > 0) lines.push({ key: "hosting", label: "Websites (Hosting & Domains)", monthly: hosting, basis: "fixe Verträge, Jahresbetrag ÷ 12", live: true });
@@ -3420,6 +3466,19 @@ function platCreditSoon(k, ko) {
     const n = (await FIN_CREDIT.refunds(hints)) + (await FIN_CREDIT.kochduDouble((ko && ko.restaurants) || []));
     if (n) console.log("Gutschrift-Vorschläge:", n, "zur Prüfung"); }).catch(e => console.error("Gutschrift-Vorschläge:", e.message)));
 }
+// Druckshop-Monatseinkommen: 10 min zwischenspeichern (Simon 16.11.2026) – liest sonst bei jedem Cockpit-Aufbau alle Bestellungen
+let PRINT_INC = { at: 0, v: null, p: null };
+function printIncomeCached() {
+  if (PRINT_INC.v && Date.now() - PRINT_INC.at < 10 * 60e3) return Promise.resolve(PRINT_INC.v);
+  if (PRINT_INC.p) return PRINT_INC.p;
+  PRINT_INC.p = Promise.resolve().then(() => PRINT.incomeStats()).then(v => { PRINT_INC = { at: Date.now(), v, p: null }; return v; }, e => { PRINT_INC.p = null; throw e; });
+  return PRINT_INC.p;
+}
+// Mail-Teil der Cockpit-Daten (auch für den frischen Stand aus MAIL_SNAP zwischen zwei Aufbauten)
+function cockpitMail(mail) {
+  const msgs = mail && Array.isArray(mail.messages) ? mail.messages : [];
+  return Object.assign({ accounts: (mail && mail.accounts) || [], fetchedAt: mail && mail.fetchedAt, messages: msgs.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 200) }, mailFlags());
+}
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
   const weatherP = withTimeout(weatherNow(), 3000, null);
@@ -3427,7 +3486,7 @@ async function cockpitBuild(year, forceForecast) {
   const [sev, sitesSnap, rwc, k, b, ko, va, vaPrev, mail, cal, pc, ski, hg, bya] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
-    withTimeout(valueroStats(String(+year - 1)), 8000, null), withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
+    withTimeout(valueroStats(String(+year - 1)), 8000, null), withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(true), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
     withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }), withTimeout(blitzAbgleichBookings(year, today), 9500, { bookings: null, status: "fehlt", error: "keine Antwort (Zeitüberschreitung)" }),
   ]);
   const bill = readBilling(), incomeVouchers = await incP;
@@ -3444,7 +3503,6 @@ async function cockpitBuild(year, forceForecast) {
     const w4yY = w4yYear(c), costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear + w4yY);
     return Object.assign({}, s, { own: c.own, active: c.active, hidden: c.hidden, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), w4y: c.w4y, w4yQty: c.w4yQty, w4yYear: w4yY, incomeYear, costYear, result: round2(incomeYear - costYear) });
   });
-  const msgs = mail && Array.isArray(mail.messages) ? mail.messages : [];
   const events = [].concat(
     (cal && cal.events || []).map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || e.start || "").slice(0, 10), time: e.time || "", source: "kalender" })),
     (pc && pc.events || []).map(e => ({ id: e.id, title: e.title, date: e.date, time: e.time, endTime: e.endTime, location: e.location, source: "icloud", cal: e.calName || "" })),
@@ -3463,14 +3521,19 @@ async function cockpitBuild(year, forceForecast) {
       kantineur: k, valuero: va,
     },
     sites, kochduDay: KOCHDU.token ? withSafe(() => koDayInfo(today)) : null, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx, fxFallback: !!rwc.fxFallback } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
-    mail: Object.assign({ accounts: (mail && mail.accounts) || [], fetchedAt: mail && mail.fetchedAt, messages: msgs.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 200) }, mailFlags()),
+    mail: cockpitMail(mail),
     events, todos: readTodos(),
   };
 }
-// Cockpit-Daten: frisch (≤ 15 s) direkt, bis 30 min alt sofort ausliefern + im Hintergrund neu bauen (stale-while-revalidate).
-// at = 0 heißt „ungültig“ (nach Änderungen) → dann wird auf den Neubau gewartet. Letzter Stand liegt auch auf /data (schneller Start nach Deploy).
-let COCKPIT_INV = 0;
-const COCKPIT_MEMO = { _at: 0, key: "", data: null, p: null, pKey: "", get at() { return this._at; }, set at(v) { if (!v) COCKPIT_INV = Date.now(); this._at = v; } };
+// Cockpit-Daten: frisch (≤ 3 min, Simon 16.11.2026 – vorher 15 s) direkt, bis 30 min alt sofort ausliefern + im Hintergrund neu bauen (stale-while-revalidate).
+// at = 0 heißt „ungültig“ (nach eigenen Änderungen, die man sofort sehen will: Verrechnen/Buchung, Websites-Abrechnung, Leads) → auf den Neubau warten.
+// stale() heißt nur „veraltet“ (Simon 16.11.2026, für Hintergrund- und Serien-Änderungen: Plattform-Rechnungen über fin-api, Buchhaltung, Bank-Import,
+// Mail-Aktionen, Auto-Buchungen, Kontaktformular): letzter Stand sofort (mit stale: true), Neubau im Hintergrund – das Cockpit lädt bei stale nach 4 s nach.
+// Letzter Stand liegt auch auf /data (schneller Start nach Deploy).
+let COCKPIT_INV = 0, COCKPIT_HARD = 0;
+const COCKPIT_FRESH = 3 * 60e3;
+const COCKPIT_MEMO = { _at: 0, dirty: false, key: "", data: null, p: null, pKey: "", get at() { return this.dirty ? 0 : this._at; }, set at(v) { if (!v) COCKPIT_INV = COCKPIT_HARD = Date.now(); this._at = v; },
+  stale() { COCKPIT_INV = Date.now(); this.dirty = true; } };
 const COCKPIT_SWR = 30 * 60e3, COCKPIT_SNAP_FILE = path.join(DATA_DIR, "cockpit-snap.json");
 let COCKPIT_SNAP_AT = 0;
 try { const sn = JSON.parse(fs.readFileSync(COCKPIT_SNAP_FILE, "utf8")); if (sn && sn.data && Date.now() - sn.at < COCKPIT_SWR) { COCKPIT_MEMO.data = sn.data; COCKPIT_MEMO.key = sn.key; COCKPIT_MEMO._at = sn.at; } } catch (e) {}
@@ -3479,14 +3542,33 @@ function cockpitPersist() { if (Date.now() - COCKPIT_SNAP_AT < 60e3) return; COC
 function cockpitRebuild(year, forceForecast) {
   const key = String(year), M = COCKPIT_MEMO; if (M.p && M.pKey === key) return M.p;
   const t0 = Date.now(); M.pKey = key;
-  M.p = cockpitBuild(year, forceForecast).then(d => { M.key = key; M.data = d; M._at = t0 >= COCKPIT_INV ? Date.now() : 0; M.p = null; cockpitPersist(); return d; }).catch(e => { M.p = null; throw e; });
+  M.p = cockpitBuild(year, forceForecast).then(d => { M.key = key; M.data = d; M._at = t0 >= COCKPIT_HARD ? Date.now() : 0; M.dirty = t0 < COCKPIT_INV; M.p = null; cockpitPersist(); return d; }).catch(e => { M.p = null; throw e; });
   return M.p;
 }
 async function cockpitData(year, force, forceForecast) {
-  const key = String(year), M = COCKPIT_MEMO, ok = !force && !forceForecast && M.data && M.key === key && M.at > 0, age = Date.now() - M.at;
-  if (ok && age < 15000) return M.data;
+  const key = String(year), M = COCKPIT_MEMO, ok = !force && !forceForecast && M.data && M.key === key && M._at > 0, age = Date.now() - M._at;
+  if (force) JSON_FORCE_AT = Date.now();
+  if (ok && !M.dirty && age < COCKPIT_FRESH) return M.data;
   if (ok && age < COCKPIT_SWR) { cockpitRebuild(year).catch(() => {}); return Object.assign({}, M.data, { stale: true }); }   // sofort, Aktualisierung läuft
   return cockpitRebuild(year, forceForecast);
+}
+// Antwort von /admin/api/cockpit (Simon 16.11.2026): ETag aus dem Inhalt; schickt das Cockpit ?etag=… (oder If-None-Match) mit dem
+// gleichen Stand, kommt nur { same: true, etag } zurück. Sonst die volle Antwort mit "etag" als erstem Feld (rückwärtskompatibel);
+// die komprimierte Fassung wird je Stand gemerkt, damit mehrere Tabs/Polls nicht jedes Mal neu komprimieren.
+let COCKPIT_OUT = { tag: "", z: {} };
+function cockpitSend(req, res, u, body) {
+  const tag = crypto.createHash("sha1").update(body).digest("base64").replace(/[^\w]/g, "").slice(0, 22);
+  const h = { "Content-Type": TYPES[".json"], "Cache-Control": "no-store", ETag: '"' + tag + '"', Vary: "Accept-Encoding" };
+  const want = String(u.searchParams.get("etag") || "").replace(/"/g, ""), inm = String(req.headers["if-none-match"] || "").split(/\s*,\s*/).map(t => t.replace(/^W\//, "").replace(/"/g, ""));
+  if (want === tag) return send(res, 200, JSON.stringify({ same: true, etag: tag }), TYPES[".json"], { "Cache-Control": "no-store", ETag: h.ETag });
+  if (inm.indexOf(tag) > -1) { res.writeHead(304, { ETag: h.ETag, "Cache-Control": "no-store" }); return res.end(); }
+  const full = '{"etag":"' + tag + '",' + body.slice(1);
+  const ae = String(req.headers["accept-encoding"] || ""), enc = /\bbr\b/.test(ae) ? "br" : /\bgzip\b/.test(ae) ? "gzip" : "";
+  if (!enc || full.length <= 1024) return send(res, 200, full, h["Content-Type"], h);
+  if (COCKPIT_OUT.tag !== tag) COCKPIT_OUT = { tag, z: {} };
+  let z = COCKPIT_OUT.z[enc];
+  if (!z) { const buf = Buffer.from(full); z = COCKPIT_OUT.z[enc] = enc === "br" ? zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } }) : zlib.gzipSync(buf, { level: 6 }); }
+  h["Content-Encoding"] = enc; res.writeHead(200, h); return res.end(z);
 }
 // Lead bearbeiten: Phase, geschätzter Wert, Notizen (Daten bleiben in leads.json)
 function leadOp(pl) {
@@ -4014,7 +4096,7 @@ async function fonDataboxEntry(pin, applkey) {
   });
 }
 // Databox täglich automatisch (nur mit FON_PIN): neue Bescheide/Mitteilungen erscheinen im Cockpit
-setTimeout(function fonDbTick() { if (process.env.FON_PIN && !fonZugang().fehlt) fonDatabox("", 31).catch(e => console.error("FinanzOnline Databox:", e.message)); setTimeout(fonDbTick, 24 * 3600e3).unref(); }, 5 * 60e3).unref();
+setTimeout(function fonDbTick() { if (process.env.FON_PIN && !fonZugang().fehlt) { jobDone("fonDatabox"); fonDatabox("", 31).catch(e => console.error("FinanzOnline Databox:", e.message)); } setTimeout(fonDbTick, 24 * 3600e3).unref(); }, jobDelay("fonDatabox", 24 * 3600e3, 5 * 60e3)).unref();   // letzter Lauf gemerkt (Simon 16.11.2026)
 // Entwurf aus den aktuellen sevDesk-Daten (serverseitig berechnet)
 const FON_JAHR_SCHEMA = { 2025: true };   // veröffentlichte BMF-Schemata „Jahreserklärungen“, gegen die der Builder geprüft ist
 async function fonEntwurf(art, key, paket, fresh) {
@@ -4558,7 +4640,7 @@ async function handleAdmin(req, res, u, p) {
       else if (op === "acceptAll") r = { results: await FIN_PROP.acceptAll(pl.kind ? String(pl.kind) : "") };
       else if (op === "like") r = { result: await FIN_RULES.likeApply(String(pl.txId || ""), pl.act || {}) };   // „Beleg wie zuletzt“ – Klick beim Öffnen eines Umsatzes
       else return J(400, { ok: false, error: "unbekannte Aktion" });
-      SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+      SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale();
       return J(200, Object.assign({ ok: true }, r, await FIN_PROP.view()));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
@@ -4622,7 +4704,7 @@ async function handleAdmin(req, res, u, p) {
       else if (op === "refundundo") r = (await FIN_LOCAL.refundUndo(tx)).objects;
       else if (op === "creditrefundundo") r = (await FIN_LOCAL.creditRefundUndo(tx)).objects;
       else return J(400, { ok: false, error: "unbekannte Aktion" });
-      SEV_CACHE.at = 0; STEUER_CACHE.at = 0; IM_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+      SEV_CACHE.at = 0; STEUER_CACHE.at = 0; IM_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale();
       return J(200, { ok: true, op, result: r && r.invoice ? { invoiceId: String(r.invoice.id), nr: r.invoice.invoiceNumber || "", paid: +r.invoice.paidAmount || 0, status: +r.invoice.status || 0, made: r.made || undefined, freed: r.freed || undefined } : (r && r.id ? { id: String(r.id) } : true) });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
@@ -4758,7 +4840,7 @@ async function handleAdmin(req, res, u, p) {
       if (!pl.preview && pl.confirm !== true) return send(res, 400, JSON.stringify({ ok: false, error: "Bestätigung fehlt" }), TYPES[".json"]);
       const r = await FIN_LOCAL.importBank(pl.accountId, parsed.items, FIN_BANK.hash, !!pl.preview);
       if (!pl.preview && FIN_STATE.local) { r.mollieLinked = await FIN_MOLLIE.relink().catch(() => 0); r.rules = await FIN_RULES.run().catch(() => ({ done: 0 })); }   // Mollie-Auszahlungen mit neuen Bankumsätzen verknüpfen
-      if (!pl.preview) { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
+      if (!pl.preview) { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale(); }
       return send(res, 200, JSON.stringify(Object.assign({ ok: true, format: parsed.format, preview: !!pl.preview, local: FIN_STATE.local }, r)), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
@@ -4966,7 +5048,7 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", async () => {
       let pl; try { pl = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ ok: false, error: "bad_json" }), TYPES[".json"]); }
       const action = String(pl.action || "discover");
-      if (action === "disconnect") { icloudClear(); PRIV_CACHE = { at: 0, data: null, p: null }; return send(res, 200, JSON.stringify({ ok: true }), TYPES[".json"]); }
+      if (action === "disconnect") { icloudClear(); PRIV_CACHE = { at: 0, data: null, p: null }; PRIV_SHORT = { at: 0, data: null, p: null }; return send(res, 200, JSON.stringify({ ok: true }), TYPES[".json"]); }
       const cur = icloudCfg();
       const user = String(pl.user || cur.user || "").trim(), pass = String(pl.pass || "").replace(/\s+/g, "") || cur.pass;
       if (!user || !pass) return send(res, 400, JSON.stringify({ ok: false, error: "missing" }), TYPES[".json"]);
@@ -4976,7 +5058,7 @@ async function handleAdmin(req, res, u, p) {
         const pick = cals.find(c => c.url === pl.calUrl);
         if (!pick) return send(res, 400, JSON.stringify({ ok: false, error: "calendar_not_found" }), TYPES[".json"]);
         if (!icloudSave({ user, pass, calUrl: pick.url, calName: pick.name, calColor: pick.color })) return send(res, 500, JSON.stringify({ ok: false, error: "save_failed" }), TYPES[".json"]);
-        PRIV_CACHE = { at: 0, data: null, p: null };
+        PRIV_CACHE = { at: 0, data: null, p: null }; PRIV_SHORT = { at: 0, data: null, p: null };
         const d = await privateCalendar(true);
         return send(res, 200, JSON.stringify({ ok: true, calName: pick.name, privateCal: d }), TYPES[".json"]);
       } catch (e) {
@@ -5025,6 +5107,7 @@ async function handleAdmin(req, res, u, p) {
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/sites") {
+    ADMIN_SEEN = Date.now();   // echte Anfrage aus dem Cockpit (Simon 16.11.2026)
     try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
@@ -5046,8 +5129,10 @@ async function handleAdmin(req, res, u, p) {
       // immer frisch (nicht aus dem Zwischenspeicher): Aufträge, Verbindungs-Kurzfassung (nur Cache, keine Prüfung), Mail-Status, Wetter
       weatherNow().catch(() => {});
       const fresh = { auftraege: auftraegeView(readAuftraege()), connections: CONN.summary(), weather: WEATHER.data || d.weather || null, platformStatus: platformStatus() };
-      if (d.mail) fresh.mail = Object.assign({}, d.mail, mailFlags());
-      return sendGz(req, res, 200, JSON.stringify(Object.assign({}, d, fresh)), TYPES[".json"], { "Cache-Control": "no-store" }); }
+      // Mails: neuerer Stand aus dem Mail-Puffer (ohne Abruf) statt bis zu 3 min alter Liste aus dem Aufbau (Simon 16.11.2026)
+      if (d.mail && !MAIL_SNAP.at && MAIL.url && MAIL.token) await withTimeout(mailSnapshot(), 4000, null).catch(() => null);   // nach Mail-Aktionen: Stand per ETag nachholen (billig)
+      if (d.mail) fresh.mail = MAIL_SNAP.data && MAIL_SNAP.okAt > (Date.parse(d.fetchedAt || 0) || 0) ? cockpitMail(MAIL_SNAP.data) : Object.assign({}, d.mail, mailFlags());
+      return cockpitSend(req, res, u, JSON.stringify(Object.assign({}, d, fresh))); }
     catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "POST") {
@@ -5267,7 +5352,7 @@ async function handleAdmin(req, res, u, p) {
       delete payload.sig;
       try {
         const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/draft"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)), signal: AbortSignal.timeout(60000) });
-        const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
+        const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.stale(); }
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_draft_failed" }), TYPES[".json"]); }
     });
@@ -5283,7 +5368,7 @@ async function handleAdmin(req, res, u, p) {
       try {
         const r = await fetch(sendUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)), signal: AbortSignal.timeout(120000) });
         const txt = await r.text();
-        if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
+        if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.stale(); }
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_send_failed" }), TYPES[".json"]); }
     });
@@ -5301,7 +5386,7 @@ async function handleAdmin(req, res, u, p) {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     try { const pl = await sevBody(req, 4000);
       const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/mkdir"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, account: String(pl.account || ""), path: String(pl.path || "") }), signal: AbortSignal.timeout(30000) });
-      const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
+      const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.stale(); } return send(res, r.status, txt, TYPES[".json"]);
     } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_mkdir_failed" }), TYPES[".json"]); }
   }
   // Ordner-Verwaltung (Rechtsklick-Menü): anlegen / umbenennen / löschen / alle gelesen / leeren
@@ -5318,7 +5403,7 @@ async function handleAdmin(req, res, u, p) {
       if (pl.newPath != null) fwd.newPath = String(pl.newPath); if (pl.name != null) fwd.name = String(pl.name);
       if (pl.parent != null) fwd.parent = String(pl.parent); if (pl.force === true) fwd.force = true;
       const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/folder"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fwd), signal: AbortSignal.timeout(60000) });
-      const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
+      const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.stale(); } return send(res, r.status, txt, TYPES[".json"]);
     } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_folder_failed" }), TYPES[".json"]); }
   }
   if (p === "/admin/api/mail-action" && req.method === "POST") {
@@ -5331,7 +5416,7 @@ async function handleAdmin(req, res, u, p) {
       try {
         const r = await fetch(actionUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)), signal: AbortSignal.timeout(60000) });
         const txt = await r.text();
-        if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
+        if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.stale(); }
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_action_failed" }), TYPES[".json"]); }
     });
@@ -5362,7 +5447,7 @@ async function saveLead(lead, opt) {
   const leads = readLeads(); leads.push(lead);
   let stored = false;
   try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
-  try { COCKPIT_MEMO.at = 0; } catch (e) {}
+  try { COCKPIT_MEMO.stale(); } catch (e) {}
   try { addTask({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(), leadId: lead.id,
     notes: tkClip([lead.email, lead.phone, /chat/i.test(lead.source || "") ? lead.source : ""].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }); } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
   if (!notify) return { stored, mailed: false };
@@ -5524,7 +5609,7 @@ const FIN_PROP = require("./fin-proposals.js")({ L: FIN_LOCAL, getMeta: k => FIN
   // nie still in gemeldete UVA-Zeiträume buchen (ältere/gemeldete Eingänge bleiben „Zur Prüfung“)
   reportedPeriods: () => steuerReportedPeriods(),
   notifyAuto: async list => { if (!process.env.DATABASE_URL || !list.length) return; const eu = n => (+n || 0).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
-    SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+    SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale();
     await PUSH.send("fin", list.length === 1 ? { title: "Zahlung eingegangen: " + (list[0].contact || list[0].payer || "Kunde") + " · " + eu(list[0].amount), body: "Rechnung " + (list[0].nr || "") + " automatisch verbucht – im Cockpit rückgängig machbar.", url: "/admin#geld", tag: "fin-auto" }
       : { title: list.length + " Zahlungen eingegangen", body: list.slice(0, 4).map(x => (x.contact || x.payer || "Kunde") + " · " + (x.nr || "") + " · " + eu(x.amount)).join("\n") + "\nAutomatisch verbucht – im Cockpit rückgängig machbar.", url: "/admin#geld", tag: "fin-auto" }); },
   notify: async (fresh, total) => { if (!process.env.DATABASE_URL || !fresh.length) return; await PUSH.send("fin", fresh.length === 1 && fresh[0].amount != null ? { title: "Buchung: " + (fresh[0].amount >= 0 ? "Eingang" : "Ausgang") + " iHv. " + Math.abs(fresh[0].amount).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €", body: fresh[0].title + (fresh[0].detail ? "\n" + String(fresh[0].detail).slice(0, 140) : (total > 1 ? "\nInsgesamt " + total + " zur Prüfung" : "")),
@@ -5541,7 +5626,8 @@ const FIN_DOCMATCH = require("./fin-docmatch.js")({ L: FIN_LOCAL, P: () => FIN_P
   onChange: () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } });
 // Railway-Rechnungen (PDF) holen und als Beleg ablegen – Verbindung mit der Kartenzahlung bestätigst du in „Zur Prüfung“
 const FIN_RAILWAY = require("./fin-railway.js")({ L: FIN_LOCAL, gql: (q, v) => rwGQL(q, v), workspace: () => RW.workspace, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), onChange: () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } });
-setTimeout(function railwayInv() { (FIN_STATE.local && RW.token ? FIN_RAILWAY.run() : Promise.resolve()).catch(() => {}).finally(() => setTimeout(railwayInv, 6 * 3600e3).unref()); }, 90e3).unref();
+// Railway-Rechnungen: täglich statt alle 6 h, letzter Lauf gemerkt, Start gestaffelt (Simon 16.11.2026)
+setTimeout(function railwayInv() { (FIN_STATE.local && RW.token ? (jobDone("railwayInvoices"), FIN_RAILWAY.run()) : Promise.resolve()).catch(() => {}).finally(() => setTimeout(railwayInv, 24 * 3600e3).unref()); }, jobDelay("railwayInvoices", 24 * 3600e3, 4 * 60e3)).unref();
 function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.proposed) console.log("Belegdateien:", r.proposed, "Zuordnung(en) zur Prüfung vorgeschlagen"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
 if (require.main === module) { setTimeout(docMatchTick, 3 * 60 * 1000); setInterval(docMatchTick, 60 * 60 * 1000); }   // stündlich statt alle 15 Minuten (KI-Kosten, Simon 16.11.2026)
 const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })), auto: await autoBook().then(l => l.length).catch(() => 0) }) });
@@ -5690,10 +5776,12 @@ FIN_PROP.register("mollie-opening", {
 // Ratenkauf (Simon 07.11.2026, MacBook über asgoodasnew): Raten gehören als Teilzahlung an den einen offenen Beleg.
 // „rate-open“: offener Umsatz mit dem gleichen Betrag und Zahler wie mindestens zwei frühere Raten → an den Beleg hängen.
 // „rate-dup“: eigener Beleg ohne Datei, angelegt für eine einzelne Rate (Betrag = Rate, gleicher Lieferant) → Rate an den Hauptbeleg, Extra-Beleg weg.
-function rateVouchers() {
-  const L = FIN_LOCAL, logs = L.all("CheckAccountTransactionLog"), r2 = x => Math.round(x * 100) / 100, out = [];
+// Zahlungs-Logs je Beleg EINMAL indizieren (Simon 16.11.2026 – vorher je Beleg alle Logs durchsucht)
+function voucherLogIndex() { const m = new Map(); FIN_LOCAL.all("CheckAccountTransactionLog").forEach(l => { if (!l.object || l.object.objectName !== "Voucher") return; const k = String(l.object.id); const a = m.get(k); if (a) a.push(l); else m.set(k, [l]); }); return m; }
+function rateVouchers(idx) {
+  const L = FIN_LOCAL, li = idx || voucherLogIndex(), r2 = x => Math.round(x * 100) / 100, out = [];
   for (const m of L.all("Voucher").filter(v => ["100", "750"].indexOf(String(v.status)) > -1 && String(v.creditDebit || "C") === "C")) {
-    const ls = logs.filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(m.id)), by = {};
+    const ls = li.get(String(m.id)) || [], by = {};
     ls.forEach(l => { const t = L.get("CheckAccountTransaction", l.checkAccountTransaction && l.checkAccountTransaction.id); if (!t) return; const k = r2(Math.abs(+l.amountPaid || 0)) + "|" + String(t.payeePayerName || "").toLowerCase(); (by[k] = by[k] || []).push(t); });
     const paid = r2(ls.reduce((a, l) => a + (+l.amountPaid || 0), 0)), offen = r2(Math.abs(+m.sumGross || 0) - paid);
     Object.keys(by).filter(k => by[k].length >= 2).forEach(k => out.push({ m, rate: +k.split("|")[0], payee: k.split("|").slice(1).join("|"), offen }));
@@ -5720,10 +5808,10 @@ FIN_PROP.register("rate-open", {
 FIN_PROP.register("rate-dup", {
   label: "Rate doppelt als eigener Beleg",
   list: async () => {
-    if (!FIN_STATE.local) return []; await FIN_LOCAL.load(); const out = [], L = FIN_LOCAL, logs = L.all("CheckAccountTransactionLog");
+    if (!FIN_STATE.local) return []; await FIN_LOCAL.load(); const out = [], L = FIN_LOCAL, li = voucherLogIndex();
     const low = x => String(x || "").toLowerCase().trim();
-    for (const R of rateVouchers()) for (const v of L.all("Voucher").filter(v => String(v.id) !== String(R.m.id) && low(v.supplierName) === low(R.m.supplierName) && Math.abs(Math.abs(+v.sumGross || 0) - R.rate) < 0.005 && String(v.creditDebit || "C") === "C" && !v.document && !v.docId && !v.enshrined)) {
-      const ls = logs.filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id)); if (ls.length !== 1) continue;
+    for (const R of rateVouchers(li)) for (const v of L.all("Voucher").filter(v => String(v.id) !== String(R.m.id) && low(v.supplierName) === low(R.m.supplierName) && Math.abs(Math.abs(+v.sumGross || 0) - R.rate) < 0.005 && String(v.creditDebit || "C") === "C" && !v.document && !v.docId && !v.enshrined)) {
+      const ls = li.get(String(v.id)) || []; if (ls.length !== 1) continue;
       const t = L.get("CheckAccountTransaction", ls[0].checkAccountTransaction && ls[0].checkAccountTransaction.id); if (!t || String(t.payeePayerName || "").toLowerCase() !== R.payee) continue;
       out.push({ id: "rtd:" + v.id, key: "rtd:" + v.id, amount: R.rate, date: String(v.voucherDate || "").slice(0, 10), payload: { dupId: String(v.id), voucherId: String(R.m.id), txId: String(t.id), logId: String(ls[0].id) },
         title: "Rate vom " + String(t.valueDate || "").slice(0, 10).split("-").reverse().join(".") + " ist doppelt als eigener Beleg erfasst – an den Hauptbeleg hängen",
@@ -5766,10 +5854,20 @@ const IM_CACHE = { at: 0, items: null, p: null };
 async function autoBook() {
   if (!FIN_STATE.local || !process.env.DATABASE_URL) return [];
   const l = await FIN_PROP.autoBookIncoming();
-  if (l.length) { console.log("Zahlungseingänge automatisch verbucht:", l.map(x => (x.nr || x.invoiceId) + " " + x.amount).join(", ")); SEV_CACHE.at = 0; STEUER_CACHE.at = 0; IM_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
+  if (l.length) { console.log("Zahlungseingänge automatisch verbucht:", l.map(x => (x.nr || x.invoiceId) + " " + x.amount).join(", ")); SEV_CACHE.at = 0; STEUER_CACHE.at = 0; IM_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.stale(); }
   return l;
 }
-setTimeout(function warmProposals() { (FIN_STATE.local ? FIN_LOCAL.load().then(() => FIN_LOCAL.pairTransfers()).then(() => FIN_LOCAL.refundScan().catch(e => console.error("Doppelzahlung erkennen:", e.message))).then(() => autoBook().catch(e => console.error("Automatisch verbuchen:", e.message))).then(() => FIN_PROP.view()) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
+// Simon 16.11.2026: nur noch, wenn sich der Buchhaltungs-Stand seit dem letzten Lauf geändert hat (FIN_LOCAL.version: Speichern/Löschen/Import),
+// sonst höchstens alle 30 min (zeitabhängige Regeln, z. B. „höchstens 60 Tage alt“). Geprüft wird weiter alle 4 min – das kostet nichts.
+// „Zur Prüfung“ selbst rechnet beim Öffnen wie bisher frisch (FIN_PROP.view → list), der Lauf hier wärmt nur vor.
+// Neustart: lief das Vorwärmen vor weniger als 30 min (gespeichert), gilt der Stand nach dem Laden als aktuell – kein Lauf direkt nach jedem Deploy
+let WARM_PROP = { ver: -1, at: 0 }, WARM_FIRST = true;
+setTimeout(function warmProposals() {
+  if (WARM_FIRST) { WARM_FIRST = false; if (!jobDue("warmProposals", 30 * 60e3)) { const at0 = jobLast("warmProposals"); FIN_LOCAL.load().then(() => { WARM_PROP = { ver: FIN_LOCAL.version ? FIN_LOCAL.version() : -1, at: at0 }; }).catch(() => {}).finally(() => setTimeout(warmProposals, 4 * 60e3)); return; } }
+  const due = () => !FIN_LOCAL.version || FIN_LOCAL.version() !== WARM_PROP.ver || Date.now() - WARM_PROP.at > 30 * 60e3;
+  (FIN_STATE.local ? FIN_LOCAL.load().then(() => { if (!due()) return "skip";
+    return FIN_LOCAL.pairTransfers().then(() => FIN_LOCAL.refundScan().catch(e => console.error("Doppelzahlung erkennen:", e.message))).then(() => autoBook().catch(e => console.error("Automatisch verbuchen:", e.message))).then(() => FIN_PROP.view())
+      .then(() => { WARM_PROP = { ver: FIN_LOCAL.version ? FIN_LOCAL.version() : -1, at: Date.now() }; jobDone("warmProposals"); }); }) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
 async function imCompute() {
   await FIN_LOCAL.load(); const best = {}; let n = 0;
   for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.mollieType && !t.cashLocked)) {
@@ -5832,6 +5930,7 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
   googleReviewUrl: () => googleReviewUrl(),
   onOrder: o => { try { printTaskSync(o); } catch (e) { console.error("Aufträge (Druck):", e.message); } },
+  onOrders: list => printTaskSyncMany(list), tasksOn: () => PRINT_TASKS,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board
 // Sitemap: statische sitemap.xml (Druckshop-Blöcke nur wenn öffentlich) + Druckshop-Seiten (Preisübersicht, Kategorien, Produkte).
@@ -5873,7 +5972,7 @@ const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, le
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it => PRINT.placeOrder(it.payload.orderId, "Zur Prüfung").then(o => ({ orderNumber: o.printcom.orderNumber })), valid: it => PRINT.proposalValid(it.payload.orderId) });
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
-if (require.main === module) setInterval(() => PRINT.pollActive().catch(e => console.error("Druck-Status:", e.message)), 30 * 60 * 1000).unref();   // laufende Druckaufträge: Status/Tracking alle 30 min
+// laufende Druckaufträge: Status/Tracking fragt PRINT.tick() stündlich (höchstens alle ~2 h, plus Webhook) – eigener 30-min-Takt entfällt (Simon 16.11.2026)
 // ── Vertraulichkeitsvereinbarungen (nda.js): Links aus dem Cockpit „Rechtliches“, online unterschreiben, PDF an beide Seiten ──
 const UPLOADS = require("./uploads.js")({ DATA_DIR, ORIGIN, send, sendGz, adminAuthed, sameSiteReq, mailSend: m => mailApiSend(m), push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m), mailReady: () => !!(MAIL.url && MAIL.token) });
@@ -5894,7 +5993,7 @@ const CONN = (() => {
   let mk = null; try { mk = require("./connections.js"); } catch (e) { if (!e || e.code !== "MODULE_NOT_FOUND") throw e; console.error("Verbindungen: connections.js fehlt"); }
   if (mk) return mk({ DATA_DIR, send, categories: CONN_CATS, adminSeen: () => ADMIN_SEEN, secrets: () => [ADMIN_SECRET, ADMIN_PW] });
   const none = () => null;
-  return { add() {}, list: () => [], summary: none, get: none, check: async () => ({ item: null }), checkAll: async () => ({ items: [] }), start() {}, kick() {}, clean: s => String(s == null ? "" : s),
+  return { add() {}, suspect() {}, viewed() {}, list: () => [], summary: none, get: none, check: async () => ({ item: null }), checkAll: async () => ({ items: [] }), start() {}, kick() {}, clean: s => String(s == null ? "" : s),
     handle: (req, res) => send(res, 503, JSON.stringify({ ok: false, error: "Verbindungen sind gerade nicht verfügbar" }), TYPES[".json"], { "Cache-Control": "no-store" }) };
 })();
 let MAIL_WATCH_UNTIL = 0;   // nach „Prüfen & speichern“ eines Mail-Passworts: Konten kurz öfter prüfen

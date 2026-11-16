@@ -7,6 +7,8 @@ module.exports = function (D) {
   const { fin, renderPdf, mailSend } = D;
   const C = {};                       // type -> Map(id -> obj)
   let loaded = null;
+  // Datenstand (Simon 16.11.2026): zählt bei jedem Speichern/Löschen/Neuladen hoch – Hintergrundläufe (warmProposals in server.js) überspringen sich, solange er gleich bleibt
+  let VER = 0;
   const TMP = new Map();              // uploadTempFile: name -> {buf,type,name,at}
   const r2 = n => Math.round((+n || 0) * 100) / 100;
   const s2 = n => r2(n).toFixed(2);
@@ -27,7 +29,7 @@ module.exports = function (D) {
       await fin.init();
       const r = await fin.db().query("select type, id, data from fin_obj");
       Object.keys(C).forEach(k => delete C[k]);
-      r.rows.forEach(x => { (C[x.type] = C[x.type] || new Map()).set(String(x.id), x.data); });
+      r.rows.forEach(x => { (C[x.type] = C[x.type] || new Map()).set(String(x.id), x.data); }); VER++;
       // Kunden mit Fremdnummer (z. B. „KANT-…“ von früheren Plattform-Anlagen) einmalig in den Kundennummernkreis übernehmen
       for (const c of all("Contact").filter(c => c.customerNumber && !/^\d+$/.test(String(c.customerNumber))).sort((a, b) => String(a.create || "").localeCompare(String(b.create || "")))) { c.externalNumber = c.externalNumber || String(c.customerNumber); c.customerNumber = await nextCustomerNumber(); await save("Contact", c); }
       // Angebote mit nackter Nummer („1052“ – bis 28.10.2026 wurde der Nummernkreis ohne „AN-“ gelesen und nie weitergezählt) einmalig auf die nächste freie AN-Nummer umstellen; die alte Nummer bleibt als formerNumber
@@ -58,11 +60,11 @@ module.exports = function (D) {
     return String(Math.max(max + 1, 900000000)); }
   async function save(t, o) {
     o.objectName = t; o.update = nowIso(); if (!o.create) o.create = o.update;
-    (C[t] = C[t] || new Map()).set(String(o.id), o);
+    (C[t] = C[t] || new Map()).set(String(o.id), o); VER++;
     await fin.db().query("insert into fin_obj(type,id,data,src) values($1,$2,$3::jsonb,'local') on conflict(type,id) do update set data=excluded.data, src='local', updated_at=now()", [t, String(o.id), JSON.stringify(o)]);
     return o;
   }
-  async function del(t, id) { if (C[t]) C[t].delete(String(id)); await fin.db().query("delete from fin_obj where type=$1 and id=$2", [t, String(id)]); }
+  async function del(t, id) { if (C[t]) C[t].delete(String(id)); VER++; await fin.db().query("delete from fin_obj where type=$1 and id=$2", [t, String(id)]); }
 
   // ── Lesen ──
   const DATEF = { Invoice: "invoiceDate", Voucher: "voucherDate", Order: "orderDate", CheckAccountTransaction: "valueDate", CreditNote: "creditNoteDate" };
@@ -157,7 +159,7 @@ module.exports = function (D) {
     // wie sevDesk: Entwürfe haben noch keine feste Nummer – vergeben wird sie erst beim Fertigstellen (Versand/Download), in Versandreihenfolge
     if (isNew && String(o.status) !== "100" && !o.invoiceNumber) await finalize(o, true);
     // Positionen
-    (body.invoicePosDelete || []).forEach(p => { if (p && p.id) { const x = get("InvoicePos", p.id); if (x && x.invoice && String(x.invoice.id) === String(o.id)) { C.InvoicePos.delete(String(p.id)); fin.db().query("delete from fin_obj where type='InvoicePos' and id=$1", [String(p.id)]).catch(() => {}); } } });
+    (body.invoicePosDelete || []).forEach(p => { if (p && p.id) { const x = get("InvoicePos", p.id); if (x && x.invoice && String(x.invoice.id) === String(o.id)) { C.InvoicePos.delete(String(p.id)); VER++; fin.db().query("delete from fin_obj where type='InvoicePos' and id=$1", [String(p.id)]).catch(() => {}); } } });
     const saved = [];
     for (const p of (body.invoicePosSave || [])) {
       const x = Object.assign(p.id ? (get("InvoicePos", p.id) || {}) : { id: newId("InvoicePos") }, stripMeta(p), { invoice: ref("Invoice", o.id) });
@@ -1153,7 +1155,7 @@ module.exports = function (D) {
     if (!dry) await refundScan().catch(e => console.error("Doppelzahlung erkennen:", e.message));
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply, pairTransfers,
+  return { version: () => VER, request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply, pairTransfers,
     reclassOver: serial(reclassOver), unbook: serial(unbook), creditRefund: serial(creditRefund), creditRefundUndo: serial(creditRefundUndo), refundPairApply: serial(refundPairApply), refundUndo: serial(refundUndo), refundValid, refundScan, refundCandidates, tipTax };
   // Zahlungszuordnungs-Operationen nacheinander (Doppelklick, zweites Gerät, „Rückgängig“ und „Lösen“ gleichzeitig): sonst rechnen zwei Läufe mit
   // demselben Ausgangsstand – z. B. paidAmount −100 nach zweimal „Lösen“ oder Überzahlung doppelt abgebaut (Review 28.10.2026)
