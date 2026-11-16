@@ -1088,10 +1088,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.ok(ob.invoice.id && String(ob.invoice.id) !== String(inv1), "Entwurf neu angelegt"); assert.strictEqual(sevMock.state.deletedInvoices.length, del0 + 1);
       const mi = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.ok(mi.invoicePosSave.some(p => /Lieferung/.test(JSON.stringify(p))), JSON.stringify(mi.invoicePosSave.map(p => p.name)));
       const sum = mi.invoicePosSave.reduce((a, p) => a + (+p.price || 0) * (+p.quantity || 1), 0); assert.ok(Math.abs(sum - ob.price.gross) < 0.02 || Math.abs(sum - ob.price.net) < 0.02, "Rechnung = Gesamtpreis: " + sum + " / " + ob.price.gross);
-      // Cockpit: zurück auf d1 ohne Aufpreis, dann wieder d2 mit eigener Rechnung
+      // Cockpit, Rechnungskauf: zurück auf d1 ohne Aufpreis, dann wieder d2 mit Aufpreis → kommt in den (neu angelegten) Entwurf, keine Mail
       const c1 = await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d1, confirm: true }); assert.strictEqual(c1.ok, true, JSON.stringify(c1)); assert.strictEqual(c1.order.price.deliveryDate, d1);
       const ml1 = sevMock.state.invoiceMails.length, c2 = await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d2, charge: true, confirm: true });
-      assert.strictEqual(c2.ok, true, JSON.stringify(c2)); assert.ok(!c2.warn, c2.warn); assert.strictEqual(c2.order.extras.length, 2); assert.ok(c2.order.extras[1].invoice && c2.order.extras[1].invoice.sentAt); assert.strictEqual(sevMock.state.invoiceMails.length, ml1 + 1);
+      assert.strictEqual(c2.ok, true, JSON.stringify(c2)); assert.ok(!c2.warn, c2.warn); assert.strictEqual(c2.order.extras.length, 2); assert.strictEqual(c2.order.extras[1].inMain, true); assert.strictEqual(sevMock.state.invoiceMails.length, ml1, "Entwurf, nicht gesendet");
+      // früher ohne Aufpreis vorgezogen → Aufpreis gegenüber dem ursprünglichen Tag nachverrechnen (from), Termin bleibt
+      await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d1, confirm: true }); await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d2, confirm: true });
+      const c3 = await admin("/admin/api/print/op", { op: "wish", id: Bo.id, date: d2, from: d1, charge: true, confirm: true });
+      assert.strictEqual(c3.ok, true, JSON.stringify(c3)); assert.strictEqual(c3.order.price.deliveryDate, d2); assert.strictEqual(c3.order.extras.length, 3); assert.ok(c3.order.extras[2].gross > 0 && c3.order.extras[2].inMain);
+      assert.ok((c3.order.history || []).some(h => /nachverrechnet/.test(h.what)));
+      // Mollie (bezahlt): Aufpreis aus dem Cockpit = eigene Rechnung, sofort gesendet
+      await admin("/admin/api/print/op", { op: "wish", id: A.id, date: d1, confirm: true });
+      const ml2 = sevMock.state.invoiceMails.length, c4 = await admin("/admin/api/print/op", { op: "wish", id: A.id, date: d2, charge: true, confirm: true });
+      assert.strictEqual(c4.ok, true, JSON.stringify(c4)); const x4 = c4.order.extras[c4.order.extras.length - 1]; assert.ok(!x4.inMain && x4.invoice && x4.invoice.sentAt); assert.strictEqual(sevMock.state.invoiceMails.length, ml2 + 1);
     } finally { delete M.possOf; }
   });
   await t("Zahlungsnachweis: Überweisung unterwegs → in Arbeit; Geld kommt später an → keine zweite Bestätigung/Rechnung", async () => {

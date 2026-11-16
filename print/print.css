@@ -216,6 +216,8 @@
 .ps-mock .sheet.back{position:absolute;transform:translate(14%,12%) rotate(6deg);opacity:.96}
 .ps-mock .sheet.round{border-radius:50%}
 .ps-mock .sheet.round img{border-radius:50%}
+.ps-mock .sheet.hex{background:none;box-shadow:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.25)) drop-shadow(0 18px 30px rgba(0,0,0,.4))}
+.ps-mock .sheet.hex img{clip-path:polygon(0 50%,25% 0,75% 0,100% 50%,75% 100%,25% 100%)}
 .ps-mock.wall .sheet{transform:none;box-shadow:0 1px 2px rgba(0,0,0,.2),0 14px 30px rgba(0,0,0,.25)}
 .ps-mock .stand{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);height:10px;border-radius:5px;background:#9aa0a6;box-shadow:0 6px 14px rgba(0,0,0,.4)}
 .ps-mock .cap{position:absolute;left:14px;bottom:10px;font-size:12px;color:rgba(255,255,255,.6)}

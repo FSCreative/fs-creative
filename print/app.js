@@ -937,6 +937,20 @@
   }
   function pagesNeeded() { return S.price && S.price.pages || 0; }   // mehrseitige Produkte (Broschüre, Buch, Kalender): Seiten inkl. Umschlag
   function sides() { var m = String((S.sel.printtype || (S.prod.fixed || {}).printtype) || "").match(/^(\d)(\d)(?:_|$)/); return m && m[2] !== "0" ? 2 : 1; }   // auch „55_full_color_plus_white“ (5/5), „40_pms“
+  // Sonderform des Endformats für Schnittlinien (Simon 16.11.2026: Sechseck-Fotoplatten) – "hex" | "round" | ""
+  function shapeNow() { var t = String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape") + " " + labelOf("size");
+    return /hexagon|sechseck/i.test(t) ? "hex" : /\b(rund|round|circle|kreis)/i.test(t) && !/eckig|corner/i.test(t) ? "round" : ""; }
+  function shapePath(x, W, H, b, d, shape) { var x0 = b + d, y0 = b + d, x1 = W - b - d, y1 = H - b - d;
+    if (shape === "round") { x.ellipse(W / 2, H / 2, Math.max(1, (x1 - x0) / 2), Math.max(1, (y1 - y0) / 2), 0, 0, Math.PI * 2); return; }
+    if (shape === "hex") { var w = W - 2 * b, h = H - 2 * b, k = 1.1547 * d, p; x0 = b; y0 = b; x1 = W - b; y1 = H - b;
+      if (w >= h) { x0 += k; x1 -= k; y0 += d; y1 -= d; var q = (x1 - x0) / 4, cy = (y0 + y1) / 2; p = [[x0, cy], [x0 + q, y0], [x1 - q, y0], [x1, cy], [x1 - q, y1], [x0 + q, y1]]; }
+      else { x0 += d; x1 -= d; y0 += k; y1 -= k; var q2 = (y1 - y0) / 4, cx = (x0 + x1) / 2; p = [[cx, y0], [x1, y0 + q2], [x1, y1 - q2], [cx, y1], [x0, y1 - q2], [x0, y0 + q2]]; }
+      x.moveTo(p[0][0], p[0][1]); for (var i = 1; i < p.length; i++) x.lineTo(p[i][0], p[i][1]); x.closePath(); return; }
+    x.rect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)); }
+  // alles außerhalb der Form rot getönt, Schnittlinie rot, Sicherheitsabstand grün gestrichelt
+  function shapeEdges(x, W, H, bp, sp, shape, lw, dash) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); shapePath(x, W, H, bp, 0, shape); x.fill("evenodd");
+    x.lineWidth = lw; x.strokeStyle = "#ff3b30"; x.beginPath(); shapePath(x, W, H, bp, 0, shape); x.stroke();
+    x.strokeStyle = "#30d158"; x.setLineDash(dash); x.beginPath(); shapePath(x, W, H, bp, Math.max(0, sp - bp), shape); x.stroke(); x.restore(); }
   function labelOf(slug) { var pr = S.prod.props.filter(function (x) { return x.slug === slug; })[0]; var o = pr && pr.options.filter(function (x) { return x.slug === S.sel[slug]; })[0]; return o ? o.name : ""; }
   function totalCopies() { if (kind() !== "textile") return S.copies; var t = 0, z = S.textile.sizes; Object.keys(z).forEach(function (k) { t += +z[k] || 0; }); return t; }
   // Logo-Positionen: Textil = gewählte Positionen (feste Reihenfolge), Werbeartikel = Druckfläche
@@ -2429,7 +2443,7 @@
     if (STU[key]) { if (STU[key].figs.length) box.innerHTML = STU[key].figs.join(""); return; }   // läuft schon – fertige Seiten zeigen, der Rest folgt
     var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = safeOf(), off = !!S.pfvOff, job = STU[key] = { figs: [] };
     if (!trim) { box.innerHTML = ""; return; }
-    var rnd = /rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape")), fo = S.price && S.price.folds;
+    var rnd = shapeNow(), fo = S.price && S.price.folds;
     var show = function () { var b = document.getElementById("psStuPages"); if (b && b.getAttribute("data-key") === key) b.innerHTML = job.figs.join("") + (job.html ? "" : '<div class="ps-stu-load"><span class="ps-spin"></span> weitere Seiten werden geladen …</div>'); };
     pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
       var n = Math.min(doc.numPages, 60), i = 0;
@@ -2441,9 +2455,7 @@
         var sc = Math.min(3, 900 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
         return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () {
           var x = cv.getContext("2d"), W = cv.width, H = cv.height, pxmm = W / mmW, bp = b * pxmm, sp = (b + safe) * pxmm;
-          if (!off && rnd) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2, true); x.fill("evenodd");
-            x.lineWidth = 2; x.strokeStyle = "#ff3b30"; x.beginPath(); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2); x.stroke();
-            x.strokeStyle = "#30d158"; x.setLineDash([8, 5]); x.beginPath(); x.ellipse(W / 2, H / 2, Math.max(1, W / 2 - sp), Math.max(1, H / 2 - sp), 0, 0, Math.PI * 2); x.stroke(); x.restore(); }
+          if (!off && rnd) shapeEdges(x, W, H, bp, sp, rnd, 2, [8, 5]);
           else if (!off) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
             x.lineWidth = 2; x.strokeStyle = "#ff3b30"; if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
             x.strokeStyle = "#30d158"; x.setLineDash([8, 5]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp);
@@ -2492,7 +2504,7 @@
       var warns = [], okNotes = [], edgeFree = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
         // Randanalyse: Pixel zwischen Endformat und Sicherheitslinie, die deutlich vom typischen Randton abweichen
-        if (!/rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"))) try { var wc = document.createElement("canvas"); wc.width = W; wc.height = H; var wx = wc.getContext("2d"); wx.fillStyle = "#fff"; wx.fillRect(0, 0, W, H); wx.drawImage(cv, 0, 0); var data = wx.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        if (!shapeNow()) try { var wc = document.createElement("canvas"); wc.width = W; wc.height = H; var wx = wc.getContext("2d"); wx.fillStyle = "#fff"; wx.fillRect(0, 0, W, H); wx.drawImage(cv, 0, 0); var data = wx.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
           var px = function (xx, yy) { var o = (yy * W + xx) * 4; return [data[o], data[o + 1], data[o + 2]]; };
           var dist = function (a, b2) { return Math.abs(a[0] - b2[0]) + Math.abs(a[1] - b2[1]) + Math.abs(a[2] - b2[2]); };
           var b0 = Math.ceil(bp) + 1, s0 = Math.floor(sp) - 1, hit = 0, sideNames = [];
@@ -2528,10 +2540,8 @@
           if (lo < Math.round(150 * fq)) warns.push("!" + lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen " + D0 + " dpi).");
           else if (lo < Math.round(250 * fq)) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße (empfohlen " + D0 + " dpi) – kann leicht unscharf wirken."); else okNotes.push(lab2 + dp.imgs.length + " Bild(er) mit ausreichender Auflösung (ab " + lo + " dpi)."); }
         if (dp.fonts && dp.fonts.length) warns.push(lab2 + "Schrift nicht eingebettet: " + dp.fonts.slice(0, 3).join(", ") + " – beim Export „Schriften einbetten“ aktivieren oder Text in Pfade umwandeln.");
-        var rnd = /rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"));   // runde Aufkleber/Buttons: Schnittlinie als Kreis
-        if (!S.pfvOff && rnd) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2, true); x.fill("evenodd");
-          x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.beginPath(); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2); x.stroke();
-          x.strokeStyle = "#30d158"; x.setLineDash([6, 4]); x.beginPath(); x.ellipse(W / 2, H / 2, Math.max(1, W / 2 - sp), Math.max(1, H / 2 - sp), 0, 0, Math.PI * 2); x.stroke(); x.restore(); }
+        var rnd = shapeNow();   // runde Aufkleber/Buttons: Schnittlinie als Kreis
+        if (!S.pfvOff && rnd) shapeEdges(x, W, H, bp, sp, rnd, 1.5, [6, 4]);
         else if (!S.pfvOff) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
           x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.setLineDash([]); if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
           x.strokeStyle = "#30d158"; x.setLineDash([6, 4]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp);
@@ -2658,9 +2668,9 @@
   function sheetMock(pv) {
     var fo = S.price && S.price.folds, fsz = S.price && S.price.size;
     if (fo && fo.x && fo.x.length && fsz) return '<div class="ps-mock ps-mock-fold">' + foldMock(pv[0], fo.x, fsz.w, fsz.h, pv[1]) + '<span class="cap">Vorschau gefalzt – Farben am Bildschirm können vom Druck abweichen</span></div>';
-    var k = S.prod.key, sz = sizeOf() || { w: 1, h: 1 }, wall = k === "plakate" || k === "rollups" || Math.max(sz.w, sz.h) >= 590, round = /rund|round|circle/i.test(String(S.sel.shape || S.sel.size || "")) || k === "buttons";
+    var k = S.prod.key, sz = sizeOf() || { w: 1, h: 1 }, wall = k === "plakate" || k === "rollups" || Math.max(sz.w, sz.h) >= 590, shp = shapeNow(), round = shp === "round" || k === "buttons", hexm = shp === "hex";
     var wpct = k === "visitenkarten" ? 46 : k === "aufkleber" ? 38 : k === "rollups" ? 22 : 40;
-    var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
+    var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : hexm ? " hex" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
     return '<div class="ps-mock' + (wall ? " wall" : "") + '" role="img" aria-label="Vorschau deiner Drucksache">' + (pv[1] && !wall ? sheet(pv[1], "back") : "") + sheet(pv[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Farben am Bildschirm können vom Druck abweichen</span></div>';
   }
   function photoMock(L) {
@@ -2747,11 +2757,11 @@
   function shipOf() { var s = S.ship; return s && s.on ? { company: s.company || "", firstName: s.firstName || "", lastName: s.lastName || "", street: s.street || "", zip: s.zip || "", city: s.city || "", country: s.country || "AT", phone: s.phone || "" } : null; }
   function mockHtml() {
     var pv = S.previews;
-    if ((!pv || !pv.length) && imgOk(S.prod.img)) return '<div class="ps-mock photo"><img src="' + esc(S.prod.img) + '" alt=""><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">' + (isLogo() ? "Logo-PDF ansehen" : "Druck-PDF ansehen") + '</a><span class="cap">Beispielfoto – dein Motiv ' + (isLogo() ? "wird wie hochgeladen platziert" : "siehst du im PDF") + "</span></div>"; var k = S.prod.key, round = /rund|round|kreis|circle/i.test(labelOf("shape") + " " + (S.sel.shape || ""));
+    if ((!pv || !pv.length) && imgOk(S.prod.img)) return '<div class="ps-mock photo"><img src="' + esc(S.prod.img) + '" alt=""><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">' + (isLogo() ? "Logo-PDF ansehen" : "Druck-PDF ansehen") + '</a><span class="cap">Beispielfoto – dein Motiv ' + (isLogo() ? "wird wie hochgeladen platziert" : "siehst du im PDF") + "</span></div>"; var k = S.prod.key, shp = shapeNow(), round = shp === "round", hexm = shp === "hex";
     if (!pv || !pv.length) return '<div class="ps-mock"><div style="text-align:center;color:rgba(255,255,255,.75)"><div style="font-size:42px">' + esc(S.prod.icon) + '</div><p style="margin:8px 0 12px">Hochgeladene Druckdatei</p><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF in voller Größe ansehen</a></div></div>';
     var wall = k === "plakate" || k === "rollups", sz = sizeOf() || { w: 1, h: 1 };
     var wpct = k === "visitenkarten" ? 46 : k === "aufkleber" ? 38 : k === "rollups" ? 22 : 40;
-    var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
+    var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : hexm ? " hex" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
     return '<div class="ps-mock' + (wall ? " wall" : "") + '" role="img" aria-label="Vorschau deiner Drucksache">' + (pv[1] && !wall ? sheet(pv[1], "back") : "") + sheet(pv[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Farben am Bildschirm können vom Druck abweichen</span></div>';
   }
   function cartAside() {

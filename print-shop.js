@@ -1598,13 +1598,20 @@ module.exports = function (D) {
   }
   // Sicherheitsabstand ab Endformat: Produktwert; bei Tunnelsaum (sleeve_Xcm) liegt die Stange im Saum → Tunnelbreite + 1 cm frei halten
   const sleeveMm = sel => { let m = 0; Object.values(sel || {}).forEach(v => { const x = /^sleeve_(\d+)_?cm$/.exec(String(v)); if (x) m = Math.max(m, +x[1] * 10); }); return m; };
+  // Sonderform des Endformats (Simon 16.11.2026: Foto-Platte „Sechseck“ wurde im Studio als Rechteck gezeigt) – "hex" | "round" | ""
+  const shapeOf = (sel, labels) => { const t = (labels || []).filter(l => l && /format|form\b|größe|grösse|size|shape/i.test(l[0])).map(l => l[1]).concat([sel && sel.size, sel && sel.shape]).filter(Boolean).join(" ");
+    return /hexagon|sechseck/i.test(t) ? "hex" : /\b(rund|kreis|oval|round|circle)/i.test(t) && !/eckig/i.test(t) ? "round" : ""; };
+  // Sechseck in einem Rechteck: breiter als hoch = Spitzen links/rechts; d = Abstand nach innen (Sicherheitslinie)
+  const hexPts = (x0, y0, x1, y1, d) => { d = d || 0; const w = x1 - x0, h = y1 - y0, k = 1.1547 * d;
+    if (w >= h) { x0 += k; x1 -= k; y0 += d; y1 -= d; const q = (x1 - x0) / 4, cy = (y0 + y1) / 2; return [[x0, cy], [x0 + q, y0], [x1 - q, y0], [x1, cy], [x1 - q, y1], [x0 + q, y1]]; }
+    x0 += d; x1 -= d; y0 += k; y1 -= k; const q = (y1 - y0) / 4, cx = (x0 + x1) / 2; return [[cx, y0], [x1, y0 + q], [x1, y1 - q], [cx, y1], [x0, y1 - q], [x0, y0 + q]]; };
   const safeFor = (prod, sel) => { if (!prod || prod.imprint) return prod ? 0 : 3; const sl = sleeveMm(sel); return Math.max(+prod.safe || 3, sl ? sl + 10 : 0); };
   // ── Druckvorlage (PDF) je Produkt/Ausführung: Datenformat, Endformat, Beschnitt, Sicherheitsabstand, Falzlinien ──
   const TPL_CACHE = new Map();
   async function templatePdf(prod, n) {
     const PDFDocument = require("pdfkit");
     const bleed = n.kind === "textile" || n.kind === "promo" || prod.imprint ? 0 : +prod.bleed || 0, safe = safeFor(prod, n.sel);
-    const shapeTxt = (n.labels || []).map(l => l[1]).join(" "), round = /\b(rund|kreis|oval|round|circle)/i.test(shapeTxt) && !/eckig/i.test(shapeTxt);
+    const shape = shapeOf(n.sel, n.labels), round = shape === "round", hex = shape === "hex";
     const sheets = [];
     if (n.size) { const sd = n.folds ? 2 : Math.max(1, Math.min(2, n.sides || 1)); for (let i = 0; i < sd; i++) sheets.push({ w: n.size.w, h: n.size.h, b: bleed, title: n.folds ? (i ? "Innenseite" : "Außenseite") : sd > 1 ? (i ? "Rückseite" : "Vorderseite") : "Motiv", side: i, area: !!prod.imprint }); }
     else (n.positions || []).forEach(p => { if (p.area) sheets.push({ w: p.area[0], h: p.area[1], b: 0, title: "Druckfläche " + p.title, side: 0, area: true }); });
@@ -1619,9 +1626,9 @@ module.exports = function (D) {
       doc.page.dictionary.data.TrimBox = [B, B, W - B, H - B]; doc.page.dictionary.data.BleedBox = [0, 0, W, H];
       const lw = Math.max(0.7, Math.min(3, Math.min(W, H) / 400)), dash = Math.max(2, Math.min(W, H) / 120);
       // Beschnittzone (wird abgeschnitten) leicht eingefärbt
-      if (B > 0) { doc.save().rect(0, 0, W, H).fillColor(C.bleed).fillOpacity(0.2).fill().restore(); doc.save(); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : doc.rect(B, B, tw, th); doc.fillColor([0, 0, 0, 0]).fill().restore(); }
+      if (B > 0) { doc.save().rect(0, 0, W, H).fillColor(C.bleed).fillOpacity(0.2).fill().restore(); doc.save(); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : hex ? doc.polygon(...hexPts(B, B, B + tw, B + th)) : doc.rect(B, B, tw, th); doc.fillColor([0, 0, 0, 0]).fill().restore(); }
       // Endformat (Schnitt)
-      doc.save().lineWidth(lw).strokeColor(C.trim); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : doc.rect(B, B, tw, th); doc.stroke().restore();
+      doc.save().lineWidth(lw).strokeColor(C.trim); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : hex ? doc.polygon(...hexPts(B, B, B + tw, B + th)) : doc.rect(B, B, tw, th); doc.stroke().restore();
       // Roll-up: unterer Bereich steckt in der Kassette (Druckformat 850 × 2060 bei sichtbaren 2000 mm)
       const vis = prod.key === "rollups" && /(\d+)_x_(\d+)/.exec(String(n.sel && n.sel.size || "")), hid = vis ? sh.h - +vis[2] * 10 : 0;
       if (hid > 0 && hid < 300) { const hy = B + th - mm(hid); doc.save().rect(B, hy, tw, mm(hid)).fillColor([0, 0, 0, 40]).fillOpacity(0.18).fill().restore();
@@ -1632,6 +1639,7 @@ module.exports = function (D) {
       { const cx = [0].concat(xs).concat([sh.w]), cy = [0].concat(ys).concat([sh.h]);
         doc.save().lineWidth(lw).dash(dash, { space: dash * 0.7 }).strokeColor(C.safe);
         if (round) doc.ellipse(W / 2, H / 2, tw / 2 - S, th / 2 - S);
+        else if (hex) doc.polygon(...hexPts(B, B, B + tw, B + th, S));
         else for (let yi = 0; yi < cy.length - 1; yi++) for (let xi = 0; xi < cx.length - 1; xi++) {
           const l = cx[xi] + (xi ? FS : safe), r = cx[xi + 1] - (xi < cx.length - 2 ? FS : safe), t = cy[yi] + (yi ? FS : safe), bo = cy[yi + 1] - (yi < cy.length - 2 ? FS : safe);
           if (r > l && bo > t) doc.rect(B + mm(l), B + mm(t), mm(r - l), mm(bo - t)); }
@@ -2977,9 +2985,11 @@ module.exports = function (D) {
     const days = Object.values(by).sort((a, b) => a.d.localeCompare(b.d)), curD = (o.price && (o.price.wish || o.price.deliveryDate)) || "";
     const cur = days.find(x => x.d === curD) || null, cheap = l => l.slice().sort((a, b) => a.gross - b.gross)[0] || null;
     const base = cur || cheap(days.filter(x => x.u === (o.urgency || "standard"))) || cheap(days);
-    days.forEach(x => { x.extraGross = base ? Math.max(0, r2(x.gross - base.gross)) : 0; x.current = !!cur && x.d === cur.d; });
+    rebase(days, base); days.forEach(x => { x.current = !!cur && x.d === cur.d; });
     return { days, current: curD, curOk: !!cur };
   }
+  // Aufpreis je Tag gegenüber einem Basistag; fastShip = teurerer (Express-)Versand bei gleicher Produktionsstufe
+  function rebase(days, base) { days.forEach(x => { x.extraGross = base ? Math.max(0, r2(x.gross - base.gross)) : 0; x.fastShip = !!base && x.ship > base.ship + 0.004; }); }
   function applyChoice(o, ch, by) {
     const pu = (o.price && o.price.purchase) || {}, oldTotal = +pu.total || 0, total = r2(ch.product + ch.ship), from = (o.price.wish || o.price.deliveryDate || ""), fromU = o.urgency;
     o.urgency = ch.u; o.pcOptions = ch.pcOpts; if (Array.isArray(ch.labels) && ch.labels.length) o.labels = ch.labels;
@@ -2990,7 +3000,7 @@ module.exports = function (D) {
     hist(o, "Liefertermin geändert (" + by + "): " + (from ? deDate(from) : "–") + (fromU !== ch.u ? " · " + (URGENCY_DE[fromU] || fromU) : "") + " → " + deDate(ch.d) + " · " + (URGENCY_DE[ch.u] || ch.u) + " (Einkauf " + eur(total) + (Math.abs(total - oldTotal) > 0.004 ? ", " + (total > oldTotal ? "+" : "−") + eur(Math.abs(total - oldTotal)) : "") + ")");
   }
   function newExtra(o, ch, by) { const rate = o.price.rate || 0, gross = r2(ch.extraGross), net = r2(gross / (1 + rate / 100));
-    return { id: "X" + rnd(8), kind: "lieferzeit", label: (ch.u !== "standard" ? (URGENCY_DE[ch.u] || ch.u) + "-Zuschlag" : "Aufpreis Liefertermin") + " – Lieferung " + deDate(ch.d), gross, net, vat: r2(gross - net), rate, by, at: nowIso(), d: ch.d, u: ch.u, status: "open" }; }
+    return { id: "X" + rnd(8), kind: "lieferzeit", label: (ch.u !== "standard" ? (URGENCY_DE[ch.u] || ch.u) + "-Zuschlag" : ch.fastShip ? "Expressversand-Zuschlag" : "Aufpreis Liefertermin") + " – Lieferung " + deDate(ch.d), gross, net, vat: r2(gross - net), rate, by, at: nowIso(), d: ch.d, u: ch.u, status: "open" }; }
   function bookExtra(o, ex) { o.extras = (o.extras || []).concat([ex]); o.price.gross = r2(o.price.gross + ex.gross); o.price.net = r2(o.price.net + ex.net); o.price.vat = r2(o.price.vat + ex.vat); o.price.margin = r2((o.price.margin || 0) + ex.net); }
   // Rechnungsentwurf mit dem Aufpreis neu anlegen (nur solange er nicht versendet ist) – true = Aufpreis steht jetzt in der Hauptrechnung
   async function redraft(o) {
@@ -5839,7 +5849,7 @@ module.exports = function (D) {
           const ck = (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))));
           const hemMm = sleeveMm(o.sel), rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
             noBleed: ck.some(c => BLEED_RX.test(c.text || "")), hem: hemMm ? "Tunnelsaum " + hemMm / 10 + " cm: in diesem Bereich steckt die Stange – keine Texte/Logos hinein." : /eyelet|oese|öse/i.test(JSON.stringify(o.sel || {})) ? "Ösen sitzen im Rand – Texte und Logos nicht in die Ecken bzw. an den Rand legen." : "" });
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
@@ -6260,14 +6270,21 @@ module.exports = function (D) {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!canRedate(o)) throw new Error(o.pcOptions && !isLogoKind(o) ? "Schon bei Print.com bestellt – der Liefertermin lässt sich hier nicht mehr ändern" : "Für diese Bestellung lässt sich der Liefertermin hier nicht ändern");
           const C = await dayChoices(o), pu = (o.price && o.price.purchase) || {};
-          const pub = x => ({ d: x.d, u: x.u, urgency: URGENCY_DE[x.u] || x.u, ship: x.ship, buy: r2(x.product + x.ship), extraGross: x.extraGross, extraNet: r2(x.extraGross / (1 + (o.price.rate || 0) / 100)), current: x.current });
-          if (op === "days") return J(res, 200, { ok: true, days: C.days.map(pub), current: C.current, curOk: C.curOk, earliest: C.days[0] ? C.days[0].d : "", buyNow: +pu.total || 0, business: o.customer && o.customer.type === "company" });
+          // from = Basistag: Aufpreis gegenüber dem ursprünglichen Termin nachverrechnen (Simon 16.11.2026: Termin früher ohne Aufpreis vorgezogen, Expressversand fehlte auf der Rechnung)
+          if (b.from) { const bs = C.days.find(x => x.d === String(b.from)); if (!bs) throw new Error("Der ursprüngliche Liefertag ist bei Print.com nicht mehr im Angebot – Aufpreis bitte von Hand ergänzen"); rebase(C.days, bs); }
+          const pub = x => ({ d: x.d, u: x.u, urgency: URGENCY_DE[x.u] || x.u, ship: x.ship, buy: r2(x.product + x.ship), extraGross: x.extraGross, extraNet: r2(x.extraGross / (1 + (o.price.rate || 0) / 100)), gross: x.gross, net: x.net, fastShip: !!x.fastShip, current: x.current });
+          if (op === "days") return J(res, 200, { ok: true, days: C.days.map(pub), current: C.current, curOk: C.curOk, earliest: C.days[0] ? C.days[0].d : "", buyNow: +pu.total || 0, business: o.customer && o.customer.type === "company",
+            inDraft: !!(o.payment && o.payment.method === "invoice" && o.invoice && o.invoice.id && o.invoice.draft && !o.invoice.sentAt), charged: (o.extras || []).filter(x => x.kind === "lieferzeit").reduce((a, x) => r2(a + x.gross), 0) });
           const ch = C.days.find(x => x.d === String(b.date || "")) || (!b.date && C.days.find(x => x.u === (o.urgency || "standard")));
           if (!ch) throw new Error("Dieser Liefertag ist bei Print.com nicht (mehr) möglich – bitte neu laden");
-          applyChoice(o, ch, "Cockpit" + (b.by ? ", " + clip(b.by, 40) : ""));
+          if (!(b.from && ch.current)) applyChoice(o, ch, "Cockpit" + (b.by ? ", " + clip(b.by, 40) : ""));
           let warn = "";
-          if (b.charge === true && ch.extraGross > 0.004) { const ex = newExtra(o, ch, "Cockpit"); bookExtra(o, ex); await store.putOrder(o);
-            try { await extraInvoice(o, ex, false); } catch (e) { warn = "Termin geändert, aber die Rechnung für den Aufpreis ist fehlgeschlagen: " + clip(e.message, 160); hist(o, warn); } }
+          // Kauf auf Rechnung mit noch offenem Entwurf: Aufpreis in die Hauptrechnung, sonst eigene Rechnung (sofort gesendet)
+          if (b.charge === true && ch.extraGross > 0.004) { const ex = newExtra(o, ch, "Cockpit"); ex.inMain = true; bookExtra(o, ex);
+            if (b.from) hist(o, ex.label.split(" – ")[0] + " nachverrechnet (gegenüber " + deDate(String(b.from)) + "): " + eur(ex.gross));
+            let inMain = false; if (o.payment && o.payment.method === "invoice") { try { inMain = await redraft(o); } catch (e) { hist(o, "Rechnungsentwurf mit Aufpreis fehlgeschlagen: " + clip(e.message, 160)); } }
+            if (!inMain) { ex.inMain = false; await store.putOrder(o);
+              try { await extraInvoice(o, ex, false); } catch (e) { warn = "Termin geändert, aber die Rechnung für den Aufpreis ist fehlgeschlagen: " + clip(e.message, 160); hist(o, warn); } } }
           stamp(o); await store.putOrder(o);
           return J(res, 200, { ok: true, order: o, warn });
         }
