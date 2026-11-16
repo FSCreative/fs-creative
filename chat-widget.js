@@ -125,7 +125,7 @@ function toggle(on,auto){
 }
 function start(){
   paint();
-  api("/chat/api/start",{cid:cid(),page:location.pathname}).then(function(j){ if(!j||!j.ok) return; online=!!j.online; closed=!!j.closed; typing=!!j.typing; msgs=j.msgs||[]; last=msgs.length?msgs[msgs.length-1].id:0; if(j.name&&!el.nm.value) el.nm.value=j.name; seen(); head(); paint(); schedule(); }).catch(function(){ schedule(); });
+  api("/chat/api/start",{cid:cid(),page:location.pathname,cart:cartSum()}).then(function(j){ if(!j||!j.ok) return; online=!!j.online; closed=!!j.closed; typing=!!j.typing; msgs=j.msgs||[]; last=msgs.length?msgs[msgs.length-1].id:0; if(j.name&&!el.nm.value) el.nm.value=j.name; seen(); head(); paint(); schedule(); }).catch(function(){ schedule(); });
 }
 function seen(){ if(last&&last!==st.seen){ st.seen=last; save(); } }
 function schedule(){ clearTimeout(pollT); if(isOpen) pollT=setTimeout(poll,typing?2000:online?3000:4000); }
@@ -188,11 +188,14 @@ function upNext(){
   x.onerror=function(){ done({ok:false,error:"net"}); };
   x.send(f);
 }
+/* Warenkorb aus dem Druckshop (gleiche Domain) mitschicken – damit die KI Preise und Positionen sieht (Simon 16.11.2026) */
+function cartSum(){ try{ var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null"); if(!c||!c.items||!c.items.length||Date.now()-(+c.at||0)>30*864e5) return null;
+  return c.items.slice(0,10).map(function(x){ var p=x.price||{}, f=x.designFee||{}; return {t:String(x.title||"").slice(0,80),n:+(x.copies||x.n)||0,s:String(x.size||"").slice(0,40),l:(x.labels||[]).slice(0,8).map(function(l){ return String(l&&l[0]||"").slice(0,40)+": "+String(l&&l[1]||"").slice(0,80); }),g:+p.gross||0,fee:+f.gross||0}; }); }catch(e){ return null; } }
 function send(){
   var text=el.in.value.trim(); if(!text||sending) return;
   if(text.length>2000){ el.err.textContent="Bitte höchstens 2000 Zeichen."; return; }
   var nm=el.nm.value.trim().slice(0,80); sending=true; el.s.disabled=true; el.err.textContent="";
-  api("/chat/api/send",{cid:cid(),text:text,name:nm,page:location.pathname,website:el.hp.value}).then(function(j){
+  api("/chat/api/send",{cid:cid(),text:text,name:nm,page:location.pathname,website:el.hp.value,cart:cartSum()}).then(function(j){
     sending=false; el.s.disabled=false;
     if(!j||!j.ok){ el.err.textContent=j&&j.error==="too_many"?"Zu viele Nachrichten – bitte kurz warten.":j&&j.error==="too_long"?"Bitte höchstens 2000 Zeichen.":"Senden hat nicht geklappt – bitte nochmal versuchen."; return; }
     el.in.value=""; grow(); st.started=1; if(nm) st.name=nm; save();

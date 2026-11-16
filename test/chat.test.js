@@ -252,7 +252,7 @@ async function startServer(dir, env) {
     .then(async r => Object.assign({ _status: r.status }, await r.json().catch(() => ({}))));
   const FC = cidOf("fileconv"), OTHER = cidOf("otherconv");
   let pngMsg = null;
-  await t("Anhang: Besucher lädt Bild + PDF hoch → Nachricht mit Datei, Abruf mit richtigem Typ, nosniff, inline/Download; KI bekommt nur den Hinweis", async () => {
+  await t("Anhang: Besucher lädt Bild + PDF hoch → Nachricht mit Datei, Abruf mit richtigem Typ, nosniff, inline/Download; KI bekommt Bilder, bei PDFs nur den Hinweis", async () => {
     ipN = 6; const n0 = mock.calls.length;
     const r = await up(FC, PNG, "../../Mein Foto <x>.PNG", { "X-Chat-Name": encodeURIComponent("Erika Test"), "X-Chat-Page": encodeURIComponent("/druck") });
     assert.strictEqual(r._status, 200, JSON.stringify(r)); assert.strictEqual(r.ok, true); pngMsg = r.msg;
@@ -267,6 +267,8 @@ async function startServer(dir, env) {
     const pl = await pj("/chat/api/poll?c=" + FC + "&after=0"); assert.ok(pl.msgs.some(m => m.file && m.file.id === pd.msg.file.id), "im Verlauf");
     assert.ok(await waitFor(async () => mock.calls.slice(n0).some(c => /\[Kunde hat Datei Angebot\.pdf \(PDF\) gesendet\]/.test(JSON.stringify(c.body.messages)))), "Hinweis an die KI");
     assert.ok(!mock.calls.slice(n0).some(c => /PDF-1\.4|fiktives Test-PDF/.test(JSON.stringify(c.body))), "kein Dateiinhalt an die KI");
+    assert.ok(mock.calls.slice(n0).some(c => (c.body.messages || []).some(m => Array.isArray(m.content) && m.content.some(x => x.type === "image" && x.source && x.source.media_type === "image/png"))), "Bild (Screenshot) geht als Bild an die KI");
+    assert.ok(mock.calls.slice(n0).some(c => /WISSEN ÜBER FS CREATIVE/.test(JSON.stringify(c.body.system))), "Website-Wissen im System-Text");
     const cv = (await adm("/admin/api/chat/conv?id=" + FC)).conv; assert.strictEqual(cv.name, "Erika Test"); assert.strictEqual(cv.page, "/druck"); assert.ok(/📎/.test(cv.last.text) || cv.last.from === "ki");
   });
 
@@ -317,6 +319,14 @@ async function startServer(dir, env) {
     assert.ok(!fs.existsSync(fdir), "Anhänge gelöscht"); assert.strictEqual((await pub("/chat/api/file?c=" + FC + "&f=" + pngMsg.file.id)).status, 404);
   });
 
+  await t("Warenkorb aus dem Shop geht mit (Druckpreis + Grafikbearbeitung = Summe), KI sieht ihn", async () => {
+    ipN = 9; const W = cidOf("warenkorb"), n0 = mock.calls.length;
+    const cart = [{ t: "Visitenkarten", n: 1000, s: "85 × 55 mm", l: ["Papier: 350 g/m² matt"], g: 41.04, fee: 30 }];
+    assert.strictEqual((await pj("/chat/api/send", { cid: W, text: "Warum werden aus 41 plötzlich 71?", page: "/print/warenkorb", cart }))._status, 200);
+    const c = await waitFor(async () => mock.calls.slice(n0).find(x => /AKTUELLER WARENKORB/.test(JSON.stringify(x.body.system))));
+    assert.ok(c, "Warenkorb im Stand der Unterhaltung"); const sy = JSON.stringify(c.body.system);
+    assert.ok(/Visitenkarten · 1.?000 Stk\./.test(sy) && /Druck 41,04 € \+ Grafikbearbeitung durch FS Creative 30,00 € = 71,04 €/.test(sy) && /Summe: 71,04 €/.test(sy), sy.slice(0, 400));
+  });
   await t("Beenden (Besucher sieht „beendet“, neue Nachricht öffnet wieder) und Löschen", async () => {
     const c = await adm("/admin/api/chat/op", { id: A, op: "close" }); assert.strictEqual(c.conv.closed, true);
     const p = await pj("/chat/api/poll?c=" + A + "&after=0"); assert.strictEqual(p.closed, true); assert.ok(p.msgs.some(m => m.from === "sys" && /beendet/.test(m.text)));
