@@ -96,6 +96,17 @@ const SEED = [["SevSequence", seq],
     assert.strictEqual(L.all("Order").filter(o => o.orderNumber === nr).length, 1, "keine Kopie");
   });
 
+  await t("Rechnungsentwurf löschen und neu anlegen: keine alten Positionen am neuen Entwurf, Id nicht wiederverwendet", async () => {
+    const ip = n => ({ objectName: "InvoicePos", mapAll: true, quantity: 1, price: 100, taxRate: 20, name: n, unity: { id: 1, objectName: "Unity" } });
+    const mk = async n => (await L.request("POST", "/Invoice/Factory/saveInvoice", { body: { invoice: { objectName: "Invoice", invoiceType: "RE", status: "100", invoiceDate: "16.11.2026", header: "Rechnung", contact: { id: "1", objectName: "Contact" } }, invoicePosSave: n.map(ip) } })).objects.invoice;
+    const a = await mk(["Banner"]); await L.request("DELETE", "/Invoice/" + a.id, {});
+    const b = await mk(["Banner", "Expressversand-Zuschlag"]);
+    assert.notStrictEqual(String(b.id), String(a.id), "neue Id");
+    const ps = (await L.request("GET", "/Invoice/" + b.id + "/getPositions", { query: {} })).objects;
+    assert.deepStrictEqual(ps.map(x => x.name), ["Banner", "Expressversand-Zuschlag"]);
+    assert.ok(!L.all("InvoicePos").some(x => x.invoice && String(x.invoice.id) === String(a.id)), "Positionen des gelöschten Entwurfs weg");
+  });
+
   fs.rmSync(TMP, { recursive: true, force: true });
   if (fails.length) console.log(fails.join("\n\n"));
   console.log("angebotsnummer: " + pass + " bestanden, " + fail + " fehlgeschlagen");

@@ -51,7 +51,11 @@ module.exports = function (D) {
   const all = t => Array.from((C[t] || new Map()).values());
   const get = (t, id) => (C[t] && C[t].get(String(id))) || null;
   const ref = (t, id) => ({ id: String(id), objectName: t });
-  function newId(t) { let max = 0; (C[t] || new Map()).forEach((_, k) => { const n = +k; if (n > max) max = n; }); return String(Math.max(max + 1, 900000000)); }
+  // neue Id nie wiederverwenden: auch Ids zählen, auf die noch Positionen zeigen (Simon 16.11.2026: gelöschter Entwurf 900000093 neu vergeben → alte Positionen hingen am neuen Entwurf)
+  function newId(t) { let max = 0; (C[t] || new Map()).forEach((_, k) => { const n = +k; if (n > max) max = n; });
+    const key = t.charAt(0).toLowerCase() + t.slice(1); if (C[t + "Pos"]) C[t + "Pos"].forEach(p => { const n = p && p[key] ? +p[key].id : 0; if (n > max) max = n; });
+    if (C.IdTomb) C.IdTomb.forEach(x => { if (x && x.t === t && +x.n > max) max = +x.n; });
+    return String(Math.max(max + 1, 900000000)); }
   async function save(t, o) {
     o.objectName = t; o.update = nowIso(); if (!o.create) o.create = o.update;
     (C[t] = C[t] || new Map()).set(String(o.id), o);
@@ -1036,6 +1040,8 @@ module.exports = function (D) {
           if (String(o.status) !== "100") throw err(400, "Nur Angebots-Entwürfe können gelöscht werden");
           for (const x of positionsOf("Order", id)) await del("OrderPos", x.id);
         }
+        if (T === "Invoice" || T === "CreditNote" || T === "Voucher") { for (const x of positionsOf(T, id)) await del(T + "Pos", x.id);   // Entwurf samt Positionen löschen
+          await save("IdTomb", { id: T + "-" + String(id), t: T, n: String(id), at: nowIso() }); }   // Id merken → wird nie neu vergeben
         await del(T, id); return { objects: [null] }; }
       throw err(400, "Nicht unterstützt: " + method + " " + p);
     }

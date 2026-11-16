@@ -6266,6 +6266,12 @@ module.exports = function (D) {
         if (op === "pollAll") return J(res, 200, { ok: true, polled: await pollAll() });
         // Liefertermin ändern, solange der Auftrag in Prüfung ist (Simon 15.11.2026: „falls der Kunde das wünscht“) – days: mögliche Tage frisch von Print.com, wish: Tag setzen (date "" = frühester Termin)
         // Liefertermin im Cockpit ändern, solange der Auftrag in Prüfung ist – alle Lieferstufen, Aufpreis für den Kunden; charge=true → eigene Rechnung, sofort gesendet
+        // Rechnungsentwurf aus dem aktuellen Auftrag neu anlegen (nur unversendete Entwürfe) – z. B. nach Korrekturen
+        if (op === "redraft") {
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          if (!(await redraft(o))) throw new Error("Kein offener Rechnungsentwurf – versendete Rechnungen bitte stornieren");
+          stamp(o); await store.putOrder(o); return J(res, 200, { ok: true, order: o });
+        }
         if (op === "days" || op === "wish") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!canRedate(o)) throw new Error(o.pcOptions && !isLogoKind(o) ? "Schon bei Print.com bestellt – der Liefertermin lässt sich hier nicht mehr ändern" : "Für diese Bestellung lässt sich der Liefertermin hier nicht ändern");
