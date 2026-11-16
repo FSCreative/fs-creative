@@ -1730,7 +1730,7 @@
     var i = Math.max(0, opts.indexOf(cur)), pv = opts[i - 1], nx = opts[i + 1], v = cur ? cur.slug : opts[0].slug, sh = sheetsTxt(pr, v);
     var b = function (o, t, lab) { return '<button type="button" class="ps-stp"' + (o ? ' data-ddpick="prop:pages|' + esc(o.slug) + '"' : " disabled") + ' aria-label="' + lab + '">' + t + "</button>"; };
     return '<div class="ps-tile"><span class="ps-tl">' + esc(rowTitle(pr)) + '</span><div class="ps-stepper">' + b(pv, "−", "Weniger Seiten") + '<label class="ps-stpv"><input type="number" inputmode="numeric" data-pgin="1" min="' + esc(opts[0].slug) + '" max="' + esc(opts[opts.length - 1].slug) + '" step="' + Math.max(1, parseFloat(opts[1].slug) - parseFloat(opts[0].slug)) + '" value="' + esc(String(parseFloat(v))) + '" aria-label="Seitenzahl"> Seiten</label>' + b(nx, "+", "Mehr Seiten") + "</div>" +
-      '<span class="ps-td">' + esc((sh ? sh + " · " : "") + "möglich: " + parseFloat(opts[0].slug) + "–" + parseFloat(opts[opts.length - 1].slug) + " Seiten") + "</span></div>";
+      '<span class="ps-stph">' + esc((sh ? sh + " · " : "") + "möglich: " + parseFloat(opts[0].slug) + "–" + parseFloat(opts[opts.length - 1].slug) + " Seiten") + "</span></div>";
   }
   function tileHtml(pr) {
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
