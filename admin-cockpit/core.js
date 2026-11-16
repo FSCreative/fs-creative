@@ -145,13 +145,14 @@ FSC.searcher = function(fn){ FSC.searchers.push(fn); };
 FSC.action("priv",function(){ var v=FSC.priv(!FSC.priv()); FSC.toast(v?"Beträge ausgeblendet":"Beträge sichtbar"); });
 
 /* ---------- Laden ---------- */
-FSC.load = function(force){
+FSC.load = function(force,_stale){
   if(FSC.busy) return Promise.resolve(); FSC.busy=true;
   return FSC.api("/admin/api/cockpit?year="+FSC.year+(force?"&force=1":"")).then(function(d){
     FSC.busy=false; if(!d||d.error||d.ok===false){ FSC.loadErr=(d&&d.error)||"Fehler"; } else { FSC.D=d; FSC.loadErr=""; FSC.dataHooks.forEach(function(h){ try{ h(d); }catch(e){ console.error(e); } }); }
     FSC.render(); runDeep();   // Deep-Link-Aktion (#ansicht/aktion:arg) erst mit Daten
     /* Server hat den letzten Stand sofort geliefert und aktualisiert im Hintergrund → kurz danach still nachladen */
-    if(d&&d.stale){ clearTimeout(FSC._staleT); FSC._staleT=setTimeout(function(){ if(!document.hidden) FSC.load(false); },4000); }
+    /* nur einmal je Laden nachfassen – sonst Schleife alle 4 s, solange der Server „stale“ meldet (Simon 16.11.2026) */
+    if(d&&d.stale&&!_stale){ clearTimeout(FSC._staleT); FSC._staleT=setTimeout(function(){ if(!document.hidden) FSC.load(false,true); },4000); }
   }).catch(function(e){ FSC.busy=false; if(String(e.message)!=="login"){ FSC.loadErr="Keine Verbindung zum Server."; FSC.render(); } });
 };
 
@@ -208,7 +209,17 @@ FSC._scrollAt=0; window.addEventListener("scroll",function(){ FSC._scrollAt=Date
 document.addEventListener("touchmove",function(){ FSC._scrollAt=Date.now(); },{passive:true});
 /* Eigene Aktionen (Klick, Taste, Eingabe) nie verzögern – nur automatische Aktualisierungen warten aufs Scroll-Ende */
 FSC._userAt=0; ["click","keydown","input","change","submit"].forEach(function(t){ document.addEventListener(t,function(){ FSC._userAt=Date.now(); },true); });
+/* Energie sparen (Simon 16.11.2026): Neuzeichnen aus Modul-Rückrufen zusammenfassen (ein Aufbau pro Bild statt mehrere pro Takt).
+   F.renderFor("print","heute"): ganze Seite nur, wenn eine dieser Ansichten offen ist – sonst nur Leiste (Zähler) + Statusleiste. F.onView(id): Ansicht offen und sichtbar. */
+var rsT=0, rnT=0;
+FSC.renderSoon = function(){ if(rsT) return; rsT=requestAnimationFrame(function(){ rsT=0; FSC.render(); }); };
+FSC.renderNavSoon = function(){ if(rnT||rsT) return; rnT=requestAnimationFrame(function(){ rnT=0; FSC.renderNav(); if(FSC.renderSide) try{ FSC.renderSide(); }catch(e){ console.error(e); } }); };
+FSC.renderFor = function(){ if([].indexOf.call(arguments,FSC.current)>=0) FSC.renderSoon(); else FSC.renderNavSoon(); };
+FSC.onView = function(id){ return FSC.current===id&&!document.hidden; };
+/* Nachrangiges Laden beim Start entzerren: nach ms in einer ruhigen Phase (requestIdleCallback), damit der Start nicht 10 Abrufe auf einmal macht */
+FSC.whenIdle = function(fn,ms){ setTimeout(function(){ if(window.requestIdleCallback) requestIdleCallback(function(){ fn(); },{timeout:20000}); else fn(); },ms||0); };
 FSC.render = function(){
+  if(rsT){ cancelAnimationFrame(rsT); rsT=0; } if(rnT){ cancelAnimationFrame(rnT); rnT=0; }
   FSC.renderNav();
   var main=document.getElementById("main");
   if(!FSC.D){ main.innerHTML='<div class="loading">'+(FSC.loadErr?FSC.esc(FSC.loadErr)+' <button class="btn" data-act="reload">Erneut versuchen</button>':'Lade deine Daten …')+'</div>'; return; }
@@ -259,7 +270,8 @@ FSC.framesPut = function(main,frs){
   });
   frs.forEach(function(r){ if(r.mv&&!r.used&&r.f.parentNode&&r.f.parentNode.id==="__fpark") r.f.remove(); });
 };
-FSC.go = function(id){ FSC._forceRender=true; FSC.current=id; try{ history.replaceState(null,"","#"+id); }catch(e){} FSC.closeDrawer(); FSC.closeModal(); FSC.render(); window.scrollTo(0,0); };
+FSC.go = function(id){ FSC._forceRender=true; FSC.current=id; try{ history.replaceState(null,"","#"+id); }catch(e){} FSC.closeDrawer(); FSC.closeModal(); FSC.render(); window.scrollTo(0,0);
+  try{ document.dispatchEvent(new CustomEvent("fsc-view",{detail:id})); }catch(e){} };   // Module starten/stoppen ihre Abfragen beim Ansichtswechsel (Simon 16.11.2026)
 
 /* ---------- Drawer & Dialoge ---------- */
 FSC.openDrawer = function(html,refresh){ var d=document.getElementById("drawer"); d.innerHTML=html; d.classList.add("on"); d.setAttribute("aria-hidden","false"); document.getElementById("scrim").classList.add("on"); FSC.drawerRefresh=refresh||null; var c=d.querySelector("[data-close]"); if(c) c.focus(); };
@@ -684,6 +696,22 @@ FSC.openHash=function(h){
 };
 window.addEventListener("hashchange",function(){ var h=location.hash.slice(1); if(h&&h!==FSC.current) FSC.openHash(h); });
 
+/* ---------- Leerlauf (Simon 16.11.2026) ----------
+   <html class="fsc-idle">, wenn das Fenster im Hintergrund/verdeckt ist oder 60 s keine Eingabe kam: CSS hält dann alle Endlos-Animationen an
+   (Alpen-Szene, Puls-Punkte …), Module können mit FSC.idle() rAF-Schleifen aussetzen. Jede Eingabe/Fokus weckt sofort wieder auf. */
+(function(){
+  var de=document.documentElement, last=Date.now(), t=0;
+  function set(on){ if(de.classList.contains("fsc-idle")!==on){ de.classList.toggle("fsc-idle",on); try{ document.dispatchEvent(new CustomEvent("fsc-idle",{detail:on})); }catch(e){} } }
+  function check(){ clearTimeout(t); var hid=document.hidden||(document.hasFocus&&!document.hasFocus()), left=60000-(Date.now()-last);
+    if(hid||left<=0){ set(true); return; } set(false); t=setTimeout(check,left+50); }
+  function wake(){ last=Date.now(); if(de.classList.contains("fsc-idle")||!t) check(); }
+  ["pointerdown","pointermove","keydown","wheel","touchstart","scroll","focus"].forEach(function(ev){ window.addEventListener(ev,wake,{passive:true,capture:true}); });
+  window.addEventListener("blur",function(){ setTimeout(check,0); });
+  document.addEventListener("visibilitychange",function(){ if(document.hidden) set(true); else wake(); });
+  FSC.idle = function(){ return de.classList.contains("fsc-idle"); };
+  check();
+})();
+
 /* ---------- Start ---------- */
 FSC.start = function(){
   fillIcons(); try{ FSC.lqInit(); }catch(e){ console.error(e); }
@@ -694,8 +722,9 @@ FSC.start = function(){
   var th=document.getElementById("themeSel"); if(th){ th.value=FSC.theme(); th.addEventListener("change",function(){ FSC.actions.theme(th.value); }); }
   document.getElementById("refresh").addEventListener("click",function(){ FSC.actions.reload(); });
   var sb=document.getElementById("searchBtn"); if(sb) sb.addEventListener("click",function(){ if(FSC.actions.search) FSC.actions.search(); });
-  setInterval(function(){ if(!document.hidden&&!FSC.modalOpen()) FSC.load(false); },60000);
-  document.addEventListener("visibilitychange",function(){ if(!document.hidden&&FSC.D&&Date.now()-Date.parse(FSC.D.fetchedAt)>60000) FSC.load(false); });
+  /* alle 3 min statt jede Minute (Energie, Simon 16.11.2026); live wichtige Teile (Mail, Chat, Druck) haben eigene, schnellere Abfragen auf ihrer Ansicht */
+  setInterval(function(){ if(!document.hidden&&!FSC.modalOpen()) FSC.load(false); },180000);
+  document.addEventListener("visibilitychange",function(){ if(!document.hidden&&FSC.D&&Date.now()-Date.parse(FSC.D.fetchedAt)>120000) FSC.load(false); });
   FSC.priv();
   FSC.render(); FSC.load(false);
 };

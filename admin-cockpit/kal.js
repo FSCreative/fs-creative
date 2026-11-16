@@ -176,7 +176,7 @@ function readOnly(e){ return e.source==="outlook"||(e.source==="icloud"&&e.recur
 
 /* Daten laden: einmal kurz nach dem Start (für Suche/Heute), danach beim Öffnen und bei jedem Neuladen, wenn veraltet */
 var first=true;
-F.onData(function(){ if(first){ first=false; setTimeout(function(){ loadCal(false); },1500); return; } if(CAL.ready) syncD(); if(F.current==="kal"&&Date.now()-CAL.at>20000) loadCal(false); });
+F.onData(function(){ if(first){ first=false; if(F.current==="kal"||F.current==="heute") setTimeout(function(){ loadCal(false); },1500); else F.whenIdle(function(){ loadCal(false); },15000); return; } if(CAL.ready) syncD(); if(F.current==="kal"&&Date.now()-CAL.at>180000) loadCal(false); });   // höchstens alle 3 min (vorher 20 s, Simon 16.11.2026)
 
 /* ---------- Einträge je Tag (Termine, Blitzdings, To-Dos, fällige Rechnungen) ---------- */
 function calItems(){

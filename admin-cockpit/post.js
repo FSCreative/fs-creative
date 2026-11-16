@@ -199,16 +199,18 @@ M.loadFull=function(){
   return M._lf;
 };
 /* Alle 4 s nur den ETag prüfen (billig, Antwort ohne Mails); bei Änderung den neuen Stand übernehmen – vorher 10 s (Wunsch Simon 05.11.2026: so schnell wie Outlook) */
-var POLL_BUSY=false;
+/* 4 s nur, solange das Postfach offen ist; auf anderen Seiten reicht jede Minute (Zähler/Statusleiste) – spart Strom (Simon 16.11.2026) */
+var POLL_BUSY=false, pollAt=0;
 setInterval(function(){
   if(POLL_BUSY||document.hidden||!S.full||M._lf||UNDO.timer||PURGE.timer) return;
-  POLL_BUSY=true;
+  if(F.current!=="post"&&Date.now()-pollAt<60000) return;
+  POLL_BUSY=true; pollAt=Date.now();
   F.api("/admin/api/mail?etag="+encodeURIComponent(S.etag||"")).then(function(md){
     POLL_BUSY=false;
     if(md&&!md.same&&Array.isArray(md.messages)){ var sig0=viewSig(); S.etag=md.etag||""; srvFlags(md); ingest(md,true); if(viewSig()!==sig0) M.refresh(); }
   }).catch(function(){ POLL_BUSY=false; });
 },4000);
-document.addEventListener("visibilitychange",function(){ if(!document.hidden&&S.full&&Date.now()-S.fullAt>10000) M.loadFull(); });
+document.addEventListener("visibilitychange",function(){ if(!document.hidden&&S.full&&Date.now()-S.fullAt>(F.current==="post"?10000:300000)) M.loadFull(); });   // andere Seite: voller Abruf höchstens alle 5 min, sonst reicht der ETag-Check (Simon 16.11.2026)
 var relT=null;
 M.scheduleReload=function(ms){ clearTimeout(relT); relT=setTimeout(function(){ M.loadFull(); },ms||4000); };
 F.onData(function(d){ if(d&&d.mail) ingest(d.mail,false); if(F.current==="post"&&Date.now()-S.fullAt>55000) setTimeout(M.loadFull,50); });

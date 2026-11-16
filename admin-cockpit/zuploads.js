@@ -6,7 +6,8 @@ var F=window.FSC, esc=F.esc, de=F.de;
 var ST=null, busy=false, CUR={};   // CUR[linkId] = geöffneter Ordner („Logos/Varianten“, "" = oberste Ebene)
 function hb(n){ n=+n||0; return n>=1073741824?(n/1073741824).toFixed(1).replace(".",",")+" GB":n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" MB":Math.max(1,Math.round(n/1024))+" KB"; }
 function dt(iso){ return iso?de(String(iso).slice(0,10))+" "+String(iso).slice(11,16):""; }
-function load(){ if(busy) return; busy=true; F.api("/admin/api/uploads").then(function(j){ busy=false; ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",links:[]}; F.render(); }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",links:[]}; F.render(); }); }
+var stSig="";   // nur bei Änderung neu zeichnen, außerhalb „Uploads“ nur die Leiste (Simon 16.11.2026)
+function load(){ if(busy) return; busy=true; F.api("/admin/api/uploads").then(function(j){ busy=false; ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",links:[]}; var sg=JSON.stringify(ST); if(sg!==stSig){ stSig=sg; F.renderFor("uploads"); } }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",links:[]}; F.render(); }); }
 function isNew(l){ return l.lastAt&&(!l.seenAt||l.lastAt>l.seenAt); }
 /* Aufbau wie die Kundenansicht (Wunsch Simon 05.11.2026): oben die Links als Karten, darunter je Link Kopf mit Link & Aktionen,
    dann drei Spalten – Ordnerbaum · Dateitabelle mit Pfad · Hochladen-Feld. Schmal (Handy) untereinander. */
@@ -219,7 +220,7 @@ F.action("updelf",function(v){ var p=String(v).split("|"), l=link(p[0]), f=l&&(l
 F.action("updell",function(id){ var l=link(id); if(!l) return;
   ask("Upload-Link löschen?","Der Link „"+l.title+"“ funktioniert danach nicht mehr und alle "+l.count+" Datei(en) werden endgültig vom Server gelöscht.","Link und Dateien löschen",function(){ post({op:"deleteLink",id:id,confirm:true},"Link gelöscht"); }); });
 F.view({id:"uploads",label:"Uploads",short:"Uploads",icon:"upload",order:37,count:function(){ return ST&&ST.ok?(ST.links||[]).filter(isNew).length:0; },render:render,after:function(){ if(!ST) load(); else if(ST.ok) markSeen(cur()); var c=document.querySelector(".up-cv"); if(c) c.scrollTop=c.scrollHeight; }});
-setTimeout(load,4000);
-/* offen auf „Uploads“: alle 30 s (neue Nachrichten im Chat), sonst alle 2 Min.; nie während du tippst (Eingabe bliebe zwar erhalten, aber der Fokus ginge verloren) */
-var tick=0; setInterval(function(){ tick++; var a=document.activeElement; if(document.visibilityState!=="visible"||(a&&a.getAttribute&&a.getAttribute("data-updraft"))) return; if(F.current==="uploads"||tick%4===0) load(); },30000);
+if(F.whenIdle) F.whenIdle(function(){ if(!ST) load(); },F.current==="uploads"?0:20000); else setTimeout(load,4000);   // Zähler nachrangig (Simon 16.11.2026)
+/* offen auf „Uploads“: alle 30 s (neue Nachrichten im Chat), sonst alle 10 Min. (vorher 2, Energie – Simon 16.11.2026); nie während du tippst (Eingabe bliebe zwar erhalten, aber der Fokus ginge verloren) */
+var tick=0; setInterval(function(){ tick++; var a=document.activeElement; if(document.visibilityState!=="visible"||(a&&a.getAttribute&&a.getAttribute("data-updraft"))) return; if(F.current==="uploads"||tick%20===0) load(); },30000);
 })();

@@ -20,10 +20,12 @@ F.css(
   '.rv-why{color:var(--ok)!important}'+
   '@media (max-width:900px){.rv-r{justify-content:flex-start}.rv-r .btn{min-height:40px}.rv-amt{min-width:0;text-align:left;margin-right:auto}}'
 );
-function load(){ if(busy) return; busy=true; F.api("/admin/api/fin/proposals").then(function(j){ busy=false; RV=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",items:[],groups:[],count:0}; F.render(); }).catch(function(){ busy=false; RV={ok:false,error:"Vorschläge nicht erreichbar",items:[],groups:[],count:0}; }); }
+/* Energie (Simon 16.11.2026): nur bei Änderung neu zeichnen – ganze Seite nur auf Finanzen/Heute, sonst nur die Leiste (Zähler) */
+var rvAt=0, rvSig="";
+function load(){ if(busy) return; busy=true; rvAt=Date.now(); F.api("/admin/api/fin/proposals").then(function(j){ busy=false; RV=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",items:[],groups:[],count:0}; var sg=JSON.stringify(RV); if(sg!==rvSig){ rvSig=sg; F.renderFor("geld","heute"); } }).catch(function(){ busy=false; RV={ok:false,error:"Vorschläge nicht erreichbar",items:[],groups:[],count:0}; }); }
 F.reviewCount=function(){ if(!RV) load(); return RV&&RV.ok?RV.count||0:0; };
 F.reviewReset=function(){ RV=null; load(); };
-F.onData(function(){ RV=null; load(); });
+F.onData(function(){ if(!RV||F.current==="geld"||Date.now()-rvAt>300000) load(); });   // andere Seiten: höchstens alle 5 min (bisher bei jedem Laden)
 function amt(x){ return x.amount==null?'':'<span class="rv-amt '+(x.amount<0?"bad-t":"ok-t")+'">'+eur(x.amount)+'</span>'; }
 function viewBtn(x){ var a=x.voucherId?"sdvou:"+x.voucherId:x.invoiceId?"fin:invd:"+x.invoiceId:(x.txId||(x.txIds||[])[0])?"ftxassign:"+(x.txId||x.txIds[0]):""; return a?'<button class="btn" data-act="'+esc(a)+'">'+F.svg("eye")+' Ansehen</button>':''; }
 function item(x){

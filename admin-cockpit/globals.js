@@ -36,8 +36,9 @@ function announce(){
   }
   if(!toasted){ toasted=Date.now(); F.toast("Neue Version verfügbar",false,"Neu laden",function(){ if(F.modalOpen()) F.confirm("Neu laden? Offene Eingaben im Dialog gehen verloren.","Neu laden",reloadNow); else reloadNow(); }); }
 }
+var vAt=0;
 function vcheck(fromVisible){
-  if(document.hidden) return;
+  if(document.hidden||(fromVisible&&Date.now()-vAt<60000)) return; vAt=Date.now();
   F.api("/admin/api/version").then(function(d){
     if(!d||!d.build) return;
     if(BUILD===null){ BUILD=short(d.build); return; }
@@ -47,7 +48,7 @@ function vcheck(fromVisible){
     announce();
   }).catch(function(){});
 }
-setInterval(function(){ vcheck(false); },60000);
+setInterval(function(){ vcheck(false); },300000);   // alle 5 min statt jede Minute; beim Zurückkehren ins Fenster zusätzlich (höchstens 1×/min) – Simon 16.11.2026
 setTimeout(function(){ vcheck(false); },3000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) vcheck(true); });
 

@@ -265,7 +265,7 @@ window.addEventListener("message",function(e){ if(e.origin!==location.origin||!e
 document.addEventListener("visibilitychange",function(){ if(!document.hidden&&on()){ loadStatus(); loadList(); } });
 setInterval(function(){ ticks++;
   if(on()&&!document.hidden){ if(appView()) loadList(); if(ticks%6===0) loadStatus(); }
-  else if(ticks%6===0&&WS&&WS.connected) loadList();   /* Zahl am Umschalter */
+  else if(ticks%6===0&&WS&&WS.connected&&!document.hidden) loadList();   /* Zahl am Umschalter – im Hintergrund nicht (Simon 16.11.2026) */
 },10000);
 setTimeout(loadStatus,2500);
 

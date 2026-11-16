@@ -63,7 +63,9 @@ function loadThread(){
 }
 /* Online/Offline nur von Hand über den Schalter – keine Automatik, kein Herzschlag (Wunsch Simon 06.11.2026) */
 function beat(){}
-setInterval(function(){ ticks++; if(F.current==="chat"&&!document.hidden) load(); else if(ticks%5===0) load(); },4000);
+/* Chat offen: alle 4 s; andere Seite: jede Minute (Zähler), im Hintergrund gar nicht – Hinweise macht znotify.js (Simon 16.11.2026) */
+setInterval(function(){ ticks++; if(document.hidden) return; if(F.current==="chat") load(); else if(ticks%15===0) load(); },4000);
+document.addEventListener("visibilitychange",function(){ if(!document.hidden&&F.current==="chat") load(); });
 setTimeout(load,1500);
 
 var fmtT=function(iso){ var t=new Date(iso); if(isNaN(t)) return ""; var td=new Date(); return t.toDateString()===td.toDateString()?t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):t.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"})+" "+t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); };

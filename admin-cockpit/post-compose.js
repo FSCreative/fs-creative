@@ -95,7 +95,7 @@ function syncSig(force){
   if(force||raw) return push();
   F.api("/admin/api/mail-signature").then(function(j){ if(!j||!j.ok) return; if(!j.html) push(); else F.ls("fsc_sig_synced",h); }).catch(function(){});
 }
-setTimeout(syncSig,5000);
+F.whenIdle(function(){ syncSig(); },20000);   // Signatur-Abgleich nachrangig (vorher 5 s nach Start, Simon 16.11.2026)
 
 /* ---------- Kontakte (aus gesendeten und empfangenen Mails gewichtet) ---------- */
 var CT=null, CT_V=-1;

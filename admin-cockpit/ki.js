@@ -29,7 +29,7 @@ K.pct=function(c){ return Math.round((+c||0)*100)+" %"; };
 K.conf=function(c){ c=+c||0; var t=c>=0.85?"ok":c>=0.6?"warn":"bad"; return '<span class="tag '+t+'" title="Sicherheit der KI">'+K.pct(c)+'</span>'; };
 K.notSetHtml=function(){ return '<div class="notice"><span>'+esc(K.NOT_SET)+'. Danach den Dienst neu starten – die übrigen Funktionen laufen ohne KI unverändert.</span></div>'; };
 K.rerender=function(){ if(F.current==="ki") F.render(); };
-F.onData(function(){ K.load(false).then(function(){ F.renderNav(); }); });
+F.onData(function(){ if(F.current!=="ki"&&K.st&&Date.now()-stAt<300000) return; K.load(false).then(function(){ F.renderNavSoon(); }); });   // außerhalb „KI“ höchstens alle 5 min (Simon 16.11.2026)
 
 /* ---------- Texte ---------- */
 var RULE_TXT={"8":"ig. Erwerb","9":"Vorsteuer abziehbar","10":"keine Vorsteuer","12":"RC Drittland (mit VSt)","13":"RC ohne Vorsteuer","14":"RC EU (mit VSt)"};
