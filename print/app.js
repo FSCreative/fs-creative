@@ -942,7 +942,8 @@
     var sp = S.prod.props.filter(function (x) { return x.slug === "size"; })[0]; var o = sp && sp.options.filter(function (x) { return x.slug === S.sel.size; })[0];
     return o && o.w ? { w: o.w, h: o.h } : S.prod.dims ? { w: S.prod.dims[0], h: S.prod.dims[1] } : (S.price && S.price.size) || null;
   }
-  function pagesNeeded() { return S.price && S.price.pages || 0; }   // mehrseitige Produkte (Broschüre, Buch, Kalender): Seiten inkl. Umschlag
+  function pagesNeeded() { if (S.price && S.price.pages) return S.price.pages;   // vor dem ersten Preis (Ausführungsseite) aus der gewählten Seitenzahl
+    var pr = S.prod && (S.prod.props || []).filter(function (x) { return x.slug === "pages"; })[0], n = pr && /seite/i.test(pr.title || "") && !/karten|blätter pro|pro satz/i.test(pr.title || "") ? parseFloat(S.sel.pages) : 0; return n > 0 ? n : 0; }   // mehrseitige Produkte (Broschüre, Buch, Kalender): Seiten inkl. Umschlag
   function sides() { var m = String((S.sel.printtype || (S.prod.fixed || {}).printtype) || "").match(/^(\d)(\d)(?:_|$)/); return m && m[2] !== "0" ? 2 : 1; }   // auch „55_full_color_plus_white“ (5/5), „40_pms“
   // Sonderform des Endformats für Schnittlinien (Simon 16.11.2026: Sechseck-Fotoplatten) – "hex" | "round" | ""
   function shapeNow() { var t = String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape") + " " + labelOf("size");
