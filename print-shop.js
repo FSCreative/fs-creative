@@ -66,7 +66,16 @@ function cmsTrim(j, keepSkus) {
   const mdImgs = t => Array.from(String(t || "").matchAll(/!\[[^\]]*\]\((?:https?:)?\/\/images\.ctfassets\.net\/([\w\-./%]+)\)/gi)).map(m => m[1]).filter(x => !/\.svg$/i.test(x));
   const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), pr: String(x.property || ""), d: String(x.description || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 2500), i: A(x.image) || mdImgs(x.description)[0] || "", g: [A(x.image)].concat(mdImgs(x.description)).filter(Boolean).filter((v, k, a) => a.indexOf(v) === k).slice(0, 8),
     c: (x.characteristics || []).map(r => { const c = r && (j.characteristics || {})[r.id]; return c && c.name ? String(c.name).replace(/!?\s*Materialbewertung\s*$/i, "").trim().slice(0, 40) : ""; }).filter(Boolean).slice(0, 6) })).filter(x => x.d || x.i);   // ganzer Text mit Absätzen (Info-Fenster), Eigenschaften wie „Nachhaltige Wahl“
-  return { mains, names, products, options, info };
+  // Druckspezifikationen je Produkt (Print.com-Fragen „Umschlag und Innenseiten“, „Gut zu wissen …“, Farbdeckung …) – Simon 16.11.2026
+  // Sätze, die sich auf die Print.com-Oberfläche beziehen („nebenstehende Berechnung“, „linke Seite dieses Bildschirms“), fallen weg; „Datenblätter und Vorlagen“ haben wir selbst
+  const QA = j["q-and-a"] || {}, qaTxt = {}, qa = {}, UI_RX = /nebenstehend|linken Seite|dieses Bildschirm|hiernaast|links auf dem Bildschirm/i;
+  const qaClean = t => String(t || "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/__([^_]+)__/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\r/g, "")
+    .split("\n").map(l => l.split(/(?<=[.!?])\s+/).filter(x => !UI_RX.test(x)).join(" ").replace(/[ \t]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  Object.values(j["q-and-a-groups"] || {}).forEach(g => { const m = /^product_(.+)$/.exec(String((g && g.page) || "")); if (!m || (keepSkus && !keepSkus.has(m[1]))) return;
+    const ids = (g.questions || []).map(q => q && q.id).filter(id => { const e = QA[id]; if (!e || !e.question || /^Datenblätter und Vorlagen/i.test(String(e.question).trim())) return false;
+      if (!qaTxt[id]) { const a = qaClean(e.content).slice(0, 2500); if (a.length < 20) return false; qaTxt[id] = { q: String(e.question).trim().slice(0, 120), a }; } return true; }).slice(0, 12);
+    if (ids.length) qa[m[1]] = { t: String(g.title || "").trim().slice(0, 120), ids }; });
+  return { mains, names, products, options, info, qa, qaTxt };
 }
 
 // Kuratierte Auswahl: welche Print.com-Produkte, welche Eigenschaften der Kunde sieht, welche Auflagen angeboten werden – liegt über der allgemeinen Produkt-Logik
@@ -745,13 +754,13 @@ module.exports = function (D) {
     const t = cmsTrim(await get(cmsBase() + "/" + de.fileName, 90000));
     if (!t.mains.length && !Object.keys(t.products).length) throw new Error("CMS: leer");
     const oldV = CMS && CMS.v;
-    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 6 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
+    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 7 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
     if (oldV !== CMS.v && CAT) { CAT.cv = "cms-" + CMS.v; catalog(false).catch(() => {}); }   // neues CMS-Format (z. B. Optionsbilder aus Infotexten) → kuratierte Produkte gleich neu aufbauen, nicht erst nach 24 h
     return CMS;
   }
   async function cms(force) {
     if (!CMS) CMS = await store.getMeta("print_cms").catch(() => null);
-    if (force || !CMS || !CMS.at || CMS.v !== 6 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit, v3: mit Aufnahmedatum (Neuheiten), v4: Eigenschaft je Options-Info (Fotos), v5: ganze Infotexte + Eigenschaften, v6: Bilder aus den Infotexten (Markdown)
+    if (force || !CMS || !CMS.at || CMS.v !== 7 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit, v3: mit Aufnahmedatum (Neuheiten), v4: Eigenschaft je Options-Info (Fotos), v5: ganze Infotexte + Eigenschaften, v6: Bilder aus den Infotexten (Markdown)
       if (!cmsLoading) cmsLoading = cmsRefresh().catch(e => { log("CMS:", e.message); return CMS; }).finally(() => { cmsLoading = null; });
       if (force || !CMS) return cmsLoading;
     }
@@ -5049,7 +5058,8 @@ module.exports = function (D) {
         if (!cfg().pcKey) return J(res, 503, { ok: false, error: "Der Shop wird gerade eingerichtet" });
         if (limited("product", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
         const prod = await findProduct(u.searchParams.get("key")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
-        return J(res, 200, { ok: true, product: scrubPub(pubProd(prod)) });
+        const qg = CMS && CMS.qa && CMS.qa[prod.sku], qa = qg ? { t: qg.t, items: qg.ids.map(id => CMS.qaTxt[id]).filter(Boolean) } : null;
+        return J(res, 200, { ok: true, product: Object.assign(scrubPub(pubProd(prod)), qa && qa.items.length ? { qa } : {}) });
       }
       if (p === "/print/api/optinfo" && req.method === "GET") {   // ganze Options-Info fürs Info-Fenster: Text, Fotos, Eigenschaften (Print.com-CMS)
         if (limited("optinfo", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
