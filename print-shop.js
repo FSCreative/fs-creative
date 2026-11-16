@@ -5876,8 +5876,8 @@ module.exports = function (D) {
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
         const allF = Array.from(new Set([o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid)).filter(Boolean))).slice(0, 60), pagesOf = {};
-        for (const f of allF) { const mm = await store.fileMeta(f).catch(() => null); if (mm) pagesOf[f] = +mm.pages || 1; }
-        return J(res, 200, { ok: true, docs, pagesOf, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
+        const upAt = {}; for (const f of allF) { const mm = await store.fileMeta(f).catch(() => null); if (mm) { pagesOf[f] = +mm.pages || 1; if (mm.createdAt) upAt[f] = mm.createdAt; } }   // Uploaddatum je Datei (Studio-Sortierung)
+        return J(res, 200, { ok: true, docs, pagesOf, upAt, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null, src: !!fm.src } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
       }
       // Print.com-Sortiment (nur lesend): alle Produkte bzw. ein Produkt mit Eigenschaften – zum Auswählen fürs Shop-Sortiment
       if (p === "/admin/api/print/pcproducts" && req.method === "GET") {
