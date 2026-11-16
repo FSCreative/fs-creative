@@ -289,6 +289,7 @@ textarea.pd-in{min-height:76px;resize:vertical;line-height:1.4}
 .pd-sw[aria-pressed="true"]{outline:2px solid #fff;outline-offset:2px}
 .pd-btns{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:4px}
 .pd-btns .pd-ib{border-color:var(--ps-line);width:100%}
+.pd-btns.col{grid-template-columns:minmax(0,1fr)}.pd-btns.col .ps-btn{justify-content:flex-start;text-align:left;width:100%}
 .pd-warn{font-size:12.5px;line-height:1.45;padding:8px 10px;border-radius:10px;background:#ffd60a1f;color:#ffe57a}
 .pd-warn.bad{background:#ff453a26;color:#ff8a80}
 .pd-muted{color:var(--text-faint);font-size:12.5px;line-height:1.45}
