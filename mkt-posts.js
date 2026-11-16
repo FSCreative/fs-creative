@@ -733,14 +733,17 @@ module.exports = function (C) {
       for (const p of due.slice(0, 3)) await publishPost(p);
       // Zugänge rechtzeitig auffrischen und einmal am Tag je Konto mit einer leichten Leseanfrage prüfen (auch „abgelaufene“ – vielleicht wieder gültig)
       for (const ch of S().channels.filter(c => (c.status === "ok" || c.status === "abgelaufen") && (!c.checkedAt || Date.now() - Date.parse(c.checkedAt) > 864e5))) await verifyChannel(ch);
-      // Posteingang im Hintergrund auffrischen (hält den Stand für das Cockpit warm, meldet Neues): alle 10 Minuten, solange das Cockpit
-      // in den letzten 15 Minuten den Posteingang abgefragt hat alle 4 Minuten. Läuft neben tick() her – Posten wartet nie auf langsame Plattformen.
-      const st = S().mkt, every = Date.now() - inboxSeenAt < 15 * 60e3 ? 4 * 60e3 : 10 * 60e3;
-      if (!inboxPolling && (!st.inboxPollAt || Date.now() - Date.parse(st.inboxPollAt) > every)) {
+      // Posteingang im Hintergrund auffrischen (hält den Stand für das Cockpit warm, meldet Neues). Simon 16.11.2026: alle 30 Minuten, solange
+      // das Cockpit in den letzten 10 Minuten den Posteingang abgefragt hat alle 4 Minuten; nachts (23–6 Uhr Wien) gar nicht, außer der Posteingang ist offen.
+      // Läuft neben tick() her – Posten wartet nie auf langsame Plattformen.
+      const st = S().mkt, viewing = Date.now() - inboxSeenAt < 10 * 60e3, every = viewing ? 4 * 60e3 : 30 * 60e3;
+      const hourV = +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "numeric", hourCycle: "h23" }).format(new Date()), night = hourV >= 23 || hourV < 6;
+      if (!inboxPolling && (viewing || !night) && (!st.inboxPollAt || Date.now() - Date.parse(st.inboxPollAt) > every)) {
         st.inboxPollAt = nowIso(); inboxPolling = true;
         pollInbox().catch(e => console.error("marketing: Posteingang", e.message)).then(() => { inboxPolling = false; });
       }
-      if (!statsRunning && (!st.statsPollAt || Date.now() - Date.parse(st.statsPollAt) > 10 * 60e3)) { st.statsPollAt = nowIso(); statsPoll().catch(e => console.error("marketing: Zahlen", e.message)); }
+      // Post-Zahlen stündlich (Simon 16.11.2026, vorher alle 10 min)
+      if (!statsRunning && (!st.statsPollAt || Date.now() - Date.parse(st.statsPollAt) > 60 * 60e3)) { st.statsPollAt = nowIso(); statsPoll().catch(e => console.error("marketing: Zahlen", e.message)); }
       MU.weekly().catch(e => console.error("marketing: Musik-Nachschub", e.message));
     } catch (e) { console.error("marketing: tick", e.message); }
     TICKING = false;

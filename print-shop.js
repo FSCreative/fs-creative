@@ -327,10 +327,21 @@ module.exports = function (D) {
       gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
       invoiceId: (o.invoice && o.invoice.id && !o.invoice.deleted && String(o.invoice.id)) || "", invoiceNr: (o.invoice && !o.invoice.deleted && o.invoice.nr) || "", email: c.email || "" }; }
   function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
+  // Bestellungen für lesende, häufige Wege (Cockpit-Druckseite, Feedback, Kundenkonto/Bonus, Margen, Statistik): 45 s im Speicher,
+  // jede gespeicherte Bestellung (putOrder) verwirft den Stand sofort (Simon 16.11.2026 – vorher je Aufruf bis zu 1000 volle Zeilen aus der Datenbank).
+  // NUR LESEN: die Objekte sind geteilt – wer eine Bestellung ändern will, holt sie mit store.getOrder()/store.listOrders() frisch.
+  let ORD_MEMO = null;
+  function ordersCached(fresh) {
+    if (!fresh && ORD_MEMO && Date.now() - ORD_MEMO.at < 45e3) return ORD_MEMO.p;
+    const m = { at: Date.now(), p: store.listOrders() }; ORD_MEMO = m;
+    m.p.catch(() => { if (ORD_MEMO === m) ORD_MEMO = null; });
+    return m.p;
+  }
   const store = {
     async getOrder(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select data from print_order where id=$1", [id]); return r.rows[0] ? r.rows[0].data : null; } return rdJson(path.join(FDIR(), "orders", id + ".json")); },
     async putOrder(o) { o.updatedAt = nowIso(); if (useDb()) { await (await db()).query("insert into print_order(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data, updated_at=now()", [o.id, JSON.stringify(o)]); } else wrJson(path.join(FDIR(), "orders", o.id + ".json"), o);
       if (o.invoice && o.invoice.id) idxDirty();   // Rechnungs-Index (invoiceIndex) neu lesen
+      ORD_MEMO = null;   // Bestell-Zwischenspeicher verwerfen (ordersCached)
       toTask(o); return o; },
     async listOrders() { if (useDb()) { const r = await (await db()).query("select data from print_order order by created_at desc limit 1000"); return r.rows.map(x => x.data); }
       const d = path.join(FDIR(), "orders"); return fs.readdirSync(d).filter(f => /\.json$/.test(f)).map(f => rdJson(path.join(d, f))).filter(Boolean).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); },
@@ -1274,6 +1285,7 @@ module.exports = function (D) {
   const NOPRICE = new Map();   // echte Preis-Ablehnungen („no supplier prices“) je Anfrage, 10 min – spart wiederholte Anfragen ohne Logistik-Angabe
   async function purchase0(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
+    if (n.nocache) { PRICE_CACHE.delete(key); NOPRICE.delete(key); }   // Einkaufspreis neu prüfen: genau diesen Eintrag frisch holen
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 6 * 3600e3)) return hit.v;
     const np = NOPRICE.get(key); if (np && Date.now() - np.at < 10 * 60e3) throw np.e;
     if (n.cacheOnly) throw Object.assign(new Error("busy"), { status: 429, busy: true });   // Andrang: Nebensächliches nur aus dem Zwischenspeicher
@@ -1595,7 +1607,10 @@ module.exports = function (D) {
   }
   // Ergebnisse überleben Neustarts; geplanter Start (z. B. abends) über print_tplaudit_plan
   async function tplAuditSave() { await store.setMeta("print_tplaudit", { at: TPL_AUDIT.at, done: TPL_AUDIT.done, total: TPL_AUDIT.total, stopped: !!TPL_AUDIT.stop, rows: TPL_AUDIT.rows }).catch(() => {}); }
-  const tplPlanT = setInterval(async () => { const pl = await store.getMeta("print_tplaudit_plan").catch(() => null); if (!pl || !pl.runAt || Date.parse(pl.runAt) > Date.now() || TPL_AUDIT.busy) return; await store.setMeta("print_tplaudit_plan", {}).catch(() => {}); tplAuditRun().catch(() => {}); }, 60e3); if (tplPlanT.unref) tplPlanT.unref();
+  // geplanter Start: Plan einmal laden und im Speicher halten (Simon 16.11.2026 – vorher jede Minute aus der Datenbank gelesen); „tplauditplan“ setzt TPL_PLAN mit
+  let TPL_PLAN;   // undefined = noch nicht geladen
+  const tplPlanT = setInterval(async () => { if (TPL_PLAN === undefined) TPL_PLAN = (await store.getMeta("print_tplaudit_plan").catch(() => null)) || null; const pl = TPL_PLAN;
+    if (!pl || !pl.runAt || Date.parse(pl.runAt) > Date.now() || TPL_AUDIT.busy) return; TPL_PLAN = {}; await store.setMeta("print_tplaudit_plan", {}).catch(() => {}); tplAuditRun().catch(() => {}); }, 60e3); if (tplPlanT.unref) tplPlanT.unref();
   async function accessoryList(prod) {
     if (!prod.sku) return []; const hit = ACC_CACHE.get(prod.sku); if (hit && Date.now() - hit.at < 864e5) return hit.items;
     await accLoad(); const known = ACC_MAP.map && ACC_MAP.map[prod.sku];
@@ -1909,12 +1924,12 @@ module.exports = function (D) {
      Nur für Bild-Uploads (JPG/PNG mit Platzierung) – die Auflösung prüft der Server am Original. PDFs und andere Dateien: weiter die volle Datei. */
   const pvOk = m => !!(m && m.kind === "upload" && (m.original === "jpg" || m.original === "png") && m.src && m.place && !m.front && !m.bleedFix);
   const pvId = id => id + "pv", pxId = id => id + "px";
-  // kurzer Zwischenspeicher für große Druckdateien (Studio holt sie in vielen kleinen Teilstücken) – höchstens ~350 MB, 10 Minuten
+  // kurzer Zwischenspeicher für große Druckdateien (Studio holt sie in vielen kleinen Teilstücken) – höchstens ~200 MB (Simon 16.11.2026, vorher 350 MB), 10 Minuten
   const FBUF = new Map();
   async function fileBufCached(id) { const now = Date.now(), c = FBUF.get(id); if (c && now - c.at < 600e3) { c.at = now; return c.buf; }
     const buf = await store.fileData(id); if (!buf) return buf; const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
-    if (b.length > 2e6 && b.length < 250e6) { FBUF.set(id, { buf: b, at: now }); let tot = 0; const l = [...FBUF.entries()].sort((x, y) => y[1].at - x[1].at);
-      for (const [k, v] of l) { tot += v.buf.length; if (tot > 350e6 || now - v.at > 600e3) FBUF.delete(k); } }
+    if (b.length > 2e6 && b.length < 200e6) { FBUF.set(id, { buf: b, at: now }); let tot = 0; const l = [...FBUF.entries()].sort((x, y) => y[1].at - x[1].at);
+      for (const [k, v] of l) { tot += v.buf.length; if (tot > 200e6 || now - v.at > 600e3) FBUF.delete(k); } }
     return b; }
   async function previewPdf(m) {
     if (!pvOk(m)) return null;
@@ -2340,7 +2355,7 @@ module.exports = function (D) {
   }
   async function bonusOf(c, all) {
     if (!c) return null;
-    const l = (all || await store.listOrders()).filter(o => (o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)) && BONUS_COUNTS[o.status]);
+    const l = (all || await ordersCached()).filter(o => (o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)) && BONUS_COUNTS[o.status]);
     const b = bonusCalc(l, today()), company = c.type === "company";
     const cur = b.idx > -1 ? BONUS_TIERS[b.idx] : null, nx = BONUS_TIERS[b.idx + 1] || null;
     return { company, revenue: b.revenue, r6: b.r6, since: b.since, validUntil: b.validUntil, nextCheck: b.nextCheck, tier: company && cur ? cur.key : "", name: company && cur ? cur.name : "", pct: company && cur ? cur.pct : 0,
@@ -2364,8 +2379,8 @@ module.exports = function (D) {
       n: o.copies, labels: (o.labels || []).slice(0, 12), size: fl ? fl[1] : "", price: null, warn: false, clientWarn: [], at: Date.now(), reorderOf: o.nr };
   }
   async function ordersOfCustomer(c) {
-    const l = (await store.listOrders()).filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email));
-    return l.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [], productKey: o.product.key, canReorder: !!o.fileId && !(o.motifs && o.motifs.length > 1) && o.status !== "pending_payment" && o.status !== "payment_failed" }));
+    const l = (await ordersCached()).filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email));
+    return l.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [], productKey: o.product.key, canReorder: !!o.fileId && !(o.motifs && o.motifs.length > 1) && o.status !== "pending_payment" && o.status !== "payment_failed" }));
   }
 
   // ───────────────────────── Bestellungen ─────────────────────────
@@ -2739,7 +2754,20 @@ module.exports = function (D) {
   const itemRef = o => Array.isArray(o.pageMap) && o.pageMap.length ? clip(o.nr + " · " + o.pageMap.map(p => "S" + p.page + " " + p.title).join(", "), 120) : o.nr;
   // Beidseitiger Druck (z. B. 4/4), aber nur 1 Seite in der PDF (Kunde hat den Hinweis „Rückseite bleibt weiß“ bestätigt):
   // Print.com erwartet 2 Seiten, sonst gilt die Datei als unvollständig (leere Vorschau, Mail „Druckdaten hochladen“) → weiße Rückseite in gleicher Größe anhängen.
-  const PADDED = new Map();
+  // Zwischenspeicher für aufbereitete Druckdateien (PADDED/FITTED/COVERED/ROTATED): EIN gemeinsamer LRU, zusammen höchstens ~200 MB, 10 Minuten
+  // (Simon 16.11.2026 – vorher je Speicher bis 40 Einträge/2 GB, also bis 8 GB). Größere Dateien werden nicht gemerkt, sondern bei Bedarf neu aufbereitet.
+  const PDF_LRU = new Map(), PDF_LRU_MAX = 200e6, PDF_LRU_TTL = 600e3; let PDF_LRU_BYTES = 0;
+  function pdfLruDel(k) { const v = PDF_LRU.get(k); if (v) { PDF_LRU_BYTES -= v.buf.length; PDF_LRU.delete(k); } }
+  function pdfLruNs(ns) {
+    const live = k => { const v = PDF_LRU.get(ns + k); if (v && Date.now() - v.at > PDF_LRU_TTL) { pdfLruDel(ns + k); return null; } return v || null; };
+    return {
+      has: k => !!live(k),
+      get: k => { const v = live(k); if (!v) return undefined; PDF_LRU.delete(ns + k); v.at = Date.now(); PDF_LRU.set(ns + k, v); return v.buf; },   // ans Ende = zuletzt benutzt
+      set: (k, buf) => { pdfLruDel(ns + k); if (!buf || buf.length > PDF_LRU_MAX) return; PDF_LRU.set(ns + k, { buf, at: Date.now() }); PDF_LRU_BYTES += buf.length;
+        const now = Date.now(); for (const [kk, v] of PDF_LRU) { if (PDF_LRU_BYTES <= PDF_LRU_MAX && now - v.at <= PDF_LRU_TTL) break; pdfLruDel(kk); } },
+    };
+  }
+  const PADDED = pdfLruNs("pad:");
   const needsBack = (fm, o) => !!(fm && o && fm.pages === 1 && !(o.price && o.price.pages) && !(Array.isArray(o.pageMap) && o.pageMap.length) && sidesOf(o.pcOptions || {}) === 2);
   async function padForPrint(buf, fm, o) {
     if (!needsBack(fm, o)) return buf;
@@ -2756,7 +2784,7 @@ module.exports = function (D) {
   }
   // Seitengröße für Print.com vereinheitlichen (D-261112-YTL3, 13.11.2026): Endformat (TrimBox) passt, aber zu viel Beschnitt (3 statt 2 mm) oder einzelne Seiten
   // minimal anders groß → alle passenden Seiten auf Endformat + Beschnitt zuschneiden (um die Mitte des Endformats). Nur verkleinern, nie Rand dazuerfinden.
-  const FITTED = new Map();
+  const FITTED = pdfLruNs("fit:");
   async function fitForPrint(buf, fm, o) {
     const sz = o && o.size, b = +(o && o.bleed) || 0;
     if (!sz || !(sz.w > 0) || !(sz.h > 0) || /^(textile|promo)$/.test((o.product && o.product.kind) || "") || (fm && fm.kind === "motifs")) return buf;
@@ -2778,7 +2806,7 @@ module.exports = function (D) {
     return out;
   }
   // Eigene Umschlag-Datei (Notizblock-Deckblatt, Durchschreibesatz …): Print.com erwartet EINE PDF – Seite 1 = Umschlag, danach das Innenleben (Simon 13.11.2026, BASE45)
-  const COVERED = new Map();
+  const COVERED = pdfLruNs("cov:");
   async function withCover(buf, o) {
     const k = o.id + ":" + o.cover.fileId + ":" + buf.length; if (COVERED.has(k)) return COVERED.get(k);
     const cv = await store.fileData(o.cover.fileId); if (!cv) throw new Error("Umschlag-Datei fehlt");
@@ -2788,10 +2816,8 @@ module.exports = function (D) {
   }
   // Querformat-Datei für ein Hochformat (oder umgekehrt, z. B. A5 quer bei „A5“): Print.com setzt die Seite sonst ungedreht und verkleinert ins Format
   // (Bestellung D-261104-33V2) → Seiten drehen: Vorderseiten 90°, Rückseiten 270° (Wenden wie beim Querformat üblich, Rückseite steht nicht auf dem Kopf)
-  const ROTATED = new Map();
-  // Zwischenspeicher für aufbereitete Druckdateien: höchstens 40 Einträge und zusammen 2 GB (Dateien bis 500 MB, 13.11.2026)
-  function memo(map, k, buf) { map.set(k, buf); let tot = 0; for (const v of map.values()) tot += v.length;
-    while (map.size > 40 || (map.size > 1 && tot > 2e9)) { const k0 = map.keys().next().value; tot -= map.get(k0).length; map.delete(k0); } }
+  const ROTATED = pdfLruNs("rot:");
+  function memo(map, k, buf) { map.set(k, buf); }   // gemeinsamer LRU (pdfLruNs), Grenzen siehe oben
   async function rotateForPrint(buf, fm, o) {
     const sz = o && o.size, b = +(o && o.bleed) || 0;
     if (!sz || !(sz.w > 0) || !(sz.h > 0) || Math.abs(sz.w - sz.h) < 3 || (Array.isArray(o.pageMap) && o.pageMap.length) || /^(textile|promo)$/.test((o.product && o.product.kind) || "")) return buf;
@@ -3226,9 +3252,10 @@ module.exports = function (D) {
   }
   let lastDaily = 0, lastFb = 0;
   let lastTrack = 0;
-  // Sendungsstatus höchstens alle 25 min: tick() und der 30-min-Takt im Server teilen sich diese Sperre (früher doppelt gegen das Print.com-Limit)
-  function pollDue() { if (!cfg().pcKey || Date.now() - lastTrack < 25 * 60e3) return false; lastTrack = Date.now(); return true; }
-  // Vorwärmen (alle 2 h, niedrige Priorität): Hauptprodukte in der Standard-Ausführung samt Aufpreisen kurzer Optionen und Produktionszeiten –
+  // Sendungsstatus: Print.com meldet Änderungen per Webhook; abgefragt wird nur noch als Rückfall alle ~2 h aus tick() (Simon 16.11.2026 –
+  // vorher zusätzlich ein 30-min-Takt im Server). pollActive() (Cockpit/extern) teilt sich diese Sperre.
+  function pollDue() { if (!cfg().pcKey || Date.now() - lastTrack < 115 * 60e3) return false; lastTrack = Date.now(); return true; }
+  // Vorwärmen (alle 6 h und nur mit Shop-Besuchern – siehe tick(), niedrige Priorität): Hauptprodukte in der Standard-Ausführung samt Aufpreisen kurzer Optionen und Produktionszeiten –
   // die Print.com-Antworten liegen dann im Zwischenspeicher (3 h) und Preise/Aufpreise erscheinen beim Öffnen sofort
   // ── Startseite: „Heute im Fokus“ und „Neu im Sortiment“ täglich prüfen – nur Produkte mit abrufbarem Preis, Bild und ohne bekannten teureren Mitbewerberpreis zeigen ──
   const FOCUS_POOL = ["postcards", "plakate", "folder", "tshirt-basic", "tshirt-bio", "rollups", "mesh-banner", "bauzaun", "aufkleber", "visitenkarten", "printed-letterheads", "blocknotes"];
@@ -3713,7 +3740,7 @@ module.exports = function (D) {
   let RV = null;
   async function ratings() {
     if (RV && Date.now() - RV.at < 30 * 60e3) return RV.by;
-    const by = {}; for (const o of await store.listOrders().catch(() => [])) { const f = o.feedback && o.feedback.product; if (!f || !(f.rating >= 1) || !o.product) continue; const k = o.product.key, r = by[k] || (by[k] = { n: 0, sum: 0 }); r.n++; r.sum += f.rating; }
+    const by = {}; for (const o of await ordersCached().catch(() => [])) { const f = o.feedback && o.feedback.product; if (!f || !(f.rating >= 1) || !o.product) continue; const k = o.product.key, r = by[k] || (by[k] = { n: 0, sum: 0 }); r.n++; r.sum += f.rating; }
     Object.keys(by).forEach(k => { by[k].avg = Math.round(by[k].sum / by[k].n * 10) / 10; }); RV = { at: Date.now(), by }; return by;
   }
   const RATING_MIN = 3;
@@ -4399,7 +4426,9 @@ module.exports = function (D) {
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function homeState() { if (!HOME) HOME = await store.getMeta("print_home").catch(() => null); return HOME; }
-  let lastWarm = 0;
+  // Vorwärmen (Simon 16.11.2026): Zeitpunkt in print_warm gemerkt (übersteht Deploys), alle 6 h statt ~2 h und nur, wenn seit dem letzten
+  // Vorwärmen jemand im Shop war; nach einem Neustart (Zwischenspeicher leer) frühestens 1 h nach dem letzten Lauf und erst mit dem ersten Besucher
+  let lastWarm = 0, warmLoaded = false, warmedHere = false;
   const WARM = ["flyer", "visitenkarten", "plakate", "folder", "pvc-banner", "aufkleber", "postcards", "rollups"];
   async function warmPrices() {
     const s = await settings(), cat = await catalog(false); let n0 = 0;
@@ -4418,8 +4447,12 @@ module.exports = function (D) {
   }
   async function tick() {
     if (cfg().pcKey) homeState().then(h => { if (!h || h.date !== today()) homeCheck().catch(e => log("Startseiten-Check:", e.message)); });   // täglich: Fokus & Neu prüfen
-    if (cfg().pcKey && live() && Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
-    if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
+    if (cfg().pcKey && live()) {
+      if (!warmLoaded) { warmLoaded = true; const w = await store.getMeta("print_warm").catch(() => null); lastWarm = Math.max(lastWarm, Date.parse((w && w.at) || 0) || 0);
+        const pb = await pubState().catch(() => null); lastPub = Math.max(lastPub, Date.parse((pb && pb.at) || 0) || 0); }   // Preisübersicht: Stand aus print_pub
+      if (Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
+      if (VISIT_AT > lastWarm && Date.now() - lastWarm > (warmedHere ? 6 : 1) * 3600e3) { lastWarm = Date.now(); warmedHere = true; store.setMeta("print_warm", { at: nowIso() }).catch(() => {}); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
+    }
     syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
     // unterbrochene Sortiments-Prüfung (Deploy/Neustart) nach dem Start einmal fortsetzen
     if (!auditResumed && cfg().pcKey && live()) { auditResumed = true; store.getMeta("print_audit").then(a => { if (a && !a.end && Array.isArray(a.items) && a.items.length && Date.now() - Date.parse(a.at) < 6 * 3600e3) auditRun(0, true).catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
@@ -4432,7 +4465,7 @@ module.exports = function (D) {
     autoCancelDue().catch(e => log("Auto-Storno:", e.message));
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
-    if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
+    if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle ~2 h als Rückfall (plus Webhook)
     if (Date.now() - lastFb > 55 * 60e3) { lastFb = Date.now(); feedbackMails().catch(e => log("Bewertungsmails:", e.message)); }   // stündlich: Bewertungsbitte 2–3 Tage nach der Zustellung
     try {
       if (Date.now() - lastDaily < 20 * 3600e3) return;
@@ -4485,16 +4518,19 @@ module.exports = function (D) {
       else if (!VISITS) VISITS = m && m.date === d2 ? { date: d2, ids: new Set(m.ids || []), salt: m.salt || crypto.randomBytes(16).toString("hex"), prev: m.prev || null, dirty: false, since: m.since || (!m.prev && m.date === "2026-11-03" ? "2026-11-03T11:00:00.000Z" : null) } : { date: d2, ids: new Set(), salt: crypto.randomBytes(16).toString("hex"), prev: m && m.date ? { date: m.date, n: (m.ids || []).length } : null, dirty: true, since: m && m.date ? null : nowIso() };   // erster Start überhaupt: Zählung beginnt jetzt
       return VISITS; });
   }
-  function visitCount(ip, ua) { visitsLoad().then(v => { const id = crypto.createHash("sha256").update(v.salt + "|" + v.date + "|" + ip + "|" + String(ua || "").slice(0, 200)).digest("hex").slice(0, 16);
+  let VISIT_AT = 0;   // letzter Shop-Besuch (für das Vorwärmen der Preise: ohne Besucher kein Vorwärmen)
+  function visitCount(ip, ua) { VISIT_AT = Date.now(); visitsLoad().then(v => { const id = crypto.createHash("sha256").update(v.salt + "|" + v.date + "|" + ip + "|" + String(ua || "").slice(0, 200)).digest("hex").slice(0, 16);
     if (!v.ids.has(id) && v.ids.size < 100000) { v.ids.add(id); v.dirty = true; livePush(); } }).catch(() => {}); }
-  const visitsTimer = setInterval(() => { if (VISITS && VISITS.dirty) { VISITS.dirty = false; store.setMeta("print_visits", { date: VISITS.date, salt: VISITS.salt, ids: Array.from(VISITS.ids), prev: VISITS.prev, since: VISITS.since || null }).catch(() => { VISITS.dirty = true; }); } if (VISITS && VISITS.date !== today()) visitsLoad(); }, 30000);
+  // Simon 16.11.2026: Besucherstand alle 5 min speichern (vorher alle 30 s). Die Kennungen (gehasht, wechseln täglich) bleiben dabei, damit nach einem
+  // Neustart niemand doppelt zählt; verloren gehen höchstens die Besuche der letzten Minuten vor dem Neustart (werden dann ggf. neu gezählt).
+  const visitsTimer = setInterval(() => { if (VISITS && VISITS.dirty) { VISITS.dirty = false; store.setMeta("print_visits", { date: VISITS.date, salt: VISITS.salt, ids: Array.from(VISITS.ids), prev: VISITS.prev, since: VISITS.since || null }).catch(() => { VISITS.dirty = true; }); } if (VISITS && VISITS.date !== today()) visitsLoad(); }, 5 * 60e3);
   if (visitsTimer.unref) visitsTimer.unref();
   // Bestellungen der letzten 7 Tage je Produkt (für den Hinweis im Konfigurator), 10 Min. zwischengespeichert
   let OWEEK = { at: 0, by: {} };
   // Fürs Monatseinkommen im Cockpit (Wunsch Simon 03.11.2026): Marge der echten Bestellungen (bezahlt/bestellt/… – BONUS_COUNTS) im Schnitt pro Monat,
   // über die letzten 90 Tage bzw. seit der ersten Bestellung (mind. 14 Tage, sonst zu wenig Verlauf); Marge = Verkauf netto − Einkauf − Zahlungsgebühr
   async function incomeStats() {
-    const now = Date.now(), from = now - 90 * 864e5, list = (await store.listOrders().catch(() => [])).filter(o => o && o.price && BONUS_COUNTS[o.status] && Date.parse(o.createdAt || 0) > from);
+    const now = Date.now(), from = now - 90 * 864e5, list = (await ordersCached().catch(() => [])).filter(o => o && o.price && BONUS_COUNTS[o.status] && Date.parse(o.createdAt || 0) > from);
     if (!list.length) return null;
     const first = Math.min.apply(null, list.map(o => Date.parse(o.createdAt))), days = Math.max(14, Math.min(90, (now - first) / 864e5));
     const margin = list.reduce((a, o) => a + (+o.price.margin || 0), 0), net = list.reduce((a, o) => a + (+o.price.net || 0), 0);
@@ -4504,7 +4540,7 @@ module.exports = function (D) {
   async function ordersWeek() {
     if (Date.now() - OWEEK.at < 10 * 60e3) return OWEEK.by;
     const by = {}, from = Date.now() - 7 * 864e5;
-    for (const o of await store.listOrders().catch(() => [])) if (o && o.product && BONUS_COUNTS[o.status] && Date.parse(o.createdAt || 0) > from) by[o.product.title] = (by[o.product.title] || 0) + 1;
+    for (const o of await ordersCached().catch(() => [])) if (o && o.product && BONUS_COUNTS[o.status] && Date.parse(o.createdAt || 0) > from) by[o.product.title] = (by[o.product.title] || 0) + 1;
     OWEEK = { at: Date.now(), by }; return by;
   }
   // „Angebot per Mail merken“: Konfiguration + Preis an den Besucher; auf Wunsch (eigenes Häkchen) EINE Erinnerung nach 24 h, wenn bis dahin nicht bestellt
@@ -4574,7 +4610,7 @@ module.exports = function (D) {
       const age = now - Date.parse(r.at), D1 = 864e5;
       const step = !r.m1 && !r.sent && age >= D1 ? 1 : !r.m2 && age >= 5 * D1 ? 2 : !r.m3 && !r.keep && age >= 10 * D1 ? 3 : 0;
       if (!step) continue;
-      if (!orders) orders = await store.listOrders().catch(() => []);
+      if (!orders) orders = await ordersCached().catch(() => []);
       if (orders.some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at) - 600e3)) { r.done = nowIso(); ch = true; continue; }
       r["m" + step] = nowIso(); ch = true;
       if (step === 1 && age > 4 * D1) continue;   // verpasst (z. B. nach Pause): diese Stufe auslassen
@@ -4608,7 +4644,7 @@ module.exports = function (D) {
       if (!r.remind || r.reminded || now - Date.parse(r.at) < 24 * 3600e3) continue;
       r.reminded = nowIso(); ch = true;
       if (now - Date.parse(r.at) > 72 * 3600e3) continue;   // zu alt (z. B. nach längerer Pause): nicht mehr nachfassen
-      const ordered = (await store.listOrders().catch(() => [])).some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at));
+      const ordered = (await ordersCached().catch(() => [])).some(o => o.customer && String(o.customer.email || "").toLowerCase() === r.email && Date.parse(o.createdAt || 0) > Date.parse(r.at));
       if (ordered) continue;
       await mail(r.email, "Noch Fragen zu deinem " + r.title + "?", "Dein Angebot liegt noch bereit", ["Gestern hast du dir dein Angebot für " + r.title + " zuschicken lassen. Deine Konfiguration ist weiterhin gespeichert – ein Klick und du kannst bestellen.", "Wenn du Fragen zu Papier, Format oder Druckdaten hast, antworte einfach auf diese Mail."],
         [["Produkt", r.title + (r.copies ? " · " + Number(r.copies).toLocaleString("de-AT") + " Stk." : "")], ["Preis", r.price || "im Konfigurator"], ["Angebot öffnen", r.link, "button"]], ["Das ist die einzige Erinnerung – wir schreiben dir dazu nicht noch einmal."]);
@@ -4628,7 +4664,7 @@ module.exports = function (D) {
   if (liveTimer.unref) liveTimer.unref();
   // „Bestellt (7 Tage)“ = echte Bestellungen (je Warenkorb einmal, bezahlt bzw. auf Rechnung) – alle 60 s aus dem Speicher, für /live und den Live-Stream
   const REAL_ORD = { at: 0, n: null, p: null };
-  function realOrd() { if (REAL_ORD.p || Date.now() - REAL_ORD.at < 60e3) return; REAL_ORD.p = store.listOrders().then(L => { const since = Date.now() - 7 * 864e5, keys = new Set(); (L || []).forEach(o => { if (o && Date.parse(o.createdAt || 0) > since && ["pending_payment", "payment_failed"].indexOf(o.status) < 0) keys.add(o.groupId || o.id); }); REAL_ORD.n = keys.size; REAL_ORD.at = Date.now(); }).catch(() => {}).then(() => { REAL_ORD.p = null; }); }
+  function realOrd() { if (REAL_ORD.p || Date.now() - REAL_ORD.at < 60e3) return; REAL_ORD.p = ordersCached().then(L => { const since = Date.now() - 7 * 864e5, keys = new Set(); (L || []).forEach(o => { if (o && Date.parse(o.createdAt || 0) > since && ["pending_payment", "payment_failed"].indexOf(o.status) < 0) keys.add(o.groupId || o.id); }); REAL_ORD.n = keys.size; REAL_ORD.at = Date.now(); }).catch(() => {}).then(() => { REAL_ORD.p = null; }); }
   function liveState() {
     const pages = {}, steps = {}, prods = {}, carts = []; let cart = 0, bg = 0;
     const idle0 = Date.now() - 12 * 3600e3;
@@ -4665,7 +4701,10 @@ module.exports = function (D) {
     });
   }
   async function readJson(req, max) { if (req.__json) return req.__json; const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
-  function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
+  // große JSON-Antworten (Cockpit-Druckseite mit 300 Bestellungen, Feedback …) komprimiert senden (Simon 16.11.2026); res.req = zugehörige Anfrage (Node)
+  function J(res, code, o) { const body = JSON.stringify(o), h = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+    if (body.length > 8192 && D.sendGz && res && res.req && res.req.headers) return D.sendGz(res.req, res, code, body, "application/json; charset=utf-8", h);
+    D.send(res, code, body, "application/json; charset=utf-8", h); }
   // ── Upload in Stücken (Simon 13.11.2026, bis 500 MB): POST /print/api/chunk (X-Upload-Size) → id+k; PUT /print/api/chunk/<id>?k=&off= je Stück (der Reihe nach,
   //    nach Abbruch weiter ab „got“); danach der normale Upload-Aufruf ohne Body mit X-Print-Chunk/X-Print-Chunk-Key. Stücke liegen auf der Platte (tmp), nicht im Speicher.
   const CHUNKS = new Map(), CH_DIR = path.join(require("os").tmpdir(), "fs-print-chunks");
@@ -5634,7 +5673,7 @@ module.exports = function (D) {
       if (bad.length && bad.length <= Math.max(5, AUDIT.items.length * 0.15)) bad.forEach(z => { if (st.enabled[z.sku] !== true) { if (st.enabled[z.sku] !== false) st.auditHid[z.sku] = nowIso(); st.enabled[z.sku] = false; z.hidden = true; ch = true; } });
       // wieder bestellbar: nur Produkte, die die Prüfung selbst ausgeblendet hat, wieder einblenden (von Hand ausgeblendete bleiben aus)
       AUDIT.items.forEach(z => { if (z.price && z.price.gross > 0 && st.auditHid[z.sku] && st.enabled[z.sku] === false) { delete st.enabled[z.sku]; delete st.auditHid[z.sku]; z.shown = true; ch = true; } });
-      if (ch) { await store.setMeta("print_settings", st); SETTINGS = st; PRICE_CACHE.clear(); }
+      if (ch) { await store.setMeta("print_settings", st); SETTINGS = st; }   // PRICE_CACHE bleibt: Schlüssel = reiner Print.com-Einkaufspreis (SKU/Optionen/Land), Aufschlag/Sortiment rechnet quote() jedes Mal neu (Simon 16.11.2026)
       AUDIT.hidden = bad.filter(z => z.hidden).length; AUDIT.shown = AUDIT.items.filter(z => z.shown).length;
     } finally { auditLive = false; AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
   }
@@ -5660,7 +5699,7 @@ module.exports = function (D) {
     MG.rows.sort((a, b) => a.o - b.o || a.copies - b.copies); MG.running = false; MG.at = nowIso();
   }
   async function marginsState() {
-    const s = await settings(), c = cfg(), fee = payFee(), orders = (await store.listOrders()).filter(o => BONUS_COUNTS[o.status] && o.price && o.price.purchase);
+    const s = await settings(), c = cfg(), fee = payFee(), orders = (await ordersCached()).filter(o => BONUS_COUNTS[o.status] && o.price && o.price.purchase);
     const sum = l => l.reduce((a, o) => { a.n++; a.net += +o.price.net || 0; a.purchase += +o.price.purchase.total || 0; a.fee += +o.price.payFee || 0; a.margin += +o.price.margin || 0; return a; }, { n: 0, net: 0, purchase: 0, fee: 0, margin: 0 });
     const mon = today().slice(0, 7), d30 = new Date(Date.now() - 30 * 864e5).toISOString();
     const r = x => Object.keys(x).reduce((o, k) => { o[k] = k === "n" ? x[k] : r2(x[k]); return o; }, {});
@@ -5690,7 +5729,7 @@ module.exports = function (D) {
   }
   async function adminState() {
     const c = cfg(), s = await settings();
-    const orders = await store.listOrders();
+    const orders = await ordersCached();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
     if (!BRIEF_IMP) { BRIEF_IMP = true; await briefsImport().catch(e => log("Gestaltungsanfragen übernehmen:", e.message)); }
     const briefsNew = (await briefsGet().catch(() => [])).filter(x => x.status === "neu").length;
@@ -5729,7 +5768,7 @@ module.exports = function (D) {
       if (r.ok && s.enabled[sku] !== true) { s.enabled[sku] = true; if (s.auditHid) delete s.auditHid[sku]; r.enabled = true; }
       res.push(r); await new Promise(z => setTimeout(z, 300));
     }
-    if (res.some(x => x.enabled)) { await store.setMeta("print_settings", s); SETTINGS = s; PRICE_CACHE.clear(); }
+    if (res.some(x => x.enabled)) { await store.setMeta("print_settings", s); SETTINGS = s; }   // PRICE_CACHE bleibt: Schlüssel = reiner Print.com-Einkaufspreis (SKU/Optionen/Land), Aufschlag/Sortiment rechnet quote() jedes Mal neu (Simon 16.11.2026)
     await newSeenLoad().catch(() => {});
     if (res.some(x => x.ok) && cfg().pcKey) setTimeout(() => homeCheck().catch(e => log("Startseiten-Check:", e.message)), 3000);   // neue Produkte gleich unter „Neu im Sortiment“
     const m = (await store.getMeta("print_new_skus").catch(() => null)) || { items: [] };
@@ -5767,11 +5806,12 @@ module.exports = function (D) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
       if (p === "/admin/api/print/feedback" && req.method === "GET") {   RV = null;   // Kundenfeedback: Durchschnitt + neueste Bewertungen
-        const rows = (await store.listOrders()).filter(o => o.feedback && (o.feedback.order || o.feedback.product)).map(o => ({ id: o.id, nr: o.nr, product: o.product.title, copies: o.copies, name: [o.customer.firstName, o.customer.lastName].join(" ").trim(), company: o.customer.company || "",
+        const all = await ordersCached(true);   // einmal frisch laden statt dreimal (Simon 16.11.2026); füllt zugleich den Zwischenspeicher
+        const rows = all.filter(o => o.feedback && (o.feedback.order || o.feedback.product)).map(o => ({ id: o.id, nr: o.nr, product: o.product.title, copies: o.copies, name: [o.customer.firstName, o.customer.lastName].join(" ").trim(), company: o.customer.company || "",
           order: o.feedback.order || null, productFb: o.feedback.product || null, at: (o.feedback.product || o.feedback.order).at })).sort((a, b) => a.at < b.at ? 1 : -1);
         const avg = k => { const l = rows.map(r => r[k]).filter(Boolean); return l.length ? { n: l.length, avg: Math.round(l.reduce((a, x) => a + x.rating, 0) / l.length * 10) / 10 } : { n: 0, avg: null }; };
-        const asked = (await store.listOrders()).filter(o => o.mails && o.mails.feedback && o.mails.feedback !== "skip").length;
-        const sources = {}; (await store.listOrders()).forEach(o => { const f = foundOf(o); if (f) sources[f.source] = (sources[f.source] || 0) + 1; });
+        const asked = all.filter(o => o.mails && o.mails.feedback && o.mails.feedback !== "skip").length;
+        const sources = {}; all.forEach(o => { const f = foundOf(o); if (f) sources[f.source] = (sources[f.source] || 0) + 1; });
         return J(res, 200, { ok: true, order: avg("order"), product: avg("productFb"), asked, sources, reviewUrl: reviewUrl(), rows: rows.slice(0, 100) });
       }
       if (p === "/admin/api/print/audit") {   // Sortiments-Prüfung: GET = Stand, POST {op:"run", max?} = starten (Hintergrund)
@@ -5832,7 +5872,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/customers") {
         const A = accountMod();
         if (req.method === "POST") { const b = await readJson(req, 4000); if (b.op !== "discount") return J(res, 400, { ok: false, error: "op" }); const c = await A.setDiscount(String(b.id || ""), b.pct, b.note); return c ? J(res, 200, { ok: true }) : J(res, 404, { ok: false, error: "Kunde nicht gefunden" }); }
-        const list = await A.listAll(), orders = await store.listOrders();
+        const list = await A.listAll(), orders = await ordersCached();
         const out = await Promise.all(list.map(async c => { const mine = orders.filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)), paid = mine.filter(o => BONUS_COUNTS[o.status]);
           const bo = await bonusOf(c, orders), rev12 = bo.revenue, tier = bo.name;
           return { id: c.id, email: c.email, name: [c.firstName, c.lastName].filter(Boolean).join(" "), company: c.company || "", type: c.type || "private", uid: c.uid || "", phone: c.phone || "", city: [c.zip, c.city].filter(Boolean).join(" "), verified: !!c.verified, createdAt: c.createdAt, lastLogin: c.lastLogin || "",
@@ -6151,7 +6191,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/pcprobe") {   // Print.com-Abfragen zum Prüfen: Zubehör, Produktionsvorlage, Arbeitsdateien (nur Admin)
         const sku = String(b.sku || "x"); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
         try {
-          if (b.op === "tplauditplan") { const at = String(b.at || ""); if (!Date.parse(at)) return J(res, 400, { ok: false, error: "at" }); await store.setMeta("print_tplaudit_plan", { runAt: new Date(at).toISOString() }); return J(res, 200, { ok: true, runAt: new Date(at).toISOString() }); }
+          if (b.op === "tplauditplan") { const at = String(b.at || ""); if (!Date.parse(at)) return J(res, 400, { ok: false, error: "at" }); TPL_PLAN = { runAt: new Date(at).toISOString() }; await store.setMeta("print_tplaudit_plan", TPL_PLAN); return J(res, 200, { ok: true, runAt: new Date(at).toISOString() }); }
           if (b.op === "tplauditsaved") return J(res, 200, Object.assign({ ok: true, plan: await store.getMeta("print_tplaudit_plan").catch(() => null) }, (await store.getMeta("print_tplaudit").catch(() => null)) || {}));
           if (b.op === "tplauditstop") { TPL_AUDIT.stop = true; return J(res, 200, { ok: true }); }
           if (b.op === "tplaudit") { tplAuditRun().catch(() => {}); return J(res, 200, { ok: true, started: true }); }
@@ -6178,9 +6218,11 @@ module.exports = function (D) {
         if (b.op === "refresh") { await cms(true); await catalogAll(true); await importAll(b.full === true); return J(res, 200, await sortimentState()); }
         if (b.op === "import") { await importAll(b.full === true); return J(res, 200, await sortimentState()); }
         if (b.op === "preview") return J(res, 200, await previewPrice(String(b.sku || "")));
-        await sortimentOp(b); PRICE_CACHE.clear(); return J(res, 200, await sortimentState());
+        await sortimentOp(b); return J(res, 200, await sortimentState());   // PRICE_CACHE bleibt: Schlüssel = reiner Print.com-Einkaufspreis (SKU/Optionen/Land), Aufschlag/Sortiment rechnet quote() jedes Mal neu (Simon 16.11.2026)
       }
-      if (p === "/admin/api/print/settings") { const s = await saveSettings(b); PRICE_CACHE.clear(); return J(res, 200, { ok: true, settings: s }); }
+      // Einkaufspreise von Print.com neu laden (Simon 16.11.2026): Einstellungen leeren den Preis-Zwischenspeicher nicht mehr – bei Bedarf hier gezielt
+      if (p === "/admin/api/print/pricecache") { const n = PRICE_CACHE.size; PRICE_CACHE.clear(); NOPRICE.clear(); return J(res, 200, { ok: true, cleared: n }); }
+      if (p === "/admin/api/print/settings") { const s = await saveSettings(b); return J(res, 200, { ok: true, settings: s }); }   // PRICE_CACHE bleibt: Schlüssel = reiner Print.com-Einkaufspreis (SKU/Optionen/Land), Aufschlag/Sortiment rechnet quote() jedes Mal neu (Simon 16.11.2026)
       if (p === "/admin/api/print/catalog") { const cat = await catalog(true); return J(res, 200, { ok: true, at: cat && cat.at, errors: (cat && cat.errors) || [], count: cat && cat.products ? cat.products.length : 0 }); }
       if (p === "/admin/api/print/op") {
         if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bestätigung fehlt" });
@@ -6346,7 +6388,7 @@ module.exports = function (D) {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           const prod = await findProduct(o.product.key, null, true);
           if (!prod) throw new Error("Produkt nicht mehr im Katalog");
-          PRICE_CACHE.clear(); const buy = await purchase(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency }, shipOf(o).country, shipOf(o).zip);
+          const buy = await purchase(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency, nocache: true }, shipOf(o).country, shipOf(o).zip);   // nur dieser Preis frisch (Simon 16.11.2026: nicht mehr den ganzen Zwischenspeicher leeren)
           o.price.liveCheck = { at: nowIso(), total: buy.total, product: buy.product, shipping: buy.shipping, margin: r2(o.price.net - buy.total) }; hist(o, "Einkaufspreis neu geprüft: " + eur(buy.total)); await store.putOrder(o);
           return J(res, 200, { ok: true, order: o });
         }
@@ -6359,10 +6401,16 @@ module.exports = function (D) {
   }
 
   // Abgleich mit den Aufträgen (nach dem Start und stündlich): offene Bestellungen ins Board, Statuswechsel nachziehen
-  async function syncTasks() { if (!D.onOrder) return 0; let n = 0;
-    for (const o of await store.listOrders()) { if (o.status === "pending_payment" || o.status === "payment_failed") continue;
-      if (!REVIEW[o.status] && Date.now() - Date.parse(o.updatedAt || o.createdAt) > 90 * 864e5) continue; toTask(o); n++; }
-    return n; }
+  // Simon 16.11.2026: nichts tun, solange Druckaufträge nicht als Aufgaben laufen (D.tasksOn); sonst nur Bestellungen, die seit dem letzten Abgleich
+  // geändert wurden (der erste Lauf nach dem Start nimmt alle), und alle auf einmal an server.js (onOrders: auftraege einmal lesen/schreiben)
+  let lastTaskSync = 0;
+  async function syncTasks() { if (!D.onOrder || (D.tasksOn && !D.tasksOn())) return 0; const since = lastTaskSync, t0 = Date.now(), out = [];
+    for (const o of await ordersCached()) { if (o.status === "pending_payment" || o.status === "payment_failed") continue;
+      const upd = Date.parse(o.updatedAt || o.createdAt) || 0;
+      if (since && upd < since - 60e3) continue;
+      if (!REVIEW[o.status] && Date.now() - upd > 90 * 864e5) continue; out.push(o); }
+    if (D.onOrders) { try { D.onOrders(out.map(taskInfo)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } else out.forEach(toTask);
+    lastTaskSync = t0; return out.length; }
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
   // Druckaufträge nicht mehr unter Finanzen → Zur Prüfung (Simon 10.11.2026: gehört nur unter „Druck“) – alte Vorschläge fallen damit weg
   async function proposalValid() { return false; }

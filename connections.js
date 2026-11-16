@@ -4,7 +4,9 @@
 //  – missing(): ohne Netz, sofort – null = eingerichtet, sonst { detail, fix } (→ Zustand „off“)
 //  – check(): echte Prüfung → { state: "ok"|"warn"|"error"|"off", detail, fix?, quiet?, meta? } (meta bleibt am Server)
 // Ergebnisse liegen im Speicher und in DATA_DIR/connections.json (schneller Start nach einem Deploy). Der Hintergrund prüft gestaffelt
-// (höchstens 3 gleichzeitig, je nach ttl; ohne Cockpit-Nutzung viermal seltener), „Jetzt prüfen“ höchstens alle minForce (Standard 30 s) je Verbindung.
+// (höchstens 3 gleichzeitig, je nach ttl), „Jetzt prüfen“ höchstens alle minForce (Standard 30 s) je Verbindung.
+// Simon 16.11.2026: im Takt der ttl nur, solange die Seite „Verbindungen“ in den letzten 10 min offen war oder die letzte Prüfung einen Fehler
+// ergab; sonst zwölfmal seltener. Echte Aufrufe, die scheitern (z. B. Mail-Abruf), melden das über suspect(key) → Prüfung beim nächsten Takt.
 // Texte enthalten nie Zugangsdaten: Werte geheimer Umgebungsvariablen, Token-Parameter und Bearer-Angaben werden vor dem Speichern entfernt.
 const fs = require("fs"), path = require("path");
 
@@ -16,7 +18,9 @@ module.exports = function (D) {
   const defs = [], byKey = {};
   const FILE = D.DATA_DIR ? path.join(D.DATA_DIR, "connections.json") : "";
   const CATS = Array.isArray(D.categories) ? D.categories : [];
-  let RES = {}, saveT = null, TIMER = null, lastAll = 0, lastKick = 0;
+  let RES = {}, saveT = null, TIMER = null, lastAll = 0, lastKick = 0, lastView = 0;
+  const SUSPECT = new Set();   // echte Aufrufe meldeten einen Fehler → beim nächsten Takt aktiv prüfen
+  const VIEW_MS = 10 * 60e3, IDLE_MULT = 12;
   const RUN = new Map(), FORCED = {};
   const nowIso = () => new Date().toISOString();
   const ageOf = r => (r && r.checkedAt ? Date.now() - Date.parse(r.checkedAt) : Infinity);
@@ -33,7 +37,12 @@ module.exports = function (D) {
 
   // ── Geheimnisse nie ausgeben ──
   const SECRET_ENV = /(TOKEN|SECRET|PASS|PASSWORD|PRIVATE|_KEY$|APIKEY|API_KEY|_PIN$|DATABASE_URL|CLIENT_SECRET)/i;
+  let SEC = null, SEC_AT = 0;   // einmal berechnen, höchstens jede Minute neu (Umgebung kann sich nach „In Railway eintragen“ ändern)
   function secrets() {
+    if (SEC && Date.now() - SEC_AT < 60e3) return SEC;
+    SEC = secrets0(); SEC_AT = Date.now(); return SEC;
+  }
+  function secrets0() {
     const out = [];
     Object.keys(process.env).forEach(k => { if (!SECRET_ENV.test(k)) return; const v = String(process.env[k] || "").trim(); if (v.length >= 6) out.push(v); });
     if (D.secrets) { try { (D.secrets() || []).forEach(v => { v = String(v || "").trim(); if (v.length >= 6) out.push(v); }); } catch (e) {} }
@@ -85,7 +94,7 @@ module.exports = function (D) {
       const prev = RES[d.key] || {}, now = nowIso(), up = out.state === "ok" || out.state === "warn";
       const r = { state: out.state, detail: clean(out.detail || ""), fix: cleanFix(out.fix) || null, quiet: !!out.quiet, checkedAt: now, ms: Date.now() - t0, byMissing: !!miss,
         lastOkAt: up ? now : (prev.lastOkAt || null), since: prev.state === out.state && prev.since ? prev.since : now, meta: out.meta };
-      RES[d.key] = r; persist();
+      RES[d.key] = r; SUSPECT.delete(d.key); persist();
       if (D.onChange && prev.state && prev.state !== r.state) { try { D.onChange(pub(d), prev.state); } catch (e) {} }
       return r;
     })().finally(() => RUN.delete(d.key));
@@ -100,7 +109,7 @@ module.exports = function (D) {
     if (!r || r.byMissing) return Object.assign(o, { state: "warn", pending: true, detail: "Wird geprüft …", fix: null, checkedAt: null, lastOkAt: null, since: null, quiet: true });
     const fix = r.fix || (r.state === "ok" ? null : cleanFix(typeof d.fix === "function" ? d.fix(r) : d.fix));
     return Object.assign(o, { state: r.state, detail: r.detail, fix, checkedAt: r.checkedAt, lastOkAt: r.lastOkAt || null, since: r.since || null, quiet: !!r.quiet || r.state === "ok" || r.state === "off",
-      stale: ageOf(r) > Math.max(3 * d.ttl, 30 * 60e3), ms: r.ms || 0 });
+      stale: ageOf(r) > Math.max((IDLE_MULT + 1) * d.ttl, 30 * 60e3), ms: r.ms || 0 });
   }
   function catIndex(c) { const i = CATS.indexOf(c); return i < 0 ? 99 : i; }
   function list() { return defs.map(pub).sort((a, b) => catIndex(a.category) - catIndex(b.category)); }
@@ -139,11 +148,15 @@ module.exports = function (D) {
 
   // ── Hintergrund: fällige Prüfungen gestaffelt nachholen ──
   function due() {
-    const idle = D.adminSeen ? Date.now() - D.adminSeen() > 2 * 3600e3 : false;
+    const viewing = Date.now() - lastView < VIEW_MS;
     // nicht eingerichtete brauchen keine Prüfung (Zustand „off“ ergibt sich aus missing()) – die Plätze gehören den echten Prüfungen
-    return defs.filter(d => !RUN.has(d.key) && !missingOf(d)).map(d => { const r = RES[d.key], fresh = !r || r.byMissing;   // neu bzw. eben eingerichtet → gleich prüfen
-      return { d, over: fresh ? Infinity : ageOf(r) - d.ttl * (idle ? 4 : 1) }; }).filter(x => x.over >= 0).sort((a, b) => b.over - a.over);
+    return defs.filter(d => !RUN.has(d.key) && !missingOf(d)).map(d => { const r = RES[d.key], fresh = !r || r.byMissing || SUSPECT.has(d.key);   // neu, eben eingerichtet oder Fehler gemeldet → gleich prüfen
+      const mult = viewing || (r && r.state === "error") ? 1 : IDLE_MULT;
+      return { d, over: fresh ? Infinity : ageOf(r) - d.ttl * mult }; }).filter(x => x.over >= 0).sort((a, b) => b.over - a.over);
   }
+  // echter Aufruf ist gescheitert (passiv erkannt): beim nächsten Takt aktiv prüfen – höchstens einmal je minForce
+  function suspect(key) { const d = byKey[key], r = RES[key]; if (!d || (r && ageOf(r) < d.minForce)) return; SUSPECT.add(key); }
+  function viewed() { lastView = Date.now(); }
   function tick(gap) {
     const free = Math.max(0, 3 - RUN.size); if (!free) return;
     due().slice(0, free).forEach((x, i) => { const t = setTimeout(() => { run(x.d).catch(() => {}); }, i * (gap || 4000)); if (t.unref) t.unref(); });
@@ -160,6 +173,7 @@ module.exports = function (D) {
   async function handle(req, res, u, p) {
     const J = (code, o) => D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store" });
     try {
+      viewed();
       if (p === "/admin/api/connections" && req.method === "GET") { kick(); return J(200, { ok: true, items: list(), summary: summary(), categories: CATS }); }
       if (p === "/admin/api/connections/check" && req.method === "POST") {
         let raw = ""; for await (const c of req) { raw += c; if (raw.length > 4000) return J(413, { ok: false, error: "Anfrage zu groß" }); }
@@ -173,5 +187,5 @@ module.exports = function (D) {
     } catch (e) { return J(e.status || 500, { ok: false, error: clean(e.message || e, 200) }); }
   }
 
-  return { add, list, summary, get, check, checkAll, start, kick, handle, clean, _test: { RES: () => RES, FORCED, tick, due } };
+  return { add, list, summary, get, check, checkAll, start, kick, handle, clean, suspect, viewed, _test: { RES: () => RES, FORCED, tick, due } };
 };

@@ -105,7 +105,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   const B = srv.base;
   const H = { "content-type": "application/json", "x-print-shop": "1" };
   const post = async (p, body, headers) => { const r = await fetch(B + p, { method: "POST", headers: Object.assign({}, H, headers || {}), body: JSON.stringify(body) }); return { status: r.status, j: await r.json().catch(() => null) }; };
-  const admin = async (p, body) => { const r = await fetch(B + p, body ? { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) } : { headers: { cookie: COOKIE } }); return r.json(); };
+  const admin = async (p, body) => { const r = await fetch(B + p, body ? { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) } : { headers: { cookie: COOKIE } }); const j = await r.json();
+    // Seit 16.11.2026 leeren Einstellungen/Sortiment den Einkaufspreis-Speicher nicht mehr (Schlüssel = reiner Print.com-Preis). Die Tests ändern die
+    // Print.com-Attrappe zwischen den Schritten (M.price …) und erwarten danach frische Anfragen → hier gezielt „Einkaufspreise neu laden“.
+    if (body && /^\/admin\/api\/print\/(settings|sortiment)$/.test(p)) await fetch(B + "/admin/api/print/pricecache", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: "{}" });
+    return j; };
   const upload = async (buf, name, cfg) => { const r = await fetch(B + "/print/api/upload", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-config": encodeURIComponent(JSON.stringify(cfg)) }, body: buf }); return { status: r.status, j: await r.json() }; };
   const BC = { product: "visitenkarten", sel: { size: "85x55", material: "350gr_mc", printtype: "44", finish: "none" }, copies: 250, urgency: "standard" };
   const cust = { type: "private", firstName: "Maria", lastName: "Muster", email: "maria@example.com", phone: "+43 664 1234567", street: "Silvrettastraße 12", zip: "6793", city: "Gaschurn", country: "AT" };
