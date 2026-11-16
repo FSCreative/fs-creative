@@ -379,6 +379,15 @@ module.exports = function (C) {
   function seeded(arr, seed) { const a = arr.slice(); let x = seed >>> 0; for (let i = a.length - 1; i > 0; i--) { x = (x * 1664525 + 1013904223) >>> 0; const j = x % (i + 1); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function photoUri(item) { const buf = fs.readFileSync(item.file), type = /\.png$/i.test(item.file) ? "image/png" : "image/jpeg", sz = C.imgSize ? C.imgSize(buf, type) : { w: 1, h: 1 }; return { uri: "data:" + type + ";base64," + buf.toString("base64"), ratio: sz.h ? sz.w / sz.h : 1 }; }
   // Reels: Hintergrund-Videos – eigene Clips der Marke (z. B. Skikaiser-Trailer), sonst Stockvideos (Pexels) bei Marken mit heller Schrift auf dunklem Grund
+  // Ganzes Reel (Motion + Musik) nur, wenn freigegeben/geplant, ausdrücklich angefordert (Vorschau geöffnet) oder ein Gewinnspiel-Video – sonst nur Titelbild
+  const reelFull = p => !!p.wantFull || p.status !== "entwurf" || String(p.source || "").startsWith("gewinnspiel");
+  // ganzes Reel anfordern; true = Rendern eingereiht (Vorschau lag vor)
+  function wantFull(post) {
+    if (post.format !== "reel") return false;
+    post.wantFull = true;
+    if ((post.media || {}).status !== "vorschau") return false;
+    post.media = Object.assign({}, post.media, { status: "wartet" }); enqueue("post:" + post.id); return true;
+  }
   const VIDEO_OK = { kochdu: ["hook", "photo"], valuero: ["hook", "photo", "cta"], druckshop: ["hook", "photo"], "fs-creative": ["hook", "photo"], skikaiser: ["hook", "photo", "stat", "list", "compare", "cta", "quote"] };
   JOBS.post = async function (id) {
     const p = S().posts.find(x => x.id === id); if (!p) return;
@@ -397,7 +406,14 @@ module.exports = function (C) {
       const tag = rand(), media = { status: "fertig", at: nowIso() }, v = seed % 12;
       // Titelbild: laufende Nummer des Posts der Marke → jeder Post eine andere Kombination aus Layout und Farbwelt; neu rendern = nächste
       const cv = S().posts.filter(x => x.brand === p.brand).indexOf(p) + (p.media.rerender ? hashNum(String(p.media.rerender)) % 7 + 1 : 0);
-      if (p.format === "reel") {
+      if (p.format === "reel" && !reelFull(p)) {
+        // Entwurf (Simon 16.11.2026): nur Titelbild als Vorschau – kein Motion-Rendern, keine bezahlte KI-Musik. Das ganze Reel mit Musik
+        // entsteht erst bei „Go“/„Jetzt posten“ oder wenn Simon die Vorschau öffnet (op "full").
+        fs.mkdirSync(work, { recursive: true });
+        const pf = path.join(work, "c0.png"); fs.writeFileSync(pf, await R.slidePng(slides[0], rb, { format: "story", variant: "brand", v, cover: true, cv, url }));
+        const cf = await R.toJpeg(pf, pf.replace(/\.png$/, ".jpg")), cover = p.id + "-" + tag + "-cover" + path.extname(cf); fs.copyFileSync(cf, path.join(MEDIA, cover));
+        media.status = "vorschau"; media.preview = true; media.cover = cover;
+      } else if (p.format === "reel") {
         const ok = VIDEO_OK[b.key] || [], want = slides.map(s => ok.indexOf(s.template) > -1);
         let vids = clips.map(c0 => c0.file); if (!vids.length) vids = await stockVideos(p.bgQuery, want.filter(Boolean).length);
         let vi = 0; const bgVideos = want.map(w => w && vids.length ? vids[vi++ % vids.length] : "");
@@ -420,6 +436,8 @@ module.exports = function (C) {
       old.forEach(f => { try { fs.unlinkSync(path.join(MEDIA, f)); } catch (e) {} });
     } catch (e) { console.error("marketing: Post-Medien", e.message); p.media = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; }
     try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
+    // während der Vorschau freigegeben oder geöffnet → jetzt das ganze Reel
+    if (p.media && p.media.status === "vorschau" && reelFull(p)) { p.media = Object.assign({}, p.media, { status: "wartet" }); enqueue("post:" + p.id); }
     save(true);
   };
   // nach Neustart offene Medien neu erzeugen
@@ -593,7 +611,8 @@ module.exports = function (C) {
     const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + standing(b) + "<kanal>" + PLATFORMS[ch.platform].label + " · " + (it.kind === "message" ? "Direktnachricht" : it.kind === "mention" ? "Erwähnung" : "Kommentar") + "</kanal>\n" +
       (it.post && it.post.text ? "<beitrag>" + clip(it.post.text, 600) + "</beitrag>\n" : "") + "<unterhaltung>\n" + conv + "\n</unterhaltung>\n" + (hint ? "<stichworte_von_simon>" + clip(hint, 1000) + "</stichworte_von_simon>\n" : "") +
       "Schreib die nächste Antwort von " + b.name + " (nur den Antworttext).";
-    const r = await C.KI.marketingGen(sys, user, { type: "object", additionalProperties: false, required: ["reply"], properties: { reply: { type: "string" } } }, 4000);
+    // einfacher Kommentar ohne Stichworte → Haiku; Direktnachrichten bzw. mit Stichworten von Simon → Sonnet (Simon 16.11.2026). Einmal-Aufruf → kein Cache.
+    const r = await C.KI.marketingGen(sys, user, { type: "object", additionalProperties: false, required: ["reply"], properties: { reply: { type: "string" } } }, 4000, { model: it.kind !== "message" && !hint ? "haiku" : undefined, cache: false });
     const text = clip(String((r.json && r.json.reply) || "").trim(), ch.platform === "bluesky" ? 300 : ch.platform === "threads" ? 500 : 2000);
     if (!text) throw fail(502, "Die KI hat keinen Vorschlag geliefert – bitte nochmal.");
     return { text, eur: Math.round((r.eur || 0) * 1000) / 1000 };
@@ -1012,12 +1031,16 @@ module.exports = function (C) {
         ttReady(post);
         const lic = MU.licenseFor(post); if (lic) throw fail(400, "Musik: " + lic + " – bitte „Andere Musik“ wählen.");
         if (Date.parse(post.scheduledAt || 0) < Date.now() + 2 * 60e3) post.scheduledAt = nextSlot(brand(post.brand), post.id);
-        post.status = "geplant"; post.approvedAt = nowIso(); save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;
+        post.status = "geplant"; post.approvedAt = nowIso(); wantFull(post); save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;   // Reel-Vorschau → jetzt ganzes Reel mit Musik
       }
+      if (op === "full") { wantFull(post); save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true; }   // Vorschau geöffnet → ganzes Reel erstellen (Simon 16.11.2026)
       if (op === "now") {
         if (!(post.platforms || []).length) throw fail(400, "Keine Plattform gewählt.");
         ttReady(post);
         const lic = MU.licenseFor(post); if (lic) throw fail(400, "Musik: " + lic + " – bitte „Andere Musik“ wählen.");
+        if (post.media && post.media.status === "vorschau") {   // erst das ganze Reel erstellen; die Veröffentlichung läuft danach automatisch (fällig, Medien fertig)
+          post.approvedAt = post.approvedAt || nowIso(); post.scheduledAt = nowIso(); post.status = "geplant"; wantFull(post); save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;
+        }
         if (!post.media || post.media.status !== "fertig") throw fail(400, "Die Medien werden noch erstellt – kurz warten.");
         post.approvedAt = post.approvedAt || nowIso(); post.scheduledAt = nowIso(); post.status = "geplant"; save(true); publishPost(post).catch(() => {}); return J(res, 200, { ok: true, post: postPublic(post) }), true;
       }

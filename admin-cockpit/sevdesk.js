@@ -387,7 +387,7 @@ F.form("sdbknew",function(f){
   btn.disabled=true; err.textContent="Lade Datei hoch …";
   var rd=new FileReader(); rd.onerror=function(){ btn.disabled=false; err.textContent="Datei konnte nicht gelesen werden."; };
   rd.onload=function(){
-    F.api("/admin/api/ki/beleg-upload",{body:{filename:file.name,mime:file.type,data:rd.result,keep:true}}).then(function(up){
+    F.api("/admin/api/ki/beleg-upload",{body:{filename:file.name,mime:file.type,data:rd.result,keep:true,noKi:true}}).then(function(up){ /* nur ablegen, keine KI-Auslesung (Simon 16.11.2026) */
       if(!up||!up.uploadId) throw new Error((up&&up.error)||"Upload fehlgeschlagen");
       err.textContent="Lege Beleg an …";
       return F.api("/admin/api/sevdesk/voucher",{body:{uploadId:up.uploadId,supplierName:f.supplier.value,date:t.date,description:f.desc.value,gross:Math.abs(t.amount),taxRate:rate,taxRule:rule||undefined,accountingTypeId:f.cat.value,creditDebit:t.amount>0?"D":"C",txId:id,confirm:true}});

@@ -348,7 +348,7 @@ function relDay(d){ var a=new Date(); a.setHours(0,0,0,0); var b=new Date(d); b.
 function postDate(p){ return ["gepostet","teilweise","fehler"].indexOf(p.status)>-1?(p.postedAt||p.scheduledAt||""):(p.scheduledAt||""); }
 function bColor(k){ var b=brandOf(k); return (b.colors&&b.colors.primary)||"#8a93a8"; }
 function fileBase(p){ return "/admin/api/mkt/post-file?id="+encodeURIComponent(p.id)+"&v="+encodeURIComponent((p.media||{}).rev||""); }
-function thumbOf(p){ var md=p.media||{}; if(md.status!=="fertig") return ""; return p.format==="reel"?(md.cover?fileBase(p)+"&kind=cover":""):(md.images?fileBase(p)+"&i=0":""); }
+function thumbOf(p){ var md=p.media||{}; if(md.status!=="fertig"&&md.status!=="vorschau") return ""; return p.format==="reel"?(md.cover?fileBase(p)+"&kind=cover":""):(md.images?fileBase(p)+"&i=0":""); }
 /* TikTok: Marken ohne eigenes TikTok posten über das gemeinsame Konto (Server: sharedTiktok) – im Planer daher auch dort als Plattform zeigen */
 function chFor(brand,pf){ var c=chOf(brand,pf); if(!c&&pf==="tiktok"&&PL.tiktokShared&&PL.tiktokShared.brand!==brand) c=chOf(PL.tiktokShared.brand,"tiktok"); return c; }
 function weekStart(off){ var d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-(d.getDay()+6)%7+7*(off||0)); return d; }
@@ -378,7 +378,9 @@ function statsNeed(list){ var need={}; list.forEach(function(p){ Object.keys(p.r
   return Object.keys(need).map(function(k){ return k==="facebook"?"Facebook: In der Meta-App bei „Facebook Login for Business“ → Konfiguration die Berechtigung „read_insights“ ergänzen, dann Facebook unter Kanäle neu verbinden.":pfLabel(k)+": Für Aufrufe das Konto unter Kanäle einmal neu verbinden (neue Berechtigung „Statistiken“)."; }).join(" "); }
 function postCard(p,slim){
   var md=p.media||{}, base=fileBase(p), prev, reel=p.format==="reel";
-  if(md.status!=="fertig") prev=md.status==="fehler"?'<div class="mp-wait bad'+(reel?' r':'')+'"><div><b class="bad-t">Fehler</b><br>'+esc(md.error||"")+'<br><button type="button" class="btn sm" data-act="mprer:'+esc(p.id)+'">Nochmal</button></div></div>':'<div class="mp-wait'+(reel?' r':'')+'"><div><i></i>'+(reel?"Reel wird animiert …"+(slim?'':'<br><span class="small">dauert 1–2 Minuten</span>'):"Bilder werden erstellt …")+'</div></div>';
+  /* Reel-Entwurf: nur Titelbild (Simon 16.11.2026) – Klick erstellt das ganze Reel mit Musik; „Go“ macht das automatisch */
+  if(md.status==="vorschau"&&reel) prev='<button type="button" class="mp-reel" data-act="mpfull:'+esc(p.id)+'" aria-label="Ganzes Reel mit Musik erstellen"><img src="'+base+'&kind=cover" alt="" loading="lazy"><span class="pl">'+mpvI("play")+'<span>Reel erstellen</span></span></button>';
+  else if(md.status!=="fertig") prev=md.status==="fehler"?'<div class="mp-wait bad'+(reel?' r':'')+'"><div><b class="bad-t">Fehler</b><br>'+esc(md.error||"")+'<br><button type="button" class="btn sm" data-act="mprer:'+esc(p.id)+'">Nochmal</button></div></div>':'<div class="mp-wait'+(reel?' r':'')+'"><div><i></i>'+(reel?"Reel wird animiert …"+(slim?'':'<br><span class="small">dauert 1–2 Minuten</span>'):"Bilder werden erstellt …")+'</div></div>';
   else if(reel) prev='<button type="button" class="mp-reel" data-act="mpvid:'+esc(p.id)+'" aria-label="Reel mit Ton ansehen"><video src="'+base+'&kind=video" poster="'+base+'&kind=cover" playsinline muted loop preload="none"></video><span class="pl">'+mpvI("play")+'<span>Ansehen</span></span></button>';
   else prev='<img src="'+base+'&i=0" alt="" data-act="mpview:'+esc(p.id)+'" loading="lazy">'+(md.images>1?'<span class="n">'+F.svg("mlayers")+md.images+'</span>':'');
   var connected=(PL.platforms||[]).filter(function(pf){ var c=chFor(p.brand,pf.key); return c&&c.status!=="getrennt"&&pf.formats.indexOf(p.format)>-1; });
@@ -393,7 +395,7 @@ function postCard(p,slim){
     var msg=bad?'<span class="msg bad-t">'+esc(r.error||"Fehler")+'</span>':(r.status==="entwurf"||r.status==="ok")&&r.note?'<span class="msg muted">'+esc(r.note)+'</span>':r.status==="übersprungen"&&r.error?'<span class="msg muted">'+esc(r.error)+'</span>':'';
     return '<div class="mp-r'+(bad?' bad':'')+'"><span class="pfn">'+pfIcon(k)+esc(pfLabel(k))+'</span>'+st+msg+numLine(k,r)+(lk?'<span class="lk">'+lk+'</span>':'')+'</div>'; }).join("")+
     (Object.keys(p.results).some(function(k){ return p.results[k].status==="ok"; })?'<button type="button" class="link small mp-statbtn" data-act="mpstat:'+esc(p.id)+'">Zahlen aktualisieren</button>':'')+'</div>';
-  var ready=md.status==="fertig", main="", subs="", hint="", time=editable?'<label class="mp-time"><span>Zeit</span><input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"></label>':'';
+  var ready=md.status==="fertig"||md.status==="vorschau", main="", subs="", hint="", time=editable?'<label class="mp-time"><span>Zeit</span><input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"></label>':'';
   if(p.status==="entwurf"){ var dis=!ready||!p.platforms.length?' disabled':'';
     main='<button type="button" class="btn primary" data-act="mpgo:'+esc(p.id)+'"'+dis+'>'+F.svg("mgo")+' Go</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'"'+dis+'>'+F.svg("send")+' Jetzt posten</button>';
     hint=!ready?(md.status==="fehler"?"Erst Bild/Video neu erstellen (Nochmal)":"Freigabe, sobald "+(reel?"das Video":"die Bilder")+" fertig "+(reel?"ist":"sind")):!p.platforms.length?"Für „Go“ mindestens eine Plattform wählen":"";
@@ -493,7 +495,7 @@ function planHtml(){
   var stats=[["fehler","mps-err",errs.length,"Fehler"],["entwurf","mps-frei",drafts.length,"zur Freigabe"],["geplant","mps-plan",planned.length,"geplant"],["gepostet","mps-done",doneWeek,"gepostet"]];
   var sec=function(id,cls,t,sub,list,right,empty,slim,more){ return '<section class="mp-sec st-'+cls+'" id="'+id+'" aria-labelledby="'+id+'-h"><div class="mp-sh"><h2 id="'+id+'-h"><i aria-hidden="true"></i>'+t+'</h2>'+(list.length?'<span class="n">'+list.length+'</span>':'')+(sub&&list.length?'<p>'+sub+'</p>':'')+(right?'<span class="r">'+right+'</span>':'')+'</div>'+
     (list.length?'<div class="panel mp-list">'+list.map(function(p){ return postCard(p,slim); }).join("")+(more||'')+'</div>':empty)+'</section>'; };
-  var allGo=drafts.filter(function(p){ return p.media.status==="fertig"&&p.platforms.length; }).length;
+  var allGo=drafts.filter(function(p){ return (p.media.status==="fertig"||p.media.status==="vorschau")&&p.platforms.length; }).length;
   var DONE_N=6, doneShow=UI.mpDoneAll?done:done.slice(0,DONE_N);
   // Fehler zuerst: selten, aber dringend – sonst stehen sie unter vielen Entwürfen
   return '<div class="mp'+(alle?' alle':'')+'">'+chips+weekHtml(mine,cur,stats)+(alle?'':genHtml(cur,b,drafts.length))+
@@ -548,7 +550,7 @@ F.action("mppf",function(a){ var x=a.split("|"), p=PL.posts.find(function(q){ re
 F.listen("change","[data-mptime]",function(el){ if(!el.value) return; postOp(el.getAttribute("data-mptime"),"update",{patch:{scheduledAt:new Date(el.value).toISOString()}},"Zeit geändert"); });
 F.action("mpgo",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }), go=function(){ postOp(id,"go",null,"Freigegeben – geht zur geplanten Zeit raus"); };
   if(p&&ttNeeds(p)) ttAsk([p],"Freigeben",go); else go(); });
-F.action("mpgoall",function(){ var list=PL.posts.filter(function(p){ return p.status==="entwurf"&&(UI.mkBrand==="alle"||p.brand===UI.mkBrand)&&p.media.status==="fertig"&&p.platforms.length; }), ids=list.map(function(p){ return p.id; });
+F.action("mpgoall",function(){ var list=PL.posts.filter(function(p){ return p.status==="entwurf"&&(UI.mkBrand==="alle"||p.brand===UI.mkBrand)&&(p.media.status==="fertig"||p.media.status==="vorschau")&&p.platforms.length; }), ids=list.map(function(p){ return p.id; });
   var all=function(){ F.confirm(ids.length+" Posts freigeben? Sie gehen zu ihren geplanten Zeiten automatisch raus.","Alle freigeben",function(){ var chain=Promise.resolve(); ids.forEach(function(id){ chain=chain.then(function(){ return api("/admin/api/mkt/post",{id:id,op:"go"}).then(function(j){ if(j&&j.post) upd(j.post); else if(j&&j.error) F.toast(j.error,true); }); }); }); chain.then(function(){ F.toast(ids.length+" Posts freigegeben"); F.render(); schedulePoll(); }); }); };
   ttAskAll(list.filter(ttNeeds),"Weiter",all); });
 F.action("mpnow",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }), now=function(){ postOp(id,"now",null,"Wird gepostet …"); };
@@ -615,6 +617,8 @@ F.action("mpretry",function(a){ var x=a.split("|"), p=PL.posts.find(function(q){
   if(p&&x[1]==="tiktok"&&ttNeeds(p)) return ttAsk([p],"Jetzt posten",null,true);
   postOp(x[0],"retry",{platform:x[1]||""},"Wird nochmal versucht …"); });
 F.action("mprer",function(id){ postOp(id,"rerender",null,"Wird neu erstellt …"); });
+/* Reel-Vorschau geöffnet → ganzes Reel mit Musik erstellen (Simon 16.11.2026: Entwürfe bekommen nur ein Titelbild) */
+F.action("mpfull",function(id){ postOp(id,"full",null,"Reel wird erstellt – dauert 1–2 Minuten"); });
 F.action("mpdel",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); F.confirm(p&&p.status==="gepostet"?"Aus der Liste entfernen? (Bei den Plattformen bleibt der Post online.)":"Diesen Entwurf verwerfen?",p&&p.status==="gepostet"?"Entfernen":"Verwerfen",function(){ postOp(id,"delete",null,"Entfernt"); },true); });
 /* Caption ganz zeigen / wieder kürzen – direkt im DOM, der Zustand bleibt für das nächste Neuzeichnen gemerkt */
 F.action("mpcap",function(id,el){ var o=UI.mpCapOpen=UI.mpCapOpen||{}; o[id]=!o[id];

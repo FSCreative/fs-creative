@@ -352,7 +352,10 @@ module.exports = function (C) {
   function list() { return all().filter(t => !t.hidden && !t.gone).map(t => ({ id: t.id, name: t.name, mood: t.tags.mood || "", license: t.license.text, source: t.source, bpm: syncedBpm(t), beat0: (t.a && t.a.beat0) || 0, file: t.fileAbs, seed: !!t.seed })); }
 
   // ───────────── Einstellungen, Schlüssel, Budget ─────────────
-  function cfg() { const st = S().mkt; st.musicCfg = Object.assign({ engine: "auto", limitEur: 15, revenueOk: "", variants: 1, saver: false, weekly: 1, ytAi: true, cfgScale: 1, maxMb: 900, maxTracks: 900 }, st.musicCfg || {}); return st.musicCfg; }
+  // Sparmodus (saver: unbenutzte KI-Titel der Marke wiederverwenden statt neu komponieren) ist seit Simon 16.11.2026 Standard – einmalig auch für gespeicherte
+  // Einstellungen eingeschaltet (saverV 2); danach gilt wieder, was Simon im Cockpit wählt.
+  function cfg() { const st = S().mkt; st.musicCfg = Object.assign({ engine: "auto", limitEur: 15, revenueOk: "", variants: 1, saver: true, weekly: 1, ytAi: true, cfgScale: 1, maxMb: 900, maxTracks: 900 }, st.musicCfg || {});
+    if ((st.musicCfg.saverV || 0) < 2) { st.musicCfg.saver = true; st.musicCfg.saverV = 2; } return st.musicCfg; }
   function stabilityKey() { const st = S().mkt, k = st.stability && C.unseal ? C.unseal(st.stability) : null; return (k && k.v) || process.env.STABILITY_API_KEY || ""; }
   function budget() { const st = S().mkt, m = monthKey(); if (!st.musicBudget || st.musicBudget.month !== m) { if (st.musicBudget && st.musicBudget.month) { st.musicBudgetHist = st.musicBudgetHist || {}; st.musicBudgetHist[st.musicBudget.month] = { usd: st.musicBudget.usd, count: st.musicBudget.count }; } st.musicBudget = { month: m, usd: 0, count: 0, weeklyUsd: 0 }; } return st.musicBudget; }
   const limitEur = () => Math.max(0, +cfg().limitEur || 0);
@@ -765,7 +768,7 @@ module.exports = function (C) {
   function storageCheck() { try { cleanup(false); } catch (e) {} }
 
   // ───────────── Wöchentlicher Nachschub (5.3): sonntags ab 03:30 Wien, einmal je ISO-Woche ─────────────
-  let WEEKLY = null;
+  let WEEKLY = null; const weeklyLow = () => clamp(parseInt(cfg().weeklyLow, 10) || 2, 1, 20);   // „knapp“ = weniger als 2 unbenutzte passende Titel je Marke
   function weekly(force) {
     if (WEEKLY) return WEEKLY; const st = S().mkt, now = Date.now(), wk = isoWeek(now);
     const vp = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now)), g = k => (vp.find(x => x.type === k) || {}).value;
@@ -776,7 +779,8 @@ module.exports = function (C) {
       if (per && !composeBlock(true)) for (const key of Object.keys(S().brands).filter(k => S().brands[k] && S().brands[k].enabled !== false)) {
         const fake = { id: "weekly-" + key, brand: key, format: "reel", platforms: [], scheduledAt: nowIso() }, p = profile(key);
         const unused = rank(fake, { want: cleanWant(key, {}, p.mood), only: x => !(x.use && x.use.count) }).list.filter(x => x.s >= 7).length;
-        for (let i = 0; i < per && unused + i < 4; i++) { const c = await compose(key, cleanWant(key, { energy: Math.round((p.energy[0] + p.energy[1]) / 2) }, p.mood), { weekly: true }); if (c.track) { out.added++; out.usd = r2(out.usd + STAB.costUsd); } else { out.notes.push(key + ": " + c.note); break; } }
+        // nur nachkomponieren, wenn der Vorrat unbenutzter, passender Titel knapp ist (unter 2; vorher bis 4 aufgefüllt – Simon 16.11.2026)
+        for (let i = 0; i < per && unused + i < weeklyLow(); i++) { const c = await compose(key, cleanWant(key, { energy: Math.round((p.energy[0] + p.energy[1]) / 2) }, p.mood), { weekly: true }); if (c.track) { out.added++; out.usd = r2(out.usd + STAB.costUsd); } else { out.notes.push(key + ": " + c.note); break; } }
       }
       out.cleaned = cleanup(true);
       all().filter(t => !t.gone && (!t.a || (t.a.v || 0) < AV)).forEach(t => { queueAnalysis(t.id); out.analysed++; });
