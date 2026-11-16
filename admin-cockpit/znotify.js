@@ -2,7 +2,7 @@
    Nur am Computer, solange das Cockpit offen ist – im Browser-Tab oder als installierte App (auch im Hintergrund). Einstellungen je Browser bzw. App (localStorage „fsc-dnotify“).
    Popups laufen über den Service Worker (registration.showNotification): nur so kommen sie auch in der installierten App (Chrome/Edge/Safari) zuverlässig an;
    gleicher tag wie beim Push („mail-<id>“) → dieselbe Mail meldet sich nur einmal.
-   Öffnen: Glocke in der Kopfleiste bzw. data-act="dnotcfg". Eigene, sparsame Abfragen: Mails alle 30 s (etag), Chat alle 15 s (?v=). */
+   Öffnen: Glocke in der Kopfleiste bzw. data-act="dnotcfg". Eigene, sparsame Abfragen: Mails und Chat jede Minute (etag bzw. ?v=), Mails nicht während das Postfach offen ist. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc;
@@ -31,12 +31,15 @@ function pop(kind,title,body,go,tag){
   else if(!document.hidden&&F.toast) F.toast(title+(body?" – "+body:""));
 }
 /* neue Mails: ungelesene im Posteingang, die beim letzten Blick noch nicht da waren (erste Runde nur merken) */
-var mailSeen=null, mailEtag="";
+var mailSeen=null, mailEtag="", mailQuiet=false;
+/* Postfach offen und sichtbar: post.js fragt dort ohnehin alle 4 s ab → hier aussetzen; danach eine stille Runde (nur merken), damit Gesehenes nicht nachträglich meldet (Simon 16.11.2026) */
 function pollMail(){ if(!cfg().on||!cfg().mail) return;
+  if(F.current==="post"&&!document.hidden){ mailQuiet=true; return; }
   F.api("/admin/api/mail?etag="+encodeURIComponent(mailEtag)).then(function(md){
+    if(md&&md.same) mailQuiet=false;   // nichts Neues seit dem letzten Stand → nächste Änderung ist echt neu
     if(!md||md.same||!Array.isArray(md.messages)) return; mailEtag=md.etag||"";
     var inbox=md.messages.filter(function(m){ return m&&m.id&&/^inbox$/i.test(m.folder||"INBOX")&&!m.deleted; });
-    if(!mailSeen){ mailSeen={}; inbox.forEach(function(m){ mailSeen[m.id]=1; }); return; }
+    if(!mailSeen||mailQuiet){ mailQuiet=false; mailSeen=mailSeen||{}; inbox.forEach(function(m){ mailSeen[m.id]=1; }); return; }
     var fresh=inbox.filter(function(m){ return !mailSeen[m.id]&&!m.read; }); inbox.forEach(function(m){ mailSeen[m.id]=1; });
     if(fresh.length===1) pop("mail","Mail: "+(fresh[0].fromName||fresh[0].from||"unbekannt"),(fresh[0].subject||"(ohne Betreff)")+(F.M&&F.M.prevText&&F.M.prevText(fresh[0].preview)?"\n"+F.M.prevText(fresh[0].preview).slice(0,140):""),"post","mail-"+fresh[0].id);
     else if(fresh.length>1) pop("mail","Mail: "+fresh.length+" neue",fresh.slice(0,3).map(function(m){ return (m.fromName||m.from||"")+" – "+(m.subject||""); }).join("\n"),"post","mail");
@@ -55,7 +58,8 @@ function pollChat(){ if(!cfg().on||!cfg().chat) return;
     if(up.length){ var c=up[0], nw=(old[c.id]||"").charAt(0)!=="h"; pop("chat",(nw?"Chat-Übergabe: ":"Website-Chat: ")+(c.name||("Besucher #"+c.no)),(nw?"Möchte mit dir sprechen – die KI hat übergeben\n":"Neue Nachricht\n")+((c.last&&c.last.text)||""),"chat","chat-"+c.id); }
   }).catch(function(){});
 }
-setInterval(pollMail,30000); setInterval(pollChat,15000); setTimeout(function(){ pollMail(); pollChat(); },4000);
+/* jede Minute (auch im Hintergrund – dafür sind die Hinweise da); vorher Mail 30 s / Chat 15 s (Energie, Simon 16.11.2026) */
+setInterval(pollMail,60000); setInterval(pollChat,60000); setTimeout(function(){ pollMail(); pollChat(); },4000);
 /* Glocke in der Kopfleiste + Einstellungen */
 var ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
 function bell(){ var host=document.querySelector(".topbar .tb-right"); if(!host) return; var b=document.getElementById("dnotBtn");

@@ -300,13 +300,17 @@ F.css(
 function api(path,body){ return F.api(path,body?{body:body}:undefined); }
 function load(){ if(PLOAD) return; PLOAD=true; return api("/admin/api/mkt/posts").then(function(j){ PLOAD=false; PL=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",posts:[],channels:[],platforms:[],providers:[]}; schedulePoll(); if(F.current==="mkt") F.render(); }).catch(function(){ PLOAD=false; PL={ok:false,error:"Keine Verbindung zum Server",posts:[],channels:[],platforms:[],providers:[]}; if(F.current==="mkt") F.render(); }); }
 F.mktPlanReload=load;
-setTimeout(function(){ if(!PL) load(); },2000);
+/* Start: sofort nur auf Marketing (die Ansicht lädt beim Öffnen ohnehin selbst), sonst später in Ruhe (Simon 16.11.2026) */
+setTimeout(function(){ if(PL) return; if(F.current==="mkt") load(); else F.whenIdle(function(){ if(!PL) load(); },90000); },2000);
 function schedulePoll(){
   clearTimeout(PPOLL); if(!PL||!PL.posts) return;
   var busy=PL.posts.some(function(p){ return p.media&&(p.media.status==="wartet"||p.media.status==="läuft")||p.status==="läuft"; });
   var soon=PL.posts.some(function(p){ return p.status==="geplant"&&Date.parse(p.scheduledAt)-Date.now()<5*60e3; });
-  if(busy||soon) PPOLL=setTimeout(function(){ if(F.current!=="mkt"){ schedulePoll(); return; } api("/admin/api/mkt/posts").then(function(j){ if(j&&j.ok){ var was=sig(PL); PL=j; if(was!==sig(j)){ if(!F.modalOpen()) F.render(); else Array.prototype.forEach.call(document.querySelectorAll("#modalHost [data-mpmus]"),function(el){ musRepaint(el.getAttribute("data-mpmus")); }); } } schedulePoll(); }); },busy?3000:30000);
+  /* andere Seite oder Fenster im Hintergrund: nicht abfragen, nur alle 30 s nachsehen; zurück auf Marketing → sofort weiter (Simon 16.11.2026) */
+  if(busy||soon) PPOLL=setTimeout(function(){ if(F.current!=="mkt"||document.hidden){ PPOLL=setTimeout(schedulePoll,30000); return; } api("/admin/api/mkt/posts").then(function(j){ if(j&&j.ok){ var was=sig(PL); PL=j; if(was!==sig(j)){ if(!F.modalOpen()) F.render(); else Array.prototype.forEach.call(document.querySelectorAll("#modalHost [data-mpmus]"),function(el){ musRepaint(el.getAttribute("data-mpmus")); }); } } schedulePoll(); }); },busy?3000:30000);
 }
+document.addEventListener("fsc-view",function(e){ if(e.detail==="mkt"&&PL) schedulePoll(); });
+document.addEventListener("visibilitychange",function(){ if(!document.hidden&&F.current==="mkt"&&PL) schedulePoll(); });
 function sig(o){ return JSON.stringify((o.posts||[]).map(function(p){ return [p.id,p.status,p.media.status,p.media.rev,Object.keys(p.results||{}).map(function(k){ return p.results[k].status; }).join()]; })); }
 function brands(){ var S=F.mktState&&F.mktState(); return (S&&S.brands||[]).filter(function(b){ return b.enabled!==false; }); }
 function brandOf(k){ return brands().find(function(b){ return b.key===k; })||{key:k,name:k,colors:{}}; }
@@ -639,7 +643,12 @@ function mpvWire(v){
   var bar=document.getElementById("mpvBar"), pos=document.getElementById("mpvPos"), t=document.getElementById("mpvT"), drag=false;
   ["play","pause","volumechange"].forEach(function(ev){ v.addEventListener(ev,mpvSync); });
   v.addEventListener("click",function(){ if(v.paused) v.play().catch(function(){}); else v.pause(); });
-  (function tick(){ if(!v.isConnected) return; var d=v.duration||0; if(!drag) pos.style.width=(d?v.currentTime/d*100:0)+"%"; t.textContent=mpvFmt(v.currentTime)+" / "+mpvFmt(d); requestAnimationFrame(tick); })();
+  /* Fortschritt: rAF nur während das Video läuft, sonst bei timeupdate/seeked (vorher Dauerschleife auch bei Pause – Simon 16.11.2026) */
+  var raf=0; function paint(){ var d=v.duration||0; if(!drag) pos.style.width=(d?v.currentTime/d*100:0)+"%"; t.textContent=mpvFmt(v.currentTime)+" / "+mpvFmt(d); }
+  function tick(){ raf=0; if(!v.isConnected||v.paused||v.ended) return; paint(); raf=requestAnimationFrame(tick); }
+  ["timeupdate","seeked","loadedmetadata","durationchange","pause","ended"].forEach(function(ev){ v.addEventListener(ev,paint); });
+  v.addEventListener("play",function(){ if(!raf) raf=requestAnimationFrame(tick); });
+  paint(); if(!v.paused) raf=requestAnimationFrame(tick);
   function seek(e){ var r=bar.getBoundingClientRect(), x=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)); pos.style.width=x*100+"%"; if(v.duration) v.currentTime=x*v.duration; }
   bar.addEventListener("pointerdown",function(e){ drag=true; bar.classList.add("drag"); try{ bar.setPointerCapture(e.pointerId); }catch(er){} seek(e); });
   bar.addEventListener("pointermove",function(e){ if(drag) seek(e); });

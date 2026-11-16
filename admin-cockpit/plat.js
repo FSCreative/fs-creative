@@ -172,7 +172,9 @@ function mmOf(m){ return String(m||"").split("-").reverse().join("/"); }
 
 /* ---------- Billing-Historie (für Rückgängig & Blitzdings-Rechnungen) ---------- */
 function loadBill(){ return F.api("/admin/api/billing").then(function(b){ if(b&&b.invoices){ BILL=b; } return BILL; }).catch(function(){ return BILL; }); }
-F.onData(function(){ loadBill().then(function(){ if(F.current==="plat") F.render(); }); });
+/* nur auf „Plattformen“ bei jedem Laden; sonst höchstens alle 10 min (Simon 16.11.2026) */
+var billAt=0;
+F.onData(function(){ if(F.current!=="plat"&&BILL&&Date.now()-billAt<600000) return; billAt=Date.now(); loadBill().then(function(){ if(F.current==="plat") F.renderSoon(); }); });
 
 /* ---------- Ausstehende Änderungen ----------
    Der Server puffert Plattform-Daten bis zu 25 s. Damit eine gerade gespeicherte Änderung (verrechnet, bezahlt …)

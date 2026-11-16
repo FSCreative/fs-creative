@@ -41,7 +41,7 @@ F.css('.pr-list{display:grid}.pr-row{display:grid;grid-template-columns:minmax(0
   '@media(max-width:700px){.pr-so{grid-template-columns:40px minmax(0,1fr)}.pr-so .a{grid-column:1/-1;justify-content:flex-start}}.pr-grp{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-top:8px}'+
   '.pr-livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#30d158;vertical-align:middle;margin-right:4px;animation:prpulse 1.6s infinite}@keyframes prpulse{0%{box-shadow:0 0 0 0 rgba(48,209,88,.55)}70%{box-shadow:0 0 0 8px rgba(48,209,88,0)}100%{box-shadow:0 0 0 0 rgba(48,209,88,0)}}'+
   '.pr-live{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;font-weight:600;font-size:13px}.pr-live.off{background:var(--warn-soft);color:var(--warn)}.pr-live.on{background:var(--ok-soft);color:var(--ok)}');
-function load(force){ if(busy) return; busy=true; F.api("/admin/api/print/state").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",orders:[]}; F.render(); try{ prdWarm(); }catch(e){} }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",orders:[]}; F.render(); }); }
+function load(force){ if(busy) return; busy=true; F.api("/admin/api/print/state").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",orders:[]}; F.renderFor("print","heute"); try{ prdWarm(); }catch(e){} }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",orders:[]}; F.render(); }); }
 function list(){ var o=(ST&&ST.orders)||[]; if(FILTER==="review") return o.filter(function(x){ return x.review; }); if(FILTER==="unpaid") return o.filter(function(x){ return x.status==="pending_payment"||x.status==="payment_failed"; }); if(FILTER==="active") return o.filter(function(x){ return (["ordered","in_production","problem"].indexOf(x.status)>-1||x.redo==="open"); }); if(FILTER==="done") return o.filter(function(x){ return ["shipped","delivered","rejected"].indexOf(x.status)>-1; }); return o; }
 /* Fortschrittsleiste: Bestellt → Print.com → In Produktion → Versendet → Zugestellt (Status kommt per Webhook/Abfrage von Print.com) */
 var STEPS=[["order","Bestellt"],["printcom","Bei Print.com"],["production","In Produktion"],["shipped","Versendet"],["delivered","Zugestellt"]];
@@ -804,7 +804,7 @@ F.listen("change","#nlAuto",function(el){ var on=el.checked; if(on){ el.checked=
 F.action("nlunsub",function(e){ F.confirm(e+" vom Newsletter abmelden?","Abmelden",function(){ nlOp({op:"unsub",email:e},"Abgemeldet"); },true); });
 F.action("nlcsv",function(){ F.api("/admin/api/print/newsletter",{body:{op:"export"}}).then(function(j){ if(!j||!j.ok) return F.toast("Fehler",true); var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([j.csv],{type:"text/csv"})); a.download="newsletter-empfaenger.csv"; a.click(); }); });
 F.feed(function(){ var n=ST&&ST.ok?ST.review:0; if(!n) return []; return [{id:"print-review-"+n,rank:2,sev:"warn",icon:"print",tag:["warn","Druck"],t:n+(n===1?" Druckauftrag":" Druckaufträge")+" zur Prüfung",d:"Bezahlt bzw. auf Rechnung bestellt – bei Print.com bestellen oder ablehnen.",acts:[["Prüfen","go:print","primary"]]}]; });
-F.onData(function(){ if(!ST||Date.now()-at>60000) load(); });
+F.onData(function(){ if(!ST||Date.now()-at>(F.current==="print"?60000:300000)) load(); });   // andere Seiten: höchstens alle 5 min, Zähler bleibt (Simon 16.11.2026)
 /* Schnellsuche: Druckaufträge nach Nummer, Kunde, E-Mail, Produkt → Auftrag öffnen. Noch nicht geladen → einmal still nachladen (ohne neu zu zeichnen) */
 var SQ=false;
 F.searcher(function(q){
@@ -813,7 +813,7 @@ F.searcher(function(q){
   return (ST.orders||[]).filter(function(o){ return [o.nr,o.customer,o.email,o.product,o.pcOrder,o.invoice&&o.invoice.nr].join(" ").toLowerCase().indexOf(q)>-1; }).slice(0,6)
     .map(function(o){ return {group:"Druckaufträge",label:o.nr+" · "+o.customer,sub:[o.product,o.copies?o.copies+" Stk.":"",eur(o.gross),o.statusText].filter(Boolean).join(" · "),icon:"print",act:"prord:"+o.id}; });
 });
-F.view({id:"print",label:"Druckaufträge",short:"Druck",icon:"print",order:36,count:function(){ return ST&&ST.ok?(ST.review||0)+(ST.briefsNew||0):0; },render:function(){ return '<div class="prg">'+render()+'</div>'; },after:function(){ if(!ST||Date.now()-at>60000) load(); }});
+F.view({id:"print",label:"Druckaufträge",short:"Druck",icon:"print",order:36,count:function(){ return ST&&ST.ok?(ST.review||0)+(ST.briefsNew||0):0; },render:function(){ return '<div class="prg">'+render()+'</div>'; },after:function(){ if(!ST||Date.now()-at>60000) load(); setTimeout(liveSync,0); }});
 /* Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): /admin/api/print/live alle 15 s, solange die Druck-Seite offen ist */
 var PRLIVE=null;
 /* Warenkorb-Inhalt beim Darüberfahren (anonym: Produkt, Menge, Preis – Wunsch Simon 03.11.2026) */
@@ -868,8 +868,10 @@ function liveSync(){
   LES.onmessage=function(e){ lesFail=0; try{ livePaint(JSON.parse(e.data)); }catch(x){} };
   LES.onerror=function(){ lesFail++; if(LES&&LES.readyState===2){ LES=null; } };
 }
-setInterval(function(){ liveSync(); if(!LES) liveTick(); },15000); setInterval(liveSync,1500); setTimeout(function(){ liveSync(); if(!LES) liveTick(); },800);
-document.addEventListener("visibilitychange",function(){ if(!document.hidden) liveTick(); });
+/* Energie (Simon 16.11.2026): kein 1,5-s-Takt mehr – liveSync läuft beim Aufbau der Druck-Seite (after), beim Ansichtswechsel und beim Sichtbarwerden; 15-s-Ersatzabfrage nur auf der Druck-Seite */
+setInterval(function(){ if(F.current!=="print"&&!LES) return; liveSync(); if(!LES) liveTick(); },15000); setTimeout(function(){ liveSync(); if(!LES) liveTick(); },800);
+document.addEventListener("fsc-view",function(){ liveSync(); });
+document.addEventListener("visibilitychange",function(){ liveSync(); if(!document.hidden&&!LES) liveTick(); });
 
 /* Gestaltungsanfragen („Wir gestalten für dich“ im Shop): eigene Liste statt Lead/Aufgabe/Mail – mit Kontakt-Links, Konfiguration und Dateien */
 var BR=null, brBusy=false;

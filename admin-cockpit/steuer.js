@@ -13,7 +13,7 @@ F.UI.uvaKey=F.UI.uvaKey||null; F.UI.jabYear=F.UI.jabYear||null; F.UI.stOpen=F.UI
 var loadP=null;
 function load(force){
   if(loading) return loadP; loading=true;
-  loadP=F.api("/admin/api/steuer"+(force?"?force=1":"")).then(function(j){ loading=false; if(j&&j.ok){ ST=j; loadErr=""; } else { loadErr=(j&&j.error)||"Fehler"; if(j&&j.settings){ ST=ST||j; } } if(F.current==="geld"||F.current==="heute") F.render(); return ST; })
+  loadP=F.api("/admin/api/steuer"+(force?"?force=1":"")).then(function(j){ loading=false; if(j&&j.ok){ ST=j; loadErr=""; } else { loadErr=(j&&j.error)||"Fehler"; if(j&&j.settings){ ST=ST||j; } } F.renderFor("geld","heute","finanzamt"); return ST; })
     .catch(function(){ loading=false; loadErr="Keine Verbindung."; if(F.current==="geld") F.render(); });
   return loadP;
 }
@@ -885,8 +885,10 @@ F.feed(function(){
 });
 F.action("jabopenv",function(y){ F.UI.geldTab="jab"; F.UI.jabYear=y; F.go("geld"); });
 F.action("uvaopen",function(k){ F.UI.geldTab="uva"; F.UI.uvaKey=k; F.go("geld"); });
-// Daten im Hintergrund laden, damit "Heute" die UVA-Fälligkeit zeigen kann
-setTimeout(function(){ if(!ST) load(false); },4000);
+// Daten im Hintergrund laden, damit "Heute" die UVA-Fälligkeit zeigen kann.
+// Schwerer Abruf: sofort nur auf Heute/Finanzen/Finanzamt, sonst erst nach 60 s in einer ruhigen Minute (requestIdleCallback) – Simon 16.11.2026
+setTimeout(function(){ if(ST||loading) return; var c=F.current; if(c==="heute"||c==="geld"||c==="finanzamt") return load(false);
+  setTimeout(function(){ if(ST||loading) return; var go=function(){ if(!ST&&!loading) load(false); }; if(window.requestIdleCallback) requestIdleCallback(go,{timeout:30000}); else go(); },56000); },4000);
 
 F.css(".kzb{display:inline-block;min-width:44px;text-align:center;font-family:var(--f-mono);font-weight:700;font-size:13px;padding:3px 7px;border-radius:7px;background:var(--glow-soft);color:var(--glow-ink)}"+
   "table.kz td{vertical-align:middle}.uva-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:center}.uva-top .k{font-size:12px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}.uva-top .v{font-family:var(--f-display);font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}.uva-top .s{font-size:12.5px;color:var(--ink-2)}.uva-done{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}"+

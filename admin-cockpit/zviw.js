@@ -52,7 +52,7 @@ function load(path,quiet){
     if(F.current==="viw") F.render();
   }).catch(function(){ LOADING=false; CUR={path:path,items:[],error:"Keine Verbindung zum Server",at:Date.now()}; if(F.current==="viw") F.render(); });
 }
-setTimeout(function(){ loadStatus(false); },1500);   /* nur ob eingerichtet – für den Knopf an Mail-Anhängen */
+if(F.whenIdle) F.whenIdle(function(){ loadStatus(false); },F.current==="viw"||F.current==="post"?1500:15000); else setTimeout(function(){ loadStatus(false); },1500);   /* nur ob eingerichtet – für den Knopf an Mail-Anhängen; andere Start-Ansicht: später in Ruhe (Simon 16.11.2026) */
 
 /* ---------- Darstellung ---------- */
 /* Anmeldefenster: Adresse oder Freigabe-Link, Login, Passwort – der Server prüft den Zugang bei VIW und speichert ihn erst dann (verschlüsselt) */

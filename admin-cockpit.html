@@ -254,6 +254,8 @@ tr.grp td{background:var(--sunk);font-weight:700;font-size:13px;padding:8px 14px
   .hide-m{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* Leerlauf (Fenster im Hintergrund oder 60 s keine Eingabe, core.js): Endlos-Animationen anhalten – Ladekreise/Fortschrittsbalken laufen weiter (Simon 16.11.2026) */
+.fsc-idle :not([class*="spin"]):not(.busy):not(.mp-dot):not(.mp-sk):not(.kich-dots):not(#fsSplash *),.fsc-idle :not(.busy):not(#fsSplash *)::before,.fsc-idle :not(.busy):not(#fsSplash *)::after{animation-play-state:paused!important}
 
 /* ---- Ergänzungen v2 ---- */
 .row{display:flex;gap:8px;align-items:center}
