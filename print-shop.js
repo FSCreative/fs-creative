@@ -1157,7 +1157,7 @@ module.exports = function (D) {
       else if (prod.tiers.indexOf(copies) < 0) throw bad("Ungültige Auflage");
     }
     if (prod.custom && (kind === "banner" || sel.size === "custom")) {   // freie Größe: Eingabe in cm (Banner) bzw. mm, an Print.com immer mm
-      const cu = objOf(input.custom), C = prod.custom, f = C.unit === "cm" ? 10 : 1, u = v => C.unit === "cm" ? v / 10 + " cm" : v + " mm";
+      const cu = objOf(input.custom), C = prod.custom, f = C.unit === "cm" ? 10 : 1, u = v => v >= 10000 ? String(Math.round(v / 100) / 10).replace(".", ",") + " m" : C.unit === "cm" ? v / 10 + " cm" : v + " mm";   // große Grenzen in Metern
       const w = Math.round(parseFloat(String(cu.w).replace(",", ".")) * f), h = Math.round(parseFloat(String(cu.h).replace(",", ".")) * f);
       if (!(w > 0 && h > 0)) throw bad("Bitte Breite und Höhe in " + C.unit + " angeben");
       const ok = (a, b) => a >= C.minW && a <= C.maxW && b >= C.minH && b <= C.maxH;

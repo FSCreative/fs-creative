@@ -851,6 +851,14 @@
       if (/uv.?lack|spot/i.test(n)) return "glänzender Lack-Effekt"; }
     return "";
   }
+  // Grenzen des freien Formats lesbar: große Werte in Metern (Simon 16.11.2026: „10–25000 cm“ statt „0,1–250 m“)
+  function lenTxt(mm, cm) { return mm >= 10000 ? String(Math.round(mm / 100) / 10).replace(".", ",") + " m" : cm ? String(Math.round(mm / 10 * 10) / 10).replace(".", ",") + " cm" : mm + " mm"; }
+  function rangeTxt(C) { var cm = C.unit === "cm"; return lenTxt(C.minW, cm) + "–" + lenTxt(C.maxW, cm) + " × " + lenTxt(C.minH, cm) + "–" + lenTxt(C.maxH, cm); }
+  // Produkt mit kürzerer Höchstlänge → passendes Produkt für Überlängen (Simon 16.11.2026: Mesh-Banner max. 5 m, als „Banner“ mit Mesh bis 250 m)
+  var LONGER = { "mesh-banner": { key: "pvc-banner", slug: "pvc-banner", sel: { material: "280gr_mesh_b1", printtype: "40" }, keep: ["konfektion"], t: "Länger als 5 m? Als Banner mit Mesh-Material bis 250 m am Stück" } };
+  function longerHtml() { var L = S.prod && LONGER[S.prod.key]; if (!L) return ""; var sel = Object.assign({}, L.sel); (L.keep || []).forEach(function (k) { if (S.sel[k]) sel[k] = S.sel[k]; });
+    var c = { s: sel, q: S.copies || 1 }; if (S.custom && +S.custom.w && +S.custom.h) c.c = { w: +S.custom.w, h: +S.custom.h };
+    return '<p class="ps-help ps-longer"><a class="ps-link" href="/print/' + L.slug + "?c=" + b64e(JSON.stringify(c)) + '">' + esc(L.t) + " →</a></p>"; }
   // Seitenzahl verständlich machen (Simon 16.11.2026, Abreißkalender): wie viele Blätter das sind, mit/ohne 4-seitigem Umschlag
   function sheetsTxt(pr, v) { var n = parseFloat(v), t = String(pr.title || ""); if (!(n > 0)) return ""; var cov = /4-seitig/i.test(t), inner = cov ? n - 4 : n, b = Math.round(inner / 2); if (b < 1) return "";
     var cal = /abrei|tear-off/i.test(String(S.prod.key) + " " + String(S.prod.title)); return cal ? "2 Seiten entsprechen einem Blatt im Kalender" : b + " Blätter" + (cov ? " Innenteil + Umschlag" : ""); }
@@ -860,7 +868,7 @@
       if (pr.slug === "size" && o.w && o.h && !/\d\s*[x×]\s*\d/.test(o.name)) it.sub = fmtSize(o.w, o.h);
       if (pr.slug === "pages") { var sh = sheetsTxt(pr, o.slug); if (sh) it.sub = sh; }
       if (pr.slug === "size" && o.slug === S.sel.size && S.price && S.price.folds && S.price.size) it.sub = (it.sub ? it.sub + " · " : "") + "offen " + fmtSize(S.price.size.w, S.price.size.h);
-      if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + C0.minW / f0 + " × " + C0.minH / f0 + " bis " + C0.maxW / f0 + " × " + C0.maxH / f0 + " " + C0.unit; if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
+      if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + rangeTxt(C0); if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
     var bo = bestOf(pr); items.sort(function (a, b) { return a.best && b.best ? bo.indexOf(a.val) - bo.indexOf(b.val) : 0; });
@@ -1164,7 +1172,7 @@
     var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + "\u00a0" + U() + "" + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
     if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + "\u00a0" + U() + "" : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
     what += wishHtml();
-    if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
+    if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + (/höchstens/.test(S.priceErr) ? longerHtml() : "") + altsHtml();
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
     // Rabatt durch die Mindestmarge begrenzt (Wunsch Simon 04.11.2026): ehrlich „bester Preis“ anschreiben statt einen Prozentsatz, der nicht greift
@@ -1718,7 +1726,7 @@
     var C = S.prod.custom, cm = C.unit === "cm", f = cm ? 10 : 1, u = C.unit, blank = inl && !isCustom(), cv = blank ? { w: "", h: "" } : S.custom;
     return dimChips() + '<div class="ps-row2 ps-dims"><div class="ps-field"><label for="psW">Breite (' + u + ')</label><input id="psW" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="' + (cm ? 1 : 1) + '" value="' + esc(cv.w) + '"' + (blank ? ' placeholder="z. B. ' + (cm ? 200 : 148) + '"' : "") + '></div>' +
       '<div class="ps-field"><label for="psH">Höhe (' + u + ')</label><input id="psH" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="1" value="' + esc(cv.h) + '"' + (blank ? ' placeholder="z. B. ' + (cm ? 100 : 210) + '"' : "") + '></div><button type="button" class="ps-dimswap" data-dimswap="1" aria-label="Breite und Höhe tauschen" title="Hoch-/Querformat tauschen">⇄</button></div>' +
-      '<p class="ps-help">Mindestens ' + C.minW / f + " × " + C.minH / f + " " + u + ", höchstens " + C.maxW / f + " × " + C.maxH / f + " " + u + " (Endformat, ohne Beschnitt).</p>";
+      '<p class="ps-help">Mindestens ' + lenTxt(C.minW, f === 10) + " × " + lenTxt(C.minH, f === 10) + ", höchstens " + lenTxt(C.maxW, f === 10) + " × " + lenTxt(C.maxH, f === 10) + " (Endformat, ohne Beschnitt).</p>" + longerHtml();
   }
   function propHtml(pr, v) {
     if (!propVisible(pr, v)) return "";
@@ -1755,7 +1763,7 @@
   function fmtRow(inner) {
     var C = S.prod.custom, u = C.unit, f = u === "cm" ? 10 : 1, sz = sizeOf(), open = S.dd === "fmtc";
     var val = sz ? (sz.w / f).toLocaleString("de-AT") + " × " + (sz.h / f).toLocaleString("de-AT") + " " + u : "Maße eingeben";
-    return '<div class="ps-tile' + (open ? " open" : "") + '"><span class="ps-tl">' + (kind() === "banner" ? "Format" : "Eigenes Format") + '</span><button type="button" class="ps-dd" data-dd="fmtc" aria-expanded="' + open + '"><span class="v">' + esc(val) + " <small>frei wählbar · " + C.minW / f + "–" + C.maxW / f + " × " + C.minH / f + "–" + C.maxH / f + " " + u + '</small></span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>" + (open ? '<div class="ps-cfgc">' + inner + "</div>" : "") + "</div>";
+    return '<div class="ps-tile' + (open ? " open" : "") + '"><span class="ps-tl">' + (kind() === "banner" ? "Format" : "Eigenes Format") + '</span><button type="button" class="ps-dd" data-dd="fmtc" aria-expanded="' + open + '"><span class="v">' + esc(val) + " <small>frei wählbar · " + rangeTxt(C) + '</small></span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>" + (open ? '<div class="ps-cfgc">' + inner + "</div>" : "") + "</div>";
   }   // Ausführung als eine ruhige Liste (Zeile je Option)
   function sectionsHtml(p) {
     var props = p.props.filter(function (pr) { return propVisible(pr); }), inS = function (l) { return props.filter(function (pr) { return l.indexOf(pr.slug) > -1; }); };
