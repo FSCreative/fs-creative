@@ -1550,8 +1550,10 @@
       '<span class="bd"><b>' + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + '</span><span class="tag">' + tag + "</span></span></button>";
   }
   // Suche mit Synonymen (Wunsch Simon 27.10.2026): „Leinwand“ findet die Canvas-Drucke, dazu gängige Alltagswörter; mehrere Wörter = alle müssen passen
-  var SYN = { leinwand: ["leinwand", "canvas-print", "auf canvas", "canvas im"], leinwände: ["leinwand", "canvas-print", "auf canvas", "canvas im"], keilrahmen: ["canvas-print", "leinwand"],
-    plakat: ["plakat", "poster"], plakate: ["plakat", "poster"], poster: ["poster", "plakat"], aufkleber: ["aufkleber", "sticker", "etikett"], sticker: ["sticker", "aufkleber"],
+  var CV = ["leinwand", "canvas-print", "auf canvas", "canvas im"];   // Leinwandbilder auch bei „Poster“, „Wandbild“, „Kunstdruck“ (Simon 16.11.2026)
+  var SYN = { leinwand: CV, leinwände: CV, leinwandbild: CV, leinwandbilder: CV, leinwanddruck: CV, fotoleinwand: CV, canvas: CV, keilrahmen: ["canvas-print", "leinwand"],
+    wandbild: CV.concat(["poster", "plexiglas", "dibond"]), wandbilder: CV.concat(["poster", "plexiglas", "dibond"]), kunstdruck: CV.concat(["poster"]), bild: CV.concat(["poster", "foto"]), bilder: CV.concat(["poster", "foto"]), fotodruck: CV.concat(["foto"]),
+    plakat: ["plakat", "poster"], plakate: ["plakat", "poster"], poster: ["poster", "plakat", "canvas-print", "auf canvas"], aufkleber: ["aufkleber", "sticker", "etikett"], sticker: ["sticker", "aufkleber"],
     tasse: ["tasse", "becher"], tassen: ["tasse", "becher"], becher: ["becher", "tasse"], kuli: ["kugelschreiber", "kuli"], kulis: ["kugelschreiber", "kuli"],
     shirt: ["shirt"], tshirt: ["t-shirt", "shirt"], pulli: ["hoodie", "sweat", "pullover"], pullover: ["pullover", "hoodie", "sweat"], beutel: ["beutel", "tasche"], tasche: ["tasche", "beutel"], taschen: ["tasche", "beutel"],
     schild: ["schild", "sign", "dibond", "forex"], schilder: ["schild", "sign", "dibond", "forex"], fahne: ["fahne", "flag", "beachflag"], flagge: ["flagge", "fahne", "flag"], prospekt: ["prospekt", "folder", "broschüre"], handzettel: ["flyer", "handzettel"] };
