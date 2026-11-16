@@ -3103,7 +3103,9 @@
     S.sel[slug] = val; fixSel(slug);
     // Probedruck/Muster (z. B. Kartenset): gibt es nur als 1 Stück – Auflage auf 1, beim Zurückwechseln die vorige Auflage wieder (Simon 10.11.2026)
     if (slug === "sample") { if (/^sample_/.test(String(val))) { if (+S.copies !== 1) S.copiesNoSample = S.copies; S.copies = 1; } else if (S.copiesNoSample) { S.copies = S.copiesNoSample; S.copiesNoSample = null; } }
-    if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) {
+    // nur Papier/Folie/Ecken/Rillung/Verpackung geändert → Datei bleibt gültig, kein neuer Abgleich (Simon 16.11.2026; gleiche Regel wie am Server: fileSelKey)
+    var b0 = JSON.parse(before), freeOnly = Object.keys(Object.assign({}, b0, S.sel)).every(function (k) { return String(b0[k]) === String(S.sel[k]) || (/^(material|finish|bundle|sealed|individually_sealed|pallet_delivery|plano_delivery|rounded_corners|creasing|loop_stitches|type_glue|slitting|sample)$/.test(k) && !(k === "material" && /transpa|clear|glas|acryl|plexi|mesh|blockout/i.test(String(b0[k]) + " " + String(S.sel[k])))); });
+    if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel) && !freeOnly) {
       if (S.file && S.file.kind === "upload" && S.file.fileId && !S.file.noFile && !(S.mot.n > 1)) fileRebind();   // Datei behalten und für die neue Ausführung neu prüfen (Simon 12.11.2026)
       else if (!(S.file && S.file.noFile)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } }
     if (isLogo() && kind() === "promo" && lk !== logoKey()) { S.logos = {}; S.file = null; }

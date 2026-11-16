@@ -489,6 +489,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/order", order({ expectedGross: 10 })); assert.strictEqual(r.status, 409); assert.strictEqual(r.j.price.gross, 38.4);
     assert.strictEqual((await post("/print/api/order", order({ customer: Object.assign({}, cust, { zip: "12" }) }))).status, 400);
     assert.strictEqual((await post("/print/api/order", order({ fileToken: "x" }))).status, 400);
+    { // Folie (finish) geändert → Datei bleibt gültig (nur geänderter Preis → 409 mit Preis, nicht „Druckdatei passt nicht“); Format geändert → Datei passt nicht
+      const sel2 = Object.assign({}, BC.sel, { finish: "gloss_laminate" }), rf = await post("/print/api/order", order({ sel: sel2, expectedGross: 1 }), { "x-forwarded-for": "203.0.113.91" });
+      assert.ok(!/passt nicht mehr/.test(rf.j.error || ""), "Folie ändert die Datei nicht: " + rf.j.error);
+      const rz = await post("/print/api/order", order({ sel: Object.assign({}, BC.sel, { size: "85x85" }) }), { "x-forwarded-for": "203.0.113.91" }); assert.ok(/passt nicht mehr/.test(rz.j.error || ""), "anderes Format → Datei passt nicht: " + rz.j.error); }
     const sb = await post("/print/api/order", order({ shipTo: { firstName: "Max", lastName: "Lieferung", street: "ohne Nummer", zip: "6793", city: "Gaschurn" } })); assert.strictEqual(sb.status, 400); assert.ok(/Lieferadresse/.test(sb.j.error), "abweichende Lieferadresse wird geprüft");
   });
   await t("Bestellung Mollie: Zahlung angelegt (Betrag vom Server), Weiterleitung; Datei nicht doppelt verwendbar", async () => {

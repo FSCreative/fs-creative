@@ -2567,6 +2567,10 @@ module.exports = function (D) {
     return { orders, groupId, account };
   }
   // Auswahl unabhängig von der Schlüssel-Reihenfolge vergleichen – Postgres (jsonb) sortiert die Schlüssel der gespeicherten Datei-Metadaten um
+  // Optionen, die die Druckdatei nicht betreffen (Papier, Folie, Ecken, Rillung, Verpackung …): ändern sie sich, bleibt die Datei gültig
+  // (Simon 16.11.2026: Angebot auf 400 g + Folie umgestellt → „Druckdatei passt nicht mehr“). Transparentes Material zählt weiter (Weiß/Durchsicht).
+  const FILE_FREE = /^(material|finish|bundle|sealed|individually_sealed|pallet_delivery|plano_delivery|rounded_corners|creasing|loop_stitches|type_glue|slitting|sample)$/, CLEAR_MAT = /transpa|clear|glas|acryl|plexi|mesh|blockout/i;
+  function fileSelKey(sel) { if (!sel || typeof sel !== "object" || Array.isArray(sel)) return sel; const o = {}; Object.keys(sel).forEach(k => { const v = sel[k]; if (FILE_FREE.test(k) && !(k === "material" && CLEAR_MAT.test(String(v)))) return; o[k] = v; }); return o; }
   function canon(v) { if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]"; if (v && typeof v === "object") return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}"; return JSON.stringify(v === undefined ? null : v); }
   // Datei schon einer Bestellung zugeordnet? Nach abgebrochener Zahlung darf die Kundin denselben Warenkorb erneut bestellen (Simon 13.11.2026, Pappaufsteller):
   // frei, wenn die alte Bestellung nicht bezahlt wurde (Zahlung fehlgeschlagen/abgebrochen, abgelehnt) oder die offene Zahlung älter als 30 Minuten ist
@@ -2589,7 +2593,7 @@ module.exports = function (D) {
       if (busy === "pending") throw fail(w + "Für diese Druckdatei ist gerade noch eine Zahlung offen – bitte die Zahlung abschließen oder in ein paar Minuten erneut bestellen", 409);
       if (busy) throw fail(w + "Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
       if (f.kind === "logo" || (f.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
-      if (f.product !== prod.key || canon(f.sel) !== canon(n.fileSel)) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
+      if (f.product !== prod.key || canon(fileSelKey(f.sel)) !== canon(fileSelKey(n.fileSel))) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
       if ((f.checks || []).some(c => c.level === "error")) throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren");
       return f;
     };
