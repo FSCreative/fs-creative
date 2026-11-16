@@ -121,7 +121,7 @@ function moveTargets(acc){ var out=[{path:"INBOX",name:"Posteingang"}]; customFo
 /* ---------- Daten übernehmen ---------- */
 // Vorschautext: CSS-Reste aus HTML-Mails entfernen (z. B. „body,table,td,a{-webkit-text-size-adjust:100%} …“)
 function cleanPrev(t){ t=String(t||"").replace(/@import\s+(url\()?[^;)\s]*\)?;?/gi," ").replace(/@(font-face|media|charset|keyframes)[^{]*/gi," "); if(!/\{[^}]*[a-z-]+:[^}]*(\}|$)/i.test(t)) return t.replace(/\s+/g," ").trim(); return t.replace(/[^{}]{0,400}\{[^{}]*\}/g," ").replace(/[^{}]{0,400}\{[^}]*$/," ").replace(/^[^{}]*?[a-z-]+:[^;{}]+;[^{}]*\}/i," ").replace(/[{}]/g," ").replace(/\s+/g," ").trim(); }
-function norm(m){ return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:cleanPrev(m.preview),body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:!!m.read,starred:!!m.starred,deleted:false,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!m.answered,forwarded:!!m.forwarded,answeredAt:m.answeredAt||null,account:m.account||""}; }
+function norm(m){ return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:cleanPrev(m.preview),body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:!!m.read,starred:!!m.starred,deleted:false,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!m.answered,forwarded:!!m.forwarded,answeredAt:m.answeredAt||null,account:m.account||"",invite:m.invite||null}; }
 function applyOv(m){
   var o=OV[m.id]; if(!o) return m;
   if(Date.now()-o.at>OV_TTL){ delete OV[m.id]; return m; }
@@ -652,6 +652,16 @@ function bounceHtml(m){ var a=((m&&m.attachments)||[]).filter(function(x){ retur
   if(!b){ BOUNCE[k]={loading:true}; fetch(M.attHref(m,a),{credentials:"same-origin"}).then(function(r){ return r.ok?r.text():""; }).then(function(t){ BOUNCE[k]=bounceTxt(t); var el=document.querySelector('[data-bounce="'+k+'"]'); if(el) el.outerHTML=bounceHtml(m); }).catch(function(){ BOUNCE[k]={rc:[],why:"",dg:""}; }); b=BOUNCE[k]; }
   if(b.loading) return '<div class="notice" data-bounce="'+esc(k)+'"><span>Nicht zugestellt – Empfänger wird ermittelt …</span></div>';
   return '<div class="notice bad" data-bounce="'+esc(k)+'" style="display:block"><b>Nicht zugestellt an: '+(b.rc.length?b.rc.map(function(x){ return '<button type="button" class="raddr" data-act="mmailto:'+esc(x)+'" title="Neue Mail an '+esc(x)+'">'+esc(x)+'</button>'; }).join(", "):"(Empfänger nicht im Bericht)")+'</b>'+(b.why?'<div class="small">Grund: '+esc(b.why)+'</div>':'')+(b.dg?'<div class="small muted" style="word-break:break-word">'+esc(b.dg.slice(0,300))+'</div>':'')+'</div>'; }
+/* Termin-Einladung (Outlook/Teams): Datum, Uhrzeit, Ort, Organisator – Simon 16.11.2026: Einladung von Montafon Tourismus war eine leere Mail */
+function inviteHtml(m){ var v=m&&m.invite; if(!v||!(v.start||v.summary)) return "";
+  var wd=["So","Mo","Di","Mi","Do","Fr","Sa"], dd=function(x){ var t=new Date(x.slice(0,10)+"T12:00:00"); return isNaN(t)?x:wd[t.getDay()]+", "+t.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"}); };
+  var when=v.start?dd(v.start)+(v.allDay?" (ganztägig)":" · "+v.start.slice(11,16)+(v.end?"–"+(v.end.slice(0,10)!==v.start.slice(0,10)?dd(v.end)+" ":"")+v.end.slice(11,16):"")+" Uhr"):"";
+  var cancel=v.method==="CANCEL"||/CANCELLED/i.test(v.status||""), ics=(m.attachments||[]).filter(function(a){ return /calendar/i.test(a.contentType||""); })[0];
+  return '<div class="notice'+(cancel?' bad':'')+'" style="display:block"><div style="font-size:12px;font-weight:600;opacity:.75;margin-bottom:2px">'+(cancel?"📅 Termin abgesagt":v.method==="REPLY"?"📅 Antwort auf eine Einladung":"📅 Terminanfrage")+'</div>'+
+    '<b style="font-size:15px">'+esc(v.summary||m.subject||"Termin")+'</b><div style="margin-top:2px">'+esc(when)+(v.location?' · '+esc(v.location):'')+'</div>'+
+    (v.organizer?'<div class="muted small">Organisiert von '+esc(v.organizer)+'</div>':'')+
+    '<div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">'+(!cancel&&M.eventFromMail?'<button type="button" class="btn sm primary" data-act="mx:termin">In Kalender übernehmen</button>':'')+
+    (v.online?'<a class="btn sm" href="'+esc(v.online)+'" target="_blank" rel="noopener">Online beitreten</a>':'')+(ics?'<a class="btn sm" href="'+esc(M.attHref(m,ics))+'" download>Einladung (.ics)</a>':'')+'</div></div>'; }
 function attachmentsHtml(m){
   var atts=(m&&m.attachments)||[]; if(!atts.length) return "";
   var chips=atts.map(function(a){
@@ -841,7 +851,7 @@ function readerHtml(){
       '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an '+esc(addr)+'">&lt;'+esc(addr)+'&gt;</button>':'')+'</div>'+(toLine?'<div class="rto">'+toLine+'</div>':'')+'</div>'+
       '<div class="rdate">'+esc(m.date?new Date(m.date).toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"")+'<span>'+esc(relTime(m.date))+'</span></div></div>'+
     (trashed||dbox?'':custRow(m))+
-    bounceHtml(m)+attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
+    inviteHtml(m)+bounceHtml(m)+attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
     (m.body||m.preview?'':'<div class="notice"><span>Kein Textinhalt im Abruf. Die vollständige Nachricht findest du im Webmail.</span><button type="button" class="btn" data-act="mwebmail">In Webmail öffnen</button></div>')+
     qr+
     (!trashed&&!dbox?'<div class="mrbar" role="toolbar" aria-label="Antworten"><button type="button" class="pri" data-act="mx:reply">'+ic("reply")+'<span>Antworten</span></button><button type="button" data-act="mx:replyall" aria-label="Allen antworten">'+ic("replyall")+'<span>Allen</span></button><button type="button" data-act="mx:forward">'+ic("forward")+'<span>Weiterleiten</span></button></div>':'')+

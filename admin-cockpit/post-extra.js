@@ -262,11 +262,12 @@ var SPARTEN=[["fsc","FS Creative"],["kochdu","kochdu"],["kantineur","Kantineur"]
 M.eventFromMail=function(m){
   if(!m) return;
   var d=m.date?new Date(m.date):new Date(); if(isNaN(d)) d=new Date();
+  var iv=m.invite&&m.invite.start?m.invite:null, ivD=iv?iv.start.slice(0,10):"", ivT=iv&&!iv.allDay?iv.start.slice(11,16):"", ivE=iv&&!iv.allDay&&iv.end?iv.end.slice(11,16):"";   /* Einladung aus der Mail (text/calendar) vorausfüllen */
   F.modal('<form data-form="mevent" class="stackf"><div class="row-between"><h2 style="font-size:19px">Als Termin anlegen</h2>'+F.btnClose()+'</div>'+
-    '<label class="fl">Titel<input class="f" name="title" required value="'+esc(m.subject||"(kein Betreff)")+'"></label>'+
-    '<div class="grid2"><label class="fl">Datum<input class="f" name="date" type="date" required value="'+F.ymd(d)+'"></label><label class="fl">Bereich<select class="f" name="sparte">'+SPARTEN.map(function(s){ return '<option value="'+s[0]+'">'+esc(s[1])+'</option>'; }).join("")+'</select></label>'+
-    '<label class="fl">Von (optional)<input class="f" name="time" type="time"></label><label class="fl">Bis (optional)<input class="f" name="endTime" type="time"></label></div>'+
-    '<label class="fl">Ort (optional)<input class="f" name="location"></label>'+
+    '<label class="fl">Titel<input class="f" name="title" required value="'+esc((iv&&iv.summary)||m.subject||"(kein Betreff)")+'"></label>'+
+    '<div class="grid2"><label class="fl">Datum<input class="f" name="date" type="date" required value="'+(ivD||F.ymd(d))+'"></label><label class="fl">Bereich<select class="f" name="sparte">'+SPARTEN.map(function(s){ return '<option value="'+s[0]+'">'+esc(s[1])+'</option>'; }).join("")+'</select></label>'+
+    '<label class="fl">Von (optional)<input class="f" name="time" type="time" value="'+esc(ivT)+'"></label><label class="fl">Bis (optional)<input class="f" name="endTime" type="time" value="'+esc(ivE)+'"></label></div>'+
+    '<label class="fl">Ort (optional)<input class="f" name="location" value="'+esc(iv?(iv.location||(iv.online?"Online (Teams)":"")):"")+'"></label>'+
     '<label class="fl">Notiz<textarea class="f" name="notes" rows="6">'+esc(mailNotes(m))+'</textarea></label>'+
     '<div class="err" id="mevErr"></div><div class="foot"><span class="muted">„Privat“ landet im iCloud-Kalender, alles andere im Dashboard-Kalender.</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Termin anlegen</button></span></div></form>',"narrow");
 };
