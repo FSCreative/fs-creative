@@ -731,7 +731,7 @@ module.exports = function (D) {
     "postcards": { size: ["a6", "a6_landscape"], material: ["350gr_silk_mc", "300gr_silk_mc", "350gr_gesatineerd_mc"], printtype: ["44", "40"] },
     "bookmarks": { material: ["350gr_silk_mc", "300gr_silk_mc"], printtype: ["44"] },
     "placemats": { size: ["a3_landscape", "a3"], printtype: ["40"] },
-    "tear-off-calendars": { size: ["a4", "a5"], pages: ["734"], printtype: ["10_black"], printtype_cover: ["40"] }   // Tageskalender: 365 Blätter (1/0 schwarz) + 4-seitiger Umschlag 4/0 (Simon 16.11.2026)
+    "tear-off-calendars": { size: ["a4", "a5"], pages: ["736"], printtype: ["10_black"], printtype_cover: ["40"] }   // Tageskalender 2027: 736 Seiten = Print.com-Vorlage, 1/0 schwarz, Umschlag 4/0 (Simon 16.11.2026)
   };
   const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, jede Datei wird automatisch geprüft.", group: g.main, expose: "auto", safe: 3, generic: true, prefer: GEN_PREF[it.sku] });
   // ── Print.com-CMS (Bilder, Namen, Beschreibungen, Produktbaum), täglich ──

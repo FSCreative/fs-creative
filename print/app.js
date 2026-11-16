@@ -520,8 +520,10 @@
   // kleines Vorschaubild (JPEG ~240 px) für den Warenkorb – große PDF-Vorschauen passen nicht in den Speicher des Warenkorbs
   function mkThumb(src, cb) { try { var im = new Image(); im.onload = function () { try { var w = 240, h = Math.max(1, Math.round(im.height * w / im.width)), c = document.createElement("canvas"); c.width = w; c.height = h; var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(im, 0, 0, w, h); cb(c.toDataURL("image/jpeg", 0.72)); } catch (e) {} }; im.src = src; } catch (e) {} }
   function motLoad(i) { motSave(); S.mot.i = i; var f = S.mot.files[i] || {}; S.file = f.file || null; S.previews = f.previews || null; S.design = f.design || null; S.mode = f.mode || ""; }
+  // ein Motiv je Auflage: kurze Zeile in der Auflage-Kachel statt loser Absatz darunter (Simon 16.11.2026)
+  function motNote() { return !motOk() && S.prod && kind() === "flat" && !isLogo() && motMax() === 1 ? '<span class="ps-stph">Ein Motiv je Auflage – für weitere Motive je Motiv eine eigene Position in den Warenkorb legen.</span>' : ""; }
   function motHtml() {
-    if (!motOk()) return S.prod && kind() === "flat" && !isLogo() && motMax() === 1 ? '<p class="ps-help ps-mot1">Bei diesem Produkt ist ein Motiv je Auflage möglich. Für weitere Motive legst du einfach je Motiv eine eigene Position in den Warenkorb.</p>' : "";
+    if (!motOk()) return "";   // Hinweis „ein Motiv je Auflage“ steht klein in der Auflage-Kachel (motNote)
     var mxm = motMax(); if (S.mot.n > mxm) { S.mot.n = mxm; S.mot.files = S.mot.files.slice(0, mxm); if (S.mot.i >= mxm) S.mot.i = 0; motBalance(); }
     var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
     var segs = [1, 2, 3, 4, 5].filter(function (k) { return k <= mxm; }).map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (mxm <= 5 ? "" : n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="' + mxm + '" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
@@ -846,7 +848,7 @@
   }
   // Seitenzahl verständlich machen (Simon 16.11.2026, Abreißkalender): wie viele Blätter das sind, mit/ohne 4-seitigem Umschlag
   function sheetsTxt(pr, v) { var n = parseFloat(v), t = String(pr.title || ""); if (!(n > 0)) return ""; var cov = /4-seitig/i.test(t), inner = cov ? n - 4 : n, b = Math.round(inner / 2); if (b < 1) return "";
-    var cal = /abrei|tear-off/i.test(String(S.prod.key) + " " + String(S.prod.title)); return cal ? b + " bedruckte Abreißblätter" + (cov ? " + Umschlag" : "") : b + " Blätter" + (cov ? " Innenteil + Umschlag" : ""); }
+    var cal = /abrei|tear-off/i.test(String(S.prod.key) + " " + String(S.prod.title)); return cal ? "2 Seiten entsprechen einem Blatt im Kalender" : b + " Blätter" + (cov ? " Innenteil + Umschlag" : ""); }
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
     var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), plain: plainOf(pr, o), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", more: !!o.more, group: gname(o) };
@@ -1730,7 +1732,8 @@
     var i = Math.max(0, opts.indexOf(cur)), pv = opts[i - 1], nx = opts[i + 1], v = cur ? cur.slug : opts[0].slug, sh = sheetsTxt(pr, v);
     var b = function (o, t, lab) { return '<button type="button" class="ps-stp"' + (o ? ' data-ddpick="prop:pages|' + esc(o.slug) + '"' : " disabled") + ' aria-label="' + lab + '">' + t + "</button>"; };
     return '<div class="ps-tile"><span class="ps-tl">' + esc(rowTitle(pr)) + '</span><div class="ps-stepper">' + b(pv, "−", "Weniger Seiten") + '<label class="ps-stpv"><input type="number" inputmode="numeric" data-pgin="1" min="' + esc(opts[0].slug) + '" max="' + esc(opts[opts.length - 1].slug) + '" step="' + Math.max(1, parseFloat(opts[1].slug) - parseFloat(opts[0].slug)) + '" value="' + esc(String(parseFloat(v))) + '" aria-label="Seitenzahl"> Seiten</label>' + b(nx, "+", "Mehr Seiten") + "</div>" +
-      '<span class="ps-stph">' + esc((sh ? sh + " · " : "") + "möglich: " + parseFloat(opts[0].slug) + "–" + parseFloat(opts[opts.length - 1].slug) + " Seiten") + "</span></div>";
+      '<span class="ps-stph">' + esc((sh ? sh + " · " : "") + "möglich: " + parseFloat(opts[0].slug) + "–" + parseFloat(opts[opts.length - 1].slug) + " Seiten") +
+      (PC_TPL[S.prod.key] || []).filter(function (x) { return x.pages === String(v); }).map(function (x) { return '<br><b>Entspricht der Vorlage: <a href="' + esc(x.u) + '" target="_blank" rel="noopener" download>' + esc(x.short || x.t) + "</a></b>"; }).join("") + "</span></div>";
   }
   function tileHtml(pr) {
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
@@ -1789,7 +1792,7 @@
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + " " + U() + '"></label>'; }
     var ur = urTile(p);
-    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">' + (U(p) === "m" ? "Länge" : "Auflage") + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + meterHint(p) + "</div>" + motHtml() + ur   // Motive direkt unter der Auflage, Lieferung/Kalender immer zuletzt (Simon 04.11.2026);
+    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">' + (U(p) === "m" ? "Länge" : "Auflage") + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + meterHint(p) + motNote() + "</div>" + motHtml() + ur   // Motive direkt unter der Auflage, Lieferung/Kalender immer zuletzt (Simon 04.11.2026);
   }
   // Produktion: Schnell/Express nur zeigen, wenn sie wirklich früher liefern als eine günstigere Stufe (Termine kommen über /print/api/deltas)
   var UR_ORD = ["standard", "quick", "urgent"];
@@ -2104,7 +2107,7 @@
   }
   function pcTpl(p, cls) { return (PC_TPL[p.key] || []).map(function (x) { return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(x.u) + '" target="_blank" rel="noopener" download><span class="ic" aria-hidden="true">' + x.ic + "</span><span><b>" + esc(x.t) + "</b><small>" + esc(x.s) + '</small></span><span class="dl" aria-hidden="true">↓</span></a>'; }).join(""); }
   // fertige Vorlagen von Print.com je Produkt (Simon 16.11.2026: Abreißkalender 2027)
-  var PC_TPL = { "tear-off-calendars": [{ ic: "📅", t: "Kalendervorlage 2027 herunterladen (ZIP)", s: "Fertige Tagesblätter 1. Jänner – 31. Dezember 2027 mit Jahresübersicht, als PDF und InDesign-Datei (IDML) zum Bearbeiten – Logo oder Motiv einfach ergänzen. Monatsnamen auf Englisch, in InDesign änderbar.", u: "https://assets.ctfassets.net/ez9mp376cw6o/5JpsCQnDcvkiDfxyXce6yi/6086ec0b0b6bef5192a4c329a413e252/Tear-off-calendar-days-2027.zip" }] };
+  var PC_TPL = { "tear-off-calendars": [{ ic: "📅", pages: "736", short: "Kalendervorlage 2027 herunterladen", t: "Kalendervorlage 2027 herunterladen (ZIP)", s: "Fertige Tagesblätter 1. Jänner – 31. Dezember 2027 mit Jahresübersicht, als PDF und InDesign-Datei (IDML) zum Bearbeiten – Logo oder Motiv einfach ergänzen. Monatsnamen auf Englisch, in InDesign änderbar.", u: "https://assets.ctfassets.net/ez9mp376cw6o/5JpsCQnDcvkiDfxyXce6yi/6086ec0b0b6bef5192a4c329a413e252/Tear-off-calendar-days-2027.zip" }] };
   // Druckdaten-Anforderungen für genau diese Ausführung: Skizze (Beschnitt, Endformat, Sicherheitsabstand, Falz) + Checkliste + Profi-Details
   function mmF(v) { return String(Math.round(v * 10) / 10).replace(".", ","); }
   // Technische Sonderfarben (Palette /print/sonderfarben.ase): Name → [Anzeigefarbe nur zur Unterscheidung, Bedeutung]
