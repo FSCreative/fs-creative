@@ -2083,7 +2083,7 @@
     if (!w || !w.length) return tplBtn(cls);
     var mb = function (b) { return b >= 1048576 ? String(Math.round(b / 104857.6) / 10).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; };
     return '<div class="ps-wf' + (cls ? " " + cls : "") + '"><p class="ps-wf-h"><span aria-hidden="true">📐</span> <b>Offizielle Druckvorlage' + (w.length > 1 ? "n" : "") + '</b> <small>vom Hersteller, passend zu deiner Auswahl</small></p>' +
-      w.map(function (f) { return '<a class="ps-wf-f" href="' + esc(f.url) + '" download><span class="t">' + esc(f.type) + "</span><span>" + esc(f.name) + "</span><small>" + mb(f.size) + '</small><span class="dl" aria-hidden="true">↓</span></a>'; }).join("") + "</div>";
+      w.map(function (f) { return '<a class="ps-wf-f" href="' + esc(f.url) + '" download><span class="t">' + esc(f.type) + "</span><span>" + esc(f.name) + "</span><small>" + mb(f.size) + '</small><span class="dl" aria-hidden="true">↓</span></a>'; }).join("") + "</div>" + pcTpl(p, cls);
   }
   // Passendes Zubehör laut Hersteller (z. B. Pappaufsteller → Kartonstütze, Fußplatten) – nur Produkte aus unserem Sortiment, mit Link zur fertigen Auswahl
   function accHtml(p) {
@@ -2099,8 +2099,12 @@
   function tplBtn(cls) {
     var p = S.prod; if (!p || p.kind === "textile" || p.kind === "promo" || (!sizeOf() && !(S.sel.fold && FOLD_RX.test(S.sel.fold)))) return "";
     var f = S.price && S.price.folds;
-    return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(tplUrl()) + '" download><span class="ic" aria-hidden="true">📐</span><span><b>Druckvorlage herunterladen (PDF)</b><small>Für InDesign, Illustrator, Affinity, Canva &amp; Co. – mit Beschnitt, Sicherheitsabstand' + (f ? " und Falzlinien" : "") + ", passend zu deiner Auswahl.</small></span><span class=\"dl\" aria-hidden=\"true\">↓</span></a>";
+    return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(tplUrl()) + '" download><span class="ic" aria-hidden="true">📐</span><span><b>Druckvorlage herunterladen (PDF)</b><small>Für InDesign, Illustrator, Affinity, Canva &amp; Co. – mit Beschnitt, Sicherheitsabstand' + (f ? " und Falzlinien" : "") + ", passend zu deiner Auswahl.</small></span><span class=\"dl\" aria-hidden=\"true\">↓</span></a>" +
+      pcTpl(p, cls);
   }
+  function pcTpl(p, cls) { return (PC_TPL[p.key] || []).map(function (x) { return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(x.u) + '" target="_blank" rel="noopener" download><span class="ic" aria-hidden="true">' + x.ic + "</span><span><b>" + esc(x.t) + "</b><small>" + esc(x.s) + '</small></span><span class="dl" aria-hidden="true">↓</span></a>'; }).join(""); }
+  // fertige Vorlagen von Print.com je Produkt (Simon 16.11.2026: Abreißkalender 2027)
+  var PC_TPL = { "tear-off-calendars": [{ ic: "📅", t: "Kalendervorlage 2027 herunterladen (ZIP)", s: "Fertige Tagesblätter 1. Jänner – 31. Dezember 2027 mit Jahresübersicht, als PDF und InDesign-Datei (IDML) zum Bearbeiten – Logo oder Motiv einfach ergänzen. Monatsnamen auf Englisch, in InDesign änderbar.", u: "https://assets.ctfassets.net/ez9mp376cw6o/5JpsCQnDcvkiDfxyXce6yi/6086ec0b0b6bef5192a4c329a413e252/Tear-off-calendar-days-2027.zip" }] };
   // Druckdaten-Anforderungen für genau diese Ausführung: Skizze (Beschnitt, Endformat, Sicherheitsabstand, Falz) + Checkliste + Profi-Details
   function mmF(v) { return String(Math.round(v * 10) / 10).replace(".", ","); }
   // Technische Sonderfarben (Palette /print/sonderfarben.ase): Name → [Anzeigefarbe nur zur Unterscheidung, Bedeutung]
