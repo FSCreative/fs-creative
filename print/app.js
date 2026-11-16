@@ -1139,7 +1139,7 @@
   var chatNudgeT = setInterval(function () {
     if (Date.now() < chatNudgeAt || document.hidden) return;
     var cb = document.querySelector(".fscc-b"); if (!cb) return;   // Chat-Knopf noch nicht geladen → weiter warten
-    if (document.querySelector(".fscc-panel.open, .ps-pop")) { chatNudgeAt = Date.now() + 15000; return; }   // Chat oder Fenster offen → kurz später
+    if (document.querySelector(".fscc-panel.open, .ps-pop") || /(^|\s)(pd-open|tx-open|ps-studio-open)(\s|$)/.test(document.body.className)) { chatNudgeAt = Date.now() + 15000; return; }   // Chat, Fenster oder Designer offen → später (verdeckte im Designer am Handy die Vorlagen)
     clearInterval(chatNudgeT); try { if (sessionStorage.getItem("psChatNudge")) return; sessionStorage.setItem("psChatNudge", "1"); } catch (x) {}
     var n = document.createElement("button"); n.type = "button"; n.className = "ps-chatnudge";
     n.innerHTML = (S.prod && S.step === 2 ? "Unsicher bei Papier oder Format?" : S.prod ? "Fragen zu deiner Bestellung?" : "Suchst du etwas Bestimmtes?") + " <b>Frag mich einfach</b> 💬<span aria-hidden=\"true\">×</span>";

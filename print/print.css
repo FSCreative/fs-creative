@@ -2480,3 +2480,5 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 @media (max-width:600px){.ps-tbl{font-size:13.5px}.ps-tbl th,.ps-tbl td{padding:8px 6px}.ps-tbl th:first-child,.ps-tbl td:first-child{width:30%}}
 @media (max-width:760px){.ps-v2hero .ps-xteaser .tx{padding-bottom:60px}}
 .ps-v2q input{align-self:stretch;height:100%}
+/* Designer offen: Chat-Hinweis nie über der Arbeitsfläche (16.11.2026) */
+body.pd-open .ps-chatnudge{display:none}
