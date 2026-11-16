@@ -844,10 +844,14 @@
       if (/uv.?lack|spot/i.test(n)) return "glänzender Lack-Effekt"; }
     return "";
   }
+  // Seitenzahl verständlich machen (Simon 16.11.2026, Abreißkalender): wie viele Blätter das sind, mit/ohne 4-seitigem Umschlag
+  function sheetsTxt(pr, v) { var n = parseFloat(v), t = String(pr.title || ""); if (!(n > 0)) return ""; var cov = /4-seitig/i.test(t), inner = cov ? n - 4 : n, b = Math.round(inner / 2); if (b < 1) return "";
+    var cal = /abrei|tear-off/i.test(String(S.prod.key) + " " + String(S.prod.title)); return cal ? b + " bedruckte Abreißblätter" + (cov ? " + Umschlag" : "") : b + " Blätter" + (cov ? " Innenteil + Umschlag" : ""); }
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
     var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), plain: plainOf(pr, o), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", more: !!o.more, group: gname(o) };
       if (pr.slug === "size" && o.w && o.h && !/\d\s*[x×]\s*\d/.test(o.name)) it.sub = fmtSize(o.w, o.h);
+      if (pr.slug === "pages") { var sh = sheetsTxt(pr, o.slug); if (sh) it.sub = sh; }
       if (pr.slug === "size" && o.slug === S.sel.size && S.price && S.price.folds && S.price.size) it.sub = (it.sub ? it.sub + " · " : "") + "offen " + fmtSize(S.price.size.w, S.price.size.h);
       if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + C0.minW / f0 + " × " + C0.minH / f0 + " bis " + C0.maxW / f0 + " × " + C0.maxH / f0 + " " + C0.unit; if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
@@ -1720,10 +1724,18 @@
   var SECT_FORMAT = ["size", "shape", "custom_shape", "orientation", "roll_up_banners"], SECT_MAT = ["material", "color_material", "printtype", "print_position", "type_glue", "color", "color_textile"];
   var NONE_RX = /^(ohne|keine?|nein|nicht|offen geliefert|none|no)\b/i;
   // Zeilen-Bezeichnung: „(Breite x Höhe)“ weglassen; bei Foldern ist das Format das gefalzte Format
-  function rowTitle(pr) { var t = String(pr.title || "").replace(/\s*\((Breite|B) ?x ?(Höhe|H)\)\s*$/i, ""); if (pr.slug === "size" && S.sel.fold && FOLD_RX.test(S.sel.fold)) t = "Format gefalzt"; if (t.length > 30 && /:/.test(t)) t = t.replace(/\s*:.*$/, ""); return t; }
+  function rowTitle(pr) { var t = String(pr.title || "").replace(/\s*\((Breite|B) ?x ?(Höhe|H)\)\s*$/i, ""); if (pr.slug === "size" && S.sel.fold && FOLD_RX.test(S.sel.fold)) t = "Format gefalzt"; if (t.length > 30 && /:/.test(t)) t = t.replace(/\s*:.*$/, ""); if (pr.slug === "pages") t = t.replace(/\s*[,(]\s*(2 Seiten = 1 Blatt|1 Blatt = 2 Seiten)\)?/i, ""); return t; }
+  // Seitenzahl mit Plus/Minus statt langer Liste (Simon 16.11.2026, Abreißkalender bis 1004 Seiten) – Eingabe springt auf die nächste mögliche Seitenzahl
+  function pagesStepper(pr, opts, cur) {
+    var i = Math.max(0, opts.indexOf(cur)), pv = opts[i - 1], nx = opts[i + 1], v = cur ? cur.slug : opts[0].slug, sh = sheetsTxt(pr, v);
+    var b = function (o, t, lab) { return '<button type="button" class="ps-stp"' + (o ? ' data-ddpick="prop:pages|' + esc(o.slug) + '"' : " disabled") + ' aria-label="' + lab + '">' + t + "</button>"; };
+    return '<div class="ps-tile"><span class="ps-tl">' + esc(rowTitle(pr)) + '</span><div class="ps-stepper">' + b(pv, "−", "Weniger Seiten") + '<label class="ps-stpv"><input type="number" inputmode="numeric" data-pgin="1" min="' + esc(opts[0].slug) + '" max="' + esc(opts[opts.length - 1].slug) + '" step="' + Math.max(1, parseFloat(opts[1].slug) - parseFloat(opts[0].slug)) + '" value="' + esc(String(parseFloat(v))) + '" aria-label="Seitenzahl"> Seiten</label>' + b(nx, "+", "Mehr Seiten") + "</div>" +
+      '<span class="ps-td">' + esc((sh ? sh + " · " : "") + "möglich: " + parseFloat(opts[0].slug) + "–" + parseFloat(opts[opts.length - 1].slug) + " Seiten") + "</span></div>";
+  }
   function tileHtml(pr) {
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
+    if (pr.slug === "pages" && opts.length > 12 && opts.every(function (o) { return parseFloat(o.slug) > 0; })) return pagesStepper(pr, opts, cur);
     var best = cur && isBest(pr, cur.slug), its = propItems(pr), nseg = its.length >= 3 && its.length <= 4;
     var ttl = rowTitle(pr);
     return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(ttl) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, ttl, its, S.sel[pr.slug]) +
@@ -1748,7 +1760,9 @@
     var pmChg = pmIn && S.pm && S.pm !== "auto" ? 1 : 0, mt = minor.map(function (pr) { return rowTitle(pr); }).concat(pmIn && pmM ? ["Druckverfahren"] : []);
     var more = pmIn || minor.length ? '<details class="ps-more"' + (changed || pmChg || S.moreOpen || S.dd === "pm" || (S.dd && minor.some(function (pr) { return S.dd === "prop:" + pr.slug; })) ? " open" : "") + '><summary><span class="ps-more-t">Weitere Optionen</span>' + (changed + pmChg ? ' <b class="ps-cnt">' + (changed + pmChg) + " geändert</b>" : "") + '<small class="ps-more-h">Brauchst du meistens nicht – ist schon sinnvoll eingestellt.' + (mt.length ? " (" + esc(mt.slice(0, 4).join(", ") + (mt.length > 4 ? " u. a." : "")) + ")" : "") + '</small></summary><div class="ps-grid2">' + tiles(minor) + (pmIn ? pmT : "") + "</div></details>" : "";
     var custom = p.kind === "banner" && p.custom && !fmt.some(function (pr) { return pr.slug === "size"; }) ? customHtml() : "";   // sonst steht die freie Eingabe direkt in der Format-Zeile
-    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + (pmIn ? "" : pmT)) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
+    // festes Format (z. B. Abreißkalender A5): trotzdem als Zeile zeigen, nicht nur in den Technischen Daten (Simon 16.11.2026)
+    var fixF = !fmt.some(function (pr) { return pr.slug === "size"; }) && !custom && !(p.kind === "banner" && p.custom) && prodSize(p) ? '<div class="ps-tile"><span class="ps-tl">Format</span><div class="ps-dd ps-ddfix" role="note"><span class="v">' + esc(prodSize(p).replace(/\s+-\s+/, " · ")) + ' <small>fest vorgegeben</small></span></div></div>' : "";
+    return sec("Format", fixF + tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + (pmIn ? "" : pmT)) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
   }
   // Druckverfahren (Digital/Offset/…): Preise je Verfahren vom Server, günstigstes zuerst; „automatisch“ nimmt immer das günstigste
   function pmTile() {
@@ -2983,6 +2997,8 @@
     if (k === "ldz") return ldzPick(v);
   });
   root.addEventListener("change", function (e) {
+    if (e.target.hasAttribute && e.target.hasAttribute("data-pgin")) { var ppr = S.prod.props.filter(function (x) { return x.slug === "pages"; })[0]; if (!ppr) return; var want = parseFloat(e.target.value) || 0, po = optsOf(ppr), bestO = po[0];
+      po.forEach(function (o) { if (Math.abs(parseFloat(o.slug) - want) < Math.abs(parseFloat(bestO.slug) - want)) bestO = o; }); setProp("pages", bestO.slug); return; }
     if (e.target.id === "psAdjS") { adjApply({ scale: +e.target.value / 100 }); return; }
     if (e.target.hasAttribute && e.target.hasAttribute("data-sort")) { S.sort = e.target.value; var gs = document.getElementById("psGrid"); if (gs) { gs.innerHTML = gridHtml(); fromObserve(); } else render(); return; }
     var t = e.target;

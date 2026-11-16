@@ -627,7 +627,7 @@ module.exports = function (D) {
       const want = autoExp ? anyOpt : expose.indexOf(p.slug) > -1 || (anyOpt && (OPT_EXTRA.test(p.slug) || showAnyway));   // kuratiert: Zusatzoptionen (Stanzung, Bündelung …) trotzdem zeigen   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
       // parentOptions sind bei Print.com Gruppenüberschriften der Optionen (z. B. „A-Formate“, „Quadrat“, Papierfamilien) – keine Bedingung
       const grp = Array.isArray(p.parentOptions) ? p.parentOptions.filter(x => x && typeof x === "object" && x.slug != null).map(x => ({ slug: String(x.slug), name: String(x.name || x.slug) })).slice(0, 50) : [];
-      if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, 160).map(o => optOut(p.slug, o))) }, grp.length > 1 ? { groups: grp } : {}));
+      if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, p.slug === "pages" ? 1200 : 160).map(o => optOut(p.slug, o))) }, grp.length > 1 ? { groups: grp } : {}));
       else if (fo[p.slug] !== undefined && opts.some(o => String(o.slug) === String(fo[p.slug]))) fixed[p.slug] = String(fo[p.slug]);
       else if (p.required) {   // Pflicht-Eigenschaft ohne Auswahl im Shop: passende Option wird je Auswahl so gewählt, dass keine Ausschlussregel greift
         const o = opts.filter(x => !x.nullable).concat(opts.filter(x => x.nullable)).map(x => String(x.slug));
@@ -731,7 +731,7 @@ module.exports = function (D) {
     "postcards": { size: ["a6", "a6_landscape"], material: ["350gr_silk_mc", "300gr_silk_mc", "350gr_gesatineerd_mc"], printtype: ["44", "40"] },
     "bookmarks": { material: ["350gr_silk_mc", "300gr_silk_mc"], printtype: ["44"] },
     "placemats": { size: ["a3_landscape", "a3"], printtype: ["40"] },
-    "tear-off-calendars": { size: ["a4", "a5"] }
+    "tear-off-calendars": { size: ["a4", "a5"], pages: ["734"], printtype: ["10_black"], printtype_cover: ["40"] }   // Tageskalender: 365 Blätter (1/0 schwarz) + 4-seitiger Umschlag 4/0 (Simon 16.11.2026)
   };
   const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, jede Datei wird automatisch geprüft.", group: g.main, expose: "auto", safe: 3, generic: true, prefer: GEN_PREF[it.sku] });
   // ── Print.com-CMS (Bilder, Namen, Beschreibungen, Produktbaum), täglich ──
