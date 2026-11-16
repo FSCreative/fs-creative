@@ -41,7 +41,7 @@ F.css('.pr-list{display:grid}.pr-row{display:grid;grid-template-columns:minmax(0
   '@media(max-width:700px){.pr-so{grid-template-columns:40px minmax(0,1fr)}.pr-so .a{grid-column:1/-1;justify-content:flex-start}}.pr-grp{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-top:8px}'+
   '.pr-livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#30d158;vertical-align:middle;margin-right:4px;animation:prpulse 1.6s infinite}@keyframes prpulse{0%{box-shadow:0 0 0 0 rgba(48,209,88,.55)}70%{box-shadow:0 0 0 8px rgba(48,209,88,0)}100%{box-shadow:0 0 0 0 rgba(48,209,88,0)}}'+
   '.pr-live{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;font-weight:600;font-size:13px}.pr-live.off{background:var(--warn-soft);color:var(--warn)}.pr-live.on{background:var(--ok-soft);color:var(--ok)}');
-function load(force){ if(busy) return; busy=true; F.api("/admin/api/print/state").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",orders:[]}; F.render(); }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",orders:[]}; F.render(); }); }
+function load(force){ if(busy) return; busy=true; F.api("/admin/api/print/state").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",orders:[]}; F.render(); try{ prdWarm(); }catch(e){} }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",orders:[]}; F.render(); }); }
 function list(){ var o=(ST&&ST.orders)||[]; if(FILTER==="review") return o.filter(function(x){ return x.review; }); if(FILTER==="unpaid") return o.filter(function(x){ return x.status==="pending_payment"||x.status==="payment_failed"; }); if(FILTER==="active") return o.filter(function(x){ return (["ordered","in_production","problem"].indexOf(x.status)>-1||x.redo==="open"); }); if(FILTER==="done") return o.filter(function(x){ return ["shipped","delivered","rejected"].indexOf(x.status)>-1; }); return o; }
 /* Fortschrittsleiste: Bestellt → Print.com → In Produktion → Versendet → Zugestellt (Status kommt per Webhook/Abfrage von Print.com) */
 var STEPS=[["order","Bestellt"],["printcom","Bei Print.com"],["production","In Produktion"],["shipped","Versendet"],["delivered","Zugestellt"]];
@@ -343,13 +343,35 @@ var _prClose=F.closeDrawer; F.closeDrawer=function(){ _prClose.apply(this,argume
 var _prOpen=F.openDrawer; F.openDrawer=function(){ var d=document.getElementById("drawer"); if(d) d.classList.remove("prx"); return _prOpen.apply(this,arguments); };
 var PRD_JS=null;
 function prdPdf(){ if(window.pdfjsLib&&window.pdfjsLib.getDocument) return Promise.resolve(window.pdfjsLib); if(PRD_JS) return PRD_JS; PRD_JS=new Promise(function(res,rej){ var sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload=function(){ window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror=function(){ PRD_JS=null; rej(new Error("pdf.js")); }; document.head.appendChild(sc); }); return PRD_JS; }
-/* Vorschau-Zwischenspeicher (Simon 16.11.2026: große PDFs brauchten bei jedem Öffnen ewig): fertig gerenderte Seiten bleiben als JPEG im Browser (je Datei-ID + Größe – ändert sich bei jedem Austausch),
-   beim nächsten Öffnen ist die Vorschau sofort da. Platzierungs-Vorschauen (pv) werden nicht gemerkt, die ändern sich beim Verschieben. */
-var PRD_MEM={};
-function prdPvGet(key){ if(PRD_MEM[key]) return Promise.resolve(PRD_MEM[key]); if(!window.caches) return Promise.resolve(null);
-  return Promise.race([new Promise(function(r){ setTimeout(function(){ r(null); },1200); }),caches.open("pr-pv-1").then(function(c){ return c.match("/__prpv/"+key); }).then(function(r){ return r?r.json():null; }).then(function(j){ if(j) PRD_MEM[key]=j; return j; }).catch(function(){ return null; })]); }
-function prdPvPut(key,val){ PRD_MEM[key]=val; if(!window.caches) return;
-  caches.open("pr-pv-1").then(function(c){ return c.put("/__prpv/"+key,new Response(JSON.stringify(val),{headers:{"Content-Type":"application/json"}})).then(function(){ return c.keys(); }).then(function(ks){ ks.slice(0,Math.max(0,ks.length-120)).forEach(function(k){ c.delete(k); }); }); }).catch(function(){}); }
+/* Vorschau-Speicher (Simon 16.11.2026: große PDFs brauchten bei jedem Öffnen über eine Minute – nicht der Download, das Aufbereiten im Browser):
+   fertig gerenderte Seiten werden als JPEG gemerkt – im Browser UND am Server (/admin/api/print/thumb), damit sie auf jedem Gerät sofort da sind.
+   Für Aufträge „zur Prüfung“ bereitet das Cockpit sie im Hintergrund vor (prdWarm). Schlüssel = Datei-ID + Größe/Seiten, ändert sich bei jedem Austausch.
+   Platzierungs-Vorschauen (pv) werden nicht gemerkt, die ändern sich beim Verschieben und sind ohnehin leicht. */
+var PRD_MEM={}, PRD_JOB={}, PRD_WARM={};
+function prdThUrl(oid,fid){ return "/admin/api/print/thumb?id="+encodeURIComponent(oid)+"&fid="+encodeURIComponent(fid); }
+function prdPvGet(oid,fid,k){ var key=fid+"-"+k; if(PRD_MEM[key]) return Promise.resolve(PRD_MEM[key]);
+  var ok=function(j){ return j&&j.pages&&j.pages.length&&String(j.k||k)===String(k)?j:null; };
+  var loc=!window.caches?Promise.resolve(null):Promise.race([new Promise(function(r){ setTimeout(function(){ r(null); },1200); }),caches.open("pr-pv-1").then(function(c){ return c.match("/__prpv/"+key); }).then(function(r){ return r?r.json():null; }).catch(function(){ return null; })]);
+  return loc.then(function(j){ if(ok(j)) return j; return fetch(prdThUrl(oid,fid),{credentials:"same-origin",cache:"no-store"}).then(function(r){ return r.ok?r.json():null; }).then(function(s){ s=ok(s); if(s) prdPvKeep(key,s); return s; }).catch(function(){ return null; }); }).then(function(j){ if(j) PRD_MEM[key]=j; return j; }); }
+function prdPvKeep(key,val){ PRD_MEM[key]=val; if(!window.caches) return;
+  caches.open("pr-pv-1").then(function(c){ return c.put("/__prpv/"+key,new Response(JSON.stringify(val),{headers:{"Content-Type":"application/json"}})).then(function(){ return c.keys(); }).then(function(ks){ ks.slice(0,Math.max(0,ks.length-120)).forEach(function(q){ c.delete(q); }); }); }).catch(function(){}); }
+/* PDF einmal rendern (höchstens 2 Seiten) → { np, k, pages:[{u: JPEG-Data-URL, wmm}] } */
+function prdMake(url,cssW,k){ return prdPdf().then(function(L){ return L.getDocument({url:url,withCredentials:true}).promise; }).then(function(doc){ var n=Math.min(doc.numPages,2), np=doc.numPages, out=[];
+  var one=function(i){ if(i>n){ try{ doc.destroy(); }catch(e){} return {np:np,k:k,pages:out}; }
+    return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(2,Math.max(0.2,cssW/v0.width*Math.min(2,window.devicePixelRatio||1))), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+      return pg.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise.then(function(){ out.push({u:cv.toDataURL("image/jpeg",0.85),wmm:Math.round(v0.width/72*25.4*100)/100}); cv.width=cv.height=0; return one(i+1); }); }); };
+  return one(1); }); }
+/* gemerkte Vorschau holen oder einmal erstellen und merken (läuft je Datei nur einmal gleichzeitig) */
+function prdThumb(oid,fid,k,cssW){ var key=fid+"-"+k; if(PRD_JOB[key]) return PRD_JOB[key];
+  var p=PRD_JOB[key]=prdPvGet(oid,fid,k).then(function(c){ if(c) return c;
+    return prdMake(fileUrlOf(oid,fid,false),cssW||520,k).then(function(v){ prdPvKeep(key,v); fetch(prdThUrl(oid,fid),{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(v)}).catch(function(){}); return v; }); });
+  var done=function(){ delete PRD_JOB[key]; }; p.then(done,done); return p; }
+/* Aufträge „zur Prüfung“: Vorschauen im Hintergrund vorbereiten, eine Datei nach der anderen */
+function prdWarm(){ var cn=navigator.connection||{}; if(window.innerWidth<900||cn.saveData||/2g|3g/.test(cn.effectiveType||"")) return;   /* nicht am Handy/über Mobilfunk: die Druckdateien sind groß */
+  var L=((ST&&ST.orders)||[]).filter(function(o){ return o.review&&!PRD_WARM[o.id]; }).slice(0,4); if(!L.length) return; L.forEach(function(o){ PRD_WARM[o.id]=1; });
+  var run=function(){ var o=L.shift(); if(!o) return; F.api("/admin/api/print/order?id="+encodeURIComponent(o.id)).then(function(j){ if(!j||!j.ok) return; var ds=(j.docs||[]).filter(function(d){ return d.fileId&&!d.pv; });
+      var nx=function(){ var d=ds.shift(); if(!d) return; return prdThumb(o.id,d.fileId,(d.bytes||0)+"-"+(d.pages||0)).then(nx,nx); }; return nx(); }).then(run,run); };
+  setTimeout(run,1500); }
 /* eine fertig gerenderte Seite einsetzen: Bild, Unterschrift, „Seite ersetzen“, Rand-Ebene */
 function prdPage(el,i,n,np,cv,wmm,g){ var wrap=document.createElement("div"); wrap.className="prd-p"; wrap.appendChild(cv); var cap=document.createElement("small"); cap.textContent=n>1?(i===1?"Vorderseite":"Rückseite"):"Seite 1"; wrap.appendChild(cap); el.appendChild(wrap);
   var ed=el.getAttribute("data-edit"); if(ed){ var lb=document.createElement("label"); lb.className="prd-pact"; lb.innerHTML='⇄ Seite '+i+' ersetzen<input type="file" accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png" hidden data-prpage="'+ed+'|'+i+'">'; wrap.appendChild(lb);
@@ -358,20 +380,14 @@ function prdPage(el,i,n,np,cv,wmm,g){ var wrap=document.createElement("div"); wr
   var ov=document.createElement("canvas"); ov.width=W; ov.height=H; ov.className="prd-ov"; prdEdges(ov.getContext("2d"),W,H,bp,sp,g.shp,{fill:"rgba(255,59,48,.28)",red:"#ff3b30",green:"#30d158",lw:Math.max(1.5,W/400),dash:[6,4]});
   wrap.insertBefore(ov,cap); ov.hidden=!PRD_EDGE; if(!b&&g.tw) cap.textContent+=" · ohne Beschnitt"; }
 function prdPaint(){ var els=[].slice.call(document.querySelectorAll(".prd-pg:not([data-done])")); if(!els.length) return;
-  els.forEach(function(el){ el.setAttribute("data-done","1"); var pv=el.getAttribute("data-pv")==="1", fid=el.getAttribute("data-fid"), url=fileUrlOf(el.getAttribute("data-oid"),fid,pv), key=pv?"":fid+"-"+(el.getAttribute("data-k")||"");
+  els.forEach(function(el){ el.setAttribute("data-done","1"); var pv=el.getAttribute("data-pv")==="1", oid=el.getAttribute("data-oid"), fid=el.getAttribute("data-fid"), k=el.getAttribute("data-k")||"0", cssW=el.clientWidth>40?Math.min(el.clientWidth,520):320;
     var g={tw:+el.getAttribute("data-w"),th:+el.getAttribute("data-h"),bl:+el.getAttribute("data-b")||0,sf:el.getAttribute("data-s")!=null?+el.getAttribute("data-s"):PRD_SAFE,shp:el.getAttribute("data-shape")||""};
-    var fail=function(){ el.innerHTML='<span class="muted small">Vorschau nicht möglich – „PDF öffnen“ nutzen.</span>'; };
-    var miss=function(){ el.innerHTML='<span class="prd-wait"><i></i>Vorschau wird erstellt …<small>bei großen Dateien dauert das beim ersten Mal etwas, danach ist sie sofort da</small></span>';
-      prdPdf().then(function(L){ return L.getDocument({url:url,withCredentials:true}).promise; }).then(function(doc){ var n=Math.min(doc.numPages,2), np=doc.numPages, out=[], first=true;
-        var one=function(i){ if(i>n){ if(key&&out.length===n) prdPvPut(key,{np:np,pages:out}); try{ doc.destroy(); }catch(e){} return; }
-          return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(2,Math.max(0.2,(el.clientWidth>40?Math.min(el.clientWidth,520):320)/v0.width*(window.devicePixelRatio||1))), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
-            return pg.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise.then(function(){ if(first){ el.innerHTML=""; first=false; } var wmm=v0.width/72*25.4; prdPage(el,i,n,np,cv,wmm,g);
-              try{ out.push({u:cv.toDataURL("image/jpeg",0.85),wmm:wmm}); }catch(e){} return one(i+1); }); }); };
-        return one(1); }).catch(fail); };
-    if(!key){ miss(); return; }
-    prdPvGet(key).then(function(c){ if(!c||!c.pages||!c.pages.length){ miss(); return; } var n=c.pages.length;
-      var one=function(i){ if(i>n) return; var p=c.pages[i-1], im=new Image(); im.onload=function(){ var cv=document.createElement("canvas"); cv.width=im.naturalWidth; cv.height=im.naturalHeight; cv.getContext("2d").drawImage(im,0,0); if(i===1) el.innerHTML=""; prdPage(el,i,n,c.np||n,cv,p.wmm,g); one(i+1); }; im.onerror=function(){ delete PRD_MEM[key]; miss(); }; im.src=p.u; };
-      one(1); }); }); }
+    var fail=function(){ if(el.isConnected) el.innerHTML='<span class="muted small">Vorschau nicht möglich – „PDF öffnen“ nutzen.</span>'; };
+    var show=function(c){ if(!el.isConnected) return; var n=c.pages.length;
+      var one=function(i){ if(i>n) return; var p=c.pages[i-1], im=new Image(); im.onload=function(){ var cv=document.createElement("canvas"); cv.width=im.naturalWidth; cv.height=im.naturalHeight; cv.getContext("2d").drawImage(im,0,0); if(i===1) el.innerHTML=""; prdPage(el,i,n,c.np||n,cv,p.wmm,g); one(i+1); }; im.onerror=fail; im.src=p.u; };
+      one(1); };
+    el.innerHTML='<span class="prd-wait"><i></i>Vorschau wird erstellt …<small>bei großen Dateien dauert das beim ersten Mal, danach ist sie sofort da</small></span>';
+    (pv?prdMake(fileUrlOf(oid,fid,true),cssW,k):prdThumb(oid,fid,k,cssW)).then(show,fail); }); }
 F.listen("change","#prdEdge",function(el){ PRD_EDGE=el.checked; document.querySelectorAll(".prd-ov").forEach(function(c){ c.hidden=!PRD_EDGE; }); });
 document.addEventListener("change",function(e){ var t=e.target; if(!t||!t.getAttribute||!t.getAttribute("data-prpage")) return; var p=t.getAttribute("data-prpage").split("|"), f=t.files&&t.files[0]; t.value=""; if(!f) return;
   F.toast("Lade Seite "+p[2]+" hoch …"); fetch("/admin/api/print/page?id="+encodeURIComponent(p[0])+(p[1]!==""?"&motif="+encodeURIComponent(p[1]):"")+"&page="+encodeURIComponent(p[2]),{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(f.name)},body:f}).then(function(r){ return r.json(); }).then(function(j){

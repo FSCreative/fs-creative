@@ -543,6 +543,13 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const s = await admin("/admin/api/print/state"); assert.strictEqual(s.ok, true); assert.strictEqual(s.review, 1); assert.strictEqual(s.settings.autoSend, false, "Standard: AUS");
     const x = s.orders.find(o => o.id === o1.orderId); assert.strictEqual(x.margin, 6.06, "Marge nach Zahlungsgebühr (1,8 % + 0,25 €): 32 − 25 − 0,94"); assert.strictEqual(x.purchase, 25);
     const d = await admin("/admin/api/print/order?id=" + o1.orderId); assert.strictEqual(d.order.consent.agbVersion, cat.agbVersion); assert.strictEqual(d.order.consent.proofConfirmed, true);
+    { // Vorschau-Speicher fürs Cockpit: nur gültige JPEG-Seiten, nur Dateien dieser Bestellung
+      const jpg = "data:image/jpeg;base64," + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 1)]).toString("base64"), q = "/admin/api/print/thumb?id=" + o1.orderId + "&fid=" + d.order.fileId;
+      assert.strictEqual((await admin(q)).ok, false);
+      assert.strictEqual((await admin(q, { np: 1, k: "1-1", pages: [{ u: "data:image/png;base64,AAAA", wmm: 100 }] })).ok, false);
+      assert.strictEqual((await admin(q, { np: 1, k: "1-1", pages: [{ u: jpg, wmm: 91 }] })).ok, true);
+      const th = await admin(q); assert.strictEqual(th.k, "1-1"); assert.strictEqual(th.pages[0].wmm, 91);
+      assert.strictEqual((await admin("/admin/api/print/thumb?id=" + o1.orderId + "&fid=fremdeDatei123")).ok, false); }
     assert.strictEqual((await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { redirect: "manual" })).status, 302);
     const f = await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE } }); assert.strictEqual(f.headers.get("content-type"), "application/pdf");
   });

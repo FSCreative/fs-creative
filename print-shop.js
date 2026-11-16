@@ -5871,6 +5871,20 @@ module.exports = function (D) {
       if (p === "/admin/api/print/new" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, (await store.getMeta("print_new_skus").catch(() => null)) || { items: [] }));
       if (p === "/admin/api/print/new" && req.method === "POST") { const b = await readJson(req, 20000); const l = (Array.isArray(b.skus) ? b.skus : []).map(String).filter(x => SKU_RX.test(x)).slice(0, 60);
         if (!l.length) return J(res, 400, { ok: false, error: "keine SKUs" }); return J(res, 200, { ok: true, items: await newProductsCheck(l, { quiet: true }) }); }
+      // Vorschau-Speicher fürs Cockpit (Simon 16.11.2026): große PDFs brauchen im Browser über eine Minute zum Aufbereiten – das Cockpit rendert einmal und legt die Seiten als JPEG hier ab.
+      // Nur aus dem Cockpit (nie vom Kunden): die Vorschau ist Grundlage der Druckdaten-Prüfung. { np, k, pages: [{ u: "data:image/jpeg;base64,…", wmm }] } – k = Größe/Seiten der Datei (veraltete Vorschau erkennen)
+      if (p === "/admin/api/print/thumb" && (req.method === "GET" || req.method === "POST")) {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const fid = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid), o.cover ? [o.cover.fileId] : []).filter(Boolean);
+        if (!fid || allowed.indexOf(fid) < 0) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        if (req.method === "GET") { const buf = await store.fileData(fid + "th").catch(() => null); if (!buf) return J(res, 404, { ok: false, error: "keine Vorschau" }); return D.send(res, 200, buf, "application/json; charset=utf-8", { "Cache-Control": "private, no-store" }); }
+        const b = await readJson(req, 3e6), pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 2).map(x => ({ u: String(x && x.u || ""), wmm: Math.round((+(x && x.wmm) || 0) * 100) / 100 }));
+        const okPage = x => { const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(x.u); if (!m || !(x.wmm > 0 && x.wmm < 1e5)) return false; const buf = Buffer.from(m[1], "base64"); return buf.length > 100 && buf.length < 1.4e6 && sniff(buf) === "jpg"; };
+        if (!pages.length || !pages.every(okPage)) return J(res, 400, { ok: false, error: "Vorschau ungültig" });
+        const out = Buffer.from(JSON.stringify({ ok: true, np: Math.max(1, Math.min(5000, Math.round(+b.np) || pages.length)), k: String(b.k || "").slice(0, 40), pages }), "utf8");
+        await store.putFile({ id: fid + "th", kind: "proxy", of: fid, createdAt: nowIso(), orderId: o.id, bytes: out.length }, out);
+        return J(res, 200, { ok: true });
+      }
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
