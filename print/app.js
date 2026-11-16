@@ -799,8 +799,8 @@
     var rows = p.props.map(function (pr) { var o = pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; if (!o || NONE_RX.test(String(o.name).trim())) return ""; var d = txt(o.desc) || glossOf(pr, o), im = imgOk(o.img) ? o.img : "";
       return '<div class="ps-si">' + (im ? '<img src="' + esc(im) + '" alt="" loading="lazy">' : '<span class="ps-si-ic" aria-hidden="true">✓</span>') + '<div><span class="ps-si-k">' + esc(pr.title) + "</span><b>" + esc(/color/.test(pr.slug) ? colName(o.name) : o.name) + "</b>" + (d ? "<p>" + esc(d.length > 220 ? d.slice(0, 217) + " …" : d) + "</p>" : "") +
         (d.length > 220 || im ? '<button type="button" class="ps-link" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(o.slug) + '">Mehr Infos</button>' : "") + "</div></div>"; }).filter(Boolean);
-    var rq = reqHtml(false);   // Druckdaten-Anforderungen auch schon bei der Ausführung (Simon 16.11.2026)
-    return rows.length ? '<details class="ps-selinfo"><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div>" + wfHtml("soft") + rq + "</details>" : rq;
+    var rq = reqHtml(false);   // Druckdaten-Anforderungen auch schon bei der Ausführung, als eigenes Aufklappfeld (Simon 16.11.2026)
+    return (rows.length ? '<details class="ps-selinfo"><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div>" + wfHtml("soft") + "</details>" : "") + rq;   // eigenes Aufklappfeld darunter, nicht darin (Simon 16.11.2026)
   }
   // Eigene Infotexte, wenn Print.com keine Beschreibung liefert (Papiere, Grammaturen, Veredelungen, Großformat-Materialien)
   var GLOSS = [

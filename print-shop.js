@@ -342,6 +342,11 @@ module.exports = function (D) {
       /* große Dateien (bis 500 MB) in 64-MB-Stücken lesen: am Stück käme der Wert als Hex-Text mit doppelter Größe – über 1 GB schafft weder Postgres noch Node */
       const parts = [], P = 64 * 1048576; for (let off = 0; off < +n; off += P) { const r = await c.query("select substring(data from $2 for $3) as d from print_file where id=$1", [id, off + 1, P]); if (!r.rows[0] || !r.rows[0].d) return null; parts.push(r.rows[0].d); }
       return Buffer.concat(parts); } try { return fs.readFileSync(path.join(FDIR(), "files", id + ".pdf")); } catch (e) { return null; } },
+    // Ausschnitt einer Datei (Studio-Teilabruf): nur die gewünschten Bytes aus der Datenbank lesen, nie die ganze Datei
+    async fileSize(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select octet_length(data) as n from print_file where id=$1", [id]); return r.rows[0] && r.rows[0].n != null ? +r.rows[0].n : null; }
+      try { return fs.statSync(path.join(FDIR(), "files", id + ".pdf")).size; } catch (e) { return null; } },
+    async fileRange(id, a, n) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select substring(data from $2 for $3) as d from print_file where id=$1", [id, a + 1, n]); return r.rows[0] ? r.rows[0].d : null; }
+      let fd; try { fd = fs.openSync(path.join(FDIR(), "files", id + ".pdf"), "r"); const b = Buffer.alloc(n); const k = fs.readSync(fd, b, 0, n, a); return b.subarray(0, k); } catch (e) { return null; } finally { if (fd != null) try { fs.closeSync(fd); } catch (e) {} } },
     async listFiles() { if (useDb()) { const r = await (await db()).query("select meta from print_file"); return r.rows.map(x => x.meta); } const d = path.join(FDIR(), "files"); return fs.readdirSync(d).filter(f => /\.json$/.test(f)).map(f => rdJson(path.join(d, f))).filter(Boolean); },
     async delFile(id) { if (!okId(id)) return; if (useDb()) { await (await db()).query("delete from print_file where id=$1", [id]); return; } ["pdf", "json"].forEach(x => { try { fs.unlinkSync(path.join(FDIR(), "files", id + "." + x)); } catch (e) {} }); },
     // nur Bestellungen mit Rechnung, nur die nötigen Felder (für invoiceIndex – schont die Datenbank)
@@ -5909,6 +5914,12 @@ module.exports = function (D) {
         if (fidQ && allowed.indexOf(fidQ) < 0) return D.send(res, 404, "Datei nicht gefunden");
         const fm = await store.fileMeta(fidQ || o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
         if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }
+        // Teilabruf der Druckdatei (Studio/pdf.js): nur den Ausschnitt lesen – große Dateien (bis 500 MB) nicht jedes Mal ganz laden
+        const rg0 = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || "").trim());
+        if (rg0 && (rg0[1] || rg0[2]) && !wantSrc && u.searchParams.get("dl") !== "1") { const id0 = fidQ || o.fileId, c0 = FBUF.get(id0), len = c0 ? c0.buf.length : await store.fileSize(id0);
+          if (len != null) { const a = rg0[1] ? +rg0[1] : Math.max(0, len - +rg0[2]), z = rg0[1] && rg0[2] ? Math.min(len - 1, +rg0[2], a + 16 * 1048576 - 1) : Math.min(len - 1, a + 16 * 1048576 - 1);
+            if (a >= len || a > z) return D.send(res, 416, "", "application/pdf", { "Content-Range": "bytes */" + len });
+            const part = c0 ? c0.buf.subarray(a, z + 1) : await store.fileRange(id0, a, z - a + 1); if (part) return D.send(res, 206, part, "application/pdf", { "Accept-Ranges": "bytes", "Content-Range": "bytes " + a + "-" + (a + part.length - 1) + "/" + len, "Content-Length": String(part.length), "Cache-Control": "private, no-store" }); } }
         const sm = sid ? await store.fileMeta(sid).catch(() => null) : null, pxb = sid && u.searchParams.get("px") === "1" ? await store.fileData(pxId(sid)).catch(() => null) : null;   // px=1: leichte JPEG-Vorschau des Originals fürs Studio
         if (pxb) return D.send(res, 200, pxb, "image/jpeg", { "Cache-Control": "private, max-age=3600" });
         const buf = await fileBufCached(sid || fidQ || o.fileId);
