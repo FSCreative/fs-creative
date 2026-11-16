@@ -323,7 +323,7 @@ module.exports = function (D) {
   const okId = id => /^[A-Za-z0-9_-]{6,60}$/.test(String(id || ""));
   // Aufträge im Cockpit (server.js): jede gespeicherte Bestellung meldet ihren Stand – daraus wird die Aufgabe im Auftrag „Druckshop“
   function taskInfo(o) { const c = o.customer || {}, p = o.price || {};
-    return { id: o.id, nr: o.nr, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
+    return { id: o.id, nr: o.nr, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
       gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
       invoiceId: (o.invoice && o.invoice.id && !o.invoice.deleted && String(o.invoice.id)) || "", invoiceNr: (o.invoice && !o.invoice.deleted && o.invoice.nr) || "", email: c.email || "" }; }
   function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
@@ -3019,6 +3019,8 @@ module.exports = function (D) {
           await store.putOrder(o);
         }
       }
+      // Datei-Kontrolle: nach 22 und 50 Minuten nachsehen, ob Print.com die Druckdatei übernommen hat (stündlicher tick als Rückfall)
+      if (!process.env.PRINT_NO_TIMERS) for (const ms of [22 * 60e3, 50 * 60e3]) { const t = setTimeout(() => { for (const x of list) store.getOrder(x.id).then(o => o && !(o.printcom && o.printcom.noFile) && pollOrder(o)).catch(e => log("Datei-Kontrolle", x.nr, e.message)); }, ms); if (t.unref) t.unref(); }
       return list.find(x => x.id === o0.id) || o0;
     } finally { list.forEach(x => LOCK.delete(x.id)); }
   }
@@ -3231,6 +3233,33 @@ module.exports = function (D) {
   // Status/Tracking bei Print.com abrufen (alle 2 h für offene Sendungen, auf Klick / Webhook von Print.com)
   const PC_DONE = { SHIPPED: "shipped", INTRANSIT: "shipped", DELIVERED: "delivered" };
   const PC_PROBLEM = /CANCELED|REFUSED|REJECTED|ERROR|RETURN/;
+  // Druckdatei bei Print.com nicht angekommen (D-261115-FXZA, 16.11.2026: 248-MB-PDF abgerufen, aber nicht übernommen – Print.com-Mail „Bitte vergiss nicht deine Druckdaten hochzuladen“).
+  // Erkennbar daran, dass die Position nach der Bestellung auf ORDERRECEIVED stehen bleibt; mit Datei wechselt sie binnen Minuten auf DESIGNCONFIRMED/PREPAREDFORPRINT …
+  const PC_WAITFILE = /^(ORDERRECEIVED|WAITINGFORFILES?|WAITINGFORDESIGN|FILEMISSING|NOFILE|UPLOADFILES?)$/;
+  const NOFILE_AFTER = 20 * 60e3;
+  function noFileCheck(o, st, r) {
+    const pc = o.printcom, placed = Date.parse(pc.at || "") || 0; if (o.noFile || !st || !placed) return;
+    if (PC_WAITFILE.test(st)) {
+      if (pc.noFile || Date.now() - placed < NOFILE_AFTER) return;
+      const url = "https://app.print.com/orders/" + encodeURIComponent(pc.orderNumber), due = (Array.isArray(r && r.items) && r.items[0] && r.items[0].submissionDate) || "";
+      pc.noFile = { at: nowIso(), status: st, url, due: due || null };
+      hist(o, "Achtung: Print.com hat die Druckdatei nicht übernommen (Status " + st + " seit " + Math.round((Date.now() - placed) / 60e3) + " Min.) – bitte bei Print.com hochladen und bestätigen: " + url + (due ? " · Abgabe bis " + new Date(due).toLocaleString("de-AT", { timeZone: "Europe/Vienna", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""));
+      if (D.push) D.push("lead", { title: "Druckdatei fehlt bei Print.com: " + o.nr, body: (o.product && o.product.title || "") + " – Print.com hat die Datei nicht übernommen. Bitte dort hochladen und bestätigen.", url: "/admin#print", tag: "pcnofile-" + o.id }).catch(() => {});
+    } else if (pc.noFile) { delete pc.noFile; hist(o, "Druckdatei bei Print.com jetzt vorhanden (Status " + st + ")"); }
+  }
+  // kurz nach dem Bestellen nachsehen, ob Print.com die Datei übernommen hat (nicht erst beim 2-h-Abruf)
+  let lastNoFile = 0;
+  async function noFileDue() {
+    if (Date.now() - lastNoFile < 4 * 60e3) return; lastNoFile = Date.now();
+    const all = await store.listOrders();
+    for (const o of all) {
+      const pc = o.printcom, placed = pc && pc.orderNumber && Date.parse(pc.at || "");
+      if (!placed || o.noFile || pc.noFile || Date.now() - placed < NOFILE_AFTER || Date.now() - placed > 3 * 864e5) continue;
+      if (pc.status && !PC_WAITFILE.test(pc.status)) continue;
+      if (pc.checkedAt && Date.now() - Date.parse(pc.checkedAt) < 15 * 60e3 && Date.parse(pc.checkedAt) - placed > NOFILE_AFTER) continue;
+      try { await pollOrder(o); } catch (e) { log("Datei-Kontrolle", o.nr, e.message); }
+    }
+  }
   async function pollOrder(o) {
     if (!o.printcom || !o.printcom.orderNumber) return o;
     const raw = await pcApi("GET", "/orders/" + encodeURIComponent(o.printcom.orderNumber));
@@ -3245,6 +3274,7 @@ module.exports = function (D) {
     (Array.isArray(r.shipments) ? r.shipments : []).forEach(s => (s.tracks || []).forEach(t => { if (t) addT(t.trackUrl || t.url, t.reference || t.trackingNumber || t.trackAndTraceCode || t.code || t.number || s.shipmentNumber, t.carrier || s.carrier || s.carrierName); }));
     items.forEach(it => { if (it) addT(it.trackingUrl || it.trackUrl, it.trackingNumber || it.trackAndTraceCode, it.carrier); });
     const before = o.status;
+    noFileCheck(o, st, r);
     o.printcom.status = st; o.printcom.checkedAt = nowIso(); if (tracks.length) { o.printcom.tracks = tracks.slice(0, 5); o.printcom.trackInfo = info.slice(0, 5); }
     if (PC_DONE[st]) o.status = PC_DONE[st];
     else if (PC_PROBLEM.test(st)) o.status = "problem";
@@ -4546,7 +4576,8 @@ module.exports = function (D) {
     autoCancelDue().catch(e => log("Auto-Storno:", e.message));
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
-    if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle ~2 h als Rückfall (plus Webhook)
+    if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));
+    if (cfg().pcKey) noFileDue().catch(e => log("Datei-Kontrolle:", e.message));   // Druckdatei bei Print.com angekommen? (20 Min. nach dem Bestellen)   // Status/Tracking alle ~2 h als Rückfall (plus Webhook)
     if (Date.now() - lastFb > 55 * 60e3) { lastFb = Date.now(); feedbackMails().catch(e => log("Bewertungsmails:", e.message)); }   // stündlich: Bewertungsbitte 2–3 Tage nach der Zustellung
     try {
       if (Date.now() - lastDaily < 20 * 3600e3) return;
@@ -5607,7 +5638,7 @@ module.exports = function (D) {
 
   // ───────────────────────── HTTP: Cockpit (/admin/api/print/…) ─────────────────────────
   function orderSummary(o) {
-    return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
+    return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
