@@ -168,6 +168,8 @@
   function offerLoad(code) {
     api("/print/api/brief/offer?e=" + encodeURIComponent(code)).then(function (j) {
       if (!j.ok) { toast(j.error || "Dieses Angebot ist nicht mehr gültig", true); return; }
+      // Ausführung immer aus dem gespeicherten Angebot – auch alte Links zeigen nach einer Änderung im Cockpit den neuen Stand (Simon 16.11.2026)
+      if (j.code && S.prod && S.prod.key === j.product && cfgApply(j.code)) loadPrice();
       S.file = j.file; S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.offer = { fileId: j.file.fileId, fee: j.fee, note: j.note || "" };
       S.step = 3; render(); pollPreflight(); toast("Deine fertige Gestaltung ist geladen ✓");
     }).catch(function () { toast("Angebot konnte nicht geladen werden", true); });
