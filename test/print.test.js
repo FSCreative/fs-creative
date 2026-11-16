@@ -1592,6 +1592,34 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/€ 46,9 netto/.test(statusHead(o("ordered", { business: true }), F, NOW).sub), "Firmen: netto");
     assert.ok(/500 Stk\./.test(h.sub) && /ps-nw/.test(h.sub), "Menge + Einheit ohne Umbruch");
   });
+  await t("Sonderfarben-Prüfung: Weiß/Kontur nötig, falsch benannt → umbenannt, fehlend → Fehler, unpassend → Hinweis", async () => {
+    const PST = require(path.join(ROOT, "print-shop.js"))({ DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "fsc-spot-")) })._test, FI = require(path.join(ROOT, "print-fileinfo.js"));
+    const { PDFDocument, PDFName, PDFNumber } = require(path.join(ROOT, "node_modules", "pdf-lib"));
+    const mk = async (spots, op) => { const d = await PDFDocument.create(), pg = d.addPage([200, 200]), ctx = d.context, cs = {}, gs = {};
+      spots.forEach((n, i) => { const fn = ctx.obj({ FunctionType: 2, Domain: [0, 1], C0: [0, 0, 0, 0], C1: [0, 1, 0, 0], N: 1 }); cs["CS" + i] = ctx.register(ctx.obj([PDFName.of("Separation"), PDFName.of(n), PDFName.of("DeviceCMYK"), ctx.register(fn)])); });
+      if (op) gs.GS0 = ctx.register(ctx.obj({ Type: "ExtGState", OP: true, op: true, OPM: 1 }));
+      pg.node.set(PDFName.of("Resources"), ctx.obj({ ColorSpace: ctx.obj(cs), ExtGState: ctx.obj(gs) }));
+      return Buffer.from(await d.save({ useObjectStreams: true })); };
+    const prod = { props: [{ slug: "printtype", options: [{ slug: "40", name: "Einseitig farbig (4/0)" }, { slug: "50", name: "Einseitig farbig + Weiß (5/0)" }] },
+      { slug: "custom_shape", options: [{ slug: "clean_cut", name: "Zuschnitt" }, { slug: "custom_shape_die_cut", name: "Konturschnitt" }] }] };
+    assert.deepStrictEqual(PST.spotNeedsOf(prod, { printtype: "50", custom_shape: "custom_shape_die_cut" }).map(x => x[0] + (x[2] ? "!" : "")), ["White", "Thrucut!"], "Weiß über den Namen erkannt, Kontur kritisch");
+    assert.deepStrictEqual(PST.spotNeedsOf(prod, { printtype: "40", custom_shape: "clean_cut" }), []);
+    assert.ok(!PST.spotNeedsOf(Object.assign({}, prod, { props: prod.props.concat([{ slug: "shape", options: [{ slug: "circle_sticker", name: "Rund" }] }]) }), { custom_shape: "custom_shape_die_cut", shape: "circle_sticker" })[0][2], "Standardform → nicht kritisch");
+    // richtig angelegt
+    let r = await PST.spotCheck(await mk(["White", "Thrucut"], true), prod, { printtype: "50", custom_shape: "custom_shape_die_cut" });
+    assert.ok(r.checks.every(c => c.level === "ok") && r.checks.length === 2 && !r.buf, JSON.stringify(r.checks));
+    // falsch benannt (CutContour, Weiss) → automatisch umbenannt, neue PDF enthält die richtigen Namen
+    r = await PST.spotCheck(await mk(["Weiss", "CutContour"], true), prod, { printtype: "50", custom_shape: "custom_shape_die_cut" });
+    assert.ok(r.buf && r.checks.filter(c => /automatisch umbenannt/.test(c.text)).length === 2, JSON.stringify(r.checks));
+    assert.deepStrictEqual((await FI.spotScan(r.buf)).spots.sort(), ["Thrucut", "White"]);
+    // fehlt → Kontur = Fehler (blockiert), Weiß = Hinweis; nicht überdruckend → Hinweis
+    r = await PST.spotCheck(await mk(["PANTONE 286 C"], false), prod, { printtype: "50", custom_shape: "custom_shape_die_cut" });
+    assert.ok(r.checks.some(c => c.level === "error" && /Schnittkontur fehlt/.test(c.text) && /PANTONE 286 C/.test(c.text)), JSON.stringify(r.checks));
+    assert.ok(r.checks.some(c => c.level === "warn" && /Weißdruck fehlt/.test(c.text)) && r.checks.some(c => /Überdrucken/.test(c.text)) && r.checks.every(c => c.spot));
+    // Schnittlinie in der Datei, aber kein Konturschnitt gewählt → Hinweis
+    r = await PST.spotCheck(await mk(["Thrucut"], true), prod, { printtype: "40", custom_shape: "clean_cut" });
+    assert.ok(r.checks.length === 1 && r.checks[0].level === "warn" && /„Thrucut“/.test(r.checks[0].text), JSON.stringify(r.checks));
+  });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }
   console.log((fail ? "FEHLER: " : "OK: ") + pass + " bestanden, " + fail + " fehlgeschlagen");

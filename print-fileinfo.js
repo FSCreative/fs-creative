@@ -211,4 +211,44 @@ function recommend(info, ctx) {
   return R;
 }
 
-module.exports = { fileInfo, recommend, _t: { jpgInfo, pngInfo, iccInfo } };
+/* Sonderfarben einer PDF (Simon 16.11.2026: Weißdruck, Schnitt- und Rilllinien beim Upload prüfen): Namen aller Separation/DeviceN-Farben,
+   ob überdruckend (OP) angelegt, und – auf Wunsch – falsch benannte Sonderfarben umbenennen (z. B. „CutContour“ → „Thrucut“). */
+function pdfNameText(n) {
+  const raw = n.asString().slice(1);
+  try { return Buffer.from(raw.replace(/#([0-9A-Fa-f]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))), "latin1").toString("utf8"); } catch (e) { return raw; }
+}
+async function spotScan(buf, doc) {
+  const { PDFDocument, PDFName, PDFDict, PDFArray } = require("pdf-lib");
+  const d = doc || await PDFDocument.load(buf, { updateMetadata: false, ignoreEncryption: true });
+  const ctx = d.context, N = PDFName.of, names = new Map(), slots = [], seen = new Set();
+  let op = false;
+  const note = (s, slot) => { if (!names.has(s)) names.set(s, 0); names.set(s, names.get(s) + 1); slots.push(Object.assign({ s }, slot)); };
+  const visitCS = a => {
+    a = ctx.lookup(a) || a; if (!(a instanceof PDFArray) || a.size() < 2 || seen.has(a)) return; seen.add(a);
+    const t = a.get(0); if (!(t instanceof PDFName)) return; const tt = t.asString();
+    if (tt === "/Separation") { const n = a.get(1); if (n instanceof PDFName) { const s = pdfNameText(n); if (!/^(All|None)$/.test(s)) note(s, { arr: a, i: 1 }); } }
+    else if (tt === "/DeviceN") {
+      const l = ctx.lookup(a.get(1)); if (l instanceof PDFArray) for (let i = 0; i < l.size(); i++) { const n = l.get(i); if (n instanceof PDFName) { const s = pdfNameText(n); if (!/^(Cyan|Magenta|Yellow|Black|None|All)$/.test(s)) note(s, { arr: l, i }); } }
+      const at = a.size() > 4 ? ctx.lookup(a.get(4)) : null, co = at instanceof PDFDict ? ctx.lookup(at.get(N("Colorants"))) : null;
+      if (co instanceof PDFDict) for (const [k, v] of co.entries()) { const s = pdfNameText(k); slots.push({ s, dict: co, key: k }); visitCS(v); }
+    }
+    else if (tt === "/Indexed" || tt === "/Pattern") visitCS(a.get(1));
+  };
+  const visitDict = dict => {
+    for (const [k, v] of dict.entries()) {
+      const key = k.asString(), val = ctx.lookup(v) || v;
+      if (key === "/ColorSpace" || key === "/CS") { if (val instanceof PDFArray) visitCS(val); else if (val instanceof PDFDict) for (const [, x] of val.entries()) visitCS(x); }
+      else if ((key === "/OP" || key === "/op") && String(val) === "true") op = true;
+      else if (key === "/Resources" && val instanceof PDFDict) visitDict(val);
+      else if ((key === "/ExtGState" || key === "/XObject" || key === "/Shading" || key === "/Pattern") && val instanceof PDFDict) for (const [, x] of val.entries()) { const g = ctx.lookup(x) || x; if (g instanceof PDFDict) visitDict(g); else if (g && g.dict instanceof PDFDict) visitDict(g.dict); }
+    }
+  };
+  for (const [, obj] of ctx.enumerateIndirectObjects()) {
+    try { if (obj instanceof PDFArray) visitCS(obj); const dict = obj instanceof PDFDict ? obj : obj && obj.dict instanceof PDFDict ? obj.dict : null; if (dict) visitDict(dict); } catch (e) {}
+  }
+  const rename = (from, to) => { let n = 0; slots.forEach(x => { if (x.s !== from) return;
+    if (x.arr) { x.arr.set(x.i, N(to)); n++; } else if (x.dict) { const v = x.dict.get(x.key); x.dict.delete(x.key); x.dict.set(N(to), v); n++; } x.s = to; }); return n; };
+  return { doc: d, spots: Array.from(names.keys()), overprint: op, rename };
+}
+
+module.exports = { fileInfo, recommend, spotScan, _t: { jpgInfo, pngInfo, iccInfo } };

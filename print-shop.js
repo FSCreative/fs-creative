@@ -1506,6 +1506,54 @@ module.exports = function (D) {
     else if (info.pages) out.push({ level: "ok", text: info.pages + " Seite(n) – passt zur gewählten Druckart." });
     return out;
   }
+  /* Sonderfarben-Prüfung beim Upload (Simon 16.11.2026): Weißdruck, Konturschnitt, Rillung, Perforation, Bohrung, Veredelung – welche Sonderfarbe braucht
+     die gewählte Ausführung (gleiche Regeln wie „Druckdaten-Anforderungen“ im Shop), ist sie in der PDF, richtig benannt und überdruckend? */
+  const SPOT_NOOPT = /^(none|no|nee|geen|ohne|without|clean_cut.*|no_.*|__none|false|nein)$/;
+  function optName(prod, k, v) { const pr = (prod.props || []).find(x => x.slug === k), o = pr && pr.options.find(x => String(x.slug) === String(v)); return String((o && o.name) || ""); }
+  function spotNeedsOf(prod, sel) {
+    const v = Object.assign({}, prod.fixed || {}, sel || {}), out = [], add = (n, t, crit) => { if (!out.some(x => x[0] === n)) out.push([n, t, !!crit]); };
+    const shapeStd = Object.keys(v).some(k => /^shape$/.test(k) && /rect|circle|round|oval|square/.test(String(v[k]).toLowerCase()) && !/custom/.test(String(v[k]).toLowerCase()));
+    Object.keys(v).forEach(k => { const x = String(v[k] == null ? "" : v[k]).toLowerCase(); if (!x || SPOT_NOOPT.test(x)) return;
+      if (/^printtype/.test(k) && (/white/.test(x) || /wei(ß|ss)|white/i.test(optName(prod, k, v[k])))) add("White", "Weißdruck");
+      if (/^number_of_contour_lines$/.test(k)) return;
+      if (/kiss_?cut|application_foil/.test(x)) add("Kisscut", "Kiss-Cut-Kontur", !shapeStd);
+      else if (/die_?cut|thru_?cut/.test(x) || (/^custom_shape/.test(k) && /shape|complex|simple|contour/.test(x))) add("Thrucut", "Schnittkontur", !shapeStd);
+      if (k === "die_cut" && !/kiss/.test(x)) add("Thrucut", "Stanzkontur", true);
+      if (/^(variable_creasing_line|creasing_lines?)$/.test(k)) add("Creasing", "Rilllinie");
+      if (/^perforation/.test(k)) add("Perforation", "Perforationslinie");
+      if (/drill/.test(k) && !/corner/.test(x)) add("Drilling", "Bohrung");
+      if (/^spot_finish/.test(k) && !/foil|sense|3d/.test(x)) add("Scodix Spot", "Spot-Lack");
+      if (/spot_?uv|spot_?varnish|scodix_?spot/.test(x)) add("Scodix Spot", "Spot-Lack");
+      if (/foil/.test(x) && /spot|scodix|gold|silver|copper|rose|rainbow|glitter|red|green|blue|black/.test(x) && !/cold/.test(x)) { const fo = /silver/.test(x) ? "Silver" : /copper/.test(x) ? "Copper" : /rose/.test(x) ? "Rose" : /rainbow/.test(x) ? "Rainbow" : /glitter/.test(x) ? "Glitter" : "Gold"; add("Scodix Foil " + fo, "Folienveredelung"); }
+      if (/sense|3d_?(varnish|lak|lack)|raised/.test(x)) add(/80/.test(x) ? "Scodix Sense 80" : "Scodix Sense 40", "3D-Lack");
+    });
+    return out;
+  }
+  // häufige falsche Namen → richtige Sonderfarbe (Illustrator/Corel/Affinity-Vorlagen anderer Druckereien)
+  const SPOT_ALIAS = { White: /^(spot ?)?(white|weiss|weiß|weißdruck|weissdruck|white ?ink|wit|blanc|w1|rdg_white)( ?\d)?$/i, Thrucut: /^(cut ?contour|contour ?cut|cutcontour|cut|cutline|cut line|die ?cut|diecut|stanz(e|kontur|linie)?|kontur(schnitt)?|schnitt(kontur|linie)?|thru ?cut|through ?cut|cutter|plotter|plot)$/i,
+    Kisscut: /^(kiss ?cut|kisscutcontour|anschnitt|halbschnitt)$/i, Creasing: /^(creas(e|ing)|rill(ung|linie)?|nut(linie)?|falz(linie)?|score|fold(line)?)$/i, Perforation: /^(perf(o|oration)?|perforier(ung|linie))$/i, Drilling: /^(drill(ing)?|bohr(ung|loch)?|hole)$/i };
+  const SPOT_TECH = /^(White|Thrucut|Kisscut|Creasing|Perforation|Drilling|Insidecut|Vcut|Score|Scodix .+)$/;
+  async function spotCheck(buf, prod, sel) {
+    const needs = spotNeedsOf(prod, sel), checks = []; let out = null;
+    if (buf.length > 120 * 1024 * 1024) { if (needs.length) checks.push({ level: "warn", text: "Sehr große Datei – die Sonderfarben (" + needs.map(x => "„" + x[0] + "“").join(", ") + ") konnten nicht automatisch geprüft werden. Bitte selbst kontrollieren oder Profi-Datencheck wählen." }); return { checks, buf: null }; }
+    let sc; try { sc = await withPdf(() => FILEINFO.spotScan(buf)); } catch (e) { if (needs.length) checks.push({ level: "warn", text: "Sonderfarben konnten nicht automatisch geprüft werden – bitte kontrolliere „" + needs.map(x => x[0]).join("“, „") + "“ selbst." }); return { checks, buf: null }; }
+    let renamed = 0; const have = () => sc.spots;
+    needs.forEach(([name, label, crit]) => {
+      if (have().indexOf(name) > -1) { checks.push({ spot: true, level: "ok", text: label + ": Sonderfarbe „" + name + "“ ist angelegt." }); return; }
+      const alias = have().find(s => s.toLowerCase() === name.toLowerCase() || (SPOT_ALIAS[name] && SPOT_ALIAS[name].test(s.trim()) && !needs.some(n => n[0] === s)));
+      if (alias) { renamed += sc.rename(alias, name); checks.push({ spot: true, level: "ok", text: label + ": Sonderfarbe „" + alias + "“ heißt bei der Druckerei „" + name + "“ – automatisch umbenannt." }); return; }
+      const other = have().filter(s => !needs.some(n => n[0] === s) && !SPOT_TECH.test(s));
+      checks.push({ spot: true, level: crit ? "error" : "warn", text: label + " fehlt: In der PDF ist keine Sonderfarbe „" + name + "“" + (other.length ? " (gefunden: " + other.slice(0, 4).map(x => "„" + x + "“").join(", ") + ")" : "") + ". " +
+        (crit ? "Ohne diese Linie kann nicht geschnitten werden – bitte die Kontur als geschlossene Vektorlinie in der Sonderfarbe „" + name + "“ (100 %, überdruckend) anlegen oder im Online-Designer zeichnen."
+          : name === "White" ? "Ohne Weiß-Ebene wird kein Weiß gedruckt – Farben wirken auf transparentem oder farbigem Material durchscheinend. Bitte die weißen Flächen in der Sonderfarbe „White“ (überdruckend) anlegen."
+          : "Bitte in der Sonderfarbe „" + name + "“ (100 %, überdruckend) anlegen – sonst setzt die Druckerei die Linie selbst bzw. es gibt Rückfragen.") });
+    });
+    // technische Sonderfarben in der Datei, die zur Ausführung nicht passen (z. B. Schnittlinie, aber kein Konturschnitt gewählt) → würden mitgedruckt oder ignoriert
+    have().filter(s => SPOT_TECH.test(s) && !needs.some(n => n[0] === s)).forEach(s => checks.push({ spot: true, level: "warn", text: "Die PDF enthält die Sonderfarbe „" + s + "“, in deiner Ausführung ist dafür aber nichts gewählt – bitte Ausführung prüfen (z. B. Konturschnitt/Weißdruck wählen) oder die Ebene aus der Datei entfernen." }));
+    if (needs.length && sc.spots.length && !sc.overprint) checks.push({ spot: true, level: "warn", text: "Die Sonderfarben sind offenbar nicht auf „Überdrucken“ gestellt – sonst entstehen weiße Lücken (Aussparungen) unter Linien und Weiß. Bitte beim Export „Überdrucken“ aktivieren." });
+    if (renamed) { try { out = await withPdf(() => pdfSave(sc.doc)); } catch (e) { log("Sonderfarben umbenennen:", e.message); checks.forEach(c => { if (/automatisch umbenannt/.test(c.text)) { c.level = "warn"; c.text = c.text.replace("automatisch umbenannt.", "bitte so umbenennen."); } }); } }
+    return { checks, buf: out };
+  }
   async function imageToPdf(buf, type, size, bleed, sides) {
     const PDFDocument = require("pdfkit");
     const W = (size.w + 2 * bleed) * MM_PT, H = (size.h + 2 * bleed) * MM_PT;
@@ -1986,7 +2034,7 @@ module.exports = function (D) {
   const PAGE_GENERIC = /Rückseite bleibt weiß|füllt nur die Vorderseite|Seite\(n\)|Seiten –|Seitengröße|TrimBox|Beschnitt \(|^2 Seiten:|ersetzt durch/;
   async function savePages(m, pdf, pages, pageChecks, general, pageNames, head) {
     const info = await pdfInfoX(pdf), glob = checkPdf(info, m.size, +m.bleed || 0, +m.sides || 1, !!m.multi).filter(c => /Seite\(n\)|Seiten –|passt zur gewählten Seitenzahl|Seitengröße|keinen Beschnitt|passt nicht zum gewählten Format/.test(c.text || ""));
-    const all = [head].concat(glob, general, [].concat.apply([], pageChecks.map(x => x || [])));
+    const all = [head].concat(glob, general, [].concat.apply([], pageChecks.map(x => x || [])), (m.checks || []).filter(c => c.spot));   // Sonderfarben-Ergebnis bleibt erhalten
     return newFile("upload", String(m.name || "druck.pdf").replace(/( \+ (Rückseite|Innenseite))?(\.pdf)?$/i, "") + (pageNames.length === 2 && (+m.sides || 1) === 2 && !m.multi ? " + " + pageLabel(m, 1) : "") + ".pdf", pdf,
       { product: m.product, sel: m.sel, size: m.size, bleed: m.bleed, sides: m.sides, pages, multi: m.multi }, all,
       { original: "pdf", pageChecks, generalChecks: general, pageNames, front: m.front || m.id });
@@ -2078,7 +2126,8 @@ module.exports = function (D) {
     if (type === "pdf") {
       const info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
       target.pages = info.pages;
-      const checks = checkPdf(info, target.size, target.bleed, target.sides, target.multi), src = target.multi ? null : await keepSrc(buf, "pdf", name);
+      const spc = input.cover ? { checks: [] } : await spotCheck(buf, prod, t0.n.sel); if (spc.buf) buf = spc.buf;   // Sonderfarben prüfen (ggf. umbenannt → ab hier die korrigierte PDF)
+      const checks = checkPdf(info, target.size, target.bleed, target.sides, target.multi).concat(spc.checks), src = target.multi ? null : await keepSrc(buf, "pdf", name);
       if (checks.some(c => /mehr als nötig\. Das Endformat passt/.test(c.text || ""))) {   // überschüssigen Beschnitt abschneiden: Seitenboxen = TrimBox + Beschnitt (alle Seiten)
         try { const { PDFDocument } = require("pdf-lib"), doc = await PDFDocument.load(buf, { updateMetadata: false }), bp = target.bleed * MM_PT;
           doc.getPages().forEach(pg => { const t = pg.getTrimBox(); const x = t.x - bp, y = t.y - bp, w = t.width + 2 * bp, h = t.height + 2 * bp; pg.setMediaBox(x, y, w, h); pg.setCropBox(x, y, w, h); pg.setBleedBox(x, y, w, h); });
@@ -2112,6 +2161,7 @@ module.exports = function (D) {
     if (far) checks.push({ level: "warn", text: "Das Bild hat ein ganz anderes Seitenverhältnis als das Format – es wurde vollständig eingepasst, freie Flächen bleiben weiß. Unter „Anpassen“ kannst du stattdessen das Format füllen (dann wird angeschnitten)." });
     else if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten. Unter „Anpassen“ kannst du es stattdessen ganz einpassen." });
     checks.push({ level: "warn", text: "Bitte beachte: Inhalte im Beschnitt (" + target.bleed + " mm je Seite) werden abgeschnitten." });
+    spotNeedsOf(prod, t0.n.sel).forEach(([n, label, crit]) => checks.push({ level: "warn", text: label + ": Ein Bild (JPG/PNG) kann keine Sonderfarbe „" + n + "“ enthalten" + (crit ? " – ohne Schnittlinie kann nicht geschnitten werden. Bitte eine PDF mit der Kontur in „" + n + "“ hochladen oder die Kontur im Online-Designer zeichnen." : ". Für " + label + " bitte eine PDF mit dieser Sonderfarbe hochladen.") }));
     if (target.sides > 1) checks.push({ level: "warn", text: "Bild-Upload füllt nur die Vorderseite – die Rückseite bleibt weiß. Für zwei Seiten bitte eine 2-seitige PDF hochladen." });
     let pdf; try { pdf = (await withPdf(() => placeFile(buf, type, target.size, target.bleed, { mode, rotate: rot ? 90 : 0 }, target.sides))).pdf; } catch (e) { try { pdf = await imageToPdf(buf, type, target.size, target.bleed, target.sides); } catch (e2) { throw Object.assign(new Error("Bild konnte nicht verarbeitet werden"), { status: 400 }); } }
     target.pages = target.sides;
@@ -5500,7 +5550,7 @@ module.exports = function (D) {
         if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
         const out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)), multi = (+fm.sides || 1) > 2;
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt: Motiv minimal vergrößert (" + fm.bleed + " mm je Seite) – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt automatisch ergänzt: Randbereiche gespiegelt (" + fm.bleed + " mm je Seite) – dein Motiv bleibt unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, multi));
-        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id });
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/logos") {
@@ -6065,7 +6115,7 @@ module.exports = function (D) {
         const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0 })) : null;
         let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randbereiche gespiegelt – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
-        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
         await prSwap(o, motif, curId, meta, "Cockpit (Beschnitt " + (mode === "zoom" ? "vergrößert" : "gespiegelt") + ")");
         hist(o, "Druckdaten im Cockpit: Beschnitt ergänzt (" + (mode === "zoom" ? "Motiv leicht vergrößert" : "Rand gespiegelt") + ")" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
@@ -6452,6 +6502,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { addBleed, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { addBleed, spotNeedsOf, spotCheck, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;
