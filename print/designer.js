@@ -178,11 +178,29 @@
     else o = new fabric.Rect(Object.assign({ left: T.x + 2 * U, top: T.y + 2 * U, width: T.w - 4 * U, height: T.h - 4 * U, rx: 3 * U, ry: 3 * U }, base));
     addObj(o, true); changed(); renderPanel();
   }
+  // Falz-/Perforationslinien millimetergenau (Simon 16.11.2026): waagrecht/senkrecht, Lage = Linienmitte ab Schnittkante, mehrere auf einmal
+  function isLineSpot(o) { return o && o.type === "line" && (o.spot === "Creasing" || o.spot === "Perforation"); }
+  function lineVert(o) { var b = o.getBoundingRect(true, true); return b.height > b.width; }
+  function mkLine(n, vert, mm) { var sp = spotOf(n), T = D.trim, p = vert ? T.x + mm * U : T.y + mm * U;
+    return new fabric.Line(vert ? [p, 0, p, D.H] : [0, p, D.W, p], { fill: "", stroke: sp[2], strokeWidth: 2, strokeUniform: true, spot: n, strokeDashArray: n === "Perforation" ? [6, 4] : null }); }
+  function linePos(o) { var c = o.getCenterPoint(); return lineVert(o) ? (c.x - D.trim.x) / U : (c.y - D.trim.y) / U; }
+  function setLinePos(o, mm) { var c = o.getCenterPoint(); if (lineVert(o)) o.setPositionByOrigin(new fabric.Point(D.trim.x + mm * U, c.y), "center", "center"); else o.setPositionByOrigin(new fabric.Point(c.x, D.trim.y + mm * U), "center", "center"); o.setCoords(); }
+  function lineSec(o) { var v = lineVert(o);
+    return '<div class="pd-sec"><h4>' + esc(spotOf(o.spot)[1]) + '</h4><div class="ps-seg pd-seg" role="group" aria-label="Richtung"><button type="button" data-a="lndir:h" aria-pressed="' + !v + '">Waagrecht</button><button type="button" data-a="lndir:v" aria-pressed="' + v + '">Senkrecht</button></div>' +
+      '<div class="pd-row">' + num("lpos", r1(linePos(o)), v ? "Ab linker Schnittkante (mm)" : "Ab oberer Schnittkante (mm)", 0.5) + "</div>" +
+      '<p class="pd-muted">Gemessen wird die Mitte der Linie. Endformat: ' + r1(D.trim.w / U) + " × " + r1(D.trim.h / U) + " mm.</p></div>"; }
+  function multiLines(n) { var raw = (D.root.querySelector("#pdLm") || {}).value || "", vert = ((D.root.querySelector("#pdLd") || {}).value || "v") === "v", max = (vert ? D.trim.w : D.trim.h) / U;
+    var l = raw.split(/[;\s]+|,(?=\s|$)/).map(function (x) { return parseFloat(String(x).replace(",", ".")); }).filter(function (x) { return x > 0 && x < max; });
+    if (!l.length) { toast("Bitte Positionen in mm eingeben, z. B. 165; 205; 315; 355"); return; }
+    l.forEach(function (mm) { D.c.add(mkLine(n, vert, mm)); }); D.c.requestRenderAll(); changed(); renderPanel(); toast(l.length + (l.length === 1 ? " Linie" : " Linien") + " angelegt"); }
   function spotPanel() {
     var ink = D.ink, h = "", sw = function (c) { return '<i style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px;background:' + c + '"></i>'; };
     if (ink.need.length) h += '<div class="pd-sec"><h4>Für deine Ausführung nötig</h4><p class="pd-muted">' + ink.need.map(function (n) { var x = spotOf(n); return sw(x[2]) + "<b>" + esc(x[1]) + "</b> (" + n + ")" + (spotCount(n) ? " ✓ angelegt" : " – fehlt noch"); }).join("<br>") + "</p></div>";
     h += '<div class="pd-sec"><h4>Linie anlegen</h4><div class="pd-btns" style="flex-direction:column;align-items:stretch">' + SPOTS.map(function (x) { return '<button type="button" class="ps-btn small" style="justify-content:flex-start" data-a="spot:' + x[0] + '">' + sw(x[2]) + esc(x[1]) + "</button>"; }).join("") + "</div>" +
       '<p class="pd-muted">Linien kommen als Sonderfarbe (z. B. „Thrucut“) überdruckend ins PDF und werden <b>nicht gedruckt</b> – sie steuern Schnitt, Rillung, Perforation oder Bohrung. Form, Größe und Lage frei ändern. Eigene Formen (Kreis, Stern, Herz …) machst du unter <b>Bearbeiten → Verwendung</b> zur Schnittlinie.</p></div>';
+    h += '<div class="pd-sec"><h4>Mehrere Linien auf einmal</h4><label class="pd-lbl">Positionen in mm ab Schnittkante (mit ; trennen)<input class="pd-in" id="pdLm" placeholder="z. B. 165; 205; 315; 355"></label>' +
+      '<div class="pd-row"><select class="pd-in" id="pdLd" aria-label="Richtung"><option value="v">Senkrecht (ab links)</option><option value="h">Waagrecht (ab oben)</option></select></div>' +
+      '<div class="pd-btns"><button type="button" class="ps-btn small" data-a="spotmulti:Creasing">Rilllinien anlegen</button><button type="button" class="ps-btn small" data-a="spotmulti:Perforation">Perforationen anlegen</button></div></div>';
     if (ink.white) h += '<div class="pd-sec"><h4>Weißdruck</h4><p class="pd-muted">Deine Ausführung druckt <b>Weiß</b> (Sonderfarbe „White“). Unter allen Elementen wird automatisch deckendes Weiß gedruckt – je Element änderbar unter <b>Bearbeiten → Weißdruck</b>: darunter, ohne oder nur Weiß.</p></div>';
     else if (ink.clear) h += '<div class="pd-sec"><h4>Transparentes Material</h4><p class="pd-muted">Ohne Weißdruck wird <b>Weiß nicht gedruckt</b> – weiße Flächen und Texte bleiben durchsichtig, Farben wirken lasierend. Für deckende Farben die Ausführung „+ Weiß“ wählen.</p></div>';
     return h;
@@ -808,6 +826,7 @@
         '<div class="ps-seg pd-seg" role="group" aria-label="Linienart">' + [["solid", "Durchgezogen"], ["dash", "Gestrichelt"], ["dot", "Gepunktet"]].map(function (x) { return '<button type="button" data-a="dash:' + x[0] + '" aria-pressed="' + (ds === x[0]) + '">' + x[1] + "</button>"; }).join("") + "</div>" +
         ((o.strokeWidth || 0) > 0 && o.strokeWidth / U < 0.1 ? '<div class="pd-warn">Linien unter 0,1 mm können im Druck verschwinden.</div>' : "");
     }
+    if (!multi && isLineSpot(o)) h += lineSec(o);
     h += inkSec(o, multi);
     h += '<div class="pd-sec"><h4>Position &amp; Größe (mm, ab Schnittkante)</h4><div class="pd-row">' + num("x", r1((br.left - D.trim.x) / U), "X") + num("y", r1((br.top - D.trim.y) / U), "Y") + num("w", r1(br.width / U), "Breite") + num("h", r1(br.height / U), "Höhe") + (multi ? "" : num("angle", Math.round(o.angle || 0), "Drehung°", 1)) + "</div>" +
       '<div class="pd-btns"><button type="button" class="pd-ib" data-a="rot:-90" title="90° nach links drehen" aria-label="90 Grad nach links drehen">' + svgI("rl") + '</button><button type="button" class="pd-ib" data-a="rot:90" title="90° nach rechts drehen" aria-label="90 Grad nach rechts drehen">' + svgI("rr") + '</button><button type="button" class="pd-ib" data-a="flipx" aria-pressed="' + !!o.flipX + '" title="Horizontal spiegeln" aria-label="Horizontal spiegeln">' + svgI("fx") + '</button><button type="button" class="pd-ib" data-a="flipy" aria-pressed="' + !!o.flipY + '" title="Vertikal spiegeln" aria-label="Vertikal spiegeln">' + svgI("fy") + "</button>" +
@@ -884,7 +903,8 @@
   }
   function setNum(k, v) {
     var o = act(); if (!o || !isFinite(v)) return; var br = o.getBoundingRect(true, true);
-    if (k === "x") moveBy(o, D.trim.x + v * U - br.left, 0); else if (k === "y") moveBy(o, 0, D.trim.y + v * U - br.top);
+    if (k === "lpos" && isLineSpot(o)) setLinePos(o, v);
+    else if (k === "x") moveBy(o, D.trim.x + v * U - br.left, 0); else if (k === "y") moveBy(o, 0, D.trim.y + v * U - br.top);
     else if (k === "w" && v > 0) { var f = v * U / br.width; o.set({ scaleX: o.scaleX * f, scaleY: (o.type === "textbox" || o.role || o.ratio || o.ico || o.type === "image") ? o.scaleY * f : o.scaleY }); }
     else if (k === "h" && v > 0) { var g = v * U / br.height; o.set({ scaleY: o.scaleY * g, scaleX: (o.role || o.ratio || o.ico || o.type === "image") ? o.scaleX * g : o.scaleX }); }
     else if (k === "cvsize" && o.curve && v > 0) { updCurve(o, { size: Math.min(400, v) }); return; }
@@ -1164,6 +1184,8 @@
       case "zoomin": zoomTo(c.getZoom() * 1.25); break; case "zoomout": zoomTo(c.getZoom() / 1.25); break; case "fit": fit(); break;
       case "t": addText(v); break; case "sh": addShape(v); break;
       case "spot": addSpot(v); break;
+      case "spotmulti": multiLines(v); break;
+      case "lndir": if (isLineSpot(o) && lineVert(o) !== (v === "v")) { var pos = linePos(o), nl = mkLine(o.spot, v === "v", Math.max(0, Math.min(v === "v" ? D.trim.w / U : D.trim.h / U, pos))); c.remove(o); c.add(nl); c.setActiveObject(nl); c.requestRenderAll(); changed(); renderPanel(); } break;
       case "wh": if (o) { (o.type === "activeSelection" ? o.getObjects() : [o]).forEach(function (x) { x.wh = v === "auto" ? undefined : v; }); changed(); renderPanel(); } break;
       case "spotset": if (o) { (o.type === "activeSelection" ? o.getObjects() : [o]).forEach(function (x) { var sp = spotOf(v);
           if (sp) { if (!x.spot) x.__fill0 = x.fill; x.spot = v; x.set({ fill: "", stroke: sp[2], strokeWidth: 2, strokeUniform: true }); }
