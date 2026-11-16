@@ -299,6 +299,9 @@ function measure(file, extra) { const r = spawnSync(R.FFMPEG(), ["-hide_banner",
   });
   await t("Wochen-Nachschub: komponiert je Marke mit wenig passenden ungenutzten Titeln, höchstens 40 % des Limits", async () => {
     const env = keyed({}), { MU, st } = env; st.brands = { kochdu: BRANDS().kochdu, skikaiser: BRANDS().skikaiser }; st.mkt.musicCfg.limitEur = 0.2;   // 40 % = 0,08 € → 1 Titel (0,069 €)
+    // Simon 16.11.2026: Vorrat noch ausreichend (≥ 2 unbenutzte passende Titel) → nichts komponieren
+    const r0 = await MU.weekly(true); assert.strictEqual(r0.added, 0, JSON.stringify(r0)); assert.ok(!(st.mkt.musicBudget && st.mkt.musicBudget.count));
+    st.mkt.musicCfg.weeklyLow = 20;   // Vorrat gilt als knapp → nachkomponieren (bis 40 % des Limits)
     const r = await MU.weekly(true); assert.strictEqual(r.added, 1, JSON.stringify(r)); assert.ok(r.notes.some(n => /40 %/.test(n)) || r.added === 1); assert.strictEqual(st.mkt.musicBudget.count, 1);
     const w2 = await MU.weekly(); assert.strictEqual(w2, null, "nur einmal je Woche bzw. sonntags");
   });

@@ -32,7 +32,9 @@ module.exports = function (D) {
 
   // ── Mails auswählen ──
   const SKIP_FOLDER = /trash|papierkorb|junk|spam|sent|gesendet|draft|entw|outbox|ausgang/i;
-  const INV_RX = /rechnung|invoice|receipt|quittung|beleg|faktura|\bbill|zahlungsbest|payment|vorschreibung|abgabe|geb(ü|ue)hr|abrechnung|kontoauszug|statement|bestellung|order confirmation|your .* (plan|subscription)|\babo\b/i;
+  // Simon 16.11.2026: enger gefasst – „payment“, „Abgabe“, „Gebühr“, „Kontoauszug“, „Statement“, „Bestellung“, Abo-/Plan-Mails lösten zu oft
+  // KI-Auslesungen ohne Rechnung aus (Newsletter, Kontoauszüge, Bestellbestätigungen). Bekannte Absender (SENDERS) zählen nur mit PDF-Anhang.
+  const INV_RX = /rechnung|invoice|receipt|quittung|\bbeleg|faktura|\bbill\b|zahlungsbest(ä|ae)tigung|payment (receipt|confirmation)|vorschreibung|geb(ü|ue)hrenbescheid|abrechnung/i;
   const SENDERS = ["railway", "github", "google", "anthropic", "world4you", "gemeinde", "a1.net", "magenta", "drei.at", "cloudflare", "adobe", "openai", "apple", "microsoft", "figma", "notion", "hetzner", "canva", "envato", "paypal", "stripe", "paddle", "vercel", "digitalocean", "netcup", "ionos", "strato", "amazon", "aws", "facebook", "meta", "beds24"];
   const isDocAtt = a => { const fn = String(a.filename || "").toLowerCase(), ct = String(a.contentType || "").toLowerCase();
     if (/\.pdf$/.test(fn) || /pdf/.test(ct)) return true;
@@ -40,8 +42,10 @@ module.exports = function (D) {
     return false; };
   function looksLikeInvoice(m, atts) {
     const hay = ((m.from || "") + " " + (m.fromName || "") + " " + (m.subject || "") + " " + atts.map(a => a.filename || "").join(" ")).toLowerCase();
-    return INV_RX.test(hay) || SENDERS.some(s => hay.indexOf(s) > -1);
+    return INV_RX.test(hay) || (SENDERS.some(s => hay.indexOf(s) > -1) && atts.some(a => /\.pdf$/i.test(a.filename || "") || /pdf/i.test(a.contentType || "")));
   }
+  // wahrscheinlichster Rechnungsanhang zuerst: Rechnung vor Quittung, PDF vor Bild
+  const attRank = a => { const fn = String(a.filename || ""); return (/invoice|rechnung|faktura/i.test(fn) ? 0 : /receipt|quittung|beleg/i.test(fn) ? 2 : 4) + (/\.pdf$/i.test(fn) || /pdf/i.test(a.contentType || "") ? 0 : 1); };
   // Meta (Facebook/Instagram-Werbung, Zahlung über Zahlungsschwelle): Zahlungsbeleg steht im Mailtext → daraus wird ein PDF-Beleg
   const META_FROM = /facebookmail|facebook\.com|meta\.com|metamail|business\.facebook|ads\.facebook/i, META_SUBJ = /beleg|receipt|zahlung|payment|quittung|abrechnung|rechnung/i;
   const isMetaReceipt = m => META_FROM.test(String(m.from || "") + " " + String(m.fromName || "")) && META_SUBJ.test(String(m.subject || ""));
@@ -193,20 +197,21 @@ module.exports = function (D) {
         }
         if (!atts.length || !looksLikeInvoice(m, atts)) { seen.add(msgId(m)); ST.seen.push(msgId(m)); continue; }
         scanned++;
-        if (!ki) atts = atts.slice().sort((a, b) => (/invoice|rechnung/i.test(a.filename) ? 0 : /pdf$/i.test(a.filename) ? 1 : 2) - (/invoice|rechnung/i.test(b.filename) ? 0 : /pdf$/i.test(b.filename) ? 1 : 2)).slice(0, 1);   // Heuristik: nur der wahrscheinlichste Anhang
+        // nur der wahrscheinlichste Anhang je Mail – auch mit KI (Simon 16.11.2026: vorher bis zu 4 KI-Auslesungen je Mail)
+        atts = atts.slice().sort((a, b) => attRank(a) - attRank(b) || (a.index || 0) - (b.index || 0)).slice(0, 1);
         let pending = false;
-        for (const a of atts.slice(0, 4)) {
+        for (const a of atts) {
           const mail = mailInfo(m, a), key = mailKey(mail);
           const it = ST.items[key] = ST.items[key] || { key, mail, tries: 0 };
           if (it.x) continue;
           let x = null;
-          if (kiLeft > 0 && !(a.size > 15 * 1024 * 1024)) {
+          if (kiLeft > 0 && !(a.size > 8 * 1024 * 1024)) {   // gleiche Grenzen wie die Automatik (8 MB, 20 PDF-Seiten, XML gekürzt – in ki.js)
             kiLeft--; it.tries++;
             try { const k = await kiExtract(mail, { subject: m.subject, from: m.from, fromName: m.fromName, date: m.date });
               x = { src: "ki", isInvoice: k.isInvoice !== false, supplier: k.supplier || "", invoiceDate: k.invoiceDate || day(m.date), gross: +k.gross || 0, currency: k.currency || "EUR", invoiceNumber: k.invoiceNumber || "", amounts: [] }; }
-            catch (e) { it.err = String(e.message || e).slice(0, 160); if (/limit|not_configured|disabled/.test(e.kiCode || "")) kiLeft = 0; }
+            catch (e) { it.err = String(e.message || e).slice(0, 160); it.errCode = e.kiCode || ""; if (/limit|not_configured|disabled/.test(e.kiCode || "")) kiLeft = 0; }
           }
-          if (!x && (!ki || it.tries >= 2 || (a.size > 15 * 1024 * 1024))) x = heuristic(m);
+          if (!x && (!ki || it.tries >= 2 || (a.size > 8 * 1024 * 1024) || /too_large|type/.test(it.errCode || ""))) x = heuristic(m);
           if (x) { it.x = x; it.at = new Date().toISOString(); extracted++; } else pending = true;
         }
         if (!pending) { seen.add(msgId(m)); ST.seen.push(msgId(m)); }

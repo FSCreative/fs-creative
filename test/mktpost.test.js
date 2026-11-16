@@ -48,7 +48,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     push: async () => 0 });
   const PT = M._test.posts._test;
   const call = async (method, p, body, qs) => { const r = res(); await M.handleAdmin(req(method, body), r, new URL("http://x" + p + (qs || "")), p); await r.finished; return r; };
-  const waitMedia = async ids => { for (let i = 0; i < 1200; i++) { const ps = PT.S().posts.filter(p => ids.indexOf(p.id) > -1); if (ps.every(p => p.media && (p.media.status === "fertig" || p.media.status === "fehler"))) return ps; await sleep(100); } throw new Error("Medien nicht fertig"); };
+  const waitMedia = async (ids, preview) => { for (let i = 0; i < 1200; i++) { const ps = PT.S().posts.filter(p => ids.indexOf(p.id) > -1); if (ps.every(p => p.media && (p.media.status === "fertig" || p.media.status === "fehler" || (preview && p.media.status === "vorschau")))) return ps; await sleep(100); } throw new Error("Medien nicht fertig"); };
   const pubGet = async f => { const r = await fetch("http://127.0.0.1:" + pport + "/m/" + f); return r.status; };
 
   await t("Verbinden ohne App-Zugang wird abgelehnt", async () => {
@@ -104,11 +104,16 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.ok(/<standorte>Schruns \| Bludenz<\/standorte>/.test(kiUser), "Standorte an die KI");
     assert.strictEqual(car.place.name, "Schruns", "Standard-Standort"); assert.strictEqual(reel.mood, "froehlich", "Stimmung der Marke");
   });
-  await t("Medien: Karussell (JPEG + kleine Fassung) und Reel (MP4 + Titelbild)", async () => {
-    const [a, b] = await waitMedia([car.id, reel.id]); const c = a.id === car.id ? a : b, rl = a.id === car.id ? b : a;
+  await t("Medien: Karussell (JPEG + kleine Fassung) und Reel (Entwurf nur Titelbild, ganzes MP4 erst beim Öffnen/Go)", async () => {
+    const [a, b] = await waitMedia([car.id, reel.id], true); const c = a.id === car.id ? a : b, rl = a.id === car.id ? b : a;
     assert.strictEqual(c.media.status, "fertig", c.media.error); assert.strictEqual(c.media.images.length, 3); assert.strictEqual(c.media.small.length, 3);
     c.media.small.forEach(f => assert.ok(fs.statSync(path.join(dir, "marketing", "media", f)).size < 1e6));
-    assert.strictEqual(rl.media.status, "fertig", rl.media.error); assert.ok(rl.media.video && rl.media.cover && rl.media.duration > 3);
+    // Simon 16.11.2026: frischer Reel-Entwurf → nur Titelbild, kein Video, keine Musik
+    assert.strictEqual(rl.media.status, "vorschau", rl.media.error); assert.ok(rl.media.cover && !rl.media.video && !rl.media.track, JSON.stringify(rl.media));
+    assert.ok(fs.existsSync(path.join(dir, "marketing", "media", rl.media.cover)));
+    const fr = (await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "full" })).json(); assert.ok(fr.ok, JSON.stringify(fr)); assert.strictEqual(fr.post.media.status, "wartet");
+    const [r2] = await waitMedia([reel.id]);
+    assert.strictEqual(r2.media.status, "fertig", r2.media.error); assert.ok(r2.media.video && r2.media.cover && r2.media.duration > 3);
   });
   await t("Öffentliche Medien erst nach Freigabe", async () => {
     const c = PT.S().posts.find(p => p.id === car.id); assert.strictEqual(await pubGet(c.media.images[0]), 404);

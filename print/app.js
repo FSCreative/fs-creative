@@ -1320,22 +1320,24 @@
     qq = (qq || "").trim().toLowerCase(); if (!qq) return "";
     var l = S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, qq); })
       .sort(function (a, b) { var at = a.title.toLowerCase().indexOf(qq) === 0, bt = b.title.toLowerCase().indexOf(qq) === 0; return (bt - at) || ((b.pop || 0) - (a.pop || 0)); }).slice(0, 7);
-    var ai = qq.length >= 3 && l.length < 3 ? AIS[qq] : null, have = l.map(function (p) { return p.key; }), aiL = ai ? (ai.keys || []).map(function (k) { return S.cat.products.filter(function (p) { return p.key === k; })[0]; }).filter(function (p, i, a) { var t = p && p.title.toLowerCase(); return p && have.indexOf(p.key) < 0 && !l.some(function (x) { return x.title.toLowerCase() === t; }) && a.findIndex(function (x) { return x && x.title.toLowerCase() === t; }) === i; }).slice(0, 3 - Math.min(l.length, 3) || 3) : [];   // gleiche Namen nur einmal
+    var ai = qq.length >= AI_MIN && l.length < 3 ? AIS[qq] : null, have = l.map(function (p) { return p.key; }), aiL = ai ? (ai.keys || []).map(function (k) { return S.cat.products.filter(function (p) { return p.key === k; })[0]; }).filter(function (p, i, a) { var t = p && p.title.toLowerCase(); return p && have.indexOf(p.key) < 0 && !l.some(function (x) { return x.title.toLowerCase() === t; }) && a.findIndex(function (x) { return x && x.title.toLowerCase() === t; }) === i; }).slice(0, 3 - Math.min(l.length, 3) || 3) : [];   // gleiche Namen nur einmal
     var aiH = aiL.length ? '<div class="ps-sug-ai">✨ Passend zu deiner Suche' + (ai.hint ? " <small>" + esc(ai.hint) + "</small>" : "") + "</div>" + aiL.map(function (p) { return '<button type="button" class="ps-sug-it" role="option" data-prod="' + esc(p.key) + '"><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="">' : esc(p.icon)) + "</span><span><b>" + esc(p.title) + "</b><small>" + esc(lead(p.desc || "") || (p.cat && p.cat.mainName) || "") + "</small></span></button>"; }).join("")
-      : qq.length >= 3 && l.length < 3 && heroBusy === qq ? '<div class="ps-sug-ai"><span class="ps-spin"></span> KI sucht passende Produkte …</div>' : "";
+      : qq.length >= AI_MIN && l.length < 3 && heroBusy === qq ? '<div class="ps-sug-ai"><span class="ps-spin"></span> KI sucht passende Produkte …</div>' : "";
     if (!l.length && aiH) return aiH + '<button type="button" class="ps-sug-all" data-act="searchall">Alle Treffer für „' + esc(qq) + "“ anzeigen →</button>";
     if (!l.length) return '<div class="ps-sug-empty">Nichts gefunden – <button type="button" class="ps-link" data-nav="produkte">alle Produkte ansehen</button> oder <a class="ps-link" href="#" data-chat-open>frag uns im Chat</a>.</div>';
     return l.map(function (p, i) { return '<button type="button" class="ps-sug-it" role="option" data-prod="' + esc(p.key) + '"' + (i === 0 ? ' aria-selected="true"' : "") + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="">' : esc(p.icon)) + "</span><span><b>" + esc(p.title) + "</b><small>" + esc((p.cat && p.cat.mainName) || p.desc || "") + "</small></span>" + (p.best ? '<span class="ps-badge sm">★</span>' : "") + "</button>"; }).join("") +
       aiH + '<button type="button" class="ps-sug-all" data-act="searchall">Alle Treffer für „' + esc(qq) + "“ anzeigen →</button>";
   }
   // Startseite: wenig Treffer → nach kurzer Pause KI fragen (gleiche Merkliste wie die Produktsuche), dann die Vorschläge neu zeichnen
+  // KI-Suche erst ab 4 Zeichen und nach 1,2 s Tipp-Pause (Simon 16.11.2026: jede Zwischeneingabe kostete sonst eine KI-Anfrage)
+  var AI_MIN = 4, AI_WAIT = 1200;
   var heroT = null, heroBusy = "";
   function heroAi(v, inp0, paint0) {   // inp0/paint0: anderes Suchfeld (Kopfzeile) – sonst die Startseiten-Suche
-    var q = String(v || "").trim().toLowerCase(); clearTimeout(heroT); if (q.length < 3 || AIS[q]) return;
+    var q = String(v || "").trim().toLowerCase(); clearTimeout(heroT); if (q.length < AI_MIN || AIS[q]) return;
     var l = S.cat.products.filter(function (p) { return prodMatch(p, q); }); if (l.length >= 3) return;
     var paint = paint0 || heroPaint;
     heroT = setTimeout(function () { var inp = inp0 || document.getElementById("psHomeQ"); if (!inp || inp.value.trim().toLowerCase() !== q) return; heroBusy = q; paint();
-      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[q] = j && j.ok ? j : { keys: [] }; }, function () { AIS[q] = { keys: [] }; }).then(function () { heroBusy = ""; paint(); }); }, 550);
+      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[q] = j && j.ok ? j : { keys: [] }; }, function () { AIS[q] = { keys: [] }; }).then(function () { heroBusy = ""; paint(); }); }, AI_WAIT);
   }
   function heroPaint() { var inp = document.getElementById("psHomeQ"), sg = document.getElementById("psSug"); if (!inp || !sg || document.activeElement !== inp && !inp.value) return; var hv = sugHtml(inp.value); sg.innerHTML = hv; sg.hidden = !hv; inp.parentNode.setAttribute("aria-expanded", String(!!hv)); }
   var SHORT = { "tshirt-basic": "T-Shirts", "tshirt-bio": "Bio-Shirts", "hoodie-bio": "Hoodies", "pvc-banner": "Banner", "mesh-banner": "Mesh-Banner", rollups: "Roll-ups" };
@@ -1589,7 +1591,7 @@
   function aiKick(q, local) {
     clearTimeout(aiT); var k = q.toLowerCase(); if (AIS[k]) return aiPaint(q, local);
     aiT = setTimeout(function () { if (S.q.trim() !== q) return; aiBusy = q; aiPaint(q, local);
-      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[k] = j && j.ok ? j : { keys: [] }; }, function () { AIS[k] = { keys: [] }; }).then(function () { aiBusy = ""; if (S.q.trim() === q) aiPaint(q, local); }); }, 650);
+      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[k] = j && j.ok ? j : { keys: [] }; }, function () { AIS[k] = { keys: [] }; }).then(function () { aiBusy = ""; if (S.q.trim() === q) aiPaint(q, local); }); }, AI_WAIT);
   }
   function aiPaint(q, local) {
     var el = document.getElementById("psAi"), none = document.getElementById("psNone"); if (!el) return; var r = AIS[q.toLowerCase()];
@@ -1605,9 +1607,9 @@
   function gridHtml() {
     var qq = S.q.trim();
     if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, ql); }));
-      if (l.length < 6 && qq.length >= 3) setTimeout(function () { aiKick(qq, l.map(function (p) { return p.key; })); }, 0);   // wenig Treffer → KI-Suche ergänzt
+      if (l.length < 6 && qq.length >= AI_MIN) setTimeout(function () { aiKick(qq, l.map(function (p) { return p.key; })); }, 0);   // wenig Treffer → KI-Suche ergänzt
       return (l.length ? '<div class="ps-cv-bar ps-qbar"><p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + sortBtn() + '</div><div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
-      : '<p class="pd-muted" id="psNone" style="padding:20px 0">Keine direkten Treffer – ' + (qq.length >= 3 ? "unsere KI sucht passende Produkte …" : 'probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.') + "</p>") + '<div id="psAi"></div>'; }
+      : '<p class="pd-muted" id="psNone" style="padding:20px 0">Keine direkten Treffer – ' + (qq.length >= AI_MIN ? "unsere KI sucht passende Produkte …" : 'probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.') + "</p>") + '<div id="psAi"></div>'; }
     var g = S.group && grpOf(S.group);
     if (!g) {   // Übersicht: Bestseller + Kategorien mit Unterkategorien
       var top = S.cat.products.filter(function (p) { return p.best; }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); }).slice(0, 10);

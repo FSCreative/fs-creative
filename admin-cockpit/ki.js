@@ -49,8 +49,11 @@ K.sel=sel;
 function costLine(){
   var s=K.st; if(!s) return "Lade KI-Status …";
   if(!s.configured) return esc(K.NOT_SET);
-  return "Claude Opus 5.5 · Kosten "+esc(monthName(s.month))+": <b class=\"money\">"+F.eur(s.cost.eur)+"</b> (≈, umgerechnet mit 1 $ = "+String(s.usdEur).replace(".",",")+" €)"+(s.limitEur?" · Limit "+F.eur(s.limitEur)+(s.overLimit?' <span class="tag bad">erreicht</span>':''):"");
+  return "Claude · Kosten "+esc(monthName(s.month))+": <b class=\"money\">"+F.eur(s.cost.eur)+"</b> (≈, umgerechnet mit 1 $ = "+String(s.usdEur).replace(".",",")+" €)"+limitTxt(s);
 }
+/* Monatslimit Cockpit/Hintergrund (Simon 16.11.2026): Website-Chat und Druckshop zählen nicht mit */
+function limitTxt(s){ if(!s.limitEur) return ""; return " · Cockpit "+F.eur(s.cockpitEur||0)+" von "+F.eur(s.limitEur)+(s.overLimit?' <span class="tag bad">Limit erreicht</span>':" (noch "+F.eur(s.leftEur||0)+")"); }
+K.limitTxt=limitTxt;
 function monthName(mk){ var m=String(mk||"").match(/^(\d{4})-(\d{2})$/); if(!m) return mk||""; return new Date(+m[1],+m[2]-1,15).toLocaleDateString("de-AT",{month:"long",year:"numeric"}); }
 /* Bereich der KI-Seite: Symbol + Überschrift + Unterzeile links, Knöpfe rechts (umbrechend) – auch für ki-belege.js/ki-upload.js */
 var KIP_IC={"ki-queue":"inbox","ki-leads":"user","ki-set":"sliders","ki-belege":"checkCircle","ki-uva":"shield","ki-upload":"upload"};
@@ -60,7 +63,7 @@ K.panel=panel;
 function queueHtml(){
   var s=K.st, q=K.queue||[];
   var right='<button type="button" class="btn" data-act="kiscan"'+(K.ui.busy.scan?" disabled":"")+'>'+F.svg("refresh")+(K.ui.busy.scan?" Prüfe Postfach …":" Postfach jetzt prüfen")+'</button>';
-  var sub="Rechnungsmails bekannter Absender werden alle 15 Minuten ausgelesen und hier vorbereitet. Als Beleg gespeichert wird nur, was du freigibst.";
+  var sub="Rechnungsmails bekannter Absender werden stündlich ausgelesen und hier vorbereitet. Als Beleg gespeichert wird nur, was du freigibst.";
   var inner;
   if(!s||!s.configured) inner=K.notSetHtml();
   else if(!q.length) inner='<div class="empty">Keine vorbereiteten Belege.'+(s.scan&&s.scan.at?' Letzte Prüfung '+esc(F.ago(new Date(s.scan.at).toISOString()))+(s.scan.err?' – '+esc(s.scan.err):'')+'.':'')+'</div>';
@@ -85,13 +88,19 @@ function settingsHtml(){
   var by=s.cost.byFeature||{}, lab={}; (s.features||[]).forEach(function(f){ lab[f.key]=f.label; });
   var rows=Object.keys(by).map(function(k){ var b=by[k]; return '<tr><td>'+esc(lab[k]||k)+'</td><td class="num">'+b.calls+'</td><td class="num">'+Math.round((b.input+b.cacheRead+b.cacheWrite)/1000)+'k / '+Math.round(b.output/1000)+'k</td><td class="num money">'+F.eur(b.eur)+'</td></tr>'; }).join("");
   var hist=(s.months||[]).map(function(m){ return '<span class="tag grey">'+esc(monthName(m.month))+': <span class="money">'+F.eur(m.eur)+'</span></span>'; }).join(" ");
-  var toggles=(s.features||[]).map(function(f){ return '<label class="kitog"><input type="checkbox" data-kifeat="'+esc(f.key)+'"'+(f.on?" checked":"")+'> <span>'+esc(f.label)+(f.essential?' <span class="muted">(läuft auch über dem Limit)</span>':'')+'</span></label>'; }).join("");
+  var pub=s.publicFeatures||["chat","printdesign"];
+  var toggles=(s.features||[]).map(function(f){ return '<label class="kitog"><input type="checkbox" data-kifeat="'+esc(f.key)+'"'+(f.on?" checked":"")+'> <span>'+esc(f.label)+(pub.indexOf(f.key)>-1?' <span class="muted">(eigenes Tageslimit, zählt nicht zum Monatslimit)</span>':f.essential?' <span class="muted">(auf Klick auch über dem Limit)</span>':'')+'</span></label>'; }).join("");
   var senders=K.ui.sendersDraft!=null?K.ui.sendersDraft:(s.senders||"");
-  return panel("ki-set","Kosten &amp; Einstellungen","Preise Claude Opus 5.5: 4 $ / 20 $ je 1 Mio. Tokens (Eingabe/Ausgabe), Cache-Lesen 0,20 $. Euro-Beträge sind umgerechnet (≈).","",
-    '<div class="kigrid"><div><div class="sec-t">Status</div>'+(s.configured?'<div class="amsg ok">Verbunden · '+esc(s.modelFast?("Opus 5.5 für alle Cockpit-Funktionen · Sonnet 5.5 für Website-Chat und Druckshop-Designer (schneller für Besucher)"):("Modell "+s.model))+'</div>':K.notSetHtml())+
+  /* Modell je Funktion (Simon 16.11.2026): Opus nur für Steuer/UVA/Assistent/Rechnungen, sonst Sonnet, kurze Aufgaben Haiku */
+  var opus=(s.opusFor||[]).map(function(k){ return lab[k]||k; }), haiku=s.haikuFor||[];
+  var models=s.modelFast?("Opus 5.5 für "+opus.join(", ")+" · Sonnet 5.5 für alle anderen Funktionen"+(haiku.length?" · Haiku 5.5 für "+haiku.join(", "):"")):("Modell "+s.model);
+  var limVal=K.ui.limitDraft!=null?K.ui.limitDraft:String(s.limitEur==null?10:s.limitEur).replace(".",",");
+  return panel("ki-set","Kosten &amp; Einstellungen","Preise je 1 Mio. Tokens (Eingabe/Ausgabe): Opus 5.5 4 $ / 20 $, Sonnet 5.5 2 $ / 10 $, Haiku 5.5 1 $ / 5 $. Euro-Beträge sind umgerechnet (≈).","",
+    '<div class="kigrid"><div><div class="sec-t">Status</div>'+(s.configured?'<div class="amsg ok">Verbunden · '+esc(models)+'</div>':K.notSetHtml())+
       '<div class="sec-t" style="margin-top:12px">Diesen Monat</div>'+(rows?'<table class="kitab"><thead><tr><th>Funktion</th><th>Aufrufe</th><th>Tokens ein/aus</th><th>Kosten</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="3"><b>Summe</b></td><td class="num money"><b>'+F.eur(s.cost.eur)+'</b></td></tr></tfoot></table>':'<div class="muted">Noch keine KI-Aufrufe.</div>')+
       (hist?'<div class="kitags" style="margin-top:8px">'+hist+'</div>':'')+
-      '<p class="muted">Monatslimit: '+(s.limitEur?F.eur(s.limitEur)+' – darüber laufen nur noch Beleg- und Steuerfunktionen.':'keines gesetzt (optional Variable <b>KI_MONTHLY_LIMIT_EUR</b> in Railway, z. B. 30).')+'</p></div>'+
+      '<div class="sec-t" style="margin-top:12px">Monatslimit Cockpit &amp; Automatik</div><div class="row wrap"><input class="f" id="kiLimit" data-keepfocus="kiLimit" inputmode="decimal" style="width:90px" value="'+esc(limVal)+'"> € <button type="button" class="btn" data-act="kisavelimit">'+F.svg("checkCircle")+' Speichern</button></div>'+
+      '<p class="muted">'+(s.limitEur?'Diesen Monat '+F.eur(s.cockpitEur||0)+' von '+F.eur(s.limitEur)+(s.overLimit?' – <b>erreicht</b>':' – noch '+F.eur(s.leftEur||0))+'. ':'Kein Limit (0). ')+'Darüber pausieren automatische Läufe (Rechnungsmails, Belegdateien, Anfragen) und Assistent/Mail/Marketing; Beleg-, Steuer- und Rechnungsfunktionen laufen auf Klick weiter. Website-Chat und Druckshop haben eigene Tageslimits.</p></div>'+
     '<div><div class="sec-t">Funktionen</div><div class="kitogs">'+toggles+'</div>'+
       '<div class="sec-t" style="margin-top:12px">Bekannte Rechnungsabsender (Automatik)</div><textarea class="f" id="kiSenders" data-keepfocus="kiSenders" rows="6" placeholder="ein Begriff pro Zeile, z. B. railway">'+esc(senders)+'</textarea>'+
       '<p class="muted">Trifft auf Absender, Name oder Betreff zu (Groß-/Kleinschreibung egal).</p><div><button type="button" class="btn" data-act="kisavesenders">'+F.svg("checkCircle")+' Absender speichern</button></div></div></div>');
@@ -152,12 +161,14 @@ F.listen("change","[data-kifeat]",function(el){
   K.api("settings",{features:f}).then(function(j){ K.st=j; stAt=Date.now(); F.toast(el.checked?"Eingeschaltet":"Ausgeschaltet"); K.rerender(); }).catch(K.fail);
 });
 F.listen("input","#kiSenders",function(el){ K.ui.sendersDraft=el.value; });
+F.listen("input","#kiLimit",function(el){ K.ui.limitDraft=el.value; });
+F.action("kisavelimit",function(){ var t=document.getElementById("kiLimit"); if(!t) return; K.api("settings",{limitEur:t.value}).then(function(j){ K.st=j; stAt=Date.now(); K.ui.limitDraft=null; F.toast(j.limitEur?"Monatslimit "+F.eur(j.limitEur)+" gespeichert":"Kein Monatslimit"); K.rerender(); F.renderNav(); }).catch(K.fail); });
 F.action("kisavesenders",function(){ var t=document.getElementById("kiSenders"); if(!t) return; K.api("settings",{senders:t.value}).then(function(j){ K.st=j; stAt=Date.now(); K.ui.sendersDraft=null; F.toast("Absender gespeichert"); K.rerender(); }).catch(K.fail); });
 
 /* Abschnitt im Einstellungen-Dialog (settings.js ruft F.kiSettingsHtml auf) */
 F.kiSettingsHtml=function(){
   var s=K.st; if(!s){ K.load(true); return '<p class="set-p">Lade …</p>'; }
-  return (s.configured?'<div class="amsg ok">Verbunden · Claude Opus 5.5 · '+esc(monthName(s.month))+': <span class="money">'+F.eur(s.cost.eur)+'</span> (≈)'+(s.limitEur?' von '+F.eur(s.limitEur)+' Limit':'')+'</div>':'<div class="amsg wait">'+esc(K.NOT_SET)+'.</div>')+
+  return (s.configured?'<div class="amsg ok">Verbunden · Claude (Opus/Sonnet/Haiku) · '+esc(monthName(s.month))+': <span class="money">'+F.eur(s.cost.eur)+'</span> (≈)'+limitTxt(s)+'</div>':'<div class="amsg wait">'+esc(K.NOT_SET)+'.</div>')+
     '<p class="set-p">'+(s.features||[]).filter(function(f){ return f.on; }).length+' von '+(s.features||[]).length+' KI-Funktionen eingeschaltet.</p><button type="button" class="btn" data-go="ki">KI-Einstellungen &amp; Kosten</button>';
 };
 
@@ -166,7 +177,7 @@ F.feed(function(){
   var s=K.st; if(!s||!s.configured) return [];
   var out=[];
   if(s.queue) out.push({id:"ki-queue-"+s.queue,rank:4,sev:"info",icon:"spark",tag:["info","KI"],t:s.queue+(s.queue===1?" Beleg":" Belege")+" aus Mails vorbereitet",d:"Von der KI ausgelesen – kurz prüfen und als Beleg-Entwurf speichern.",acts:[["Ansehen","go:ki","primary"]]});
-  if(s.overLimit) out.push({id:"ki-limit-"+s.month,rank:6,sev:"warn",icon:"spark",tag:["warn","KI"],t:"KI-Monatslimit erreicht",d:"Assistent und Mail-Funktionen sind bis Monatsende pausiert; Belege und Steuer laufen weiter.",acts:[["Kosten","go:ki"]]});
+  if(s.overLimit) out.push({id:"ki-limit-"+s.month,rank:6,sev:"warn",icon:"spark",tag:["warn","KI"],t:"KI-Monatslimit erreicht",d:"Automatik, Assistent, Mail- und Marketing-Funktionen sind bis Monatsende pausiert; Belege, Steuer und Rechnungen laufen auf Klick weiter. Limit änderbar unter KI → Kosten & Einstellungen.",acts:[["Kosten","go:ki"]]});
   return out;
 });
 F.searcher(function(q){ return /^(ki|kü|ass|claude|chat|frag)/.test(q)?[{group:"KI",label:"KI-Assistent fragen",sub:"⌘J",act:"kichat"},{group:"KI",label:"KI-Übersicht & Kosten",sub:"Belege, UVA-Check, Anfragen",act:"go:ki"}]:[]; });
