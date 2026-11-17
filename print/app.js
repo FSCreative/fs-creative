@@ -980,9 +980,11 @@
       x.moveTo(p[0][0], p[0][1]); for (var i = 1; i < p.length; i++) x.lineTo(p[i][0], p[i][1]); x.closePath(); return; }
     x.rect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)); }
   // alles außerhalb der Form rot getönt, Schnittlinie rot, Sicherheitsabstand grün gestrichelt
-  function shapeEdges(x, W, H, bp, sp, shape, lw, dash) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); shapePath(x, W, H, bp, 0, shape); x.fill("evenodd");
+  function shapeEdges(x, W, H, bp, sp, shape, lw, dash) { x.save();
+    // hohe/große Vorschaubilder (z. B. Beachflag 900 × 4000 px) werden stark verkleinert angezeigt → Linien mitskalieren, Sicherheitslinie kräftiger (Simon 17.11.2026)
+    var kk = Math.max(1, Math.max(W, H) / 1200); lw = lw * kk; dash = dash.map(function (v) { return v * kk * 1.4; }); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); shapePath(x, W, H, bp, 0, shape); x.fill("evenodd");
     x.lineWidth = lw; x.strokeStyle = "#ff3b30"; x.beginPath(); shapePath(x, W, H, bp, 0, shape); x.stroke();
-    x.strokeStyle = "#30d158"; x.setLineDash(dash); x.beginPath(); shapePath(x, W, H, bp, Math.max(0, sp - bp), shape); x.stroke(); x.restore(); }
+    x.strokeStyle = "#30d158"; x.lineWidth = lw * 1.5; x.setLineDash(dash); x.beginPath(); shapePath(x, W, H, bp, Math.max(0, sp - bp), shape); x.stroke(); x.restore(); }
   function labelOf(slug) { var pr = S.prod.props.filter(function (x) { return x.slug === slug; })[0]; var o = pr && pr.options.filter(function (x) { return x.slug === S.sel[slug]; })[0]; return o ? o.name : ""; }
   function totalCopies() { if (kind() !== "textile") return S.copies; var t = 0, z = S.textile.sizes; Object.keys(z).forEach(function (k) { t += +z[k] || 0; }); return t; }
   // Logo-Positionen: Textil = gewählte Positionen (feste Reihenfolge), Werbeartikel = Druckfläche
