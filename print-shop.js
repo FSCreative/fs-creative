@@ -324,7 +324,7 @@ module.exports = function (D) {
   // Aufträge im Cockpit (server.js): jede gespeicherte Bestellung meldet ihren Stand – daraus wird die Aufgabe im Auftrag „Druckshop“
   function taskInfo(o) { const c = o.customer || {}, p = o.price || {};
     return { id: o.id, nr: o.nr, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
-      gross: isIntern(o) ? 0 : p.gross, purchase: p.purchase && p.purchase.total, margin: isIntern(o) ? 0 : p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
+      gross: isIntern(o) ? internRev(o).gross : p.gross, purchase: p.purchase && p.purchase.total, margin: isIntern(o) ? internRev(o).margin : p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
       invoiceId: (o.invoice && o.invoice.id && !o.invoice.deleted && String(o.invoice.id)) || "", invoiceNr: (o.invoice && !o.invoice.deleted && o.invoice.nr) || "", email: c.email || "" }; }
   function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
   // Bestellungen für lesende, häufige Wege (Cockpit-Druckseite, Feedback, Kundenkonto/Bonus, Margen, Statistik): 45 s im Speicher,
@@ -1862,15 +1862,23 @@ module.exports = function (D) {
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
   // Datei aufs Format setzen: „fill“ = füllt die Seite inkl. Beschnitt (Ränder werden angeschnitten), „fit“ = ganz sichtbar im Endformat (Rest weiß),
   // rotate 0/90/180/270 (im Uhrzeigersinn), scale 0,25–4 (1 = passend), dx/dy = Verschiebung in mm. Quelle: PDF (alle Seiten) oder JPG/PNG (eine Seite).
+  // Platzierung je Seite (Simon 17.11.2026: „Seite 2 verschieben hat Seite 1 mitverschoben“): place.pages["2"] = eigene Einstellung für Seite 2, sonst gilt die Grundeinstellung
+  function pagePlace(o, n) { const base = Object.assign({}, o || {}); const own = base.pages && base.pages[String(n)]; delete base.pages; return own ? Object.assign(base, own) : base; }
+  function placeWithPage(pl0, page, change) {   // neue Platzierung: Grundeinstellung oder nur eine Seite ändern
+    const cur = Object.assign({}, pl0 || {}), pages = Object.assign({}, cur.pages || {}); delete cur.pages;
+    if (!(page >= 1)) { const g = Object.assign(cur, change); if (Object.keys(pages).length) g.pages = pages; return g; }
+    pages[String(page)] = Object.assign(pagePlace(pl0, page), change); return Object.assign(cur, { pages });
+  }
   async function placeFile(buf, type, size, bleed, o, sides) {
     const { PDFDocument, degrees } = require("pdf-lib");
     const out = await PDFDocument.create(), b = (+bleed || 0) * MM_PT, W = size.w * MM_PT + 2 * b, H = size.h * MM_PT + 2 * b;
-    const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.05, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
+    const o0 = o;
     let items = [];
     if (type === "pdf") { const src = await PDFDocument.load(buf); for (const sp of src.getPages()) items.push(sp.node.Contents() ? { el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true, sp } : { blank: true }); }
     else items.push({ el: type === "png" ? await out.embedPng(buf) : await out.embedJpg(buf), rot: 0 });
-    const auto = o.rotate == null || o.rotate === "auto";
-    for (const it of items) {
+    for (let pi = 0; pi < items.length; pi++) { const it = items[pi], o = pagePlace(o0, pi + 1);
+      const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.05, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
+      const auto = o.rotate == null || o.rotate === "auto";
       if (it.blank) { const pg = out.addPage([W, H]); pg.setTrimBox(b, b, W - 2 * b, H - 2 * b); pg.setBleedBox(0, 0, W, H); continue; }   // leere Seite bleibt leer
       const w0 = it.el.width, h0 = it.el.height, srcRot = ((it.rot % 360) + 360) % 360;
       let rot = auto ? 0 : ((Math.round(+o.rotate / 90) * 90) % 360 + 360) % 360;
@@ -1903,7 +1911,7 @@ module.exports = function (D) {
       pg.setTrimBox(b, b, W - 2 * b, H - 2 * b); pg.setBleedBox(0, 0, W, H);
     }
     for (let i = items.length; i < (sides || 1); i++) out.addPage([W, H]);
-    return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] && !items[0].blank ? items[0].usedRot : 0, mode, mirrored: items.some(it => it.mirrored) };
+    return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] && !items[0].blank ? items[0].usedRot : 0, mode: o0.mode === "fit" ? "fit" : "fill", mirrored: items.some(it => it.mirrored) };
   }
   // Fehlender Beschnitt: automatisch ergänzen – „mirror“ = Randbereiche spiegeln (Motiv bleibt 1:1), „zoom“ = Motiv minimal vergrößern (Ränder werden angeschnitten)
   async function addBleed(buf, size, bleed, mode, insets) {
@@ -2796,6 +2804,9 @@ module.exports = function (D) {
       await done({ sentAt: nowIso(), draft: false, nr }, "Sammelrechnung " + (nr ? nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
     } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Sammelrechnung senden fehlgeschlagen: " + e.message); await store.putOrder(o); }
   }
+  // Interner Auftrag mit eigener Rechnung (z. B. OF St. Gallenkirch, Simon 17.11.2026): hinterlegter Rechnungsbetrag = Einnahme, Marge = netto − Einkauf; ohne Betrag 0
+  function internRev(o) { const r = o && o.internRevenue; if (!r || !(+r.net > 0)) return { gross: 0, net: 0, margin: 0 };
+    const pur = (o.price && o.price.purchase && +o.price.purchase.total) || 0; return { gross: +r.gross || 0, net: +r.net, margin: Math.round((+r.net - pur) * 100) / 100 }; }
   function isIntern(o) { return !!(o && o.payment && o.payment.method === "intern"); }
   async function submittedRest(o) {
     if (false && D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
@@ -3057,6 +3068,26 @@ module.exports = function (D) {
       if (!process.env.PRINT_NO_TIMERS) for (const ms of [22 * 60e3, 50 * 60e3]) { const t = setTimeout(() => { for (const x of list) store.getOrder(x.id).then(o => o && !(o.printcom && o.printcom.noFile) && pollOrder(o)).catch(e => log("Datei-Kontrolle", x.nr, e.message)); }, ms); if (t.unref) t.unref(); }
       return list.find(x => x.id === o0.id) || o0;
     } finally { list.forEach(x => LOCK.delete(x.id)); }
+  }
+  // Rechnung(en) nachträglich fertigstellen und senden, wenn eine Bestellung ohne das normale Senden auf „bestellt“ kam (Auftragsnummer nachgetragen,
+  // z. B. Neustart während des Sendens – Allesparat 17.11.2026: Rechnung blieb Entwurf). Gleiche Regeln wie beim Bestellen, nie doppelt.
+  async function finishInvoices(orders) {
+    let grpInvSent = false;
+    for (const o of orders) {
+      if (!o || !o.invoice || isIntern(o)) continue;
+      if (o.invoice.group && o.invoice.id && !o.invoice.sentAt && D.sendInvoice) { if (!grpInvSent) { grpInvSent = true; await sendGroupInvoice(o); } continue; }
+      if (!(o.invoice.id && !o.invoice.sentAt && D.sendInvoice)) continue;
+      const invSt = await invoiceStatusOf(o.invoice.id);
+      if (INV_SENT.indexOf(invSt) > -1) { o.invoice.sentAt = nowIso(); o.invoice.draft = false; o.invoice.sentBefore = true; if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} } hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "war bereits versendet – nicht erneut gesendet"); }
+      else {
+        try { await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + o.nr + " · FS Creative",
+            "Hallo " + o.customer.firstName + ",\n\ndein Druckauftrag " + o.nr + " ist jetzt in Produktion. Anbei die Rechnung" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
+          o.invoice.sentAt = nowIso(); o.invoice.draft = false; if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+          hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
+        } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Rechnung senden fehlgeschlagen: " + e.message); }
+      }
+      await store.putOrder(o);
+    }
   }
   async function rejectOrder(id, reason, refund, opt) {   // opt.silent: keine Mail an den Kunden (Storno telefonisch vereinbart / automatisch), opt.storno: "manual" | "auto"
     opt = opt || {};
@@ -3364,7 +3395,10 @@ module.exports = function (D) {
     const all = await store.listOrders(); let n = 0;
     for (const h of hits) {
       const o = all.find(x => x.nr === h[2]); if (!o || !o.printcom || o.printcom.orderNumber) continue;
-      o.printcom.orderNumber = h[1]; hist(o, "Print.com-Auftragsnummer " + h[1] + " aus der Bestellbestätigung übernommen"); await store.putOrder(o); n++;
+      o.printcom.orderNumber = h[1]; hist(o, "Print.com-Auftragsnummer " + h[1] + " aus der Bestellbestätigung übernommen");
+      // Bestellung ging an Print.com, der Shop konnte das Ergebnis aber nicht speichern (z. B. Neustart während des Sendens, Allesparat 17.11.2026) → als bestellt führen, nicht weiter „zur Prüfung“
+      if (["paid", "invoice_requested"].indexOf(o.status) > -1) { o.status = "ordered"; o.printcom.at = o.printcom.at || nowIso(); o.printcom.by = o.printcom.by || "automatisch (aus Bestellbestätigung)"; stamp(o); hist(o, "Als bestellt markiert – bitte Druckdatei bei Print.com prüfen"); await store.putOrder(o); await finishInvoices([o]).catch(e => log("Rechnung", o.nr, e.message)); }
+      await store.putOrder(o); n++;
       try { await pollOrder(o); } catch (e) { log("Status", o.nr, e.message); }
     }
     return n;
@@ -5599,16 +5633,22 @@ module.exports = function (D) {
         if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const sm = await store.fileMeta(fm.src), data = sm && await store.fileData(fm.src); if (!data) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden – bitte Datei neu hochladen" });
-        const o = { mode: b.mode === "fit" ? "fit" : "fill", rotate: [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : 0, scale: Math.min(4, Math.max(0.25, +b.scale || 1)), dx: Math.max(-2000, Math.min(2000, +b.dx || 0)), dy: Math.max(-2000, Math.min(2000, +b.dy || 0)), bg: b.bg === "white" ? "white" : "mirror" };
+        const ch = { mode: b.mode === "fit" ? "fit" : "fill", rotate: [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : 0, scale: Math.min(4, Math.max(0.25, +b.scale || 1)), dx: Math.max(-2000, Math.min(2000, +b.dx || 0)), dy: Math.max(-2000, Math.min(2000, +b.dy || 0)), bg: b.bg === "white" ? "white" : "mirror" };
+        // b.page = 1, 2 … → nur diese Seite; sonst alle Seiten gleich (eigene Seiten-Einstellungen fallen weg)
+        const pgN = parseInt(b.page, 10), onePage = pgN >= 1 && pgN <= Math.max(1, +fm.pages || 1) && (+fm.pages || 1) > 1;
+        const o = onePage ? placeWithPage(fm.place || { mode: "fill", rotate: 0, scale: 1 }, pgN, ch) : ch;
         const kindOf = x => x[0] === 0x25 && x[1] === 0x50 ? "pdf" : x[0] === 0xff && x[1] === 0xd8 ? "jpg" : x[0] === 0x89 && x[1] === 0x50 ? "png" : (sm.original || "pdf");   // Typ aus dem Inhalt – „original“ beschreibt den Kunden-Upload, nicht unbedingt diese Datei
         let r; try { r = await withPdf(() => placeFile(data, kindOf(data), fm.size, +fm.bleed || 0, o, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
         // Nur Format-/Beschnitt-Hinweise ersetzen – alles andere (Auflösung, Sonderfarben/Kontur, Seitenzahl …) bleibt, auch Fehler.
         // Vorher gingen beim Anpassen alle Fehler verloren und eine gesperrte Datei war wieder frei (Simon 17.11.2026)
-        const checks = keepChecks(fm.checks).filter(c => !(o.scale > 1 && /Auflösung|dpi/.test(c.text || "")));
-        checks.unshift({ level: "ok", text: "Angepasst: " + (o.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (o.rotate ? " · um " + o.rotate + "° gedreht" : "") + (o.scale !== 1 ? " · " + Math.round(o.scale * 100) + " %" : "") + (o.dx || o.dy ? " · verschoben" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." });
-        if (o.scale > 1.001) checks.push({ level: "warn", text: "Motiv vergrößert – was jetzt über die rote Linie hinausragt, wird abgeschnitten. Bitte in der Vorschau kontrollieren." });
-        if (fm.dpi && o.scale > 1) { const pr0 = await findProduct(fm.product).catch(() => null), D0 = (pr0 && pr0.dpi) || 300, d2 = Math.round(fm.dpi / o.scale);
+        const maxSc = Math.max(+o.scale || 1, ...Object.values(o.pages || {}).map(x => +x.scale || 1));
+        const checks = keepChecks(fm.checks).filter(c => !(maxSc > 1 && /Auflösung|dpi/.test(c.text || "")));
+        const pDesc = x => (x.mode === "fit" ? "ganz eingepasst" : "füllt das Format inkl. Beschnitt") + (x.rotate ? " · um " + x.rotate + "° gedreht" : "") + ((+x.scale || 1) !== 1 ? " · " + Math.round(x.scale * 100) + " %" : "") + (x.dx || x.dy ? " · verschoben" : "");
+        const perPage = o.pages && Object.keys(o.pages).length ? " · eigene Einstellung für Seite " + Object.keys(o.pages).sort().join(", ") : "";
+        checks.unshift({ level: "ok", text: "Angepasst" + (onePage ? " (Seite " + pgN + ")" : "") + ": " + (onePage ? pDesc(ch) : (o.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (o.rotate ? " · um " + o.rotate + "° gedreht" : "") + (o.scale !== 1 ? " · " + Math.round(o.scale * 100) + " %" : "") + (o.dx || o.dy ? " · verschoben" : "")) + perPage + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." });
+        if (maxSc > 1.001) checks.push({ level: "warn", text: "Motiv vergrößert – was jetzt über die rote Linie hinausragt, wird abgeschnitten. Bitte in der Vorschau kontrollieren." });
+        if (fm.dpi && maxSc > 1) { const pr0 = await findProduct(fm.product).catch(() => null), D0 = (pr0 && pr0.dpi) || 300, d2 = Math.round(fm.dpi / maxSc);
           if (d2 < Math.round(D0 * 250 / 300)) checks.push({ level: "warn", text: "Durch die Vergrößerung nur noch ca. " + d2 + " dpi (empfohlen " + D0 + " dpi) – der Druck kann unscharf wirken." }); }
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: o, px: fm.px, dpi: fm.dpi });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
@@ -5682,7 +5722,7 @@ module.exports = function (D) {
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       // Intern (ohne Bezahlung): kein Umsatz, keine Marge in Kennzahlen/Listen (Simon 17.11.2026) – Einkauf bleibt sichtbar
-      customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: isIntern(o) ? 0 : o.price.gross, net: isIntern(o) ? 0 : o.price.net, margin: isIntern(o) ? 0 : o.price.margin, intern: isIntern(o), purchase: o.price.purchase && o.price.purchase.total,
+      customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: isIntern(o) ? internRev(o).gross : o.price.gross, net: isIntern(o) ? internRev(o).net : o.price.net, margin: isIntern(o) ? internRev(o).margin : o.price.margin, intern: isIntern(o), internRevenue: isIntern(o) && o.internRevenue ? o.internRevenue : undefined, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
@@ -6282,17 +6322,20 @@ module.exports = function (D) {
         // Ausgangsbasis: Original des Kunden (src) – fehlt es (z. B. nach Seiten-Tausch oder Beschnitt), wird die aktuelle Datei zur Basis (Änderungen schaukeln sich nicht auf)
         let srcId = fm.src, sm = srcId ? await store.fileMeta(srcId) : null, data = sm ? await store.fileData(srcId) : null, isBase = false;
         if (!data) { srcId = fm.id; sm = { original: "pdf" }; data = await store.fileData(fm.id); isBase = true; } if (!data) return J(res, 400, { ok: false, error: "Datei nicht mehr vorhanden" });
-        const pl0 = isBase ? { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 } : (fm.place || {}), opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.05, +b.scale)) : (+pl0.scale || 1),
+        // b.page = 1, 2 … → nur diese Seite ändern (Simon 17.11.2026), sonst alle Seiten gleich
+        const plAll = isBase ? { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 } : (fm.place || {}), pgN = parseInt(b.page, 10), onePage = pgN >= 1 && pgN <= Math.max(1, +fm.pages || 1) && (+fm.pages || 1) > 1;
+        const pl0 = pagePlace(plAll, onePage ? pgN : 0), opt0 = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.05, +b.scale)) : (+pl0.scale || 1),
           dx: b.dx != null && isFinite(+b.dx) ? Math.max(-500, Math.min(500, +b.dx)) : (+pl0.dx || 0), dy: b.dy != null && isFinite(+b.dy) ? Math.max(-500, Math.min(500, +b.dy)) : (+pl0.dy || 0), bg: b.bg === "white" || (b.bg == null && pl0.bg === "white") ? "white" : "mirror" };
+        const opt = onePage ? placeWithPage(plAll, pgN, opt0) : opt0;   // ohne Seite: Grundeinstellung für alle, eigene Seiten-Einstellungen fallen weg
         const kindOf = x => x[0] === 0x25 && x[1] === 0x50 ? "pdf" : x[0] === 0xff && x[1] === 0xd8 ? "jpg" : x[0] === 0x89 && x[1] === 0x50 ? "png" : (sm.original || "pdf");   // Typ aus dem Inhalt – „original“ beschreibt den Kunden-Upload, nicht unbedingt diese Datei
         let r; try { r = await withPdf(() => placeFile(data, kindOf(data), fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
-        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? " · " + Math.round(opt.scale * 100) + " %" : "") + (opt.dx || opt.dy ? " · verschoben (" + fmtMm(opt.dx) + " / " + fmtMm(opt.dy) + " mm)" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
+        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit" + (onePage ? " (Seite " + pgN + ")" : "") + ": " + (opt0.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (opt0.rotate ? " · um " + opt0.rotate + "° gedreht" : "") + (opt0.scale !== 1 ? " · " + Math.round(opt0.scale * 100) + " %" : "") + (opt0.dx || opt0.dy ? " · verschoben (" + fmtMm(opt0.dx) + " / " + fmtMm(opt0.dy) + " mm)" : "") + (opt.pages ? " · eigene Einstellung für Seite " + Object.keys(opt.pages).sort().join(", ") : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: isBase ? "pdf" : fm.original, src: srcId, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileChecks = checks; }
         o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: curId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Cockpit (angepasst)" }]).slice(-30);
         if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
-        hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + (opt.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt.rotate ? ", " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? ", " + Math.round(opt.scale * 100) + " %" : "")); stamp(o); await store.putOrder(o);
+        hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + (onePage ? " · Seite " + pgN : "") + ": " + (opt0.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt0.rotate ? ", " + opt0.rotate + "° gedreht" : "") + (opt0.scale !== 1 ? ", " + Math.round(opt0.scale * 100) + " %" : "") + (opt0.dx || opt0.dy ? ", verschoben" : "")); stamp(o); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/replace" && req.method === "POST") {
@@ -6388,6 +6431,17 @@ module.exports = function (D) {
           if (open.length && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: open.length === 1 && grp.length === 1 ? "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" : "Im Warenkorb sind die aufbereiteten Druckdaten noch nicht freigegeben: " + open.map(x => x.nr).join(", ") + " – bestellt wird immer der ganze Warenkorb in einem Auftrag" });
           const o = await placeOrder(id, "Cockpit" + (b.force === true && open.length ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
         if (op === "transferok") { const o = await transferOk(id, b.note); return J(res, 200, { ok: true, order: o }); }
+        if (op === "sendinv") {   // Rechnung eines schon bestellten Auftrags fertigstellen und an den Kunden senden (nie doppelt)
+          const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
+          if (!(o1.printcom && o1.printcom.orderNumber)) return J(res, 400, { ok: false, error: "Noch nicht bei Print.com bestellt – die Rechnung geht beim Bestellen automatisch raus" });
+          await finishInvoices(isGroup(o1) ? await siblingsOf(o1) : [o1]); return J(res, 200, { ok: true, order: await store.getOrder(id) }); }
+        if (op === "revenue") {   // interner Auftrag: Rechnungsbetrag (brutto) als Einnahme hinterlegen → Umsatz/Marge im Cockpit; gross 0 = entfernen
+          const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden"); if (!isIntern(o1)) return J(res, 400, { ok: false, error: "Nur für interne Aufträge" });
+          const g = Math.round((+b.gross || 0) * 100) / 100; if (!(g >= 0) || g > 100000) return J(res, 400, { ok: false, error: "Betrag ungültig" });
+          if (!g) { delete o1.internRevenue; hist(o1, "Einnahme entfernt"); }
+          else { const rate = +((o1.price || {}).rate) || 20, net = Math.round(g / (1 + rate / 100) * 100) / 100; o1.internRevenue = { gross: g, net, invoice: clip(b.invoice, 40) || undefined, at: nowIso() };
+            hist(o1, "Einnahme hinterlegt: " + eur(g) + " brutto (" + eur(net) + " netto)" + (b.invoice ? " · Rechnung " + clip(b.invoice, 40) : "")); }
+          stamp(o1); await store.putOrder(o1); return J(res, 200, { ok: true, order: o1 }); }
         if (op === "fixup") {   // { id, orderNumber?, invoice?: { id, nr }, graphicFee?: true } – gilt für den ganzen Warenkorb; nur Cockpit-Daten, nichts an Print.com oder den Kunden
           const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
           const grp = isGroup(o0) ? await siblingsOf(o0) : [o0], ids = grp.map(x => x.id), nr = String(b.orderNumber || "").trim();
