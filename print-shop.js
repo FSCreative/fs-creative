@@ -1857,7 +1857,7 @@ module.exports = function (D) {
     } catch (e) { log("Preflight:", e.message); }
     return meta;
   }
-  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
+  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: (m.checks || []).filter(c => !c.admin), blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
     needBack: needBackOf(m), back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
   // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
@@ -1949,6 +1949,7 @@ module.exports = function (D) {
   async function newFile(kind, name, pdf, target, checks, extra) {
     const meta = Object.assign({ id: "f" + crypto.randomBytes(12).toString("hex"), kind, name: clip(name, 120) || "druck.pdf", bytes: pdf.length, createdAt: nowIso(), product: target.product, sel: target.sel, size: target.size, bleed: target.bleed, sides: target.sides, pages: target.pages || null, checks, orderId: null, sha256: crypto.createHash("sha256").update(pdf).digest("hex") }, extra || {});
     try { const pf = await preflightStart(meta, pdf); if (pf) meta.preflight = pf; } catch (e) { log("Preflight-Start:", e.message); }
+    if (kind === "upload" && Array.isArray(meta.checks)) { try { const fc = await fontCheck(pdf); meta.checks = meta.checks.filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) meta.checks.push(fc); meta.fontChecked = true; } catch (e) { log("Schriften-Prüfung:", e.message); } }
     await store.putFile(meta, pdf);
     return meta;
   }
@@ -2902,6 +2903,29 @@ module.exports = function (D) {
   /* Nicht eingebettete, aber gar nicht benutzte Schriften entfernen (Simon 17.11.2026, Allesparat: Print.com „Verarbeitung hat nicht geklappt“ –
      die PDF enthielt Helvetica/Times-Roman ohne Einbettung, nur in leeren Textblöcken „BT /F1 12 Tf ET“, wie sie manche PDF-Programme anlegen).
      Wird eine solche Schrift wirklich für Text benutzt, bleibt die Datei unverändert. Druckbild ändert sich nicht. */
+  // Schriften-Prüfung für die Kontrolle im Cockpit (Simon 17.11.2026: „bei so falschen Dateien möchte ich in der Prüfungsansicht wissen warum“):
+  // nicht eingebettete Schriften – benutzt (Print.com lehnt ab) oder nur angelegt (wird beim Senden entfernt). admin: true → nur im Cockpit, nicht beim Kunden.
+  async function fontCheck(buf) {
+    if (!buf || buf.length > 40e6) return null;
+    const { PDFDocument, PDFName, PDFDict, PDFRawStream, decodePDFRawStream } = require("pdf-lib");
+    const d = await PDFDocument.load(buf, { updateMetadata: false }), ctx = d.context, objs = [...ctx.enumerateIndirectObjects()], bad = new Map();
+    for (const [ref, obj] of objs) { if (!(obj instanceof PDFDict)) continue; const t = obj.get(PDFName.of("Type")); if (!t || t.toString() !== "/Font") continue;
+      const st = String(obj.get(PDFName.of("Subtype")) || ""); if (st === "/Type3" || st === "/Type0") continue;
+      const fd = obj.lookup(PDFName.of("FontDescriptor")); if (!(fd && (fd.get(PDFName.of("FontFile")) || fd.get(PDFName.of("FontFile2")) || fd.get(PDFName.of("FontFile3"))))) bad.set(ref.toString(), String(obj.get(PDFName.of("BaseFont")) || "?").replace(/^\/([A-Z]{6}\+)?/, "")); }
+    if (!bad.size) return null;
+    const names = new Map();
+    for (const [, obj] of objs) { const dict = obj instanceof PDFRawStream ? obj.dict : obj instanceof PDFDict ? obj : null; if (!dict) continue;
+      const res = dict.get(PDFName.of("Resources")) && ctx.lookup(dict.get(PDFName.of("Resources"))), f = res instanceof PDFDict && res.lookup(PDFName.of("Font"));
+      const scan = x => { for (const [k, v] of x.entries()) if (bad.has(v.toString())) names.set(k.toString(), bad.get(v.toString())); };
+      if (f instanceof PDFDict) scan(f); if (!dict.get(PDFName.of("Type")) && [...dict.entries()].some(([k, v]) => /^\/F/.test(k.toString()) && bad.has(v.toString()))) scan(dict); }
+    const used = new Set(), esc2 = n => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    for (const [, obj] of objs) { if (!(obj instanceof PDFRawStream)) continue; const st = obj.dict.get(PDFName.of("Subtype")); if (!((st && st.toString() === "/Form") || (!obj.dict.get(PDFName.of("Type")) && !st && !obj.dict.get(PDFName.of("Length1")) && !obj.dict.get(PDFName.of("Length2"))))) continue;
+      let txt; try { txt = Buffer.from(decodePDFRawStream(obj).decode()).toString("latin1"); } catch (e) { continue; }
+      for (const [n, base] of names) { const t2 = txt.replace(new RegExp("BT\\s+" + esc2(n) + "\\s+[\\d.]+\\s+Tf\\s+(?:[\\d.]+\\s+TL\\s+)?ET", "g"), ""); if (new RegExp(esc2(n) + "\\s+[\\d.]+\\s+Tf").test(t2)) used.add(base); } }
+    const all = [...new Set(bad.values())], un = all.filter(x => !used.has(x));
+    if (used.size) return { level: "warn", admin: true, text: "Schrift nicht eingebettet und im Text verwendet: " + [...used].join(", ") + " – Print.com lehnt solche Dateien oft ab („Verarbeitung hat nicht geklappt“). Kunden um eine PDF mit eingebetteten Schriften bzw. Text in Pfaden bitten." };
+    return { level: "warn", admin: true, text: "Nicht eingebettete Schrift(en) in der Datei angelegt, aber nicht verwendet: " + un.join(", ") + " – werden vor der Übergabe an Print.com automatisch entfernt (Druckbild bleibt gleich)." };
+  }
   async function dropUnusedFonts(buf) {
     if (!buf || buf.length > 40e6) return buf;
     const { PDFDocument, PDFName, PDFDict, PDFRawStream, decodePDFRawStream } = require("pdf-lib");
@@ -6132,6 +6156,8 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, dv = async (fid, label, motif) => { const m = await store.fileMeta(fid).catch(() => null) || {};
           const hs = (o.fileHistory || []).filter(h => (mot ? h.motif === motif : (h.motif == null || h.motif === -1)) && h.new === fid).pop();
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
+          // Schriften-Prüfung für ältere Dateien einmal nachholen (nur Kontrolle im Cockpit)
+          if (m && m.kind === "upload" && !m.fontChecked && (m.bytes || 0) < 40e6) { try { const data = await store.fileData(fid); const fc = data && await fontCheck(Buffer.from(data)); m.fontChecked = true; m.checks = (m.checks || []).filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) m.checks.push(fc); await store.putFile(m); } catch (e) { log("Schriften-Prüfung", fid, e.message); } }
           const srcInfo = await infoOf(m.src || fid).catch(() => null), effDpi = m.dpi ? Math.round(m.dpi / Math.max(0.05, +(m.place && m.place.scale) || 1)) : 0;
           const ck = (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))));
           const hemMm = sleeveMm(o.sel), rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
