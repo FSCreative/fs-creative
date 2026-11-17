@@ -1835,8 +1835,8 @@ module.exports = function (D) {
     doc.end(); await done;
     return { buf: Buffer.concat(chunks), warns, images, spots: used };
   }
-  async function preflightStart(meta, buf) {
-    const c = cfg(); if (!c.preflight || !c.pcKey || !meta.size) return null;
+  async function preflightStart(meta, buf, force) {
+    const c = cfg(); if ((!c.preflight && !force) || !c.pcKey || !meta.size) return null;
     const fd = new FormData();
     fd.append("document", new Blob([JSON.stringify({ bleed: { left: meta.bleed, right: meta.bleed, top: meta.bleed, bottom: meta.bleed }, profile: "GWG_SheetCmyk_2015 CMYK + RGB", template: [{ width: meta.size.w, height: meta.size.h }] })], { type: "application/json" }));
     fd.append("file", new Blob([buf], { type: "application/pdf" }), "druck.pdf");
@@ -6401,6 +6401,12 @@ module.exports = function (D) {
           // Gemeinsamer Versand (Simon 10.11.2026): Rohdaten ansehen – Versandmöglichkeiten, Rabatt-Berechnung, bestehende Print.com-Bestellung (nur lesen)
           if (b.op === "ship") return J(res, 200, { ok: true, raw: await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku, options: b.options || {}, deliveryPromise: 0 }, address: { country: b.country || "AT", postcode: b.postcode || "6793" }, numberOfDays: 21 }) });
           if (b.op === "combo") return J(res, 200, { ok: true, raw: await pcApi("POST", "/shipping/combined-shipment", { requestItems: Array.isArray(b.requestItems) ? b.requestItems.slice(0, 20) : [] }) });
+          // Datei mit der Print.com-Prüfung (GWG-Profil) testen, auch wenn die automatische Prüfung aus ist: { op:"preflight", fid } – wartet bis ca. 50 s auf das Ergebnis
+          if (b.op === "preflight") { const fm = await store.fileMeta(String(b.fid || "")), data = fm && await store.fileData(fm.id); if (!data) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+            const tmp = { id: fm.id, size: fm.size, bleed: fm.bleed, checks: [] }; tmp.preflight = await preflightStart(tmp, Buffer.from(data), true); if (!tmp.preflight) return J(res, 200, { ok: false, error: "Prüfung konnte nicht gestartet werden" });
+            const putFile = store.putFile; for (let i = 0; i < 17 && tmp.preflight.status === "PROCESSING"; i++) { await new Promise(r => setTimeout(r, 3000));
+              try { const j = await pcApi("GET", "/pdf/preflight/" + encodeURIComponent(tmp.preflight.id), undefined, { base: cfg().pcPlatform }); if (j && j.status && j.status !== "PROCESSING") tmp.preflight = { id: tmp.preflight.id, status: j.status, errors: (j.errors || []).map(x => x.message), warnings: (j.warnings || []).map(x => x.message), fixes: (j.fixes || []).map(x => x.message), reason: j.failure_reason, raw: j }; } catch (e) { tmp.preflight.err = e.message; } }
+            void putFile; return J(res, 200, { ok: true, preflight: tmp.preflight }); }
           if (b.op === "pcorder") { const nr = String(b.nr || ""); if (!/^\d{6,14}$/.test(nr)) return J(res, 400, { ok: false, error: "nr" }); return J(res, 200, { ok: true, raw: await pcApi("GET", "/orders/" + nr) }); }
           if (b.op === "wf") return J(res, 200, { ok: true, raw: await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/workfile", { options: b.options || {} }) });
           if (b.op === "tpl") return J(res, 200, { ok: true, raw: await pcApi("POST", "/printjobs/templates", { sku, options: b.options || {} }, { base: "https://platform.print.com" }) });
