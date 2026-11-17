@@ -236,6 +236,8 @@
     // kommt der Kunde über „Gestaltung ändern“, ersetzt die neue Fassung die alte Position statt eine zweite anzulegen
     if (coverNeed() && S.cover) { it.coverId = S.cover.fileId; it.coverToken = S.cover.token; it.coverName = S.cover.name; }
     if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30), adj: !!F0.adj, place: F0.place || null, pvk: F0.pvk || "" }; }   // adj/place: „Anpassen“ auch beim erneuten Öffnen aus dem Warenkorb
+    if (S.fixByUs && S.file && S.file.blocked) { it.fixByUs = true; it.check = S.check === "graphic" ? "graphic" : "pro"; }   // „Für mich richten lassen“: Position bleibt beim Profi-Datencheck
+    S.fixByUs = false;
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
     if (S.design && S.file.kind === "design" && !it.motifs && !it.textile) api("/print/api/draft", Object.assign(cfgOf(), { design: S.design, cart: true })).then(function (j) {
@@ -247,7 +249,7 @@
   var PRO_CHECK = 5, GRAPHIC_CHECK = 20;   // Datencheck: Profi (5 €) bzw. mit Grafikaufbereitung (20 €, Wunsch Simon 05.11.2026)
   // Datencheck je Position (Wunsch Simon 09.11.2026): x.check überschreibt die Auswahl für alle (S.check)
   var ckNorm = function (v) { return v === "pro" || v === "graphic" ? v : "self"; };
-  var itemCheck = function (x) { return x && x.noFile ? "self" : ckNorm(x && x.check ? x.check : S.check); };   // unbedruckt: kein Datencheck
+  var itemCheck = function (x) { if (x && x.noFile) return "self"; var v = ckNorm(x && x.check ? x.check : S.check); return x && x.fixByUs && v === "self" ? "pro" : v; };   // Datei mit Fehlern („für mich richten“) nie ohne Datencheck   // unbedruckt: kein Datencheck
   var ckFee = function (v) { return v === "graphic" ? GRAPHIC_CHECK : v === "pro" ? PRO_CHECK : 0; };
   var checkFee = function () { return S.cart.reduce(function (a, x) { return a + ckFee(itemCheck(x)); }, 0); };
   var anyCheck = function () { return S.cart.some(function (x) { return itemCheck(x) !== "self"; }); };
@@ -1226,7 +1228,7 @@
   }
   function renderPrice() {
     var b = document.getElementById("psPrice"), cta = S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
-       S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "";
+       S.step === 3 && S.file && !blk(S.file) ?'<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "";
     // Reihenfolge (06.11.2026): Preis → Liefertag → Weiter → Privat/Firma; alles Weitere aufklappbar
     var ph = priceHtml(false), hasSlot = ph.indexOf("<!--CTA-->") > -1;
     if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + (hasSlot ? ph.replace("<!--CTA-->", cta + (S.step === 2 ? whoHtml() : "")) : ph + cta + (S.step === 2 ? whoHtml() : "")) + meHtml();
@@ -2294,7 +2296,7 @@
         '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button>' +
         '<button type="button" class="ps-mode ps-mode-agency" data-act="brief"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></button></div>' + (reqHtml(false) || tplBtn("soft"));
     }
-    return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button>' + (S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (S.file ? "Bitte die rot markierten Punkte korrigieren." : "Wähle oben, wie du deine Druckdaten erstellst.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
+    return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button>' + (S.file && !blk(S.file) ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (S.file ? "Bitte die rot markierten Punkte korrigieren." : "Wähle oben, wie du deine Druckdaten erstellst.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
   // Schritt 3: Logos (Textil / Werbeartikel) – eine Datei je Position, danach eine gemeinsame PDF
   function vLogos() {
@@ -2386,8 +2388,12 @@
   function qualHtml(f) {
     var c = f.checks || [], e = c.filter(function (x) { return x.level === "error"; }).length, w = c.filter(function (x) { return x.level === "warn"; }).length + ((f.edgeWarn || []).length); if (f.edgeErr) e++;
     var st = e ? ["bad", "Bitte korrigieren", "Die Datei kann so nicht gedruckt werden – siehe rote Punkte."] : w ? ["warn", "Druckbar – mit Hinweisen", "Bitte die gelben Hinweise prüfen. Unsicher? Wähle an der Kasse den Profi-Datencheck."] : ["ok", "Druckfertig", "Format, Beschnitt und Auflösung passen."];
-    return '<div class="ps-qual ' + st[0] + '"><i aria-hidden="true"></i><div><b>' + st[1] + "</b><span>" + st[2] + "</span></div></div>";
+    // Fehler in der Datei → mit einem Klick „für mich richten lassen“ (Profi-Datencheck): Simon richtet die Datei vor dem Druck (Simon 17.11.2026, Kundin am Handy gescheitert)
+    if (e && f.blocked && S.fixByUs) st = ["warn", "Wir richten deine Datei", "Profi-Datencheck (+" + eur(PRO_CHECK) + ") ist gewählt: Wir bringen die Datei vor dem Druck in Ordnung und melden uns, falls etwas unklar ist. Du kannst einfach weiter bestellen."];
+    var fix = e && f.blocked ? (S.fixByUs ? '<button type="button" class="ps-link" data-act="fixbyus:0">Doch selbst korrigieren</button>' : '<button type="button" class="ps-btn primary ps-fixbtn" data-act="fixbyus:1">Für mich richten lassen · Profi-Datencheck +' + eur(PRO_CHECK) + "</button>") : "";
+    return '<div class="ps-qual ' + st[0] + '"><i aria-hidden="true"></i><div><b>' + st[1] + "</b><span>" + st[2] + "</span>" + (fix ? '<div style="margin-top:8px">' + fix + "</div>" : "") + "</div></div>";
   }
+  function blk(f) { return !!(f && f.blocked && !S.fixByUs); }   // gesperrt, außer der Kunde lässt die Datei von uns richten
   // Vorschau der Druckdatei (pdf.js) mit Beschnitt, Endformat und Sicherheitsabstand + Randanalyse (Inhalte zu nah am Rand, fehlender Beschnitt)
   var PDFJS = null, PFV = {};
   function pdfjs() { if (PDFJS) return PDFJS; PDFJS = new Promise(function (res, rej) { var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = function () { PDFJS = null; rej(new Error("pdf.js")); }; document.head.appendChild(sc); }); return PDFJS; }
@@ -2471,13 +2477,13 @@
     var co = S.ctype === "company", pr = S.price, mot = S.mot.n > 1 && motOk(), key = f.fileId + (S.pfvOff ? ":0" : ":1");
     var price = pr && (pr.gross || pr.net) ? '<span class="ps-stu-pr"><b>' + eur(co ? pr.net : pr.gross) + "</b><small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></span>" : "";
     var cvN = coverNeed(), cvMiss = cvN && !(S.cover && !S.cover.blocked);
-    var go = cvMiss && !f.blocked ? '<span class="ps-stu-blk">Bitte rechts noch den Umschlag hochladen</span>' : !f.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (mot ? "Weiter" : S.cartEdit ? (cartChanged(f) ? "Änderung übernehmen" : "Fertig") : f.edgeErr ? "Trotzdem in den Warenkorb" : "In den Warenkorb") + " →</button>" : '<span class="ps-stu-blk">Bitte die rot markierten Punkte korrigieren</span>';
+    var go = cvMiss && !blk(f) ? '<span class="ps-stu-blk">Bitte rechts noch den Umschlag hochladen</span>' : !blk(f) ? '<button type="button" class="ps-btn primary" data-act="next3">' + (mot ? "Weiter" : S.cartEdit ? (cartChanged(f) ? "Änderung übernehmen" : "Fertig") : f.edgeErr ? "Trotzdem in den Warenkorb" : "In den Warenkorb") + " →</button>" : '<button type="button" class="ps-btn primary" data-act="fixbyus:1" title="Profi-Datencheck: wir richten die Datei vor dem Druck">Für mich richten lassen (+' + eur(PRO_CHECK) + ")</button>";
     return '<div class="ps-stu" role="dialog" aria-modal="true" aria-label="Studio">' +
       '<header class="ps-stu-top"><div class="ps-stu-brand"><b>STUDIO</b><span>' + esc(sum) + (spec ? " · " + esc(spec) : "") + '</span></div>' +
       '<div class="ps-stu-act"><label class="ps-cb sm"><input type="checkbox" id="psStuEdges"' + (S.pfvOff ? "" : " checked") + '><span>Druckränder</span></label>' +
       '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div>' +
       price + (S.cartEdit ? '<button type="button" class="ps-btn" data-act="stucancel">Abbrechen</button>' : "") + '<button type="button" class="ps-btn" data-go="2">← Ausführung</button>'  + go + "</div></header>" +
-      '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (f.blocked ? "<b>Bitte rechts die rot markierten Punkte korrigieren.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb der grünen Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe sollen bis an den äußeren Rand reichen, damit nach dem Schneiden kein weißer Rand bleibt.</p>' +
+      '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (blk(f) ? "<b>Bitte rechts die rot markierten Punkte korrigieren – oder „Für mich richten lassen“ tippen.</b> " : f.blocked ? "<b>Wir richten deine Datei vor dem Druck.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb der grünen Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe sollen bis an den äußeren Rand reichen, damit nach dem Schneiden kein weißer Rand bleibt.</p>' +
       '<main class="ps-stu-pages' + (S.pfvBg ? " tr" : "") + '" id="psStuPages" data-key="' + esc(key) + '"><div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div></main></div>' +
       '<aside class="ps-stu-side">' + mtabs +
         '<div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages ? f.pages + " Seite" + (f.pages === 1 ? "" : "n") : "") + (f.bytes ? (f.pages ? " · " : "") + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
@@ -2659,6 +2665,10 @@
     var canReset = S.adjOrig && S.adjOrig.src === f.src && S.adjOrig.file.fileId !== f.fileId;
     var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
     var now = !pl ? "deine Datei, unverändert" : (mode === "fit" ? "ganz sichtbar" : "randlos gefüllt") + (sc !== 100 ? " · " + sc + " %" : "") + (rot ? " · " + rot + "° gedreht" : "") + (gaps ? (pl.bg === "white" ? " · freie Flächen weiß" : " · freie Flächen gespiegelt") : "");
+    // Am Handy zugeklappt (Simon 17.11.2026: zu viele Knöpfe für Laien) – ein Tipp öffnet „Anpassen“
+    var narrow = false; try { narrow = window.matchMedia("(max-width: 760px)").matches; } catch (e) {}
+    if (narrow && !S.adjOpen && !S.fixByUs) return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><button type="button" class="ps-btn small" data-act="adjopen" style="width:100%;justify-content:space-between;display:flex"><span><b>' + (hot ? "Format selbst anpassen" : "Anpassen") + "</b> · " + esc(now) + "</span><span aria-hidden=\"true\">▾</span></button></div>";
+    if (narrow && S.fixByUs && !S.adjOpen) return "";
     return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht – so passt du es an:" : "Anpassen") + '</b>' + (np > 1 ? '<div class="row" role="group" aria-label="Gilt für"><span class="pd-muted small">Gilt für:</span>' + [0].concat(Array.from({ length: np }, function (_, k) { return k + 1; })).map(function (n) { return '<button type="button" class="ps-btn small' + (pg === n ? " on" : "") + '" data-act="adjpg:' + n + '" aria-pressed="' + (pg === n) + '">' + (n ? "Seite " + n : "Alle Seiten") + "</button>"; }).join("") + "</div>" : "") + '<p class="pd-muted small">Jetzt' + (np > 1 ? (pg ? " (Seite " + pg + ")" : " (alle Seiten)") : "") + ': ' + esc(now) + '</p><div class="row">' +
       b("fill", "Randlos füllen", mode === "fill", "Füllt das ganze Format bis in den Beschnitt – was übersteht, wird abgeschnitten") + b("fit", "Ganz zeigen", mode === "fit", "Das ganze Motiv bleibt sichtbar – freie Flächen werden mit den gespiegelten Rändern gefüllt (oder weiß)") + '<span class="sep" aria-hidden="true"></span>' +
       b("rl", "↺", null, "Um 90° nach links drehen") + b("rr", "↻", null, "Um 90° nach rechts drehen") + "</div>" +
@@ -3035,7 +3045,9 @@
     if (k === "backcancel") { S.backEdit = false; render(); return; }
     if (k === "backremove") { if (S.fileFront) { S.file = S.fileFront; S.fileFront = null; } S.backEdit = false; S.previews = null; S.pmkSide = 0; render(); return; }
     if (k === "editdesign") return openDesigner();
-    if (k === "next3") { if (S.file && S.file.rebinding) { toast("Einen Moment – deine Datei wird für die neue Ausführung geprüft …"); return; } if (!S.file || S.file.blocked) return; if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
+    if (k === "adjopen") { S.adjOpen = true; render(); return; }
+    if (k === "fixbyus") { S.fixByUs = v === "1"; if (S.fixByUs && S.check !== "graphic") S.check = "pro"; render(); toast(S.fixByUs ? "Profi-Datencheck gewählt – wir richten deine Datei vor dem Druck ✓" : "Ok – bitte die rot markierten Punkte selbst korrigieren"); return; }
+    if (k === "next3") { if (S.file && S.file.rebinding) { toast("Einen Moment – deine Datei wird für die neue Ausführung geprüft …"); return; } if (!S.file || blk(S.file)) return; if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
       if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }
         if (miss > -1) { motLoad(miss); toast("Jetzt Motiv " + (miss + 1) + " gestalten oder hochladen"); render(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
         if (motSum() !== +S.copies) { toast("Die Stückzahlen der Motive ergeben nicht die Auflage – bitte in „Ausführung“ anpassen", true); return; } }

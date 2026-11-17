@@ -1637,6 +1637,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     // Schnittlinie in der Datei, aber kein Konturschnitt gewählt → Hinweis
     r = await PST.spotCheck(await mk(["Thrucut"], true), prod, { printtype: "40", custom_shape: "clean_cut" });
     assert.ok(r.checks.length === 1 && r.checks[0].level === "warn" && /„Thrucut“/.test(r.checks[0].text), JSON.stringify(r.checks));
+    // Cockpit-Prüfung gegen die bestellte Ausführung: 5/0 + Konturschnitt, Datei nur mit „Cutkontur“ → Weiß fehlt = Fehler, Kontur wird umbenannt
+    const sel50 = { printtype: "50", custom_shape: "custom_shape_die_cut" };
+    let rv = await PST.spotReview(await mk(["Cutkontur"], true), prod, sel50);
+    assert.ok(rv.white.need && !rv.white.has && rv.checks.some(c => c.level === "error" && /Weißdruck fehlt/.test(c.text)), JSON.stringify(rv));
+    assert.ok(rv.checks.some(c => c.level === "ok" && /„Cutkontur“.*„Thrucut“/.test(c.text)), JSON.stringify(rv.checks));
+    const fixed = await PST.spotFixForPrint(await mk(["Cutkontur", "Weiss"], true), prod, sel50);
+    assert.deepStrictEqual((await FI.spotScan(fixed)).spots.sort(), ["Thrucut", "White"], "vor dem Senden umbenannt");
+    rv = await PST.spotReview(await mk(["White", "Thrucut"], true), prod, sel50);
+    assert.ok(rv.white.has && rv.white.overprint && rv.checks.every(c => c.level === "ok"), JSON.stringify(rv.checks));
+    rv = await PST.spotReview(await mk(["White"], true), prod, { printtype: "40", custom_shape: "clean_cut" });
+    assert.ok(!rv.white.need && rv.white.has && rv.checks.some(c => c.level === "warn" && /ohne Weiß/.test(c.text)), JSON.stringify(rv.checks));
+    // Weiß-Ansicht: Ersatzfarbe der White-Separation wird Pink
+    const sc = await FI.spotScan(await mk(["White", "Thrucut"], true)); assert.strictEqual(sc.recolor(s => s === "White", [1, 0, 0.6]), 1);
   });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }

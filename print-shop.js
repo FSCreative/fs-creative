@@ -1532,7 +1532,7 @@ module.exports = function (D) {
     return out;
   }
   // häufige falsche Namen → richtige Sonderfarbe (Illustrator/Corel/Affinity-Vorlagen anderer Druckereien)
-  const SPOT_ALIAS = { White: /^(spot ?)?(white|weiss|weiß|weißdruck|weissdruck|white ?ink|wit|blanc|w1|rdg_white)( ?\d)?$/i, Thrucut: /^(cut ?contour|contour ?cut|cutcontour|cut|cutline|cut line|die ?cut|diecut|stanz(e|kontur|linie)?|kontur(schnitt)?|schnitt(kontur|linie)?|thru ?cut|through ?cut|cutter|plotter|plot)$/i,
+  const SPOT_ALIAS = { White: /^(spot ?)?(white|weiss|weiß|weißdruck|weissdruck|wei(ß|ss) ?(ebene|layer|unterdruck)|white ?(ink|layer|underprint)|wit|blanc|w1|rdg_white)( ?\d)?$/i, Thrucut: /^(cut ?contour|cut ?kontur|contour ?cut|cutcontour|schneide ?(kontur|linie)|kontur ?linie|stanz ?form|cut|cutline|cut line|die ?cut|diecut|stanz(e|kontur|linie)?|kontur(schnitt)?|schnitt(kontur|linie)?|thru ?cut|through ?cut|cutter|plotter|plot)$/i,
     Kisscut: /^(kiss ?cut|kisscutcontour|anschnitt|halbschnitt)$/i, Creasing: /^(creas(e|ing)|rill(ung|linie)?|nut(linie)?|falz(linie)?|score|fold(line)?)$/i, Perforation: /^(perf(o|oration)?|perforier(ung|linie))$/i, Drilling: /^(drill(ing)?|bohr(ung|loch)?|hole)$/i };
   const SPOT_TECH = /^(White|Thrucut|Kisscut|Creasing|Perforation|Drilling|Insidecut|Vcut|Score|Scodix .+)$/;
   async function spotCheck(buf, prod, sel) {
@@ -1555,6 +1555,31 @@ module.exports = function (D) {
     if (needs.length && sc.spots.length && !sc.overprint) checks.push({ spot: true, level: "warn", text: "Die Sonderfarben sind offenbar nicht auf „Überdrucken“ gestellt – sonst entstehen weiße Lücken (Aussparungen) unter Linien und Weiß. Bitte beim Export „Überdrucken“ aktivieren." });
     if (renamed) { try { out = await withPdf(() => pdfSave(sc.doc)); } catch (e) { log("Sonderfarben umbenennen:", e.message); checks.forEach(c => { if (/automatisch umbenannt/.test(c.text)) { c.level = "warn"; c.text = c.text.replace("automatisch umbenannt.", "bitte so umbenennen."); } }); } }
     return { checks, buf: out };
+  }
+  /* Weiß & Sonderfarben gegen die BESTELLTE Ausführung prüfen (Simon 17.11.2026, Timna: 5/0 auf transparenter Folie, Datei ohne „White“, Kontur „Cutkontur“ –
+     die Upload-Prüfung lief mit einer anderen Ausführung bzw. ging beim Anpassen verloren). Läuft im Cockpit bei jeder Druckdatei und beim Bestellen. */
+  async function spotReview(buf, prod, sel) {
+    const needs = spotNeedsOf(prod || {}, sel), sc = await withPdf(() => FILEINFO.spotScan(buf)), have = sc.spots, checks = [];
+    const white = { need: needs.some(n => n[0] === "White"), has: false, name: "", overprint: !!sc.overprint };
+    const find = name => have.indexOf(name) > -1 ? name : have.find(s => s.toLowerCase() === name.toLowerCase() || (SPOT_ALIAS[name] && SPOT_ALIAS[name].test(s.trim()) && !needs.some(n => n[0] === s))) || "";
+    needs.forEach(([name, label, crit]) => {
+      const got = find(name); if (name === "White") { white.has = !!got; white.name = got; }
+      if (got === name) checks.push({ spot: true, level: sc.overprint ? "ok" : "warn", text: label + ": Sonderfarbe „" + name + "“ ist angelegt" + (sc.overprint ? " (überdruckend)." : " – aber offenbar nicht überdruckend, sonst entstehen Aussparungen.") });
+      else if (got) checks.push({ spot: true, level: "ok", text: label + ": angelegt als „" + got + "“ – wird beim Senden an Print.com automatisch in „" + name + "“ umbenannt." });
+      else { const other = have.filter(s => !SPOT_TECH.test(s));
+        checks.push({ spot: true, level: crit || name === "White" ? "error" : "warn", text: label + " fehlt: keine Sonderfarbe „" + name + "“ in der Datei" + (other.length ? " (gefunden: " + other.slice(0, 4).map(x => "„" + x + "“").join(", ") + ")" : "") + "." +
+          (name === "White" ? " Bestellt ist Druck mit Weiß – ohne Weiß-Ebene wird kein Weiß gedruckt, Farben wirken auf transparentem/farbigem Material durchscheinend." : crit ? " Ohne Kontur kann nicht geschnitten werden." : "") }); }
+    });
+    if (!white.need) { const w = have.find(s => s === "White" || SPOT_ALIAS.White.test(s.trim())); if (w) { white.name = w; white.has = true; checks.push({ spot: true, level: "warn", text: "Die Datei hat eine Weiß-Ebene („" + w + "“), bestellt ist aber Druck ohne Weiß – das Weiß wird nicht gedruckt." }); } }
+    have.filter(s => SPOT_TECH.test(s) && s !== "White" && !needs.some(n => n[0] === s)).forEach(s => checks.push({ spot: true, level: "warn", text: "Sonderfarbe „" + s + "“ in der Datei, in der Ausführung ist dafür aber nichts gewählt – wird ignoriert oder mitgedruckt." }));
+    return { checks, white, spots: have, needs: needs.map(n => n[0]) };
+  }
+  // Vor dem Senden an Print.com: falsch benannte Sonderfarben (z. B. „Cutkontur“, „Weiss“) in die Namen umbenennen, die Print.com erwartet
+  async function spotFixForPrint(buf, prod, sel) {
+    const needs = spotNeedsOf(prod || {}, sel); if (!needs.length) return buf;
+    const sc = await withPdf(() => FILEINFO.spotScan(buf)); let n = 0;
+    needs.forEach(([name]) => { if (sc.spots.indexOf(name) > -1) return; const al = sc.spots.find(s => s.toLowerCase() === name.toLowerCase() || (SPOT_ALIAS[name] && SPOT_ALIAS[name].test(s.trim()) && !needs.some(x => x[0] === s))); if (al) n += sc.rename(al, name); });
+    return n ? Buffer.from(await withPdf(() => pdfSave(sc.doc))) : buf;
   }
   async function imageToPdf(buf, type, size, bleed, sides) {
     const PDFDocument = require("pdfkit");
@@ -2620,7 +2645,7 @@ module.exports = function (D) {
     if (method === "mollie" && !cfg().mollieKey) throw Object.assign(new Error("Online-Zahlung ist noch nicht eingerichtet – bitte Rechnung wählen oder uns kontaktieren"), { status: 503 });
     const prepared = [];
     for (let i = 0; i < items.length; i++) {
-      const it = Object.assign({}, items[i] || {}, { __disc: input.__disc || [] }), x = await prepItem(it, s, cust, method, uidRes, i, items.length);
+      const it = Object.assign({}, items[i] || {}, { __disc: input.__disc || [], __check: (items[i] && items[i].check) || input.check || "" }), x = await prepItem(it, s, cust, method, uidRes, i, items.length);
       if (x.priceChanged) return { priceChanged: true, price: x.price, index: i };
       if (shipTo && x.o) x.o.shipTo = shipTo;
       prepared.push(x);
@@ -2685,7 +2710,8 @@ module.exports = function (D) {
       if (busy) throw fail(w + "Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
       if (f.kind === "logo" || (f.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
       if (f.product !== prod.key || canon(fileSelKey(f.sel)) !== canon(fileSelKey(n.fileSel))) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
-      if ((f.checks || []).some(c => c.level === "error")) throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren");
+      // Profi-Datencheck/Grafikaufbereitung (Simon 17.11.2026, Jacqueline am Handy): Fehler sperren nicht – Simon richtet die Datei vor dem Druck (geht nie automatisch raus)
+      if ((f.checks || []).some(c => c.level === "error") && input.__check !== "pro" && input.__check !== "graphic") throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren oder den Profi-Datencheck wählen (dann richten wir die Datei für dich)");
       return f;
     };
     let fm = null, motifs = null; const noFile = noFileNeeded(prod, n.sel);
@@ -2725,6 +2751,14 @@ module.exports = function (D) {
       const net = r2(+of.feeNet || 0), vat = r2(net * (o.price.rate || 0) / 100), gross = r2(net + vat);
       if (net > 0) { o.price.designFee = { net, vat, gross }; o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net); }
       o.briefId = br.id;
+    }
+    // Weiß & Sonderfarben gegen die bestellte Ausführung (die Datei kann mit einer anderen Ausführung hochgeladen worden sein): Fehler → Bestellung geht in die Prüfung
+    o.fileChecks = (o.fileChecks || []).slice();
+    for (const fid of (motifs ? motifs.map(x => x.fileId) : [o.fileId]).filter(Boolean)) {
+      try { const fmx = await store.fileMeta(fid); if (!fmx || (fmx.bytes || 0) > 150e6) continue; const data = await store.fileData(fid); if (!data) continue;
+        const rv = await spotReview(Buffer.from(data), prod, n.sel); fmx.spotRev = { k: "2|" + JSON.stringify(n.sel || {}), r: rv }; await store.putFile(fmx).catch(() => {});
+        rv.checks.filter(c => c.level === "error").forEach(c => o.fileChecks.push({ admin: true, spot: true, level: "error", text: (motifs ? "Motiv " + (motifs.findIndex(x => x.fileId === fid) + 1) + ": " : "") + c.text }));
+      } catch (e) { log("Sonderfarben beim Bestellen", fid, e.message); }
     }
     return { o, fm, clientWarn: Array.isArray(input.clientWarn) ? input.clientWarn : null };
   }
@@ -5131,6 +5165,7 @@ module.exports = function (D) {
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
+        if (buf.length < 150e6) buf = await findProduct(o.product.key).then(pr => spotFixForPrint(buf, pr, o.sel)).catch(e => { log("Sonderfarben umbenennen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
       if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flagshapes.js" || p === "/print/print.css") {
@@ -6161,11 +6196,16 @@ module.exports = function (D) {
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
           // Schriften-Prüfung für ältere Dateien einmal nachholen (nur Kontrolle im Cockpit)
           if (m && m.kind === "upload" && !m.fontChecked && (m.bytes || 0) < 40e6) { try { const data = await store.fileData(fid); const fc = data && await fontCheck(Buffer.from(data)); m.fontChecked = true; m.checks = (m.checks || []).filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) m.checks.push(fc); await store.putFile(m); } catch (e) { log("Schriften-Prüfung", fid, e.message); } }
+          // Weiß & Sonderfarben immer gegen die bestellte Ausführung prüfen (Ergebnis je Datei + Ausführung gemerkt)
+          let spot = null; const spK = "2|" + JSON.stringify(o.sel || {});
+          if (m && m.spotRev && m.spotRev.k === spK) spot = m.spotRev.r;
+          else if (m && m.id && (m.bytes || 0) < 150e6) { try { const data = await store.fileData(fid); if (data) { spot = await spotReview(Buffer.from(data), prodX, o.sel); m.spotRev = { k: spK, r: spot }; await store.putFile(m).catch(() => {}); } } catch (e) { log("Sonderfarben-Prüfung", fid, e.message); } }
           const srcInfo = await infoOf(m.src || fid).catch(() => null), effDpi = m.dpi ? Math.round(m.dpi / Math.max(0.05, +(m.place && m.place.scale) || 1)) : 0;
           const ck = (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))));
-          const hemMm = sleeveMm(o.sel), rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
+          const hemMm = sleeveMm(o.sel); let rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
             noBleed: ck.some(c => BLEED_RX.test(c.text || "")), hem: hemMm ? "Tunnelsaum " + hemMm / 10 + " cm: in diesem Bereich steckt die Stange – keine Texte/Logos hinein." : /eyelet|oese|öse/i.test(JSON.stringify(o.sel || {})) ? "Ösen sitzen im Rand – Texte und Logos nicht in die Ecken bzw. an den Rand legen." : "" });
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || "")))), adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          if (spot) rec = rec.filter(r => r.title !== "Technische Farben");
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
@@ -6372,6 +6412,14 @@ module.exports = function (D) {
         hist(o, "Druckdaten im Cockpit: frühere Version wiederhergestellt" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + " (" + (meta.name || fid) + ")"); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
+      if (p === "/admin/api/print/whiteview" && req.method === "GET") {   // „Weiß ansehen“: Druckdatei mit der Weiß-Ebene in Pink (zeigt, wo Weiß druckt)
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
+        if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        const data = await store.fileData(fid); if (!data) return J(res, 404, { ok: false, error: "Datei nicht mehr vorhanden" });
+        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [1, 0, 0.6]); out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
+        catch (e) { return J(res, 400, { ok: false, error: "Weiß-Ansicht nicht möglich: " + String(e.message || e).slice(0, 80) }); }
+        return D.send(res, 200, out, "application/pdf", { "Content-Length": String(out.length), "Content-Disposition": 'inline; filename="' + o.nr + '-weiss.pdf"', "Cache-Control": "private, no-store" });
+      }
       if (p === "/admin/api/print/fit" && req.method === "POST") {   // Druckdaten im Cockpit anpassen (einpassen/füllen/drehen) – vom Original aus, neue Datei, alte bleibt im Verlauf
         const b = await readJson(req, 4000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Anpassen nicht mehr möglich" });
@@ -6389,7 +6437,7 @@ module.exports = function (D) {
         const kindOf = x => x[0] === 0x25 && x[1] === 0x50 ? "pdf" : x[0] === 0xff && x[1] === 0xd8 ? "jpg" : x[0] === 0x89 && x[1] === 0x50 ? "png" : (sm.original || "pdf");   // Typ aus dem Inhalt – „original“ beschreibt den Kunden-Upload, nicht unbedingt diese Datei
         let r; try { r = await withPdf(() => placeFile(data, kindOf(data), fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
-        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit" + (onePage ? " (Seite " + pgN + ")" : "") + ": " + (opt0.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (opt0.rotate ? " · um " + opt0.rotate + "° gedreht" : "") + (opt0.scale !== 1 ? " · " + Math.round(opt0.scale * 100) + " %" : "") + (opt0.dx || opt0.dy ? " · verschoben (" + fmtMm(opt0.dx) + " / " + fmtMm(opt0.dy) + " mm)" : "") + (opt.pages ? " · eigene Einstellung für Seite " + Object.keys(opt.pages).sort().join(", ") : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
+        const checks = (fm.checks || []).filter(c => !/^Angepasst( im Cockpit)?( \(Seite \d+\))?:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit" + (onePage ? " (Seite " + pgN + ")" : "") + ": " + (opt0.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (opt0.rotate ? " · um " + opt0.rotate + "° gedreht" : "") + (opt0.scale !== 1 ? " · " + Math.round(opt0.scale * 100) + " %" : "") + (opt0.dx || opt0.dy ? " · verschoben (" + fmtMm(opt0.dx) + " / " + fmtMm(opt0.dy) + " mm)" : "") + (opt.pages ? " · eigene Einstellung für Seite " + Object.keys(opt.pages).sort().join(", ") : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: isBase ? "pdf" : fm.original, src: srcId, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileChecks = checks; }
         o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: curId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Cockpit (angepasst)" }]).slice(-30);
@@ -6699,6 +6747,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { addBleed, spotNeedsOf, spotCheck, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { addBleed, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

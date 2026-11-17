@@ -248,7 +248,10 @@ async function spotScan(buf, doc) {
   }
   const rename = (from, to) => { let n = 0; slots.forEach(x => { if (x.s !== from) return;
     if (x.arr) { x.arr.set(x.i, N(to)); n++; } else if (x.dict) { const v = x.dict.get(x.key); x.dict.delete(x.key); x.dict.set(N(to), v); n++; } x.s = to; }); return n; };
-  return { doc: d, spots: Array.from(names.keys()), overprint: op, rename };
+  // Bildschirm-Ansicht (Cockpit „Weiß ansehen“): Ersatzfarbe einer Separation durch eine Signalfarbe ersetzen – zeigt, wo die Sonderfarbe druckt
+  const recolor = (test, rgb) => { let n = 0; slots.forEach(x => { if (!x.arr || !test(x.s)) return; const t = x.arr.get(0); if (!(t instanceof PDFName) || t.asString() !== "/Separation") return;
+    x.arr.set(2, N("DeviceRGB")); x.arr.set(3, ctx.obj({ FunctionType: 2, Domain: [0, 1], C0: [1, 1, 1], C1: rgb, N: 1 })); n++; }); return n; };
+  return { doc: d, spots: Array.from(names.keys()), overprint: op, rename, recolor };
 }
 
 module.exports = { fileInfo, recommend, spotScan, _t: { jpgInfo, pngInfo, iccInfo } };
