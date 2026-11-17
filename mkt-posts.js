@@ -153,7 +153,7 @@ module.exports = function (C) {
     if (b.key === "druckshop") await syncPrintPhotos().catch(e => console.error("marketing: Produktfotos", e.message));
     await webFresh(b);
     await describeLibrary(b.key).catch(() => 0);
-    const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + placesTxt(b) + bilderTxt(b) + (post.format === "reel" ? MU.promptBlocks(b.key) : "") + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
+    const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + placesTxt(b) + bilderTxt(b, String(instruction || "") + " " + (cur && (cur.idea || cur.pillar) || "")) + (post.format === "reel" ? MU.promptBlocks(b.key) : "") + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
       "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint() + stockHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 12000);
     const x = (r.json && r.json.posts || [])[0]; if (!x) throw fail(502, "Die KI hat keinen Beitrag geliefert – bitte nochmal.");
@@ -174,7 +174,7 @@ module.exports = function (C) {
     if (b.key === "druckshop") await syncPrintPhotos().catch(e => console.error("marketing: Produktfotos", e.message));
     await webFresh(b);
     const descEur = await describeLibrary(b.key).catch(e => { console.error("marketing: Bildbeschreibung", e.message); return 0; });
-    const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + "<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + (mix.indexOf("reel") > -1 ? MU.promptBlocks(b.key) : "") + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
+    const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + "<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b, typeof vorg === "string" ? vorg : "") + (mix.indexOf("reel") > -1 ? MU.promptBlocks(b.key) : "") + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
       "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? (count === 1 ? "wähle das Format, das zum Thema am besten passt (Reel oder Karussell bringen meist die meiste Reichweite)." : "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite).") : "nur dieses Format.") +
       (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint() + stockHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 24000);
@@ -281,6 +281,7 @@ module.exports = function (C) {
   // Grundstock im Projekt (mkt-assets/<marke>/: Fotos von der Website, Spielszenen, Trailer-Clips) + eigene Uploads (Datenordner marketing/library/<marke>/)
   // + beim Druckshop die Produktfotos aus dem Shop (marketing/library-print/, Kennung „p-…“, täglich abgeglichen)
   const LIB = path.join(DIR, "library"), PLIB = path.join(DIR, "library-print");
+  const PGAL = path.join(DIR, "library-print-gallery");   // alle Print.com-Bilder (Galerie je Produkt + Werbebilder), Simon 17.11.2026
   function library(key) {
     const out = [], hidden = ((S().mkt.libHidden || {})[key]) || [];
     const add = (dir, own, pre) => { let fl = []; try { fl = fs.readdirSync(dir); } catch (e) { return; }
@@ -288,6 +289,7 @@ module.exports = function (C) {
         let size = 0; try { size = fs.statSync(path.join(dir, f)).size; } catch (e) {} out.push({ id, file: path.join(dir, f), kind: /mp4/i.test(m[1]) ? "clip" : "photo", own, name: f, size, product: pre === "p-" }); }); };
     add(path.join(C.ROOT || path.dirname(DIR), "mkt-assets", key), false); add(path.join(LIB, key), true);
     if (key === "druckshop") add(PLIB, false, "p-");
+    if (key === "druckshop") add(PGAL, false, "g-");
     add(WEB.libDir(key), false, "w-");   // Fotos von der Website (täglich abgeglichen)
     return out;
   }
@@ -314,6 +316,61 @@ module.exports = function (C) {
       st.printPhotosAt = nowIso(); save(); return added;
     })().finally(() => { printSync = null; });
     return printSync;
+  }
+  // Alle Bilder von Print.com für den Druckshop (Simon 17.11.2026: „wir dürfen alle verwenden“): Galerie jedes Produkts + Werbebilder.
+  // Beschreibung = Produktname/Kurztext (keine KI) in eigener Index-Datei – bei tausenden Bildern nicht in den Einstellungen. Höchstens wöchentlich, im Hintergrund.
+  const PROMO = [
+    ["2022/12/homepage-hero-lookbooks-scaled.jpg", "Werbebild Print.com: türkiser Koffer mit Lookbooks und Musterbüchern, Druckmuster"],
+    ["2023/04/Shopify-header-totaal_zonder-logo-scaled.jpg", "Werbebild Print.com: Laptop aus Papier mit Druckshop am Bildschirm, Stecker, Blitze – online bestellen, Online-Designer"],
+    ["2023/11/2023-homepage-okt2023-2000px.jpg", "Werbebild Print.com: Flugzeugsitz mit Laptop, Drucksachen und Sekt – Druck als First-Class-Service"],
+    ["2023/01/Cards.jpg", "Werbebild Print.com: rosa Klappkarte „Love rules“ – Grußkarten, Einladungen"],
+    ["2023/03/categories-cards.jpg", "Werbebild Print.com: verschiedene Karten und Grußkarten"],
+    ["2023/01/Folded-Leaflet.jpg", "Werbebild Print.com: gefalzte Flyer und Folder"],
+    ["2023/01/Growpaper-cards.jpg", "Werbebild Print.com: Samenpapier-Karten, nachhaltige Drucksachen"],
+    ["2023/01/Mugs_printed.jpg", "Werbebild Print.com: bedruckte Tassen"],
+    ["2023/01/Plaatmateriaal_dibond_collage.jpg", "Werbebild Print.com: Schilder aus Alu-Dibond"],
+    ["2023/01/Real-estate-sign__1_.jpg", "Werbebild Print.com: Immobilienschild, Außenwerbung"],
+    ["2023/01/Aluminum_textile_frame.jpg", "Werbebild Print.com: Textilrahmen aus Aluminium, Messewand"],
+    ["2023/04/brochures_magazines_geniet_broch_totaal_720.jpg", "Werbebild Print.com: Broschüren und Magazine, geheftet"],
+    ["2023/08/canvas-shopping-bags-white.jpg", "Werbebild Print.com: bedruckte Stofftaschen"],
+    ["2023/09/Boxes_fefco_red_-braun.jpg", "Werbebild Print.com: bedruckte Versandkartons rot und braun"],
+    ["2023/06/Lamppost-Signs-logo-name-rvv-grijs-bewerkt.jpg", "Werbebild Print.com: Laternenschilder, Außenwerbung"]];
+  const GIDX = () => { try { return JSON.parse(fs.readFileSync(path.join(PGAL, "index.json"), "utf8")); } catch (e) { return {}; } };
+  let galSync = null, galIdx = null;
+  const galDesc = () => galIdx || (galIdx = GIDX());
+  async function syncPrintGallery(force) {
+    const st = S().mkt; if (!force && st.printGalleryAt && Date.now() - Date.parse(st.printGalleryAt) < 7 * 864e5) return 0;
+    if (galSync) return galSync;
+    galSync = (async () => {
+      fs.mkdirSync(PGAL, { recursive: true });
+      const base = publicBase(), idx = GIDX(), jobs = [], seen = new Set(); let added = 0;
+      const cat = await fetch(base + "/print/api/catalog", { signal: AbortSignal.timeout(30000) }).then(r => r.json());
+      const prods = (cat && (cat.products || cat.items)) || (Array.isArray(cat) ? cat : []);
+      for (const p of prods) {
+        let d = null; try { d = await fetch(base + "/print/api/product?key=" + encodeURIComponent(p.key), { signal: AbortSignal.timeout(20000) }).then(r => r.json()); } catch (e) { continue; }
+        const pr = (d && (d.product || d)) || {}, imgs = [].concat(pr.img || [], pr.images || []).map(String).filter(u => /^https:\/\/images\.ctfassets\.net\/.+\.(jpe?g|png|webp)/i.test(u));
+        let n = 0;
+        for (const u of imgs) { const asset = u.split("?")[0]; if (seen.has(asset) || n >= 8) continue; seen.add(asset); n++;
+          const f = (String(p.key).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 50) + "-" + crypto.createHash("sha1").update(asset).digest("hex").slice(0, 8) + ".jpg");
+          idx["g-" + f] = clip("Produktfoto (Print.com): " + (pr.title || p.title || p.key) + (pr.desc ? " – " + pr.desc : ""), 160);
+          jobs.push({ f, url: asset + "?fm=jpg&w=900&q=72" }); }
+      }
+      PROMO.forEach(([rel, txt]) => { const f = "werbung-" + rel.split("/").pop().toLowerCase().replace(/\.[a-z]+$/, "").replace(/[^a-z0-9_-]+/g, "-").slice(0, 50) + ".jpg"; idx["g-" + f] = clip(txt, 160); jobs.push({ f, url: "https://www.print.com/wp-content/uploads/" + rel, big: true }); });
+      const want = new Set(jobs.map(j => j.f)), q = jobs.slice();
+      const work = async () => { while (q.length) { const j = q.shift(), file = path.join(PGAL, j.f); if (fs.existsSync(file)) continue;
+        try { const r = await fetch(j.url, { signal: AbortSignal.timeout(30000), headers: { "User-Agent": "Mozilla/5.0" } }); if (!r.ok) throw new Error("HTTP " + r.status); let buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length < 2000 || buf[0] !== 0xff || buf[1] !== 0xd8) throw new Error("kein JPG");
+          if (j.big && buf.length > 600e3) { const t = path.join(WORK, "gal-" + rand() + ".jpg"); fs.mkdirSync(WORK, { recursive: true }); fs.writeFileSync(t, buf);
+            try { await R.ffmpeg(["-i", t, "-vf", "scale='min(1600,iw)':-2", "-frames:v", "1", "-q:v", "4", file + ".tmp.jpg"]); fs.renameSync(file + ".tmp.jpg", file); } finally { try { fs.unlinkSync(t); } catch (e) {} } }
+          else fs.writeFileSync(file, buf);
+          added++; } catch (e) { want.delete(j.f); delete idx["g-" + j.f]; } } };
+      await Promise.all([work(), work(), work(), work()]);
+      let fl = []; try { fl = fs.readdirSync(PGAL); } catch (e) {}
+      fl.forEach(f => { if (/\.jpg$/.test(f) && !want.has(f)) { try { fs.unlinkSync(path.join(PGAL, f)); } catch (e) {} delete idx["g-" + f]; } });
+      fs.writeFileSync(path.join(PGAL, "index.json"), JSON.stringify(idx)); galIdx = idx;
+      st.printGalleryAt = nowIso(); save(); console.log("marketing: Print.com-Bilder", added, "neu,", want.size, "gesamt"); return added;
+    })().finally(() => { galSync = null; });
+    return galSync;
   }
   // Envato-Import: ZIP (auch ZIP in ZIP) → Fotos (JPG/PNG/WebP, auf max. 2400 px) und Hochformat-/Querformat-Videos (MP4/MOV → MP4) in die Sammlung,
   // Sounds (MP3/WAV/M4A/AIFF/OGG) in die Musik, Lizenztext (TXT/PDF/HTML im ZIP) samt Projektname als Nachweis je Datei.
@@ -354,7 +411,7 @@ module.exports = function (C) {
   const LD = () => (S().mkt.libDesc = S().mkt.libDesc || {});
   async function describeLibrary(key) {
     if (!C.KI || !C.KI.marketingVision || !C.KI.marketingOn || !C.KI.marketingOn() || !R.videoReady()) return 0;
-    const d = LD()[key] = LD()[key] || {}, todo = library(key).filter(x => x.kind === "photo" && !d[x.id]).slice(0, 24); if (!todo.length) return 0;
+    const d = LD()[key] = LD()[key] || {}, todo = library(key).filter(x => x.kind === "photo" && !d[x.id] && !descOf(key, x.id)).slice(0, 24); if (!todo.length) return 0;
     const tmp = path.join(WORK, "desc-" + key + "-" + rand()); fs.mkdirSync(tmp, { recursive: true }); const items = [];
     for (let i = 0; i < todo.length; i++) { const f = path.join(tmp, i + ".jpg"); try { await R.ffmpeg(["-i", todo[i].file, "-vf", "scale=512:-2", "-frames:v", "1", "-q:v", "5", f]); items.push({ id: todo[i].id, jpeg: fs.readFileSync(f) }); } catch (e) {} }
     let eur = 0;
@@ -375,7 +432,15 @@ module.exports = function (C) {
       return { it, it2 };
     });
   }
-  const bilderTxt = b => { const d = LD()[b.key] || {}, ph = library(b.key).filter(x => x.kind === "photo" && d[x.id]); return ph.length ? "<bilder>\n" + ph.slice(0, 40).map(x => x.id + " | " + d[x.id].d).join("\n") + "\n</bilder>\n" : ""; };
+  // Bildbeschreibung: KI/Shop-Text aus den Einstellungen, sonst Index der Print.com-Bilder
+  const descOf = (key, id) => { const d = LD()[key] || {}; if (d[id]) return d[id].d; if (key === "druckshop" && id.indexOf("g-") === 0) return galDesc()[id] || ""; return ""; };
+  // Bei vielen Bildern (Druckshop: tausende von Print.com) nur die zum Thema passenden an die KI geben (Wörter aus Vorgaben/Thema), Rest gemischt
+  const bilderTxt = (b, topic) => { const ph = library(b.key).filter(x => x.kind === "photo" && descOf(b.key, x.id)); if (!ph.length) return "";
+    let pick = ph; if (ph.length > 60) { const words = String(topic || "").toLowerCase().split(/[^a-zäöüß0-9]+/).filter(w => w.length > 3);
+      const sc = x => { const t = descOf(b.key, x.id).toLowerCase(); return words.reduce((a, w) => a + (t.indexOf(w.slice(0, Math.max(4, w.length - 2))) > -1 ? 1 : 0), 0) + (/^g-werbung/.test(x.id) ? 0.5 : 0); };
+      const ranked = ph.map(x => ({ x, s: sc(x), r: hashNum(x.id + String(topic || "").slice(0, 40)) })).sort((m, n) => n.s - m.s || m.r - n.r);
+      pick = ranked.filter(m => m.s >= 1).slice(0, 45).map(m => m.x); const rest = ranked.filter(m => pick.indexOf(m.x) < 0).slice(0, 60 - pick.length).map(m => m.x); pick = pick.concat(rest); }
+    return "<bilder>\n" + pick.map(x => x.id + " | " + descOf(b.key, x.id)).join("\n") + "\n</bilder>\n"; };
   function seeded(arr, seed) { const a = arr.slice(); let x = seed >>> 0; for (let i = a.length - 1; i > 0; i--) { x = (x * 1664525 + 1013904223) >>> 0; const j = x % (i + 1); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function photoUri(item) { const buf = fs.readFileSync(item.file), type = /\.png$/i.test(item.file) ? "image/png" : "image/jpeg", sz = C.imgSize ? C.imgSize(buf, type) : { w: 1, h: 1 }; return { uri: "data:" + type + ";base64," + buf.toString("base64"), ratio: sz.h ? sz.w / sz.h : 1 }; }
   // Reels: Hintergrund-Videos – eigene Clips der Marke (z. B. Skikaiser-Trailer), sonst Stockvideos (Pexels) bei Marken mit heller Schrift auf dunklem Grund
@@ -1231,7 +1296,7 @@ module.exports = function (C) {
     }
     // Bildersammlung: ansehen, hochladen (Fotos als data-URI, Videos roh per PUT), entfernen (Grundstock wird nur ausgeblendet)
     if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand"));
-      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job; } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "", web: x.id.indexOf("w-") === 0, lic: (l => l ? l.source + " · " + l.project + " · " + l.at.slice(0, 10) : "")(licOf(x.id)) })), web: (w => w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "" } : null)(WEB.info(b.key)), url: b.url || "" }), true; }
+      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job;  syncPrintGallery(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Print.com-Bilder", e.message)); } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: descOf(b.key, x.id), web: x.id.indexOf("w-") === 0, lic: (l => l ? l.source + " · " + l.project + " · " + l.at.slice(0, 10) : "")(licOf(x.id)) })), web: (w => w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "" } : null)(WEB.info(b.key)), url: b.url || "" }), true; }
     if (p === "/admin/api/mkt/library-file" && req.method === "GET") {
       const b = brand(u.searchParams.get("brand")), it = library(b.key).find(x => x.id === String(u.searchParams.get("id") || "")); if (!it) throw fail(404, "Nicht gefunden");
       return sendFile(req, res, it.file, /\.mp4$/i.test(it.file) ? "video/mp4" : /\.png$/i.test(it.file) ? "image/png" : "image/jpeg", ""), true;
