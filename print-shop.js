@@ -1852,7 +1852,8 @@ module.exports = function (D) {
       if (j && j.status && j.status !== "PROCESSING") {
         meta.preflight = { id: meta.preflight.id, status: j.status, errors: (j.errors || []).map(x => clip(x.message, 300)).slice(0, 20), warnings: (j.warnings || []).map(x => clip(x.message, 300)).slice(0, 20), fixes: (j.fixes || []).map(x => clip(x.message, 300)).slice(0, 20), reason: clip(j.failure_reason, 300) };
         meta.preflight.errors.forEach(t => meta.checks.push({ level: "error", text: "Erweiterte Prüfung: " + scrubText(t) }));
-        meta.preflight.warnings.forEach(t => meta.checks.push({ level: "warn", text: "Erweiterte Prüfung: " + scrubText(t) }));
+        // Warnungen (z. B. „feine schwarze Linie nicht auf Überdrucken“) nur in der Cockpit-Kontrolle – beim Kunden wären sie irreführend; Fehler sieht auch der Kunde
+        meta.preflight.warnings.forEach(t => meta.checks.push({ level: "warn", admin: true, text: "Erweiterte Prüfung (Print.com): " + scrubText(t) }));
         await store.putFile(meta);
       }
     } catch (e) { log("Preflight:", e.message); }
