@@ -1837,11 +1837,12 @@ module.exports = function (D) {
   }
   async function preflightStart(meta, buf, force) {
     const c = cfg(); if ((!c.preflight && !force) || !c.pcKey || !meta.size) return null;
-    const fd = new FormData();
-    // „document“ als reiner Text – als Blob mit Typ meldete Print.com „invalid json in document“ (17.11.2026), die Prüfung lief dadurch nie
-    fd.append("document", JSON.stringify({ bleed: { left: +meta.bleed || 0, right: +meta.bleed || 0, top: +meta.bleed || 0, bottom: +meta.bleed || 0 }, profile: "GWG_SheetCmyk_2015 CMYK + RGB", template: [{ width: meta.size.w, height: meta.size.h }] }));
-    fd.append("file", new Blob([buf], { type: "application/pdf" }), "druck.pdf");
-    const j = await pcApi("POST", "/pdf/preflight", undefined, { base: c.pcPlatform, form: fd, timeout: 60000 });
+    // Laut Doku (developer.print.com/reference/pdf-preflight-1, 17.11.2026): JSON mit „url“ – Print.com holt die Datei selbst über den signierten Link.
+    // Vorher multipart mit „document“: Print.com las das JSON nie („invalid json“ / „Value is not nullable“), die Prüfung lief dadurch nie.
+    const b = +meta.bleed || 0, n = Math.max(1, +meta.pages || +meta.sides || 1);
+    const body = { url: c.publicUrl + "/print/api/file/" + encodeURIComponent(meta.id) + "?t=" + encodeURIComponent(sig("file", meta.id)) + "&pdf=1", profile: "GWG_SheetCmyk_2015 CMYK + RGB",
+      bleed: { left: b, right: b, top: b, bottom: b }, template: Array.from({ length: n }, () => ({ width: meta.size.w, height: meta.size.h })) };
+    void buf; const j = await pcApi("POST", "/pdf/preflight", body, { base: c.pcPlatform, timeout: 60000 });
     return j && j.id ? { id: String(j.id), status: "PROCESSING" } : null;
   }
   async function preflightPoll(meta) {
@@ -1948,9 +1949,10 @@ module.exports = function (D) {
   }
   async function newFile(kind, name, pdf, target, checks, extra) {
     const meta = Object.assign({ id: "f" + crypto.randomBytes(12).toString("hex"), kind, name: clip(name, 120) || "druck.pdf", bytes: pdf.length, createdAt: nowIso(), product: target.product, sel: target.sel, size: target.size, bleed: target.bleed, sides: target.sides, pages: target.pages || null, checks, orderId: null, sha256: crypto.createHash("sha256").update(pdf).digest("hex") }, extra || {});
-    try { const pf = await preflightStart(meta, pdf); if (pf) meta.preflight = pf; } catch (e) { log("Preflight-Start:", e.message); }
     if (kind === "upload" && Array.isArray(meta.checks)) { try { const fc = await fontCheck(pdf); meta.checks = meta.checks.filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) meta.checks.push(fc); meta.fontChecked = true; } catch (e) { log("Schriften-Prüfung:", e.message); } }
     await store.putFile(meta, pdf);
+    // Print.com-Prüfung erst nach dem Speichern starten – Print.com holt die Datei über den Link
+    try { const pf = await preflightStart(meta, pdf); if (pf) { meta.preflight = pf; await store.putFile(meta); } } catch (e) { log("Preflight-Start:", e.message); }
     return meta;
   }
   async function targetOf(input, loose) {
@@ -6459,7 +6461,7 @@ module.exports = function (D) {
           if (b.op === "combo") return J(res, 200, { ok: true, raw: await pcApi("POST", "/shipping/combined-shipment", { requestItems: Array.isArray(b.requestItems) ? b.requestItems.slice(0, 20) : [] }) });
           // Datei mit der Print.com-Prüfung (GWG-Profil) testen, auch wenn die automatische Prüfung aus ist: { op:"preflight", fid } – wartet bis ca. 50 s auf das Ergebnis
           if (b.op === "preflight") { const fm = await store.fileMeta(String(b.fid || "")), data = fm && await store.fileData(fm.id); if (!data) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
-            const tmp = { id: fm.id, size: fm.size, bleed: fm.bleed, checks: [] }; tmp.preflight = await preflightStart(tmp, Buffer.from(data), true); if (!tmp.preflight) return J(res, 200, { ok: false, error: "Prüfung konnte nicht gestartet werden" });
+            const tmp = { id: fm.id, size: fm.size, bleed: fm.bleed, pages: fm.pages, sides: fm.sides, checks: [] }; tmp.preflight = await preflightStart(tmp, Buffer.from(data), true); if (!tmp.preflight) return J(res, 200, { ok: false, error: "Prüfung konnte nicht gestartet werden" });
             const putFile = store.putFile; for (let i = 0; i < 17 && tmp.preflight.status === "PROCESSING"; i++) { await new Promise(r => setTimeout(r, 3000));
               try { const j = await pcApi("GET", "/pdf/preflight/" + encodeURIComponent(tmp.preflight.id), undefined, { base: cfg().pcPlatform }); if (j && j.status && j.status !== "PROCESSING") tmp.preflight = { id: tmp.preflight.id, status: j.status, errors: (j.errors || []).map(x => x.message), warnings: (j.warnings || []).map(x => x.message), fixes: (j.fixes || []).map(x => x.message), reason: j.failure_reason, raw: j }; } catch (e) { tmp.preflight.err = e.message; } }
             void putFile; return J(res, 200, { ok: true, preflight: tmp.preflight }); }
