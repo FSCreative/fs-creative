@@ -1838,7 +1838,8 @@ module.exports = function (D) {
   async function preflightStart(meta, buf, force) {
     const c = cfg(); if ((!c.preflight && !force) || !c.pcKey || !meta.size) return null;
     const fd = new FormData();
-    fd.append("document", new Blob([JSON.stringify({ bleed: { left: meta.bleed, right: meta.bleed, top: meta.bleed, bottom: meta.bleed }, profile: "GWG_SheetCmyk_2015 CMYK + RGB", template: [{ width: meta.size.w, height: meta.size.h }] })], { type: "application/json" }));
+    // „document“ als reiner Text – als Blob mit Typ meldete Print.com „invalid json in document“ (17.11.2026), die Prüfung lief dadurch nie
+    fd.append("document", JSON.stringify({ bleed: { left: +meta.bleed || 0, right: +meta.bleed || 0, top: +meta.bleed || 0, bottom: +meta.bleed || 0 }, profile: "GWG_SheetCmyk_2015 CMYK + RGB", template: [{ width: meta.size.w, height: meta.size.h }] }));
     fd.append("file", new Blob([buf], { type: "application/pdf" }), "druck.pdf");
     const j = await pcApi("POST", "/pdf/preflight", undefined, { base: c.pcPlatform, form: fd, timeout: 60000 });
     return j && j.id ? { id: String(j.id), status: "PROCESSING" } : null;
@@ -2898,6 +2899,34 @@ module.exports = function (D) {
   // Seitengröße für Print.com vereinheitlichen (D-261112-YTL3, 13.11.2026): Endformat (TrimBox) passt, aber zu viel Beschnitt (3 statt 2 mm) oder einzelne Seiten
   // minimal anders groß → alle passenden Seiten auf Endformat + Beschnitt zuschneiden (um die Mitte des Endformats). Nur verkleinern, nie Rand dazuerfinden.
   const FITTED = pdfLruNs("fit:");
+  /* Nicht eingebettete, aber gar nicht benutzte Schriften entfernen (Simon 17.11.2026, Allesparat: Print.com „Verarbeitung hat nicht geklappt“ –
+     die PDF enthielt Helvetica/Times-Roman ohne Einbettung, nur in leeren Textblöcken „BT /F1 12 Tf ET“, wie sie manche PDF-Programme anlegen).
+     Wird eine solche Schrift wirklich für Text benutzt, bleibt die Datei unverändert. Druckbild ändert sich nicht. */
+  async function dropUnusedFonts(buf) {
+    if (!buf || buf.length > 40e6) return buf;
+    const { PDFDocument, PDFName, PDFDict, PDFRawStream, decodePDFRawStream } = require("pdf-lib");
+    const d = await PDFDocument.load(buf, { updateMetadata: false }), ctx = d.context, objs = [...ctx.enumerateIndirectObjects()];
+    const bad = new Set();
+    for (const [ref, obj] of objs) { if (!(obj instanceof PDFDict)) continue; const t = obj.get(PDFName.of("Type")); if (!t || t.toString() !== "/Font") continue;
+      const st = String(obj.get(PDFName.of("Subtype")) || ""); if (st === "/Type3" || st === "/Type0") continue;
+      const fd = obj.lookup(PDFName.of("FontDescriptor")); if (!(fd && (fd.get(PDFName.of("FontFile")) || fd.get(PDFName.of("FontFile2")) || fd.get(PDFName.of("FontFile3"))))) bad.add(ref.toString()); }
+    if (!bad.size) return buf;
+    const fontDicts = [];   // Schrift-Verzeichnisse (/F1 6 0 R …), die auf eine dieser Schriften zeigen
+    for (const [, obj] of objs) { const dict = obj instanceof PDFRawStream ? obj.dict : obj instanceof PDFDict ? obj : null; if (!dict) continue;
+      const res = dict.get(PDFName.of("Resources")) && ctx.lookup(dict.get(PDFName.of("Resources"))); const f = res instanceof PDFDict && res.lookup(PDFName.of("Font")); if (f instanceof PDFDict) fontDicts.push(f);
+      if (!dict.get(PDFName.of("Type")) && [...dict.entries()].some(([k, v]) => /^\/F/.test(k.toString()) && bad.has(v.toString()))) fontDicts.push(dict); }
+    const names = new Set(); fontDicts.forEach(f => { for (const [k, v] of f.entries()) if (bad.has(v.toString())) names.add(k.toString()); });
+    if (!names.size) return buf;
+    const esc2 = n => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), edits = [];
+    for (const [ref, obj] of objs) { if (!(obj instanceof PDFRawStream)) continue; const st = obj.dict.get(PDFName.of("Subtype")), isForm = st && st.toString() === "/Form", isContent = !obj.dict.get(PDFName.of("Type")) && !st && !obj.dict.get(PDFName.of("Length1")) && !obj.dict.get(PDFName.of("Length2"));
+      if (!isForm && !isContent) continue; let txt; try { txt = Buffer.from(decodePDFRawStream(obj).decode()).toString("latin1"); } catch (e) { continue; }
+      let out = txt; for (const n of names) { out = out.replace(new RegExp("BT\\s+" + esc2(n) + "\\s+[\\d.]+\\s+Tf\\s+(?:[\\d.]+\\s+TL\\s+)?ET", "g"), ""); if (new RegExp(esc2(n) + "\\s+[\\d.]+\\s+Tf").test(out)) return buf; }   // wirklich benutzt → nichts ändern
+      if (out !== txt) edits.push([ref, obj, out]); }
+    for (const [ref, obj, out] of edits) { const dict = {}; for (const [k, v] of obj.dict.entries()) if (["/Filter", "/Length", "/DecodeParms"].indexOf(k.toString()) < 0) dict[k.toString().slice(1)] = v; ctx.assign(ref, ctx.flateStream(Buffer.from(out, "latin1"), dict)); }
+    fontDicts.forEach(f => { for (const [k, v] of [...f.entries()]) if (bad.has(v.toString())) f.delete(k); });
+    for (const [ref] of objs) if (bad.has(ref.toString())) ctx.delete(ref);
+    return Buffer.from(await d.save({ useObjectStreams: false }));
+  }
   async function fitForPrint(buf, fm, o) {
     const sz = o && o.size, b = +(o && o.bleed) || 0;
     if (!sz || !(sz.w > 0) || !(sz.h > 0) || /^(textile|promo)$/.test((o.product && o.product.kind) || "") || (fm && fm.kind === "motifs")) return buf;
@@ -5074,6 +5103,7 @@ module.exports = function (D) {
         if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
+        buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
       if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flagshapes.js" || p === "/print/print.css") {
