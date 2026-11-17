@@ -46,6 +46,21 @@ function pasteClean(html){
       if(tg==="UL"||tg==="OL"){ var l=document.createElement(tg); walk(n,l,nb); if(l.childNodes.length){ dst.appendChild(l); if(dst.tagName!=="LI"){ var sp2=document.createElement("div"); sp2.className="__sp"; sp2.appendChild(document.createElement("br")); dst.appendChild(sp2); } } return; }
       if(tg==="LI"){ var li=document.createElement("li"); walk(n,li,nb); while(li.lastChild&&li.lastChild.nodeName==="BR") li.removeChild(li.lastChild); if(dst.tagName==="UL"||dst.tagName==="OL") dst.appendChild(li); else { var ul=document.createElement("ul"); ul.appendChild(li); dst.appendChild(ul); } return; }
       if(tg==="A"&&/^\s*(https?:|mailto:|tel:)/i.test(n.getAttribute("href")||"")){ var a=document.createElement("a"); a.setAttribute("href",n.getAttribute("href").trim()); walk(n,a,nb); if(nb){ var ab=document.createElement("b"); ab.appendChild(a); dst.appendChild(ab); } else dst.appendChild(a); return; }
+      /* Tabellen (z. B. Preisstaffeln) bleiben Tabellen – immer im einheitlichen Mail-Stil, Fremd-Formatierung fällt weg (Simon 17.11.2026) */
+      if(tg==="TABLE"&&n.querySelector("td,th")){
+        var tb=document.createElement("table"); tb.setAttribute("cellpadding","0"); tb.setAttribute("cellspacing","0"); tb.setAttribute("border","0");
+        tb.setAttribute("style","border-collapse:collapse;margin:4px 0");
+        var rows=Array.prototype.filter.call(n.querySelectorAll("tr"),function(r){ return r.closest("table")===n; }), first=true, isNum=function(x){ x=String(x||"").trim(); return /\d/.test(x)&&/^[\d.,\s]+\s*(€|%|ct|Stk\.?)?$/.test(x); }, numCol={};
+        rows.slice(1).forEach(function(r){ Array.prototype.filter.call(r.children,function(c){ return /^(TD|TH)$/.test(c.tagName); }).forEach(function(c,ci){ var t=c.textContent.trim(); if(!t) return; if(numCol[ci]===undefined) numCol[ci]=true; if(!isNum(t)) numCol[ci]=false; }); });
+        rows.forEach(function(r){ var cells=Array.prototype.filter.call(r.children,function(c){ return /^(TD|TH)$/.test(c.tagName); }); if(!cells.length) return;
+          var head=first&&(cells.every(function(c){ return c.tagName==="TH"; })||!!(r.parentNode&&r.parentNode.tagName==="THEAD")), tr=document.createElement("tr");
+          cells.forEach(function(c,ci){ var td=document.createElement(head?"th":"td"), num=ci>0&&numCol[ci]===true;
+            if(c.getAttribute("colspan")) td.setAttribute("colspan",c.getAttribute("colspan"));
+            td.setAttribute("style","padding:6px 12px;border-bottom:1px solid #e3e3e3;text-align:"+(num&&ci>0?"right":"left")+";white-space:nowrap"+(head?";background:#f3f4f6;font-weight:bold;border-bottom:2px solid #c9ccd1":""));
+            walk(c,td,head?false:nb); while(td.lastChild&&td.lastChild.nodeName==="BR") td.removeChild(td.lastChild); tr.appendChild(td); });
+          tb.appendChild(tr); first=false; });
+        if(tb.childNodes.length){ dst.appendChild(tb); var sp3=document.createElement("div"); sp3.className="__sp"; sp3.appendChild(document.createElement("br")); dst.appendChild(sp3); }
+        return; }
       if(/^(P|DIV|H[1-6]|BLOCKQUOTE|TR|PRE|SECTION|ARTICLE|HEADER|FOOTER|TABLE|TBODY)$/.test(tg)){ var d=document.createElement("div"); walk(n,d,nb); if(!d.textContent.trim()&&!d.querySelector("br,ul,ol")) d.appendChild(document.createElement("br")); dst.appendChild(d);
         if(/^(P|H[1-6]|BLOCKQUOTE|PRE|UL|OL)$/.test(tg)&&dst.tagName!=="LI"&&d.textContent.trim()){ var sp=document.createElement("div"); sp.className="__sp"; sp.appendChild(document.createElement("br")); dst.appendChild(sp); } return; }
       if(tg==="TD"||tg==="TH"){ walk(n,dst,nb); dst.appendChild(document.createTextNode(" ")); return; }
