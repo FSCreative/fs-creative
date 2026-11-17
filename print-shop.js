@@ -324,7 +324,7 @@ module.exports = function (D) {
   // Aufträge im Cockpit (server.js): jede gespeicherte Bestellung meldet ihren Stand – daraus wird die Aufgabe im Auftrag „Druckshop“
   function taskInfo(o) { const c = o.customer || {}, p = o.price || {};
     return { id: o.id, nr: o.nr, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
-      gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
+      gross: isIntern(o) ? 0 : p.gross, purchase: p.purchase && p.purchase.total, margin: isIntern(o) ? 0 : p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
       invoiceId: (o.invoice && o.invoice.id && !o.invoice.deleted && String(o.invoice.id)) || "", invoiceNr: (o.invoice && !o.invoice.deleted && o.invoice.nr) || "", email: c.email || "" }; }
   function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
   // Bestellungen für lesende, häufige Wege (Cockpit-Druckseite, Feedback, Kundenkonto/Bonus, Margen, Statistik): 45 s im Speicher,
@@ -3308,7 +3308,9 @@ module.exports = function (D) {
     else if (PC_PROBLEM.test(st)) o.status = "problem";
     else if (st && ["ordered", "problem"].indexOf(o.status) > -1) o.status = "in_production";
     if (o.status !== before) { stamp(o); hist(o, ({ in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", problem: "Problem" }[o.status] || STATUS_DE[o.status] || o.status) + " – Print.com-Status: " + st); }
-    if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) {
+    // Intern (im Shop als Admin bestellt): keine Versand-/Tracking-Mails an die eingegebene Adresse (Simon 17.11.2026)
+    if (isIntern(o)) { if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) { o.mails.shipped = "intern"; hist(o, "Versandmail übersprungen (intern)"); } }
+    else if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) {
       o.mails.shipped = await mail(o.customer.email, "Deine Drucksachen sind unterwegs · " + o.nr, "Deine Bestellung ist versendet",
         ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) ist gedruckt und auf dem Weg zu dir."],
         [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(tracks.map((t, i) => ["Sendungsverfolgung" + (tracks.length > 1 ? " " + (i + 1) : ""), t]), await acctRows(o)), tracks.length ? ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."] : ["Die Sendungsverfolgung schicken wir dir nach, sobald sie verfügbar ist."], D.notifyTo, 2) ? nowIso() : null;
@@ -3336,7 +3338,7 @@ module.exports = function (D) {
     const hr = viennaHour(now); if (hr < 8 || hr >= 20) return 0;
     const all = await store.listOrders(); let n = 0;
     for (const o of all) {
-      if (!o.customer || o.customer.feedbackOk !== true || !o.mails || o.mails.feedback || (o.feedback && o.feedback.product)) continue;
+      if (!o.customer || o.customer.feedbackOk !== true || !o.mails || o.mails.feedback || (o.feedback && o.feedback.product) || isIntern(o)) continue;
       if (["shipped", "delivered"].indexOf(o.status) < 0) continue;
       const due = feedbackDue(o); if (!due || now < due || now - due > 25 * 864e5) continue;
       const link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#feedback";
@@ -5668,7 +5670,8 @@ module.exports = function (D) {
   // ───────────────────────── HTTP: Cockpit (/admin/api/print/…) ─────────────────────────
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
-      customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
+      // Intern (ohne Bezahlung): kein Umsatz, keine Marge in Kennzahlen/Listen (Simon 17.11.2026) – Einkauf bleibt sichtbar
+      customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: isIntern(o) ? 0 : o.price.gross, net: isIntern(o) ? 0 : o.price.net, margin: isIntern(o) ? 0 : o.price.margin, intern: isIntern(o), purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
