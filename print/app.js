@@ -958,9 +958,21 @@
     var pr = S.prod && (S.prod.props || []).filter(function (x) { return x.slug === "pages"; })[0], n = pr && /seite/i.test(pr.title || "") && !/karten|blätter pro|pro satz/i.test(pr.title || "") ? parseFloat(S.sel.pages) : 0; return n > 0 ? n : 0; }   // mehrseitige Produkte (Broschüre, Buch, Kalender): Seiten inkl. Umschlag
   function sides() { var m = String((S.sel.printtype || (S.prod.fixed || {}).printtype) || "").match(/^(\d)(\d)(?:_|$)/); return m && m[2] !== "0" ? 2 : 1; }   // auch „55_full_color_plus_white“ (5/5), „40_pms“
   // Sonderform des Endformats für Schnittlinien (Simon 16.11.2026: Sechseck-Fotoplatten) – "hex" | "round" | ""
-  function shapeNow() { var t = String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape") + " " + labelOf("size");
+  /* Beachflags (Simon 17.11.2026): echte Fahnenform je Variante (gerade, schräg, Halbmond, rund, Square, Drop) statt Rechteck – Umrisse aus den
+     offiziellen Print.com-Vorlagen, Datei /print/flagshapes.js wird nur bei Fahnen nachgeladen */
+  var flagLoading = false;
+  function flagShape() { var k = S.sel && S.sel.flag_types && S.sel.size ? S.sel.flag_types + "|" + S.sel.size : ""; if (!k) return null;
+    if (window.FLAG_SHAPES) return window.FLAG_SHAPES[k] || null;
+    if (!flagLoading) { flagLoading = true; var sc = document.createElement("script"); sc.src = "/print/flagshapes.js?v=" + (window.PRINT_V || "2");
+      sc.onload = function () { try { for (var k2 in STU) delete STU[k2]; render(); } catch (e) {} }; document.head.appendChild(sc); }
+    return null; }
+  function flagDraw(x, d, ox, oy, w, h, mir) { var t = String(d).match(/[MLCZ]|-?[\d.]+(?:e-?\d+)?/g) || [], i = 0, op = "", P = function () { var a = +t[i++], b2 = +t[i++]; return [ox + (mir ? 1 - a : a) * w, oy + b2 * h]; };
+    while (i < t.length) { if (/^[MLCZ]$/.test(t[i])) op = t[i++]; if (op === "Z") { x.closePath(); op = ""; continue; } if (i >= t.length || /^[MLCZ]$/.test(t[i])) continue;
+      if (op === "M") { var m = P(); x.moveTo(m[0], m[1]); op = "L"; } else if (op === "L") { var l = P(); x.lineTo(l[0], l[1]); } else if (op === "C") { var p1 = P(), p2 = P(), p3 = P(); x.bezierCurveTo(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]); } else i++; } }
+  function shapeNow() { if (flagShape()) return "flag"; var t = String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape") + " " + labelOf("size");
     return /hexagon|sechseck/i.test(t) ? "hex" : /\b(rund|round|circle|kreis)/i.test(t) && !/eckig|corner/i.test(t) ? "round" : ""; }
   function shapePath(x, W, H, b, d, shape) { var x0 = b + d, y0 = b + d, x1 = W - b - d, y1 = H - b - d;
+    if (shape === "flag") { var fl = flagShape(); if (fl && H >= W) { flagDraw(x, d > 0 ? fl.s : fl.c, b, b, W - 2 * b, H - 2 * b, S.sel.finish_side === "right"); return; } }
     if (shape === "round") { x.ellipse(W / 2, H / 2, Math.max(1, (x1 - x0) / 2), Math.max(1, (y1 - y0) / 2), 0, 0, Math.PI * 2); return; }
     if (shape === "hex") { var w = W - 2 * b, h = H - 2 * b, k = 1.1547 * d, p; x0 = b; y0 = b; x1 = W - b; y1 = H - b;
       if (w >= h) { x0 += k; x1 -= k; y0 += d; y1 -= d; var q = (x1 - x0) / 4, cy = (y0 + y1) / 2; p = [[x0, cy], [x0 + q, y0], [x1 - q, y0], [x1, cy], [x1 - q, y1], [x0 + q, y1]]; }

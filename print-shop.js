@@ -4925,7 +4925,7 @@ module.exports = function (D) {
   // Version aus dem Inhalt der Shop-Dateien: beim Umschalten eines Deploys kann eine Anfrage noch beim alten Server landen – der liefert dann seine
   // (alte) Datei nur unter seiner eigenen Version aus, für fremde Versionen ohne Zwischenspeichern (siehe unten), sonst bliebe alter Code stundenlang im Cache
   const ASSET_BUF = {};   // Shop-Dateien einmal je Start lesen (ändern sich nur mit Deploy)
-  const ASSET_V = (() => { try { const h = crypto.createHash("sha1"); ["print/app.js", "print/print.css", "print/designer.js", "print/templates.js", "print.html"].forEach(f => { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (e) {} }); return h.digest("hex").slice(0, 12); }
+  const ASSET_V = (() => { try { const h = crypto.createHash("sha1"); ["print/app.js", "print/print.css", "print/designer.js", "print/templates.js", "print/flagshapes.js", "print.html"].forEach(f => { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (e) {} }); return h.digest("hex").slice(0, 12); }
     catch (e) { return String(process.env.RAILWAY_GIT_COMMIT_SHA || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12); } })();
   // Aktionsbanner in der Kopfzeile: aktiver Gutschein mit banner:true bzw. WILLKOMMEN10 (endet automatisch mit Ablauf/Deaktivierung im Cockpit)
   function promoOf() { const t = today(), ok = x => x && x.active !== false && (!x.until || t <= x.until) && !(x.maxUses && (x.used || 0) >= x.maxUses) && +x.pct > 0, L = Object.values(VOUCHERS || {});
@@ -5036,7 +5036,7 @@ module.exports = function (D) {
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
-      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/print.css") {
+      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flagshapes.js" || p === "/print/print.css") {
         let js = ""; try { js = ASSET_BUF[p] || (ASSET_BUF[p] = fs.readFileSync(path.join(__dirname, "print", p.slice(7)))); } catch (e) { return D.send(res, 404, "Not found"); }
         const vq = u && u.searchParams ? u.searchParams.get("v") : "";
         /* Speed 13.11.2026: mit aktueller Versionsnummer (= Prüfsumme der Dateien) darf Cloudflare/der Browser die Datei 1 Jahr behalten – jeder Deploy hat einen neuen Link */
