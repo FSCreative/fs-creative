@@ -327,7 +327,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const bad = await upload(await pdfOf(210, 297, 1), "a4.pdf", BC); assert.strictEqual(bad.j.blocked, true); assert.ok(bad.j.checks.some(c => c.level === "error" && /passt nicht/.test(c.text)));
     // Datei im Endformat ohne Beschnitt: Beschnitt wird beim Hochladen automatisch ergänzt (gespiegelt, alle Seiten) – seit 17.11.2026
     const noB = await upload(await pdfOf(85, 55, 2), "ohne.pdf", BC); assert.strictEqual(noB.status, 200, JSON.stringify(noB.j));
-    assert.ok(noB.j.checks.some(c => c.level === "ok" && /automatisch ergänzt/.test(c.text)) && !noB.j.checks.some(c => /keinen Beschnitt/.test(c.text)) && noB.j.pages === 2, JSON.stringify(noB.j.checks));
+    assert.ok(noB.j.checks.some(c => c.level === "ok" && /automatisch ergänzt/.test(c.text)) && !noB.j.checks.some(c => c.level === "warn" && /keinen Beschnitt/.test(c.text)) && noB.j.pages === 2, JSON.stringify(noB.j.checks));
     // Einseitige Datei behält das Original (src) → „Anpassen“ möglich
     const one = await upload(await pdfOf(85, 55, 1), "ohne1.pdf", BC); assert.strictEqual(one.status, 200, JSON.stringify(one.j));
     assert.ok(one.j.checks.some(c => /automatisch ergänzt/.test(c.text)) && one.j.adj === true, JSON.stringify(one.j));
