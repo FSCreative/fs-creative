@@ -235,7 +235,7 @@
     // Gestaltung im Warenkorb änderbar (Wunsch Simon 06.11.2026): Designer-Stand als Entwurf auf dem Server (nicht in der Merkliste), Position merkt sich den Link;
     // kommt der Kunde über „Gestaltung ändern“, ersetzt die neue Fassung die alte Position statt eine zweite anzulegen
     if (coverNeed() && S.cover) { it.coverId = S.cover.fileId; it.coverToken = S.cover.token; it.coverName = S.cover.name; }
-    if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30) }; }
+    if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30), adj: !!F0.adj, place: F0.place || null, pvk: F0.pvk || "" }; }   // adj/place: „Anpassen“ auch beim erneuten Öffnen aus dem Warenkorb
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
     if (S.design && S.file.kind === "design" && !it.motifs && !it.textile) api("/print/api/draft", Object.assign(cfgOf(), { design: S.design, cart: true })).then(function (j) {
@@ -3006,7 +3006,11 @@
     if (k === "pfvbg") { S.pfvBg = v === "1"; var sp0 = document.getElementById("psStuPages"); if (sp0) sp0.classList.toggle("tr", S.pfvBg); document.querySelectorAll(".ps-stu [data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
     if (k === "cartstudio") { var cs0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cs0 && cs0.fileId) cartStudio(cs0); return; }
     if (k === "cartcfg") { var cc0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cc0 && (cc0.fileId || cc0.noFile)) cartStudio(cc0, 2); return; }
-    if (k === "stucancel") { S.cartEdit = ""; S.file = null; S.previews = null; S.mode = ""; go(4); return; }
+    if (k === "stucancel") {
+      // Position aus dem Warenkorb geöffnet und Datei angepasst (Einpassen, Beschnitt …) → nicht stillschweigend verwerfen (Simon 17.11.2026)
+      var ce1 = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit; })[0], nx3 = document.querySelector('[data-act="next3"]');
+      if (ce1 && nx3 && S.file && !S.file.noFile && S.file.fileId && S.file.fileId !== ce1.fileId && !S.file.blocked && window.confirm("Du hast deine Druckdatei angepasst. Soll die Änderung in den Warenkorb übernommen werden?\n\nOK = übernehmen, Abbrechen = verwerfen")) { nx3.click(); return; }
+      S.cartEdit = ""; S.file = null; S.previews = null; S.mode = ""; go(4); return; }
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cpages") { pagesView(v); return; }
     if (k === "cartday") { cartDay(v); return; }
