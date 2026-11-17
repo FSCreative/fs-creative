@@ -2845,6 +2845,7 @@ module.exports = function (D) {
     // Warenkorb (Simon 13.11.2026): nur gemeinsam – erst wenn alle Positionen bezahlt und automatisch freigebbar sind; sonst gibt Simon den ganzen Warenkorb im Cockpit frei
     let go = autoOk(o);
     if (go && isGroup(o)) { const sib = await siblingsOf(o); go = sib.length >= (o.groupSize || 1) && sib.every(x => (x.printcom && x.printcom.orderNumber) || autoOk(x)); }
+    if (go) { const fresh = await store.getOrder(o.id).catch(() => null); if (fresh && fresh.printcom && fresh.printcom.orderNumber) go = false; }   // schon mit dem Warenkorb gesendet
     if (go) { try { await placeOrder(o.id, isIntern(o) ? "intern (im Shop als Admin bestellt)" : directOf(o) ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
@@ -2995,8 +2996,11 @@ module.exports = function (D) {
   // Warenkorb (Simon 13.11.2026): alle noch nicht bestellten Positionen gehen zusammen als EIN Print.com-Auftrag – nie einzeln (sonst zwei Aufträge, doppelter Versand)
   async function placeOrder(id, by) {
     const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
+    // Schon bei Print.com (z. B. mit dem ganzen Warenkorb in einem Auftrag) → nie ein zweites Mal senden.
+    // 17.11.2026: Warenkorb OF St. Gallenkirch – Position 1 schickte den ganzen Warenkorb, die Positionen 2–4 wurden danach einzeln NOCHMAL bestellt
+    if (o0.printcom && o0.printcom.orderNumber) throw new Error("Schon bei Print.com bestellt (Auftrag " + o0.printcom.orderNumber + ")");
     let list = [o0];
-    if (isGroup(o0)) { const sib = await siblingsOf(o0); list = sib.filter(x => !(x.printcom && x.printcom.orderNumber) && x.status !== "rejected"); if (!list.some(x => x.id === o0.id)) list = [o0]; }
+    if (isGroup(o0)) { const sib = await siblingsOf(o0); list = sib.filter(x => !(x.printcom && x.printcom.orderNumber) && x.status !== "rejected"); if (!list.some(x => x.id === o0.id)) throw new Error("Schon mit dem Warenkorb bei Print.com bestellt"); }
     if (list.some(x => LOCK.has(x.id))) throw new Error("Wird gerade gesendet");
     list.forEach(x => LOCK.add(x.id));
     try {
