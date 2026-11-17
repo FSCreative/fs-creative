@@ -6506,8 +6506,12 @@ module.exports = function (D) {
           stamp(o1); await store.putOrder(o1); return J(res, 200, { ok: true, order: o1 }); }
         if (op === "fixup") {   // { id, orderNumber?, invoice?: { id, nr }, graphicFee?: true } – gilt für den ganzen Warenkorb; nur Cockpit-Daten, nichts an Print.com oder den Kunden
           const o0 = await store.getOrder(id); if (!o0) throw new Error("Bestellung nicht gefunden");
-          const grp = isGroup(o0) ? await siblingsOf(o0) : [o0], ids = grp.map(x => x.id), nr = String(b.orderNumber || "").trim();
-          if (nr && !/^\d{6,14}$/.test(nr)) return J(res, 400, { ok: false, error: "Print.com-Auftragsnummer ungültig" });
+          const nr = String(b.orderNumber || "").trim(); if (nr && !/^\d{6,14}$/.test(nr)) return J(res, 400, { ok: false, error: "Print.com-Auftragsnummer ungültig" });
+          // move: nur diese Position auf einen anderen Print.com-Auftrag umhängen (z. B. doppelt bestellt, Doppel storniert – Simon 17.11.2026, OF-Ständer); Status neu abfragen
+          if (b.move === true && nr) { const x = o0, old = x.printcom && x.printcom.orderNumber; x.printcom = Object.assign({}, x.printcom, { orderNumber: nr, status: "", error: undefined, at: (x.printcom && x.printcom.at) || nowIso() });
+            if (["problem", "paid", "invoice_requested"].indexOf(x.status) > -1) { x.status = "ordered"; stamp(x); } hist(x, "Print.com-Auftrag " + (old ? old + " → " : "") + nr + " im Cockpit zugeordnet"); await store.putOrder(x);
+            try { await pollOrder(x); } catch (e) { log("Status", x.nr, e.message); } return J(res, 200, { ok: true, order: await store.getOrder(x.id) }); }
+          const grp = isGroup(o0) ? await siblingsOf(o0) : [o0], ids = grp.map(x => x.id);
           for (const x of grp) {
             // restore: im Cockpit versehentlich stornierte Position, die bei Print.com mitbestellt wurde, zurückholen (nur ausdrücklich)
             const back = b.restore === true && x.status === "rejected";
