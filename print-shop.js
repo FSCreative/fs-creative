@@ -6181,6 +6181,14 @@ module.exports = function (D) {
         }
         return J(res, 200, { ok: true, vouchers: Object.values(all).map(v => Object.assign({}, v, { usedBy: undefined, customers: (v.usedBy || []).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
       }
+      if (p === "/admin/api/print/whiteview" && req.method === "GET") {   // „Weiß ansehen“: Druckdatei mit der Weiß-Ebene in Pink (zeigt, wo Weiß druckt)
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
+        if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        const data = await store.fileData(fid); if (!data) return J(res, 404, { ok: false, error: "Datei nicht mehr vorhanden" });
+        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [1, 0, 0.6]); out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
+        catch (e) { return J(res, 400, { ok: false, error: "Weiß-Ansicht nicht möglich: " + String(e.message || e).slice(0, 80) }); }
+        return D.send(res, 200, out, "application/pdf", { "Content-Length": String(out.length), "Content-Disposition": 'inline; filename="' + o.nr + '-weiss.pdf"', "Cache-Control": "private, no-store" });
+      }
       if (p === "/admin/api/print/order" && req.method === "GET") {
         // Prüfbericht (Simon 11.11.2026): technische Infos zum Original (bzw. zur Druckdatei) – einmal lesen, im Datei-Eintrag merken
         const infoOf = async id => { if (!id) return null; const fm = await store.fileMeta(id).catch(() => null); if (!fm) return null; if (fm.info && fm.info.v === 4) return Object.assign({ name: fm.name || "" }, fm.info);
@@ -6411,14 +6419,6 @@ module.exports = function (D) {
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId; await prSwap(o, motif, curId, meta, "Cockpit (wiederhergestellt)");
         hist(o, "Druckdaten im Cockpit: frühere Version wiederhergestellt" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + " (" + (meta.name || fid) + ")"); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
-      }
-      if (p === "/admin/api/print/whiteview" && req.method === "GET") {   // „Weiß ansehen“: Druckdatei mit der Weiß-Ebene in Pink (zeigt, wo Weiß druckt)
-        const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
-        if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
-        const data = await store.fileData(fid); if (!data) return J(res, 404, { ok: false, error: "Datei nicht mehr vorhanden" });
-        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [1, 0, 0.6]); out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
-        catch (e) { return J(res, 400, { ok: false, error: "Weiß-Ansicht nicht möglich: " + String(e.message || e).slice(0, 80) }); }
-        return D.send(res, 200, out, "application/pdf", { "Content-Length": String(out.length), "Content-Disposition": 'inline; filename="' + o.nr + '-weiss.pdf"', "Cache-Control": "private, no-store" });
       }
       if (p === "/admin/api/print/fit" && req.method === "POST") {   // Druckdaten im Cockpit anpassen (einpassen/füllen/drehen) – vom Original aus, neue Datei, alte bleibt im Verlauf
         const b = await readJson(req, 4000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
