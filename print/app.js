@@ -2618,14 +2618,15 @@
     var pl = f.place || { mode: "fill", rotate: 0, scale: 1 }, sc = Math.round((pl.scale || 1) * 100), hot = (f.checks || []).some(function (c) { return c.level === "error" && /passt nicht zum gewählten Format/.test(c.text || ""); });
     var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
     return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht? Mit einem Klick anpassen:" : "Anpassen") + '</b><div class="row">' +
-      b("fit", "Ganz einpassen", pl.mode === "fit", "Alles bleibt sichtbar, freie Flächen bleiben weiß") + b("fill", "Format füllen", pl.mode !== "fit", "Füllt bis in den Beschnitt – Ränder werden angeschnitten") + '<span class="sep" aria-hidden="true"></span>' +
+      b("fit", "Ganz einpassen", pl.mode === "fit", "Alles bleibt sichtbar, freie Flächen werden mit gespiegelten Rändern gefüllt") + b("fill", "Format füllen", pl.mode !== "fit", "Füllt bis in den Beschnitt – Ränder werden angeschnitten") + '<span class="sep" aria-hidden="true"></span>' +
       b("rl", "↺", null, "Um 90° nach links drehen") + b("rr", "↻", null, "Um 90° nach rechts drehen") + "</div>" +
-      '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (pl.mode !== "fit" && sc === 100 ? "" : b("reset", "Zurücksetzen")) + "</div></div>";
+      '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (pl.mode !== "fit" && sc === 100 ? "" : b("reset", "Zurücksetzen")) + "</div>" +
+      (pl.mode === "fit" || sc < 100 ? '<div class="row"><label class="ps-adj-s"><input type="checkbox" id="psAdjW"' + (pl.bg === "white" ? " checked" : "") + '> <span>Freie Flächen weiß lassen</span></label><span class="pd-muted small">' + (pl.bg === "white" ? "Achtung: der weiße Rand wird mitgedruckt." : "Sonst füllen wir sie mit den gespiegelten Rändern deines Motivs – kein weißer Rand.") + "</span></div>" : "") + "</div>";
   }
   function adjApply(ch) {
     var f = S.file; if (!f || !f.adj || S.adjBusy) return; var pl = Object.assign({ mode: "fill", rotate: 0, scale: 1 }, f.place || {}, ch);
     S.adjBusy = true; var box = document.getElementById("psAdj"); if (box) box.classList.add("busy");
-    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
+    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale, bg: pl.bg === "white" ? "white" : "mirror" }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
       S.file = j; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast(j.blocked ? "Angepasst – bitte die Hinweise prüfen" : "Angepasst ✓"); }).catch(function () { S.adjBusy = false; toast("Keine Verbindung", true); render(); });
   }
   // ── Druck auf dem Produkt: Produktfoto mit Motiv/Logo in der Druckfläche (Textil, Werbeartikel, Taschen) bzw. Blatt-Vorschau (Papier) ──
@@ -2972,7 +2973,7 @@
       api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
     if (k === "adj" && S.file) { var pl0 = S.file.place || { mode: "fill", rotate: 0, scale: 1 };
-      adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : v === "rr" ? { rotate: (pl0.rotate || 0) + 90 } : { mode: "fill", scale: 1 }); return; }
+      adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : v === "rr" ? { rotate: (pl0.rotate || 0) + 90 } : { mode: "fill", scale: 1, bg: "mirror" }); return; }
     if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
@@ -3035,6 +3036,7 @@
     if (e.target.hasAttribute && e.target.hasAttribute("data-pgin")) { var ppr = S.prod.props.filter(function (x) { return x.slug === "pages"; })[0]; if (!ppr) return; var want = parseFloat(e.target.value) || 0, po = optsOf(ppr), bestO = po[0];
       po.forEach(function (o) { if (Math.abs(parseFloat(o.slug) - want) < Math.abs(parseFloat(bestO.slug) - want)) bestO = o; }); setProp("pages", bestO.slug); return; }
     if (e.target.id === "psAdjS") { adjApply({ scale: +e.target.value / 100 }); return; }
+    if (e.target.id === "psAdjW") { adjApply({ bg: e.target.checked ? "white" : "mirror" }); return; }
     if (e.target.hasAttribute && e.target.hasAttribute("data-sort")) { S.sort = e.target.value; var gs = document.getElementById("psGrid"); if (gs) { gs.innerHTML = gridHtml(); fromObserve(); } else render(); return; }
     var t = e.target;
     if (t.name && t.name.indexOf("prop:") === 0) { setProp(t.name.slice(5), t.value); return; }

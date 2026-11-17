@@ -1865,7 +1865,7 @@ module.exports = function (D) {
     const out = await PDFDocument.create(), b = (+bleed || 0) * MM_PT, W = size.w * MM_PT + 2 * b, H = size.h * MM_PT + 2 * b;
     const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.05, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
     let items = [];
-    if (type === "pdf") { const src = await PDFDocument.load(buf); for (const sp of src.getPages()) items.push(sp.node.Contents() ? { el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true } : { blank: true }); }
+    if (type === "pdf") { const src = await PDFDocument.load(buf); for (const sp of src.getPages()) items.push(sp.node.Contents() ? { el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true, sp } : { blank: true }); }
     else items.push({ el: type === "png" ? await out.embedPng(buf) : await out.embedJpg(buf), rot: 0 });
     const auto = o.rotate == null || o.rotate === "auto";
     for (const it of items) {
@@ -1881,12 +1881,27 @@ module.exports = function (D) {
       const th = -((rot + srcRot) % 360) * Math.PI / 180, cos = Math.cos(th), sin = Math.sin(th);   // pdf-lib dreht gegen den Uhrzeigersinn um den Ursprung
       const cx = W / 2 + dx, cy = H / 2 - dy, ox = cx - (a / 2 * cos - c / 2 * sin), oy = cy - (a / 2 * sin + c / 2 * cos);
       const pg = out.addPage([W, H]), opt = { x: ox, y: oy, width: a, height: c, rotate: degrees(-((rot + srcRot) % 360)) };
-      if (mode === "fit" || sc < 1) pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: require("pdf-lib").rgb(1, 1, 1) });
+      const mw = rw * f, mh = rh * f, mx0 = cx - mw / 2, my0 = cy - mh / 2, gap = mx0 > 0.05 || my0 > 0.05 || mx0 + mw < W - 0.05 || my0 + mh < H - 0.05;
+      if (mode === "fit" || sc < 1 || gap) pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: require("pdf-lib").rgb(1, 1, 1) });
+      // Freie Flächen (eingepasst, verkleinert, verschoben) nicht weiß lassen, sondern das Motiv an seinen Kanten nach außen spiegeln – sonst kommt bei Print.com
+      // eine Seite mit weißem Rand an, obwohl der Kunde „Format füllen“ gesehen hat (Simon 17.11.2026, z. B. Flyer 99 %, Banner „ganz einpassen“ 90 %). „bg: white“ = bewusst weiß.
+      if (gap && o.bg !== "white" && mw > 1 && mh > 1) {
+        try {
+          const tmp = await PDFDocument.create(), tp = tmp.addPage([mw, mh]);
+          const tel = it.page ? await tmp.embedPage(it.sp) : type === "png" ? await tmp.embedPng(buf) : await tmp.embedJpg(buf);
+          const tx = mw / 2 - (a / 2 * cos - c / 2 * sin), ty = mh / 2 - (a / 2 * sin + c / 2 * cos);
+          if (it.page) tp.drawPage(tel, { x: tx, y: ty, xScale: f, yScale: f, rotate: opt.rotate }); else tp.drawImage(tel, { x: tx, y: ty, width: a, height: c, rotate: opt.rotate });
+          const mem = await out.embedPage((await PDFDocument.load(await tmp.save())).getPage(0)), e = 0.4;
+          for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]])
+            pg.drawPage(mem, { x: sx === 0 ? mx0 : sx < 0 ? mx0 + e : mx0 + 2 * mw - e, y: sy === 0 ? my0 : sy < 0 ? my0 + e : my0 + 2 * mh - e, xScale: sx === 0 ? 1 : -1, yScale: sy === 0 ? 1 : -1 });
+          it.mirrored = true;
+        } catch (e) { log("Ränder spiegeln:", e.message); }
+      }
       if (it.page) pg.drawPage(it.el, { x: ox, y: oy, xScale: f, yScale: f, rotate: opt.rotate }); else pg.drawImage(it.el, opt);
       pg.setTrimBox(b, b, W - 2 * b, H - 2 * b); pg.setBleedBox(0, 0, W, H);
     }
     for (let i = items.length; i < (sides || 1); i++) out.addPage([W, H]);
-    return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] && !items[0].blank ? items[0].usedRot : 0, mode };
+    return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] && !items[0].blank ? items[0].usedRot : 0, mode, mirrored: items.some(it => it.mirrored) };
   }
   // Fehlender Beschnitt: automatisch ergänzen – „mirror“ = Randbereiche spiegeln (Motiv bleibt 1:1), „zoom“ = Motiv minimal vergrößern (Ränder werden angeschnitten)
   async function addBleed(buf, size, bleed, mode, insets) {
@@ -1898,6 +1913,7 @@ module.exports = function (D) {
       if ((sp.getRotation().angle || 0) % 360) throw bad("Gedrehte PDF-Seiten können nicht automatisch ergänzt werden");
       // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
       const sz = sp.getSize(), hasB = Math.abs(sz.width - (W + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (H + 2 * b)) < 2 * MM_PT;
+      if (!hasB && Math.abs((sz.width / sz.height) / (W / H) - 1) > 0.012) throw bad("Seitengröße passt nicht zum Endformat – bitte unter „Anpassen“ einpassen");   // nie verzerren
       const emb = hasB ? await out.embedPage(sp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
       if (mode === "zoom") { const f = Math.max((W + 2 * b) / pw, (H + 2 * b) / ph); pg.drawPage(emb, { x: (W + 2 * b - pw * f) / 2, y: (H + 2 * b - ph * f) / 2, xScale: f, yScale: f }); }
       else {   // 8 gespiegelte Kopien rundum, leicht überlappend (keine Nahtlinien), Mitte zuletzt obenauf
@@ -2136,7 +2152,16 @@ module.exports = function (D) {
         } catch (e) { log("Beschnitt zuschneiden:", e.message); }
       }
       const sc = checks.findIndex(c => /Seitenverhältnis passt/.test(c.text || ""));
-      if (sc > -1 && src) {   // nur die Größe weicht ab → jetzt wirklich skalieren (vorher stand nur der Hinweis da)
+      // Datei genau im Endformat, aber ohne Beschnitt → Beschnitt gleich beim Hochladen ergänzen (Ränder spiegeln, Motiv bleibt 1:1). Sonst ging die Seite ohne
+      // Beschnitt an Print.com und nach dem Schneiden blieb ein weißer Rand (Simon 17.11.2026: Banner 2000 × 1000, Flyer 148 × 210, Lifesizer). Gilt für alle Seiten.
+      if (+target.bleed > 0 && checks.some(c => /Die Datei hat keinen Beschnitt/.test(c.text || ""))) {
+        try { const m0 = info.media, sz2 = m0 && near(m0.w, target.size.h, 1) && near(m0.h, target.size.w, 1) && !near(m0.w, target.size.w, 1) ? { w: target.size.h, h: target.size.w } : target.size;   // quer angelegt: im eigenen Format ergänzen, gedreht wird beim Übergeben
+          const out = await withPdf(() => addBleed(buf, sz2, +target.bleed, "mirror"));
+          const ck = [{ level: "ok", text: "Deine Datei hatte keinen Beschnitt – wir haben ihn automatisch ergänzt (Randbereiche " + fmtMm(target.bleed) + " mm gespiegelt, dein Motiv bleibt unverändert). Seite jetzt " + fmtMm(sz2.w + 2 * target.bleed) + " × " + fmtMm(sz2.h + 2 * target.bleed) + " mm – bitte in der Vorschau kontrollieren." }].concat(checks.filter(c => !/Die Datei hat keinen Beschnitt/.test(c.text || "")));
+          return newFile("upload", name, out, target, ck, { original: "pdf", src, bleedFix: "mirror" });
+        } catch (e) { log("Beschnitt beim Hochladen ergänzen:", e.message); }
+      }
+      if (sc > -1) {   // nur die Größe weicht ab → jetzt wirklich skalieren (vorher stand nur der Hinweis da); auch mehrseitige PDFs (vorher nur mit Original-Kopie)
         try { const r = await withPdf(() => placeFile(buf, "pdf", target.size, target.bleed, { mode: "fill" }, target.sides));
           checks[sc] = { level: "ok", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm automatisch auf " + (target.size.w + 2 * target.bleed) + " × " + (target.size.h + 2 * target.bleed) + " mm (inkl. Beschnitt) skaliert" + (r.rot ? " und gedreht" : "") + " – bitte in der Vorschau kontrollieren." };
           return newFile("upload", name, r.pdf, target, checks, { original: "pdf", src, place: { mode: "fill", rotate: r.rot, scale: 1 } });
@@ -5564,12 +5589,12 @@ module.exports = function (D) {
         if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const sm = await store.fileMeta(fm.src), data = sm && await store.fileData(fm.src); if (!data) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden – bitte Datei neu hochladen" });
-        const o = { mode: b.mode === "fit" ? "fit" : "fill", rotate: [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : 0, scale: Math.min(4, Math.max(0.25, +b.scale || 1)), dx: Math.max(-2000, Math.min(2000, +b.dx || 0)), dy: Math.max(-2000, Math.min(2000, +b.dy || 0)) };
+        const o = { mode: b.mode === "fit" ? "fit" : "fill", rotate: [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : 0, scale: Math.min(4, Math.max(0.25, +b.scale || 1)), dx: Math.max(-2000, Math.min(2000, +b.dx || 0)), dy: Math.max(-2000, Math.min(2000, +b.dy || 0)), bg: b.bg === "white" ? "white" : "mirror" };
         const kindOf = x => x[0] === 0x25 && x[1] === 0x50 ? "pdf" : x[0] === 0xff && x[1] === 0xd8 ? "jpg" : x[0] === 0x89 && x[1] === 0x50 ? "png" : (sm.original || "pdf");   // Typ aus dem Inhalt – „original“ beschreibt den Kunden-Upload, nicht unbedingt diese Datei
         let r; try { r = await withPdf(() => placeFile(data, kindOf(data), fm.size, +fm.bleed || 0, o, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
         const checks = (fm.checks || []).filter(c => c.level === "ok" && /dpi|Seite\(n\)|Seiten –/.test(c.text || "") || /Rückseite bleibt weiß|Bild-Upload füllt/.test(c.text || ""));
-        checks.unshift({ level: "ok", text: "Angepasst: " + (o.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (o.rotate ? " · um " + o.rotate + "° gedreht" : "") + (o.scale !== 1 ? " · " + Math.round(o.scale * 100) + " %" : "") + (o.dx || o.dy ? " · verschoben" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." });
+        checks.unshift({ level: "ok", text: "Angepasst: " + (o.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (o.rotate ? " · um " + o.rotate + "° gedreht" : "") + (o.scale !== 1 ? " · " + Math.round(o.scale * 100) + " %" : "") + (o.dx || o.dy ? " · verschoben" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." });
         if (o.mode === "fill" || o.scale > 1) checks.push({ level: "warn", text: "Bitte in der Vorschau kontrollieren: Inhalte am Rand und im Beschnitt (" + fm.bleed + " mm je Seite) werden abgeschnitten." });
         if (fm.dpi && o.scale > 1) { const d2 = Math.round(fm.dpi / o.scale); if (d2 < 150) checks.push({ level: "warn", text: "Durch die Vergrößerung nur noch ca. " + d2 + " dpi – der Druck kann unscharf wirken." }); }
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: o, px: fm.px, dpi: fm.dpi });
@@ -6244,11 +6269,11 @@ module.exports = function (D) {
         let srcId = fm.src, sm = srcId ? await store.fileMeta(srcId) : null, data = sm ? await store.fileData(srcId) : null, isBase = false;
         if (!data) { srcId = fm.id; sm = { original: "pdf" }; data = await store.fileData(fm.id); isBase = true; } if (!data) return J(res, 400, { ok: false, error: "Datei nicht mehr vorhanden" });
         const pl0 = isBase ? { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 } : (fm.place || {}), opt = { mode: b.mode === "fit" ? "fit" : b.mode === "fill" ? "fill" : (pl0.mode || "fill"), rotate: b.rotate != null && [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : (+pl0.rotate || 0), scale: b.scale != null && isFinite(+b.scale) ? Math.min(4, Math.max(0.05, +b.scale)) : (+pl0.scale || 1),
-          dx: b.dx != null && isFinite(+b.dx) ? Math.max(-500, Math.min(500, +b.dx)) : (+pl0.dx || 0), dy: b.dy != null && isFinite(+b.dy) ? Math.max(-500, Math.min(500, +b.dy)) : (+pl0.dy || 0) };
+          dx: b.dx != null && isFinite(+b.dx) ? Math.max(-500, Math.min(500, +b.dx)) : (+pl0.dx || 0), dy: b.dy != null && isFinite(+b.dy) ? Math.max(-500, Math.min(500, +b.dy)) : (+pl0.dy || 0), bg: b.bg === "white" || (b.bg == null && pl0.bg === "white") ? "white" : "mirror" };
         const kindOf = x => x[0] === 0x25 && x[1] === 0x50 ? "pdf" : x[0] === 0xff && x[1] === 0xd8 ? "jpg" : x[0] === 0x89 && x[1] === 0x50 ? "png" : (sm.original || "pdf");   // Typ aus dem Inhalt – „original“ beschreibt den Kunden-Upload, nicht unbedingt diese Datei
         let r; try { r = await withPdf(() => placeFile(data, kindOf(data), fm.size, +fm.bleed || 0, opt, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
-        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? " · " + Math.round(opt.scale * 100) + " %" : "") + (opt.dx || opt.dy ? " · verschoben (" + fmtMm(opt.dx) + " / " + fmtMm(opt.dy) + " mm)" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
+        const checks = (fm.checks || []).filter(c => !/^Angepasst:|Bitte in der Vorschau kontrollieren/.test(c.text || "")).concat([{ level: "ok", text: "Angepasst im Cockpit: " + (opt.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (opt.rotate ? " · um " + opt.rotate + "° gedreht" : "") + (opt.scale !== 1 ? " · " + Math.round(opt.scale * 100) + " %" : "") + (opt.dx || opt.dy ? " · verschoben (" + fmtMm(opt.dx) + " / " + fmtMm(opt.dy) + " mm)" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." }]);
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: isBase ? "pdf" : fm.original, src: srcId, from: fm.id, place: opt, px: fm.px, dpi: fm.dpi, orderId: o.id });
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileChecks = checks; }
         o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: curId, new: meta.id, motif: motif > -1 ? motif : null, name: meta.name, by: "Cockpit (angepasst)" }]).slice(-30);
