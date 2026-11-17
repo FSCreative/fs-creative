@@ -2466,7 +2466,7 @@
   }
   // Warenkorb-Position im Studio geöffnet: hat sich Datei, Ausführung oder Menge geändert? (sonst „Fertig“ statt „Änderung übernehmen“)
   function cartChanged(f) { var ce = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit; })[0]; if (!ce) return true;
-    return (f && f.fileId) !== ce.fileId || +ce.copies !== +S.copies || JSON.stringify(ce.sel || {}) !== JSON.stringify(S.sel || {}) || JSON.stringify(ce.custom || null) !== JSON.stringify(isCustom() ? S.custom : null); }
+    var sel0 = ce.sel || {}; return (f && f.fileId) !== ce.fileId || +ce.copies !== +S.copies || Object.keys(sel0).some(function (k) { return String(sel0[k]) !== String((S.sel || {})[k]); }) || (ce.custom && ce.custom.w && isCustom() && (+ce.custom.w !== +S.custom.w || +ce.custom.h !== +S.custom.h)); }
   function studioHtml(f, mtabs, sum, spec, top, shown, rest) {
     var co = S.ctype === "company", pr = S.price, mot = S.mot.n > 1 && motOk(), key = f.fileId + (S.pfvOff ? ":0" : ":1");
     var price = pr && (pr.gross || pr.net) ? '<span class="ps-stu-pr"><b>' + eur(co ? pr.net : pr.gross) + "</b><small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></span>" : "";
@@ -2634,7 +2634,7 @@
   // Kein Beschnitt in der PDF → automatisch ergänzen lassen (Ränder spiegeln oder Motiv minimal vergrößern), jederzeit rückgängig
   function bleedFixHtml(f) {
     if (S.fileOrig && S.fileOrig.next === f.fileId) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedMode === "zoom" ? "Motiv minimal vergrößert." : "Randbereiche gespiegelt – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="bleedundo">Rückgängig</button></div>';
-    if (f.kind !== "upload" || !(f.checks || []).some(function (c) { return /keinen Beschnitt/.test(c.text || ""); })) return "";
+    if (f.kind !== "upload" || !(f.checks || []).some(function (c) { return c.level !== "ok" && /keinen Beschnitt/.test(c.text || ""); })) return "";   // „hatte keinen Beschnitt – automatisch ergänzt“ (ok) zählt nicht
     return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so bleibt nach dem Schneiden kein weißer Rand stehen. Du siehst danach sofort die Vorschau und kannst es rückgängig machen.</span><ul class="ps-bfix-i"><li><b>Ränder spiegeln:</b> die äußersten Millimeter werden nach außen gespiegelt – dein Motiv bleibt gleich groß und unverändert.</li><li><b>Motiv leicht vergrößern:</b> das Motiv wird minimal größer gezogen, bis es den Beschnitt füllt – Inhalte ganz am Rand werden etwas angeschnitten.</li></ul><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
   }
   // ── Anpassen: Upload ganz einpassen / Format füllen, drehen, Größe – der Server setzt die Datei vom Original aus neu (exakte Größe inkl. Beschnitt) ──
