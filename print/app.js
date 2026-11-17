@@ -2648,15 +2648,18 @@
   /* Umbau Simon 17.11.2026 („Anpassen muss logischer werden“): zwei klare Arten (Randlos füllen / Ganz zeigen), der angezeigte Zustand entspricht der Datei
      (unveränderte Datei = keine Art gedrückt), „Zurücksetzen“ führt zum Stand vor dem ersten Anpassen zurück (auch Drehung), freie Flächen weiß/gespiegelt
      immer wählbar, wenn es welche gibt; wo Anpassen nicht geht, steht warum */
+  // Anpassen je Seite (Simon 17.11.2026: „Seite 2 verschieben hat Seite 1 mitverschoben“): 0 = alle Seiten, 1, 2 … = nur diese Seite
+  function adjPg(f) { var n = +(f && f.pages) || 1; return n > 1 ? Math.min(n, Math.max(0, S.adjPg == null ? 0 : +S.adjPg)) : 0; }
+  function pagePl(pl, n) { var b = Object.assign({}, pl || {}), own = n && b.pages ? b.pages[String(n)] : null; delete b.pages; return own ? Object.assign(b, own) : b; }
   function adjHtml(f) {
     if (!f) return "";
     var hot = (f.checks || []).some(function (c) { return c.level === "error" && /passt nicht zum gewählten Format/.test(c.text || ""); });
     if (!f.adj) return hot && f.kind === "upload" ? '<div class="ps-adj hot" id="psAdj"><b>Format passt nicht</b><p class="pd-muted small">' + ((+f.pages || 1) > 2 ? "Bei mehrseitigen Dateien kann das Format hier nicht automatisch angepasst werden. Bitte die PDF im oben angegebenen Format neu exportieren – oder an der Kasse den Profi-Datencheck wählen, dann melden wir uns." : "Diese Datei kann hier nicht automatisch angepasst werden. Bitte im angegebenen Format neu exportieren oder die Datei erneut hochladen.") + "</p></div>" : "";
-    var pl = f.place || null, mode = pl ? pl.mode : "", rot = pl ? (((+pl.rotate || 0) % 360) + 360) % 360 : 0, sc = Math.round(((pl && pl.scale) || 1) * 100), gaps = !!pl && (mode === "fit" || sc < 100);
+    var np = +f.pages || 1, pg = adjPg(f), pl = f.place ? pagePl(f.place, pg) : null, mode = pl ? pl.mode : "", rot = pl ? (((+pl.rotate || 0) % 360) + 360) % 360 : 0, sc = Math.round(((pl && pl.scale) || 1) * 100), gaps = !!pl && (mode === "fit" || sc < 100);
     var canReset = S.adjOrig && S.adjOrig.src === f.src && S.adjOrig.file.fileId !== f.fileId;
     var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
     var now = !pl ? "deine Datei, unverändert" : (mode === "fit" ? "ganz sichtbar" : "randlos gefüllt") + (sc !== 100 ? " · " + sc + " %" : "") + (rot ? " · " + rot + "° gedreht" : "") + (gaps ? (pl.bg === "white" ? " · freie Flächen weiß" : " · freie Flächen gespiegelt") : "");
-    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht – so passt du es an:" : "Anpassen") + '</b><p class="pd-muted small">Jetzt: ' + esc(now) + '</p><div class="row">' +
+    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht – so passt du es an:" : "Anpassen") + '</b>' + (np > 1 ? '<div class="row" role="group" aria-label="Gilt für"><span class="pd-muted small">Gilt für:</span>' + [0].concat(Array.from({ length: np }, function (_, k) { return k + 1; })).map(function (n) { return '<button type="button" class="ps-btn small' + (pg === n ? " on" : "") + '" data-act="adjpg:' + n + '" aria-pressed="' + (pg === n) + '">' + (n ? "Seite " + n : "Alle Seiten") + "</button>"; }).join("") + "</div>" : "") + '<p class="pd-muted small">Jetzt' + (np > 1 ? (pg ? " (Seite " + pg + ")" : " (alle Seiten)") : "") + ': ' + esc(now) + '</p><div class="row">' +
       b("fill", "Randlos füllen", mode === "fill", "Füllt das ganze Format bis in den Beschnitt – was übersteht, wird abgeschnitten") + b("fit", "Ganz zeigen", mode === "fit", "Das ganze Motiv bleibt sichtbar – freie Flächen werden mit den gespiegelten Rändern gefüllt (oder weiß)") + '<span class="sep" aria-hidden="true"></span>' +
       b("rl", "↺", null, "Um 90° nach links drehen") + b("rr", "↻", null, "Um 90° nach rechts drehen") + "</div>" +
       '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (canReset ? b("reset", "Zurücksetzen", null, "Zurück zu deiner Datei vor dem Anpassen") : "") + "</div>" +
@@ -2664,10 +2667,10 @@
       '<p class="pd-muted small"><b>Randlos füllen:</b> nichts bleibt weiß, die Ränder werden etwas angeschnitten. <b>Ganz zeigen:</b> alles bleibt sichtbar, Lücken werden aufgefüllt.</p></div>';
   }
   function adjApply(ch) {
-    var f = S.file; if (!f || !f.adj || S.adjBusy) return; var pl = Object.assign({ mode: "fill", rotate: 0, scale: 1 }, f.place || {}, ch);
+    var f = S.file; if (!f || !f.adj || S.adjBusy) return; var pg = adjPg(f), pl = Object.assign({ mode: "fill", rotate: 0, scale: 1 }, pagePl(f.place, pg), ch);
     if (!S.adjOrig || S.adjOrig.src !== f.src) S.adjOrig = { src: f.src, file: f };   // Stand vor dem ersten Anpassen – für „Zurücksetzen“
     S.adjBusy = true; var box = document.getElementById("psAdj"); if (box) box.classList.add("busy");
-    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale, bg: pl.bg === "white" ? "white" : "mirror" }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
+    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale, bg: pl.bg === "white" ? "white" : "mirror", page: pg || undefined }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
       S.file = j; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast(j.blocked ? "Angepasst – bitte die Hinweise prüfen" : "Angepasst ✓"); }).catch(function () { S.adjBusy = false; toast("Keine Verbindung", true); render(); });
   }
   // ── Druck auf dem Produkt: Produktfoto mit Motiv/Logo in der Druckfläche (Textil, Werbeartikel, Taschen) bzw. Blatt-Vorschau (Papier) ──
@@ -3013,7 +3016,8 @@
     if (k === "bleedfix" && S.file) { var f0 = S.file; t.disabled = true; t.textContent = "Wird ergänzt …";
       api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
-    if (k === "adj" && S.file) { var pl0 = S.file.place || { mode: "fill", rotate: 0, scale: 1 };
+    if (k === "adjpg") { S.adjPg = +v || 0; render(); return; }
+    if (k === "adj" && S.file) { var pl0 = pagePl(S.file.place, adjPg(S.file));
       if (v === "reset") { if (S.adjOrig && S.adjOrig.src === S.file.src) { S.file = S.adjOrig.file; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast("Zurückgesetzt – deine Datei wie vor dem Anpassen"); } else adjApply({ mode: "fill", scale: 1, rotate: 0, bg: "mirror" }); return; }
       adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : { rotate: (pl0.rotate || 0) + 90 }); return; }
     if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }

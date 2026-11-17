@@ -340,6 +340,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const wh = await post("/print/api/file/fit", { fileId: one.j.fileId, token: one.j.token, mode: "fit", rotate: 0, scale: 0.8, bg: "white" }); assert.strictEqual(wh.status, 200, JSON.stringify(wh.j));
     assert.ok(wh.j.checks.some(c => /freie Flächen bleiben weiß/.test(c.text)) && wh.j.place.bg === "white", JSON.stringify(wh.j.checks));
     assert.strictEqual((await post("/print/api/file/bleed", { fileId: upOk.fileId, token: upOk.token, mode: "mirror" })).status, 400, "hat schon Beschnitt");
+    // Anpassen je Seite (17.11.2026): nur Seite 2 verkleinern – Seite 1 bleibt, wie sie ist; danach „Alle Seiten“ hebt die Seiten-Einstellung auf
+    const p2 = await post("/print/api/file/fit", { fileId: upOk.fileId, token: upOk.token, mode: "fill", rotate: 0, scale: 0.8, page: 2 }); assert.strictEqual(p2.status, 200, JSON.stringify(p2.j));
+    assert.ok(p2.j.place.pages && p2.j.place.pages["2"] && p2.j.place.pages["2"].scale === 0.8 && (p2.j.place.scale || 1) === 1 && !p2.j.place.pages["1"], JSON.stringify(p2.j.place));
+    assert.ok(p2.j.checks.some(c => /Seite 2/.test(c.text)), JSON.stringify(p2.j.checks));
+    const pAll = await post("/print/api/file/fit", { fileId: p2.j.fileId, token: p2.j.token, mode: "fill", rotate: 0, scale: 0.9 }); assert.ok(pAll.j.place && !pAll.j.place.pages && pAll.j.place.scale === 0.9, JSON.stringify(pAll.j.place));
     const txt = await upload(Buffer.from("hallo welt ".repeat(30)), "x.txt", BC); assert.strictEqual(txt.status, 415);
   });
   await t("Warenkorb-Link: neuer Link bzw. alte Links (Kurzlink, ID) mit neuem Stand überschreiben", async () => {
