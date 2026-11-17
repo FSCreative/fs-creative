@@ -2574,7 +2574,8 @@ module.exports = function (D) {
     const shipTo = validShipTo(input.shipTo, cust);
     let uidRes = null;
     if (cust.type === "company" && cust.uid) { uidRes = await uidCheck(cust.uid); cust.uidValid = !!uidRes.valid; if (uidRes.uid) cust.uid = uidRes.uid; }
-    const method = input.payment === "invoice" ? "invoice" : "mollie";
+    // Intern (Simon 17.11.2026): nur mit Cockpit-Anmeldung – ohne Bezahlung, ohne Rechnung und Kundenmails, geht direkt an Print.com
+    const method = input.payment === "intern" && input.__admin === true ? "intern" : input.payment === "invoice" ? "invoice" : "mollie";
     if (method === "invoice" && !(cust.type === "company" && cust.uidValid)) throw Object.assign(new Error(uidRes && uidRes.unreachable ? "Die UID kann gerade nicht geprüft werden – bitte online bezahlen oder später erneut versuchen" : "Kauf auf Rechnung nur für Firmen mit gültiger UID"), { status: 400 });
     if (method === "mollie" && !cfg().mollieKey) throw Object.assign(new Error("Online-Zahlung ist noch nicht eingerichtet – bitte Rechnung wählen oder uns kontaktieren"), { status: 503 });
     const prepared = [];
@@ -2601,7 +2602,7 @@ module.exports = function (D) {
       if (input.__origin) o.origin = Object.assign({}, input.__origin);
       if (Array.isArray(x.clientWarn) && x.clientWarn.length) { o.clientChecks = x.clientWarn.slice(0, 10).map(t => clip(t, 300)); }
       if (x.bleedOk === true) { o.bleedOk = true; o.fileChecks = bleedOkChecks(o.fileChecks); }   // Vorschau: Motiv endet vor dem Rand → Beschnitt-Hinweis entfällt
-      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "graphic" ? "Datencheck mit Grafikaufbereitung gewünscht – Grafik druckfertig machen und dem Kunden zur Freigabe senden" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
+      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : method === "intern" ? "intern ohne Bezahlung, im Shop als Admin bestellt" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "graphic" ? "Datencheck mit Grafikaufbereitung gewünscht – Grafik druckfertig machen und dem Kunden zur Freigabe senden" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
       if (x.fm) { x.fm.orderId = o.id; await store.putFile(x.fm); }
       await briefDone(o); await store.putOrder(o);
@@ -2671,12 +2672,12 @@ module.exports = function (D) {
     const exp = parseFloat(input.expectedGross);
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };
     const id = "P" + Date.now().toString(36).toUpperCase() + rnd(6);
-    const o = { id, nr: "D-" + today().slice(2).replace(/-/g, "") + "-" + rnd(4), createdAt: nowIso(), status: method === "invoice" ? "invoice_requested" : "pending_payment",
+    const o = { id, nr: "D-" + today().slice(2).replace(/-/g, "") + "-" + rnd(4), createdAt: nowIso(), status: method === "invoice" ? "invoice_requested" : method === "intern" ? "paid" : "pending_payment",
       product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
       custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || (motifs ? motifs.map(m => ({ copies: m.copies })) : undefined), motifs: motifs || undefined, pageMap: (fm || {}).pageMap || undefined, logoFiles: (fm || {}).logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
       fileId: fm ? fm.id : null, fileName: fm ? fm.name : "", fileKind: fm ? fm.kind : "none", fileChecks: fm ? fm.checks || [] : [], noFile: noFile || undefined, cover: cover || undefined, customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || undefined, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
-      payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
+      payment: { method, status: method === "invoice" ? "invoice" : method === "intern" ? "intern" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
     if (fm && fm.briefId) {   // von FS Creative gestaltet (Gestaltungsanfrage): Grafik-Aufschlag ist Pflicht und nicht abwählbar
       const br = (await briefsGet()).find(x => x.id === fm.briefId), of = br && br.offer;
@@ -2689,7 +2690,7 @@ module.exports = function (D) {
   }
   // Bestellung ist verbindlich (bezahlt bzw. Rechnung gewählt): Rechnungsentwurf, Vorschlag, Push, Mails – dann ggf. automatisch senden
   async function submitted(o) {
-    if (!isGroup(o)) await makeInvoice(o);
+    if (!isGroup(o) && !isIntern(o)) await makeInvoice(o);
     await store.putOrder(o);
     return submittedRest(o);
   }
@@ -2768,11 +2769,13 @@ module.exports = function (D) {
       await done({ sentAt: nowIso(), draft: false, nr }, "Sammelrechnung " + (nr ? nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
     } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Sammelrechnung senden fehlgeschlagen: " + e.message); await store.putOrder(o); }
   }
+  function isIntern(o) { return !!(o && o.payment && o.payment.method === "intern"); }
   async function submittedRest(o) {
     if (false && D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: (o.check === "pro" ? "Profi-Datencheck: " : o.check === "graphic" ? "Grafikaufbereitung: " : "") + "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
       detail: o.product.title + " · " + o.copies + " Stk. · " + (o.payment.method === "invoice" ? "Rechnung (Freigabe nötig)" : "bezahlt") + " · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
     if (D.push) D.push("lead", { title: "Druckauftrag: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: o.nr + " · " + o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.check === "pro" ? " · Profi-Datencheck – bitte persönlich prüfen" : o.check === "graphic" ? " · Grafikaufbereitung – Grafik druckfertig machen und zur Freigabe senden" : "") + "\n" + (o.payment.method === "invoice" ? "Auf Rechnung – Freigabe nötig" : "Bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
-    if (isGroup(o) && !(o.invoice && o.invoice.id)) {
+    if (isIntern(o)) { o.mails.confirm = o.mails.confirm || "intern"; await store.putOrder(o); }   // intern: keine Rechnung, keine Bestätigung an den Kunden
+    if (isGroup(o) && !(o.invoice && o.invoice.id) && !isIntern(o)) {
       const sib0 = await siblingsOf(o);
       if (groupReady(o, sib0)) { await makeGroupInvoice(o, sib0); await store.putOrder(o); }
     }
@@ -2811,11 +2814,11 @@ module.exports = function (D) {
     const s = await settings();
     const directOf = x => x.check === "self" && !(x.fileChecks || []).some(c => c.level === "error") && !(x.clientChecks || []).some(t => /wird sichtbar unscharf/.test(t));
     // Profi-Datencheck bezahlt → nie automatisch senden, Simon prüft persönlich (Bestellung D-261104-33V2 ging trotz „pro“ direkt raus)
-    const autoOk = x => ((s.autoSend && x.check !== "pro" && x.check !== "graphic" && !x.cover) || (directOf(x) && !x.cover)) && x.status === "paid";
+    const autoOk = x => ((s.autoSend && x.check !== "pro" && x.check !== "graphic" && !x.cover) || (directOf(x) && !x.cover) || (isIntern(x) && !x.cover && x.check !== "pro" && x.check !== "graphic")) && x.status === "paid";
     // Warenkorb (Simon 13.11.2026): nur gemeinsam – erst wenn alle Positionen bezahlt und automatisch freigebbar sind; sonst gibt Simon den ganzen Warenkorb im Cockpit frei
     let go = autoOk(o);
     if (go && isGroup(o)) { const sib = await siblingsOf(o); go = sib.length >= (o.groupSize || 1) && sib.every(x => (x.printcom && x.printcom.orderNumber) || autoOk(x)); }
-    if (go) { try { await placeOrder(o.id, directOf(o) ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
+    if (go) { try { await placeOrder(o.id, isIntern(o) ? "intern (im Shop als Admin bestellt)" : directOf(o) ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
   // Status der Rechnung in der Buchhaltung ("100" Entwurf, "200" offen, "750" teilbezahlt, "1000" bezahlt); "" = unbekannt (alter Server/keine Antwort)
@@ -5610,6 +5613,7 @@ module.exports = function (D) {
       if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
         if (limited("order", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
         const b = await readJson(req, 400000); const me = await accountMod().current(req); b.__customerId = me ? me.id : null; b.__origin = b.origin && typeof b.origin === "object" ? originOf(b.origin, req.headers["user-agent"]) : null;
+        b.__admin = !!(D.adminAuthed && D.adminAuthed(req));   // nur angemeldet im Cockpit: Zahlungsart „intern“
         const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email);
         if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc;
         const r = await createCheckout(b);
