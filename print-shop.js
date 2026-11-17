@@ -711,7 +711,9 @@ module.exports = function (D) {
     }
     if (!sizeLabel && fixed.size && by.size) { const so = (by.size.options || []).find(o => o && String(o.slug) === fixed.size); if (so && so.name && !/^custom$/i.test(so.slug)) sizeLabel = clip(String(so.name), 80); }
     // Sehr große bzw. extrem lange Formate (z. B. 20 m × 76 cm): Großformat-Auflösung, kein Online-Designer (nur Datei-Upload, Maßstab 1:10)
-    const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10), large = dims && Math.max(dims[0], dims[1]) >= 1000;
+    // Großformat auch, wenn die wählbaren Größen ≥ 1 m sind (Beachflags, Displays …) – sonst galten 300 dpi wie bei Flyern (Simon 17.11.2026: Warnungen irreführend)
+    const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10),
+      large = (dims && Math.max(dims[0], dims[1]) >= 1000) || (!dims && exposed.some(x => x.slug === "size") && (by.size && by.size.options || []).some(o => { const d = o && String(o.slug) !== "custom" && dimsOf(o); return d && Math.max(d[0], d[1]) >= 1000; }));
     const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null && !/shape|complex|simple|die_?cut|thru_?cut|contour/i.test(String(fixed.custom_shape || "").replace(/^clean_cut$/, "")), safe: c.safe || 3, sku: String(sku),
       bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
       props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, maxDesigns: +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
@@ -2177,15 +2179,15 @@ module.exports = function (D) {
     const dpi = Math.round(Math.min((rot ? dm.h : dm.w) / (W / 25.4), (rot ? dm.w : dm.h) / (H / 25.4)));
     const D0 = prod.dpi || 300, f = D0 / 300;   // Großformat (Banner) braucht weniger dpi
     const checks = [];
-    if (dpi >= Math.floor(D0 * 0.95)) checks.push({ level: "ok", text: "Auflösung " + dpi + " dpi – passt." });   // ±5 %: 299 statt 300 dpi sieht man im Druck nicht
+    // gleiche Grenzen wie die Prüfung im Browser (ab 83 % von D0 „passt“) – vorher widersprachen sich Server und Browser (Simon 17.11.2026)
+    if (dpi >= Math.round(250 * f)) checks.push({ level: "ok", text: "Auflösung " + dpi + " dpi – passt." });
     else if (dpi >= Math.round(150 * f)) checks.push({ level: "warn", text: "Auflösung nur " + dpi + " dpi (empfohlen " + D0 + " dpi). Der Druck kann leicht unscharf wirken." });
     else if (dpi >= Math.round(72 * f)) checks.push({ level: "warn", text: "Auflösung sehr gering (" + dpi + " dpi). Der Druck wird sichtbar unscharf – besser eine größere Datei verwenden." });
     else checks.push({ level: "error", text: "Auflösung viel zu gering (" + dpi + " dpi) für " + W + " × " + H + " mm." });
     if (rot) checks.push({ level: "ok", text: "Bild ist " + (dm.w > dm.h ? "quer" : "hoch") + ", das Format " + (W > H ? "quer" : "hoch") + " – automatisch um 90° gedreht. Unter „Anpassen“ kannst du die Drehung ändern." });
     const ar = ((rot ? dm.h : dm.w) / (rot ? dm.w : dm.h)) / (W / H), far = Math.abs(ar - 1) > 0.25, mode = far ? "fit" : "fill";   // stark abweichend: ganz einpassen statt große Teile abzuschneiden
-    if (far) checks.push({ level: "warn", text: "Das Bild hat ein ganz anderes Seitenverhältnis als das Format – es wurde vollständig eingepasst, freie Flächen bleiben weiß. Unter „Anpassen“ kannst du stattdessen das Format füllen (dann wird angeschnitten)." });
+    if (far) checks.push({ level: "warn", text: "Das Bild hat ein ganz anderes Seitenverhältnis als das Format – es wurde ganz eingepasst, freie Flächen sind mit den gespiegelten Rändern gefüllt. Unter „Anpassen“ kannst du stattdessen randlos füllen (dann wird angeschnitten) oder die Flächen weiß lassen." });
     else if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten. Unter „Anpassen“ kannst du es stattdessen ganz einpassen." });
-    checks.push({ level: "warn", text: "Bitte beachte: Inhalte im Beschnitt (" + target.bleed + " mm je Seite) werden abgeschnitten." });
     spotNeedsOf(prod, t0.n.sel).forEach(([n, label, crit]) => checks.push({ level: "warn", text: label + ": Ein Bild (JPG/PNG) kann keine Sonderfarbe „" + n + "“ enthalten" + (crit ? " – ohne Schnittlinie kann nicht geschnitten werden. Bitte eine PDF mit der Kontur in „" + n + "“ hochladen oder die Kontur im Online-Designer zeichnen." : ". Für " + label + " bitte eine PDF mit dieser Sonderfarbe hochladen.") }));
     if (target.sides > 1) checks.push({ level: "warn", text: "Bild-Upload füllt nur die Vorderseite – die Rückseite bleibt weiß. Für zwei Seiten bitte eine 2-seitige PDF hochladen." });
     let pdf; try { pdf = (await withPdf(() => placeFile(buf, type, target.size, target.bleed, { mode, rotate: rot ? 90 : 0 }, target.sides))).pdf; } catch (e) { try { pdf = await imageToPdf(buf, type, target.size, target.bleed, target.sides); } catch (e2) { throw Object.assign(new Error("Bild konnte nicht verarbeitet werden"), { status: 400 }); } }
@@ -5585,6 +5587,8 @@ module.exports = function (D) {
         try { await previewPdf(fm); } catch (e) { log("Vorschau:", e.message); }
         return J(res, 200, { ok: true });
       }
+      // Prüfergebnisse, die nach Anpassen/Beschnitt weiter gelten: alles außer Format/Beschnitt/Drehung (wird neu beschrieben) und der erweiterten Prüfung (läuft neu)
+      function keepChecks(list) { return (list || []).filter(c => c && !/^(Angepasst|Beschnitt (automatisch )?ergänzt|Erweiterte Prüfung)|Seitengröße|Endformat|Beschnitt|Seitenverhältnis|Quer-|Hochformat|Querformat|gedreht|skaliert|Format kann hier nicht|eingepasst|Bitte in der Vorschau kontrollieren|Motiv vergrößert/i.test(c.text || "")); }
       if (p === "/print/api/file/fit" && req.method === "POST") {   // Anpassen: einpassen/füllen, drehen, skalieren, verschieben – immer vom Original aus (neue Datei)
         if (limited("upload", ip, 300, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const b = await readJson(req, 2000), id = String(b.fileId || "");
@@ -5595,10 +5599,13 @@ module.exports = function (D) {
         const kindOf = x => x[0] === 0x25 && x[1] === 0x50 ? "pdf" : x[0] === 0xff && x[1] === 0xd8 ? "jpg" : x[0] === 0x89 && x[1] === 0x50 ? "png" : (sm.original || "pdf");   // Typ aus dem Inhalt – „original“ beschreibt den Kunden-Upload, nicht unbedingt diese Datei
         let r; try { r = await withPdf(() => placeFile(data, kindOf(data), fm.size, +fm.bleed || 0, o, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
         const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
-        const checks = (fm.checks || []).filter(c => c.level === "ok" && /dpi|Seite\(n\)|Seiten –/.test(c.text || "") || /Rückseite bleibt weiß|Bild-Upload füllt/.test(c.text || ""));
+        // Nur Format-/Beschnitt-Hinweise ersetzen – alles andere (Auflösung, Sonderfarben/Kontur, Seitenzahl …) bleibt, auch Fehler.
+        // Vorher gingen beim Anpassen alle Fehler verloren und eine gesperrte Datei war wieder frei (Simon 17.11.2026)
+        const checks = keepChecks(fm.checks).filter(c => !(o.scale > 1 && /Auflösung|dpi/.test(c.text || "")));
         checks.unshift({ level: "ok", text: "Angepasst: " + (o.mode === "fit" ? (r.mirrored ? "ganz eingepasst (freie Flächen mit gespiegelten Rändern gefüllt)" : "ganz eingepasst (freie Flächen bleiben weiß)") : r.mirrored ? "Motiv verkleinert, Rand bis in den Beschnitt gespiegelt" : "füllt das Format inkl. Beschnitt") + (o.rotate ? " · um " + o.rotate + "° gedreht" : "") + (o.scale !== 1 ? " · " + Math.round(o.scale * 100) + " %" : "") + (o.dx || o.dy ? " · verschoben" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." });
-        if (o.mode === "fill" || o.scale > 1) checks.push({ level: "warn", text: "Bitte in der Vorschau kontrollieren: Inhalte am Rand und im Beschnitt (" + fm.bleed + " mm je Seite) werden abgeschnitten." });
-        if (fm.dpi && o.scale > 1) { const d2 = Math.round(fm.dpi / o.scale); if (d2 < 150) checks.push({ level: "warn", text: "Durch die Vergrößerung nur noch ca. " + d2 + " dpi – der Druck kann unscharf wirken." }); }
+        if (o.scale > 1.001) checks.push({ level: "warn", text: "Motiv vergrößert – was jetzt über die rote Linie hinausragt, wird abgeschnitten. Bitte in der Vorschau kontrollieren." });
+        if (fm.dpi && o.scale > 1) { const pr0 = await findProduct(fm.product).catch(() => null), D0 = (pr0 && pr0.dpi) || 300, d2 = Math.round(fm.dpi / o.scale);
+          if (d2 < Math.round(D0 * 250 / 300)) checks.push({ level: "warn", text: "Durch die Vergrößerung nur noch ca. " + d2 + " dpi (empfohlen " + D0 + " dpi) – der Druck kann unscharf wirken." }); }
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: o, px: fm.px, dpi: fm.dpi });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
@@ -5611,7 +5618,7 @@ module.exports = function (D) {
         if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
         const out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)), multi = (+fm.sides || 1) > 2;
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt: Motiv minimal vergrößert (" + fm.bleed + " mm je Seite) – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt automatisch ergänzt: Randbereiche gespiegelt (" + fm.bleed + " mm je Seite) – dein Motiv bleibt unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, multi));
-        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id });
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat(keepChecks(fm.checks).filter(c => !/Seite\(n\) –|Seiten –/.test(c.text || ""))), { original: "pdf", bleedFix: mode, from: fm.id, src: fm.src || null });   // src: „Anpassen“ bleibt danach möglich
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/logos") {

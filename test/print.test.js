@@ -356,6 +356,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Upload Bild: dpi wird geprüft, Bild wird in PDF mit exakter Größe gewandelt", async () => {
     const low = await upload(png(200, 133, [200, 30, 30]), "logo.png", BC); assert.strictEqual(low.status, 200, JSON.stringify(low.j));
     assert.ok(low.j.checks.some(c => /dpi/.test(c.text) && c.level !== "ok"), JSON.stringify(low.j.checks));
+    // Anpassen darf Fehler nicht verschwinden lassen (17.11.2026: vorher war eine gesperrte Datei nach einem Klick wieder frei)
+    const lowFit = await post("/print/api/file/fit", { fileId: low.j.fileId, token: low.j.token, mode: "fit", rotate: 0, scale: 1 }); assert.strictEqual(lowFit.status, 200, JSON.stringify(lowFit.j));
+    assert.strictEqual(lowFit.j.blocked, low.j.blocked, JSON.stringify(lowFit.j.checks)); assert.ok(lowFit.j.checks.some(c => /dpi/.test(c.text) && c.level !== "ok"), JSON.stringify(lowFit.j.checks));
+    assert.ok(!low.j.checks.some(c => /Inhalte im Beschnitt/.test(c.text)), "kein Dauer-Hinweis bei jedem Bild");
     const hi = await upload(png(1060, 700, [10, 10, 10]), "foto.png", BC); assert.ok(hi.j.checks.some(c => c.level === "ok" && /dpi/.test(c.text)), JSON.stringify(hi.j.checks));
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=" + hi.j.token + "&pdf=1")).arrayBuffer());
     const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);

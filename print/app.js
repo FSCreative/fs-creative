@@ -2200,7 +2200,7 @@
     var pgN = pagesNeeded(), pagesTxt = pgN ? "<b>" + pgN + " Seiten in einer PDF</b> (inkl. Umschlag) – Einzelseiten in Leserichtung, keine Doppelseiten: Seite 1 = Titel, Seite " + pgN + " = Rückseite; leere Seiten bitte mitzählen"
       : sd === 2 ? (f ? "Seite 1 = Außenseite, Seite 2 = Innenseite" : "Seite 1 = Vorderseite, Seite 2 = Rückseite") + " – beide in einer PDF" : "1 Seite";
     var items = [
-      ["📏", "Anzulieferndes Format", "Datei anlegen in <b>" + unit(fileW) + " × " + unit(fileH) + "</b> – Endformat " + unit(sz.w) + " × " + unit(sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
+      ["📏", "Anzulieferndes Format", "Datei anlegen in <b>" + fmtSize(fileW, fileH) + "</b> – Endformat " + fmtSize(sz.w, sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
       ["🛡️", "Sicherheitsabstand", "Texte, Logos und wichtige Inhalte mindestens <b>" + mmF(safe) + " mm</b> vom Rand des Endformats entfernt" + (sleeveCm() ? " – im Tunnelsaum (" + sleeveCm() + " cm) steckt die Stange, dort nichts Wichtiges platzieren" : p.kind === "banner" ? " – im Randbereich sitzen Saum und Ösen" : "")],
       ["🖼️", "Auflösung", "Bilder mit mindestens <b>" + dpi + " dpi</b> in Endgröße" + (big ? " (für Großformat genügt das, aus der Entfernung gesehen)" : "") + "; Logos und Texte am besten als Vektor"],
       ["📄", "Seiten", pagesTxt],
@@ -2210,7 +2210,7 @@
     ];
     // Aufdruck (Werbeartikel, Taschen, Textil, Tampon-/Siebdruck): Druckfläche statt Endformat, kein Beschnitt, kein Sicherheitsabstand
     if (p.imprint) { var pms = /pantone|sonderfarbe/i.test(labelOf("printtype") || "");
-      items = [["📏", "Druckfläche", "<b>max. " + unit(sz.w) + " × " + unit(sz.h) + "</b> – dein Motiv in dieser Größe oder kleiner anlegen, <b>ohne Beschnitt</b>; wir platzieren es mittig in der Druckfläche"],
+      items = [["📏", "Druckfläche", "<b>max. " + fmtSize(sz.w, sz.h) + "</b> – dein Motiv in dieser Größe oder kleiner anlegen, <b>ohne Beschnitt</b>; wir platzieren es mittig in der Druckfläche"],
         ["✒️", "Logo", "Am besten als <b>Vektor</b> (PDF, AI, EPS oder SVG); Schriften in Pfade umwandeln, feine Linien ab 0,3 pt" + (pms ? ". Fotos und Farbverläufe sind im " + esc(labelOf("printtype")) + " nicht möglich" : "")],
         ["🎨", "Farben", pms ? "<b>Pantone-Farben</b> laut gewählter Farbanzahl – bitte die Pantone-Nummern in der Datei angeben" : "<b>CMYK</b> anlegen – RGB wird beim Druck umgerechnet"],
         ["📦", "Datei", "<b>PDF</b> mit nur dem Motiv – ohne Hintergrundfläche, ohne Rahmen und Schnittmarken · max. 500 MB"]]; }
@@ -2247,7 +2247,7 @@
     var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
-    return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + unit(fileW) + " × " + unit(fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
+    return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + fmtSize(fileW, fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
       '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + '<figcaption><span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>" + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
       reqList(items.filter(function (x) { return x[3] !== "wide"; }), "") + "</div>" +
       // lange Hinweise (Ausführung, Herstellerangaben) über die volle Breite in zwei Spalten – sonst bleibt links unter der Skizze alles leer (Simon 16.11.2026)
@@ -2464,11 +2464,14 @@
     x.onerror = function () { upPop("close"); toast("Upload fehlgeschlagen – bitte erneut versuchen.", true); };
     x.send(f);
   }
+  // Warenkorb-Position im Studio geöffnet: hat sich Datei, Ausführung oder Menge geändert? (sonst „Fertig“ statt „Änderung übernehmen“)
+  function cartChanged(f) { var ce = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit; })[0]; if (!ce) return true;
+    return (f && f.fileId) !== ce.fileId || +ce.copies !== +S.copies || JSON.stringify(ce.sel || {}) !== JSON.stringify(S.sel || {}) || JSON.stringify(ce.custom || null) !== JSON.stringify(isCustom() ? S.custom : null); }
   function studioHtml(f, mtabs, sum, spec, top, shown, rest) {
     var co = S.ctype === "company", pr = S.price, mot = S.mot.n > 1 && motOk(), key = f.fileId + (S.pfvOff ? ":0" : ":1");
     var price = pr && (pr.gross || pr.net) ? '<span class="ps-stu-pr"><b>' + eur(co ? pr.net : pr.gross) + "</b><small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></span>" : "";
     var cvN = coverNeed(), cvMiss = cvN && !(S.cover && !S.cover.blocked);
-    var go = cvMiss && !f.blocked ? '<span class="ps-stu-blk">Bitte rechts noch den Umschlag hochladen</span>' : !f.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (mot ? "Weiter" : S.cartEdit ? "Änderung übernehmen" : "In den Warenkorb") + " →</button>" : '<span class="ps-stu-blk">Bitte die rot markierten Punkte korrigieren</span>';
+    var go = cvMiss && !f.blocked ? '<span class="ps-stu-blk">Bitte rechts noch den Umschlag hochladen</span>' : !f.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (mot ? "Weiter" : S.cartEdit ? (cartChanged(f) ? "Änderung übernehmen" : "Fertig") : f.edgeErr ? "Trotzdem in den Warenkorb" : "In den Warenkorb") + " →</button>" : '<span class="ps-stu-blk">Bitte die rot markierten Punkte korrigieren</span>';
     return '<div class="ps-stu" role="dialog" aria-modal="true" aria-label="Studio">' +
       '<header class="ps-stu-top"><div class="ps-stu-brand"><b>STUDIO</b><span>' + esc(sum) + (spec ? " · " + esc(spec) : "") + '</span></div>' +
       '<div class="ps-stu-act"><label class="ps-cb sm"><input type="checkbox" id="psStuEdges"' + (S.pfvOff ? "" : " checked") + '><span>Druckränder</span></label>' +
@@ -2477,7 +2480,7 @@
       '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (f.blocked ? "<b>Bitte rechts die rot markierten Punkte korrigieren.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb der grünen Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe sollen bis an den äußeren Rand reichen, damit nach dem Schneiden kein weißer Rand bleibt.</p>' +
       '<main class="ps-stu-pages' + (S.pfvBg ? " tr" : "") + '" id="psStuPages" data-key="' + esc(key) + '"><div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div></main></div>' +
       '<aside class="ps-stu-side">' + mtabs +
-        '<div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages || "?") + " Seite" + (f.pages === 1 ? "" : "n") + (f.bytes ? " · " + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
+        '<div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages ? f.pages + " Seite" + (f.pages === 1 ? "" : "n") : "") + (f.bytes ? (f.pages ? " · " : "") + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
         (f.kind === "design" ? '<button type="button" class="ps-link" data-act="editdesign">Bearbeiten</button>' : "") + '<a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF</a><button type="button" class="ps-link" data-act="clearfile">Andere Datei</button></div></div>' +
         coverCardHtml(cvN) + qualHtml(f) + adjHtml(f) + bleedFixHtml(f) + backHtml(f) +
         '<div class="ps-upv-chk">' + checksHtml(shown) + (rest.length ? '<details><summary>Alle Prüfungen anzeigen (' + top.length + ")</summary>" + checksHtml(rest) + "</details>" : "") + '<div id="psPfvW"></div></div>' +
@@ -2544,6 +2547,9 @@
       S.file = x.noFile ? noFileObj() : Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
       S.cover = x.coverId ? { fileId: x.coverId, token: x.coverToken, name: x.coverName || "Umschlag", kind: "upload", cover: true, checks: [] } : null;
       S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.cartEdit = x.id; S.step = step || 3; render(); if (!x.noFile) pollPreflight();
+      // Position ohne gespeicherte Datei-Infos (ältere Warenkörbe, Warenkorb-Links): Seiten, Prüfungen, „Anpassen“ vom Server nachladen
+      if (!x.noFile && !x.fm && /^f[a-f0-9]{24}$/.test(x.fileId || "")) api("/print/api/file/" + x.fileId + "?t=" + encodeURIComponent(x.fileToken || ""), null, "GET").then(function (j) {
+        if (j && j.ok && S.file && S.file.fileId === x.fileId) { S.file = j; S.previews = null; render(); } }).catch(function () {});
       if (step === 2) toast("Ausführung ändern – danach „Weiter“ und „Änderung übernehmen“, die Position wird ersetzt.");
       try { history.replaceState(null, "", "/print"); } catch (e) {}
     });
@@ -2571,6 +2577,8 @@
           [["links", function (k, d) { return [b0 + d, k]; }, H], ["rechts", function (k, d) { return [W - 1 - b0 - d, k]; }, H], ["oben", function (k, d) { return [k, b0 + d]; }, W], ["unten", function (k, d) { return [k, H - 1 - b0 - d]; }, W]].forEach(function (sd) {
             if (s0 <= b0) return; var ref = [], k, d; for (k = 0; k < sd[2]; k += 7) ref.push(px.apply(null, sd[1](k, 0)));
             var med = [0, 1, 2].map(function (c2) { var a = ref.map(function (p2) { return p2[c2]; }).sort(function (m, n2) { return m - n2; }); return a[a.length >> 1]; });
+            // Foto/Verlauf/Muster bis an den Rand (Flammen, Landschaft …): kein einheitlicher Randton → das ist Hintergrund, kein Text am Rand – Seite nicht werten (Simon 17.11.2026: Warnung irreführend)
+            var spread = ref.map(function (p2) { return dist(p2, med); }).sort(function (m, n2) { return m - n2; }); if (spread.length && spread[Math.floor(spread.length * 0.6)] > 45) return;
             var rows = 0; for (k = Math.round(sp); k < sd[2] - Math.round(sp); k++) { for (d = 0; d <= s0 - b0; d++) { var q = sd[1](k, d); if (dist(px(q[0], q[1]), med) > 120) { rows++; break; } } }
             if (rows / pxmm > 1.2) { hit++; sideNames.push(sd[0]); } });
           var cmk = cropMarks(data, W, H, pxmm);
@@ -2595,9 +2603,12 @@
             if (tt && nw / tt < 0.005) edgeFree.push(idx); }
         } catch (e) {}
         var dp = r.deep || {}, lab2 = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        if (f.original === "jpg" || f.original === "png" || (f.checks || []).some(function (c) { return /Auflösung|dpi/.test(c.text || ""); })) dp.imgs = null;   // Auflösung steht schon in der Server-Prüfung – nicht doppelt/widersprüchlich
         if (dp.imgs && dp.imgs.length) { var lo = Math.min.apply(null, dp.imgs), D0 = +S.prod.dpi || 300, fq = D0 / 300;   // gleiche Grenzen wie die Prüfung am Server: Großformat (Banner, D0 100 dpi) braucht weniger Auflösung – wird aus der Ferne betrachtet
           if (lo < Math.round(150 * fq)) warns.push("!" + lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen " + D0 + " dpi).");
           else if (lo < Math.round(250 * fq)) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße (empfohlen " + D0 + " dpi) – kann leicht unscharf wirken."); else okNotes.push(lab2 + dp.imgs.length + " Bild(er) mit ausreichender Auflösung (ab " + lo + " dpi)."); }
+        // Standardschriften (Helvetica, Times, Courier, Arial …) hat jede Druckerei – kein Hinweis; Bild-Uploads (JPG/PNG): Auflösung prüft schon der Server
+        if (dp.fonts) dp.fonts = dp.fonts.filter(function (fn) { return !/^(Helvetica|Times|Courier|Symbol|ZapfDingbats|Arial|TimesNewRoman|CourierNew)([-,].*)?$/i.test(String(fn).replace(/\s+/g, "")); });
         if (dp.fonts && dp.fonts.length) warns.push(lab2 + "Schrift nicht eingebettet: " + dp.fonts.slice(0, 3).join(", ") + " – beim Export „Schriften einbetten“ aktivieren oder Text in Pfade umwandeln.");
         var rnd = shapeNow();   // runde Aufkleber/Buttons: Schnittlinie als Kreis
         if (!S.pfvOff && rnd) shapeEdges(x, W, H, bp, sp, rnd, 1.5, [6, 4]);
@@ -2617,7 +2628,7 @@
       if (okNotes.length) wh += '<ul class="ps-checks">' + okNotes.map(function (w) { return '<li class="ok">' + esc(w) + "</li>"; }).join("") + "</ul>";
       PFV[key] = { html: html, warn: wh }; var b2 = document.getElementById("psPfv"); if (b2 && b2.getAttribute("data-fid") === f.fileId) { b2.querySelector(".ps-pfv-c").innerHTML = html; document.getElementById("psPfvW").innerHTML = wh; }
       if (warns.length && S.file === f) { f.edgeWarn = warns; f.edgeErr = warns.some(function (w) { return w[0] === "!"; }); var qb = document.querySelector(".ps-qual"); if (qb && !/bad/.test(qb.className)) { qb.className = "ps-qual " + (f.edgeErr ? "bad" : "warn"); qb.innerHTML = '<i aria-hidden="true"></i><div><b>' + (f.edgeErr ? "Bitte korrigieren" : "Druckbar – mit Hinweisen") + "</b><span>Die automatische Prüfung hat etwas gefunden – siehe Hinweise unten." + (f.edgeErr ? " So würde der Druck sichtbar schlechter aussehen." : "") + " Unsicher? Wähle an der Kasse den Profi-Datencheck.</span></div>"; }
-        if (f.edgeErr) document.querySelectorAll('[data-act="next3"]').forEach(function (bt) { if (!/Trotzdem/.test(bt.textContent)) bt.textContent = "Trotzdem in den Warenkorb"; }); }
+        if (f.edgeErr && !S.cartEdit && !(S.mot.n > 1)) document.querySelectorAll('.ps-stu [data-act="next3"]').forEach(function (bt) { if (!/Trotzdem/.test(bt.textContent)) bt.textContent = "Trotzdem in den Warenkorb →"; }); }
     }).catch(function () { var b3 = document.getElementById("psPfv"); if (b3) b3.querySelector(".ps-pfv-c").innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – bitte „PDF ansehen“ nutzen.</p>'; });
   }
   // Kein Beschnitt in der PDF → automatisch ergänzen lassen (Ränder spiegeln oder Motiv minimal vergrößern), jederzeit rückgängig
@@ -2627,18 +2638,27 @@
     return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so bleibt nach dem Schneiden kein weißer Rand stehen. Du siehst danach sofort die Vorschau und kannst es rückgängig machen.</span><ul class="ps-bfix-i"><li><b>Ränder spiegeln:</b> die äußersten Millimeter werden nach außen gespiegelt – dein Motiv bleibt gleich groß und unverändert.</li><li><b>Motiv leicht vergrößern:</b> das Motiv wird minimal größer gezogen, bis es den Beschnitt füllt – Inhalte ganz am Rand werden etwas angeschnitten.</li></ul><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
   }
   // ── Anpassen: Upload ganz einpassen / Format füllen, drehen, Größe – der Server setzt die Datei vom Original aus neu (exakte Größe inkl. Beschnitt) ──
+  /* Umbau Simon 17.11.2026 („Anpassen muss logischer werden“): zwei klare Arten (Randlos füllen / Ganz zeigen), der angezeigte Zustand entspricht der Datei
+     (unveränderte Datei = keine Art gedrückt), „Zurücksetzen“ führt zum Stand vor dem ersten Anpassen zurück (auch Drehung), freie Flächen weiß/gespiegelt
+     immer wählbar, wenn es welche gibt; wo Anpassen nicht geht, steht warum */
   function adjHtml(f) {
-    if (!f || !f.adj) return "";
-    var pl = f.place || { mode: "fill", rotate: 0, scale: 1 }, sc = Math.round((pl.scale || 1) * 100), hot = (f.checks || []).some(function (c) { return c.level === "error" && /passt nicht zum gewählten Format/.test(c.text || ""); });
+    if (!f) return "";
+    var hot = (f.checks || []).some(function (c) { return c.level === "error" && /passt nicht zum gewählten Format/.test(c.text || ""); });
+    if (!f.adj) return hot && f.kind === "upload" ? '<div class="ps-adj hot" id="psAdj"><b>Format passt nicht</b><p class="pd-muted small">' + ((+f.pages || 1) > 2 ? "Bei mehrseitigen Dateien kann das Format hier nicht automatisch angepasst werden. Bitte die PDF im oben angegebenen Format neu exportieren – oder an der Kasse den Profi-Datencheck wählen, dann melden wir uns." : "Diese Datei kann hier nicht automatisch angepasst werden. Bitte im angegebenen Format neu exportieren oder die Datei erneut hochladen.") + "</p></div>" : "";
+    var pl = f.place || null, mode = pl ? pl.mode : "", rot = pl ? (((+pl.rotate || 0) % 360) + 360) % 360 : 0, sc = Math.round(((pl && pl.scale) || 1) * 100), gaps = !!pl && (mode === "fit" || sc < 100);
+    var canReset = S.adjOrig && S.adjOrig.src === f.src && S.adjOrig.file.fileId !== f.fileId;
     var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
-    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht? Mit einem Klick anpassen:" : "Anpassen") + '</b><div class="row">' +
-      b("fit", "Ganz einpassen", pl.mode === "fit", "Alles bleibt sichtbar, freie Flächen werden mit gespiegelten Rändern gefüllt") + b("fill", "Format füllen", pl.mode !== "fit", "Füllt bis in den Beschnitt – Ränder werden angeschnitten") + '<span class="sep" aria-hidden="true"></span>' +
+    var now = !pl ? "deine Datei, unverändert" : (mode === "fit" ? "ganz sichtbar" : "randlos gefüllt") + (sc !== 100 ? " · " + sc + " %" : "") + (rot ? " · " + rot + "° gedreht" : "") + (gaps ? (pl.bg === "white" ? " · freie Flächen weiß" : " · freie Flächen gespiegelt") : "");
+    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht – so passt du es an:" : "Anpassen") + '</b><p class="pd-muted small">Jetzt: ' + esc(now) + '</p><div class="row">' +
+      b("fill", "Randlos füllen", mode === "fill", "Füllt das ganze Format bis in den Beschnitt – was übersteht, wird abgeschnitten") + b("fit", "Ganz zeigen", mode === "fit", "Das ganze Motiv bleibt sichtbar – freie Flächen werden mit den gespiegelten Rändern gefüllt (oder weiß)") + '<span class="sep" aria-hidden="true"></span>' +
       b("rl", "↺", null, "Um 90° nach links drehen") + b("rr", "↻", null, "Um 90° nach rechts drehen") + "</div>" +
-      '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (pl.mode !== "fit" && sc === 100 ? "" : b("reset", "Zurücksetzen")) + "</div>" +
-      (pl.mode === "fit" || sc < 100 ? '<div class="row"><label class="ps-adj-s"><input type="checkbox" id="psAdjW"' + (pl.bg === "white" ? " checked" : "") + '> <span>Freie Flächen weiß lassen</span></label><span class="pd-muted small">' + (pl.bg === "white" ? "Achtung: der weiße Rand wird mitgedruckt." : "Sonst füllen wir sie mit den gespiegelten Rändern deines Motivs – kein weißer Rand.") + "</span></div>" : "") + "</div>";
+      '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (canReset ? b("reset", "Zurücksetzen", null, "Zurück zu deiner Datei vor dem Anpassen") : "") + "</div>" +
+      (gaps ? '<div class="row"><label class="ps-adj-s"><input type="checkbox" id="psAdjW"' + (pl.bg === "white" ? " checked" : "") + '> <span>Freie Flächen weiß lassen</span></label><span class="pd-muted small">' + (pl.bg === "white" ? "Der weiße Rand wird so mitgedruckt." : "Sonst füllen wir sie mit den gespiegelten Rändern deines Motivs – kein weißer Rand.") + "</span></div>" : "") +
+      '<p class="pd-muted small"><b>Randlos füllen:</b> nichts bleibt weiß, die Ränder werden etwas angeschnitten. <b>Ganz zeigen:</b> alles bleibt sichtbar, Lücken werden aufgefüllt.</p></div>';
   }
   function adjApply(ch) {
     var f = S.file; if (!f || !f.adj || S.adjBusy) return; var pl = Object.assign({ mode: "fill", rotate: 0, scale: 1 }, f.place || {}, ch);
+    if (!S.adjOrig || S.adjOrig.src !== f.src) S.adjOrig = { src: f.src, file: f };   // Stand vor dem ersten Anpassen – für „Zurücksetzen“
     S.adjBusy = true; var box = document.getElementById("psAdj"); if (box) box.classList.add("busy");
     api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale, bg: pl.bg === "white" ? "white" : "mirror" }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
       S.file = j; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast(j.blocked ? "Angepasst – bitte die Hinweise prüfen" : "Angepasst ✓"); }).catch(function () { S.adjBusy = false; toast("Keine Verbindung", true); render(); });
@@ -2987,7 +3007,8 @@
       api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
     if (k === "adj" && S.file) { var pl0 = S.file.place || { mode: "fill", rotate: 0, scale: 1 };
-      adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : v === "rr" ? { rotate: (pl0.rotate || 0) + 90 } : { mode: "fill", scale: 1, bg: "mirror" }); return; }
+      if (v === "reset") { if (S.adjOrig && S.adjOrig.src === S.file.src) { S.file = S.adjOrig.file; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast("Zurückgesetzt – deine Datei wie vor dem Anpassen"); } else adjApply({ mode: "fill", scale: 1, rotate: 0, bg: "mirror" }); return; }
+      adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : { rotate: (pl0.rotate || 0) + 90 }); return; }
     if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
@@ -3023,7 +3044,7 @@
     if (k === "stucancel") {
       // Position aus dem Warenkorb geöffnet und Datei angepasst (Einpassen, Beschnitt …) → nicht stillschweigend verwerfen (Simon 17.11.2026)
       var ce1 = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit; })[0], nx3 = document.querySelector('[data-act="next3"]');
-      if (ce1 && nx3 && S.file && !S.file.noFile && S.file.fileId && S.file.fileId !== ce1.fileId && !S.file.blocked && window.confirm("Du hast deine Druckdatei angepasst. Soll die Änderung in den Warenkorb übernommen werden?\n\nOK = übernehmen, Abbrechen = verwerfen")) { nx3.click(); return; }
+      if (ce1 && nx3 && S.file && !S.file.noFile && S.file.fileId && S.file.fileId !== ce1.fileId && !S.file.blocked && window.confirm("Du hast deine Druckdatei angepasst.\n\n„OK“ – Änderung in den Warenkorb übernehmen\n„Abbrechen“ – Änderung verwerfen, die Position bleibt wie vorher")) { nx3.click(); return; }
       S.cartEdit = ""; S.file = null; S.previews = null; S.mode = ""; go(4); return; }
     if (k === "cartedit") { var ce = S.cart.filter(function (x) { return x.id === v; })[0]; if (!ce || !ce.draft) return; S.cartEdit = ce.id; loadDraft(ce.draft.id, ce.draft.t, ce); return; }
     if (k === "cpages") { pagesView(v); return; }
