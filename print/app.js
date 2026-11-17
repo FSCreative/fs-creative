@@ -315,8 +315,8 @@
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
       h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         (x.fileId ? ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? '<span class="ps-ci-sum"><b>' + eur(itemTotal(x, co)) + "</b><small>" + (co ? "netto" : "inkl. USt") + (x.designFee ? " · Druck " + eur(co ? x.price.net : x.price.gross) + " + Grafik " + eur(co ? x.designFee.net : x.designFee.gross) : "") + "</small></span>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
-        (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.motifs && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
-        ((x.fileId || x.noFile) && !x.motifs && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
+        (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
+        ((x.fileId || x.noFile) && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
     h += svcRows(co) + "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Weiter zur Lieferung</button></div></div>' +
@@ -2545,6 +2545,13 @@
       if (+x.copies > 0) S.copies = +x.copies; if (x.urgency) { S.urgency = x.urgency; S.dday = x.wish || ""; } if (x.custom && x.custom.w) S.custom = { w: x.custom.w, h: x.custom.h }; if (x.pm) S.pm = x.pm;
       fixSel(); loadPrice();
       S.file = x.noFile ? noFileObj() : Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
+      // mehrere Motive (Simon 17.11.2026: Position mit Motiven ließ sich nicht öffnen): Motive samt Dateien und Aufteilung wiederherstellen, Datei-Infos vom Server nachladen
+      if (x.motifs && x.motifs.length > 1) {
+        S.mot = { n: x.motifs.length, split: x.motifs.map(function (m) { return +m.copies || 0; }), i: 0, files: x.motifs.map(function (m) { return { file: { kind: "upload", name: m.fileName || "Druckdatei", fileId: m.fileId, token: m.fileToken, checks: [] }, previews: null, design: null, mode: "upload" }; }) };
+        S.file = S.mot.files[0].file;
+        x.motifs.forEach(function (m, i) { if (/^f[a-f0-9]{24}$/.test(m.fileId || "")) api("/print/api/file/" + m.fileId + "?t=" + encodeURIComponent(m.fileToken || ""), null, "GET").then(function (j) {
+          var mf = S.mot.files[i]; if (j && j.ok && mf && mf.file && mf.file.fileId === m.fileId) { mf.file = j; if (S.mot.i === i) { S.file = j; S.previews = null; } render(); } }).catch(function () {}); });
+      }
       S.cover = x.coverId ? { fileId: x.coverId, token: x.coverToken, name: x.coverName || "Umschlag", kind: "upload", cover: true, checks: [] } : null;
       S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.cartEdit = x.id; S.step = step || 3; render(); if (!x.noFile) pollPreflight();
       // Position ohne gespeicherte Datei-Infos (ältere Warenkörbe, Warenkorb-Links): Seiten, Prüfungen, „Anpassen“ vom Server nachladen
