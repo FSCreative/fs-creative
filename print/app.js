@@ -2821,7 +2821,7 @@
     if (!S.payment) S.payment = S.cat.payments.mollie ? "mollie" : (invOk ? "invoice" : "");
     if (S.payment === "invoice" && !invOk) S.payment = S.cat.payments.mollie ? "mollie" : "";
     /* Intern (Simon 17.11.2026): im Cockpit angemeldet → ohne Bezahlung direkt an Print.com (Server prüft die Anmeldung selbst) */
-    if (S.isAdmin === undefined) { S.isAdmin = false; fetch("/admin/api/version", { credentials: "same-origin", cache: "no-store" }).then(function (r) { if (r.ok) { S.isAdmin = true; render(); } }).catch(function () {}); }
+    if (S.isAdmin === undefined) { S.isAdmin = false; fetch("/admin/api/version", { credentials: "same-origin", cache: "no-store", redirect: "manual" }).then(function (r) { if (r.ok && r.type !== "opaqueredirect" && !r.redirected && /json/.test(r.headers.get("content-type") || "")) { S.isAdmin = true; render(); } }).catch(function () {}); }
     if (S.payment === "intern" && !S.isAdmin) S.payment = S.cat.payments.mollie ? "mollie" : (invOk ? "invoice" : "");
     var internPay = S.isAdmin ? '<label class="ps-radio"><input type="radio" name="pay" value="intern"' + (S.payment === "intern" ? " checked" : "") + '><span><b>Intern – ohne Bezahlung</b><small>Nur für dich (im Cockpit angemeldet): geht sofort an Print.com, keine Rechnung und keine Mails an den Kunden.</small></span></label>' : "";
     var lastDel = S.cart.reduce(function (m, x) { var d = x.price && x.price.deliveryDate; return d && d > m ? d : m; }, "");
