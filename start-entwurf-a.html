@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Entwurf A – Startseite | FS Creative</title>
+<meta name="robots" content="noindex,nofollow" />
+<link rel="canonical" href="https://www.fs-creative.at/" />
+<meta name="description" content="Webdesign aus dem Montafon: FS Creative baut schnelle Websites, Online-Shops &amp; Buchungsplattformen für Betriebe in Vorarlberg &amp; Tirol – und druckt über 900 Produkte im eigenen Online-Druckshop." />
+<meta name="author" content="FS Creative" />
+<meta name="theme-color" content="#0a0a0f" />
+<link rel="icon" type="image/png" sizes="48x48" href="/logos/favicon-f-48.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/logos/favicon-f-192.png" />
+<link rel="apple-touch-icon" href="/logos/favicon-f-180.png" />
+<link rel="stylesheet" href="/fs-consent.css?v=2" />
+<script type="application/json" id="fs-consent-config">{"privacyUrl":"/datenschutz","imprintUrl":"/impressum","position":"bottom-left","tone":"du","categories":{"media":["Google Maps"]}}</script>
+<style>
+:root{
+  --bg:#0a0a0f;--bg-soft:#111118;--ink:#0d0d12;
+  --surface:rgba(255,255,255,.04);--surface-2:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.1);--border-2:rgba(255,255,255,.18);
+  --text:#f5f5f7;--text-dim:#a9a9b3;--text-faint:#8a8a95;
+  --accent:#0a84ff;--accent-2:#3a9bff;--yellow:#ffd60a;
+  --maxw:1240px;--nav-h:60px;--ease:cubic-bezier(.22,.61,.36,1);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;letter-spacing:-.01em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+ul{list-style:none}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+a:focus-visible,button:focus-visible,label:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.skip{position:absolute;left:12px;top:-60px;z-index:300;background:var(--accent);color:#fff;padding:10px 16px;border-radius:10px;font-weight:600;transition:top .2s}
+.skip:focus{top:12px}
+.vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- Nav ---------- */
+header.nav{position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav-h);display:flex;align-items:center;background:rgba(10,10,15,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid transparent;transition:border-color .3s}
+header.nav.scrolled{border-bottom-color:var(--border)}
+.nav-inner{max-width:var(--maxw);margin:0 auto;width:100%;padding:0 28px;display:flex;align-items:center;justify-content:space-between;position:relative}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;letter-spacing:-.02em}
+.brand .mark{width:32px;height:32px;display:grid;place-items:center}
+.brand .mark img{width:100%;height:100%;object-fit:contain}
+.nav-links{display:flex;align-items:center;gap:2px}
+.nav-links a{font-size:14px;color:var(--text-dim);padding:8px 12px;border-radius:999px;transition:color .2s,background .2s;white-space:nowrap}
+.nav-links a:hover{color:var(--text)}
+.nav-links a.active{color:var(--text);background:var(--surface-2)}
+.nav-links a.nav-print{color:var(--yellow)}
+.nav-links a.nav-cta{color:#fff;background:var(--accent);padding:8px 18px;margin-left:6px}
+.nav-links a.nav-cta:hover{background:var(--accent-2)}
+.nav-toggle{position:absolute;opacity:0;pointer-events:none;display:none}
+.burger{display:none;width:40px;height:40px;background:var(--surface-2);border-radius:11px;cursor:pointer;flex-direction:column;gap:5px;align-items:center;justify-content:center}
+.burger span{width:18px;height:2px;background:var(--text);border-radius:2px}
+.tabbar{display:none}
+
+/* ---------- Buttons ---------- */
+.btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:12px 22px;border-radius:999px;font-size:16px;font-weight:600;letter-spacing:-.01em;transition:transform .25s var(--ease),background .25s,color .25s,border-color .25s}
+.btn .arr{transition:transform .25s var(--ease)}
+.btn:hover .arr{transform:translateX(4px)}
+.btn.blue{background:var(--accent);color:#fff}
+.btn.blue:hover{background:var(--accent-2)}
+.btn.ink{background:var(--ink);color:#fff}
+.btn.ink:hover{background:#000}
+.btn.ghost{border:1px solid var(--border-2);color:var(--text)}
+.btn.ghost:hover{border-color:var(--text)}
+.more{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:15px;padding:10px 4px;border-bottom:1px solid currentColor;line-height:1.1}
+.btns{display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px}
+
+/* ---------- Hero ---------- */
+main{padding-top:var(--nav-h)}
+.hero{position:relative;padding:clamp(40px,7vw,96px) 0 0;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-20% -10% auto;height:620px;background:radial-gradient(40% 50% at 18% 40%,rgba(10,132,255,.22),transparent 70%),radial-gradient(35% 45% at 85% 30%,rgba(255,214,10,.13),transparent 70%);pointer-events:none;z-index:-1}
+.kicker{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim)}
+.kicker .dot{width:8px;height:8px;border-radius:50%;background:var(--yellow);box-shadow:0 0 0 4px rgba(255,214,10,.15)}
+.h1{margin:22px 0 0;font-weight:800;letter-spacing:-.055em;line-height:.9;font-size:clamp(50px,9.6vw,136px)}
+.h1 .ln.sm{font-size:.36em;letter-spacing:-.035em;color:var(--text-dim);font-weight:700;margin-top:.35em;line-height:1}
+.h1 .ln{display:block;overflow:hidden;padding-bottom:.06em}
+.h1 .ln>span{display:inline-block;animation:rise .9s var(--ease) both}
+.h1 .ln:nth-child(2)>span{animation-delay:.08s}
+.h1 .ln:nth-child(3)>span{animation-delay:.16s}
+.h1 .w{color:var(--accent)}
+.h1 .p{color:var(--yellow)}
+.h1 .s{color:var(--text-faint);font-weight:700}
+@keyframes rise{from{transform:translateY(105%)}to{transform:none}}
+.hero-meta{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:28px;align-items:end;margin-top:30px;padding-bottom:40px;border-bottom:1px solid var(--border)}
+.lead{font-size:clamp(18px,1.6vw,22px);color:var(--text-dim);max-width:44ch;line-height:1.45}
+.lead strong{color:var(--text);font-weight:600}
+.hero-facts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.hero-facts li{font-size:13px;font-weight:600;padding:7px 13px;border:1px solid var(--border-2);border-radius:999px;color:var(--text-dim)}
+
+/* Doors */
+.doors{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px 0 0}
+.door{position:relative;display:flex;flex-direction:column;border-radius:30px;overflow:hidden;min-height:640px;isolation:isolate}
+.door-copy{padding:34px 36px 0;position:relative;z-index:2}
+.door-no{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.door h2{font-size:clamp(34px,3.6vw,52px);font-weight:800;letter-spacing:-.045em;line-height:.98;margin:18px 0 14px}
+.door h2 a:hover{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:6px}
+.door p.txt{font-size:17px;line-height:1.5;max-width:40ch;margin-bottom:22px}
+.door-stage{position:relative;flex:1;min-height:330px;margin-top:34px}
+.d-web{background:linear-gradient(160deg,#0f2a55 0%,#0a1630 45%,#0b0d18 100%);border:1px solid rgba(10,132,255,.35)}
+.d-web .door-no{color:#7cbcff}
+.d-web p.txt{color:#c3cbe0}
+.d-print{background:var(--yellow);color:var(--ink)}
+.d-print .door-no{color:#5a4a00}
+.d-print p.txt{color:#2b2604}
+.d-print .more{color:var(--ink)}
+.d-print .plogo{height:34px;width:auto}
+.badge{font-size:11px;letter-spacing:.1em;padding:4px 10px;border-radius:999px;background:var(--ink);color:var(--yellow)}
+.note{display:block;font-size:13px;margin-top:8px;opacity:.85}
+
+/* Web stage: browser + phone */
+.browser{position:absolute;left:36px;right:-60px;top:0;border-radius:14px 0 0 0;overflow:hidden;background:#111;box-shadow:0 30px 80px rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.12);transition:transform .7s var(--ease)}
+.browser .bar{display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;background:#1b1c22;border-bottom:1px solid rgba(255,255,255,.08)}
+.browser .bar i{width:9px;height:9px;border-radius:50%;background:#3a3b44}
+.browser .bar span{margin-left:10px;font-size:11px;color:#9a9aa5;background:#26272f;padding:3px 12px;border-radius:6px}
+.browser img{width:100%;height:auto;aspect-ratio:880/550;object-fit:cover}
+.phone{position:absolute;right:28px;top:48px;width:min(30%,170px);border-radius:24px;overflow:hidden;border:5px solid #1b1c22;box-shadow:0 24px 60px rgba(0,0,0,.65);transition:transform .7s var(--ease)}
+.phone img{width:100%;height:auto;aspect-ratio:1/2;object-fit:cover}
+.sticker{position:absolute;left:14px;top:-26px;width:104px;height:104px;border-radius:50%;background:var(--yellow);color:var(--ink);display:grid;place-items:center;text-align:center;font-weight:800;font-size:13px;line-height:1.05;letter-spacing:-.01em;z-index:3;box-shadow:0 10px 30px rgba(0,0,0,.4);animation:wob 6s ease-in-out infinite}
+.sticker b{display:block;font-size:22px;letter-spacing:-.03em}
+@keyframes wob{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(6deg)}}
+.d-web:hover .browser{transform:translateY(-10px)}
+.d-web:hover .phone{transform:translateY(-18px) rotate(-2deg)}
+
+/* Print stage: fanned product cards */
+.fan{position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;padding:34px 20px 0}
+.pcard{position:relative;width:min(34%,210px);background:#fff;border-radius:18px;padding:8px 8px 12px;box-shadow:0 22px 50px rgba(60,45,0,.35);transition:transform .6s var(--ease);color:var(--ink)}
+.pcard img{width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:12px;background:#f2f2f2}
+.pcard .lbl{display:block;padding:10px 4px 0;font-size:14px;line-height:1.25}
+.pcard .lbl b{display:block;font-size:16px;letter-spacing:-.02em}
+.pcard .pr{display:inline-block;margin-top:4px;font-weight:700;font-size:13px;background:var(--yellow);border-radius:999px;padding:2px 8px}
+.pcard .cp{display:block;font-size:12px;color:#55555c;margin-top:2px}
+.pc1{transform:rotate(-8deg) translate(22px,10px);z-index:1}
+.pc2{transform:translateY(-22px);z-index:3}
+.pc3{transform:rotate(8deg) translate(-22px,10px);z-index:2}
+.pcard:hover,.pcard:focus-visible{transform:translateY(-36px) rotate(0);z-index:4}
+.d-print .door-stage::before{content:"";position:absolute;left:50%;bottom:-40%;width:130%;aspect-ratio:1;transform:translateX(-50%);background:radial-gradient(circle,rgba(255,255,255,.55),transparent 60%);z-index:-1}
+
+/* Ticker */
+.ticker{margin-top:56px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;white-space:nowrap;padding:18px 0}
+.ticker-track{display:inline-flex;gap:0;animation:tick 48s linear infinite}
+.ticker span{font-size:clamp(22px,2.6vw,34px);font-weight:700;letter-spacing:-.03em;color:var(--text-faint);padding:0 22px}
+.ticker span:nth-child(4n+1){color:var(--text)}
+.ticker i{font-style:normal;color:var(--yellow);font-size:.45em;vertical-align:middle}
+@keyframes tick{to{transform:translateX(-50%)}}
+
+/* ---------- Sections ---------- */
+.sec{padding:clamp(72px,10vw,140px) 0}
+.sec-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px 56px;align-items:end;margin-bottom:clamp(36px,5vw,64px)}
+.eyebrow{display:block;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+.h2{font-size:clamp(38px,5.6vw,80px);font-weight:800;letter-spacing:-.05em;line-height:.95}
+.sec-top p{color:var(--text-dim);font-size:18px;max-width:46ch}
+
+/* Services list */
+.svc{border-top:1px solid var(--border)}
+.svc li{border-bottom:1px solid var(--border)}
+.svc-row{display:grid;grid-template-columns:72px minmax(0,1.1fr) minmax(0,1.4fr) 40px;gap:24px;align-items:baseline;padding:28px 6px;transition:background .3s,padding .3s var(--ease)}
+.svc-row .n{font-size:14px;font-weight:700;color:var(--text-faint);font-variant-numeric:tabular-nums}
+.svc-row h3{font-size:clamp(24px,2.6vw,36px);font-weight:700;letter-spacing:-.035em;line-height:1.05}
+.svc-row p{color:var(--text-dim);font-size:16px}
+.svc-row .go{font-size:22px;color:var(--text-faint);transition:transform .3s var(--ease),color .3s;justify-self:end}
+a.svc-row:hover{background:var(--surface);padding-left:18px}
+a.svc-row:hover .go{color:var(--accent);transform:translateX(4px)}
+a.svc-row:hover h3{color:var(--accent)}
+
+/* Druckshop */
+.shop{background:var(--yellow);color:var(--ink);border-radius:36px;padding:clamp(30px,5vw,64px);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(28px,5vw,64px)}
+.shop .eyebrow{color:#5a4a00}
+.shop .h2{color:var(--ink)}
+.shop p.l{font-size:18px;color:#2b2604;margin:18px 0 22px;max-width:46ch}
+.checks{display:grid;gap:10px;margin-bottom:28px}
+.checks li{display:flex;gap:12px;font-weight:600;font-size:16px}
+.checks li::before{content:"";flex:0 0 22px;height:22px;border-radius:50%;background:var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffd60a' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center/13px no-repeat;margin-top:1px}
+.shop .more{color:var(--ink)}
+.shop-imgs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:26px}
+.shop-imgs a{display:block}
+.shop-imgs span{display:block;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#fff}
+.shop-imgs img{width:100%;height:100%;object-fit:cover;transition:transform .5s var(--ease)}
+.shop-imgs a:hover img{transform:scale(1.06)}
+.shop-imgs b{display:block;font-size:15px;margin-top:8px}
+.cats h3{font-size:14px;font-weight:700;letter-spacing:.04em;margin-bottom:12px;color:#3d3504}
+.cats ul{display:flex;flex-wrap:wrap;gap:8px}
+.cats a{display:inline-flex;align-items:center;min-height:38px;padding:7px 14px;border-radius:999px;border:1.5px solid rgba(13,13,18,.28);font-size:14px;font-weight:600;transition:background .2s,color .2s,border-color .2s}
+.cats a:hover{background:var(--ink);color:var(--yellow);border-color:var(--ink)}
+.shop a:focus-visible{outline-color:var(--ink)}
+
+/* Projects */
+.proj{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.pj{position:relative;display:flex;flex-direction:column;justify-content:space-between;gap:40px;min-height:300px;padding:32px;border-radius:28px;border:1px solid var(--border);background:var(--bg-soft);overflow:hidden;isolation:isolate;transition:border-color .3s,transform .4s var(--ease)}
+.pj::before{content:"";position:absolute;width:420px;height:420px;right:-140px;top:-160px;border-radius:50%;background:radial-gradient(circle,var(--c),transparent 65%);opacity:.32;z-index:-1;transition:opacity .4s,transform .6s var(--ease)}
+.pj:hover{border-color:var(--c);transform:translateY(-4px)}
+.pj:hover::before{opacity:.55;transform:scale(1.15)}
+.pj .tag{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--c)}
+.pj h3{font-size:clamp(40px,5vw,68px);font-weight:800;letter-spacing:-.055em;line-height:.95;margin:10px 0 12px}
+.pj p{color:var(--text-dim);font-size:16px;max-width:40ch}
+.pj .foot-l{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:600;color:var(--text-dim)}
+.pj .foot-l .arr{font-size:20px;color:var(--c);transition:transform .3s var(--ease)}
+.pj:hover .foot-l .arr{transform:translateX(5px)}
+
+/* Drone */
+.drone{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:32px;align-items:center;padding:clamp(28px,4vw,48px);border-radius:28px;background:linear-gradient(120deg,rgba(10,132,255,.14),rgba(255,255,255,.02) 60%);border:1px solid var(--border)}
+.drone h2{font-size:clamp(28px,3.4vw,44px);font-weight:800;letter-spacing:-.045em;line-height:1}
+.drone p{color:var(--text-dim);margin-top:14px;max-width:52ch}
+.drone p strong{color:var(--text)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.chips li{font-size:14px;font-weight:600;padding:9px 15px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border)}
+
+/* References */
+.refs{border-top:1px solid var(--border)}
+.refs a{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;gap:20px;align-items:baseline;padding:24px 6px;border-bottom:1px solid var(--border);transition:padding .3s var(--ease),background .3s}
+.refs a:hover{padding-left:18px;background:var(--surface)}
+.refs h3{font-size:clamp(22px,2.6vw,34px);font-weight:700;letter-spacing:-.035em}
+.refs .t{color:var(--text-dim);font-size:15px}
+.refs .t small{display:block;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);margin-bottom:2px}
+.refs .h{font-size:14px;color:var(--text-dim);white-space:nowrap}
+.refs a:hover .h{color:var(--accent)}
+.refs-more{margin-top:32px}
+
+/* CTA */
+.cta{position:relative;border-radius:36px;padding:clamp(40px,7vw,96px) clamp(26px,6vw,80px);background:radial-gradient(60% 90% at 0% 100%,rgba(10,132,255,.35),transparent 70%),radial-gradient(50% 80% at 100% 0%,rgba(255,214,10,.16),transparent 70%),var(--bg-soft);border:1px solid var(--border);overflow:hidden}
+.cta .h2{font-size:clamp(44px,7.6vw,112px);max-width:12ch}
+.cta .h2 span{color:var(--accent)}
+.cta-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:28px;margin-top:36px}
+.person{display:flex;align-items:center;gap:14px;color:var(--text-dim);font-size:16px;max-width:40ch}
+.person img{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--border-2);flex:0 0 auto}
+.person strong{color:var(--text)}
+.person a{text-decoration:underline;text-underline-offset:3px}
+
+/* Index (Leistungen / Branchen / Regionen) */
+.idx{padding-top:clamp(56px,8vw,96px);padding-bottom:clamp(40px,6vw,72px)}
+.idx-top{border-top:1px solid var(--border);padding-top:clamp(40px,5vw,64px)}
+.idx-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:20px 56px;margin-bottom:36px}
+.idx-top h2{font-size:clamp(26px,3vw,38px);font-weight:800;letter-spacing:-.04em;line-height:1.05}
+.idx-top p{color:var(--text-dim);font-size:16px}
+.idx-cols{display:grid;grid-template-columns:1fr 1fr 1.6fr;gap:32px}
+.idx-cols h3{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.idx-cols ul a{display:block;padding:6px 0;font-size:15px;color:var(--text-dim);transition:color .2s}
+.idx-cols ul a:hover{color:var(--text)}
+.idx-cols .two{columns:2;column-gap:24px}
+
+/* Footer */
+footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding:52px 0 30px}
+.foot-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:32px}
+.foot-brand .brand{margin-bottom:12px}
+.foot-brand p{color:var(--text-dim);font-size:14px;max-width:34ch}
+.foot-col h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:14px;font-weight:600}
+.foot-col a,.foot-col span{display:block;color:var(--text-dim);font-size:14px;margin-bottom:9px;transition:color .2s}
+.foot-col a:hover{color:var(--text)}
+.foot-bottom{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;border-top:1px solid var(--border);margin-top:38px;padding-top:22px;color:var(--text-faint);font-size:13px}
+.foot-bottom a{text-decoration:underline;text-underline-offset:2px}
+.foot-bottom a:hover{color:var(--text)}
+
+/* ---------- Responsive ---------- */
+@media(max-width:1100px){
+  .nav-links a{padding:8px 9px}
+  .foot-grid{grid-template-columns:1fr 1fr 1fr}
+  .foot-brand{grid-column:1/-1}
+}
+@media(max-width:980px){
+  .doors{grid-template-columns:1fr}
+  .door{min-height:0}
+  .door-stage{min-height:420px}
+  .hero-meta,.sec-top,.shop,.drone,.idx-top{grid-template-columns:1fr}
+  .hero-facts,.chips{justify-content:flex-start}
+  .svc-row{grid-template-columns:52px minmax(0,1fr) 30px}
+  .svc-row p{grid-column:2/3}
+  .svc-row .go{grid-row:1;grid-column:3}
+  .idx-cols{grid-template-columns:1fr 1fr}
+  .idx-cols>div:last-child{grid-column:1/-1}
+  .idx-cols>div:last-child .two{columns:3}
+}
+@media(max-width:860px){
+  .burger{display:flex}
+  .nav-links{position:absolute;top:calc(100% + 10px);right:20px;flex-direction:column;align-items:stretch;gap:2px;background:rgba(17,17,24,.98);border:1px solid var(--border);border-radius:16px;padding:10px;min-width:220px;display:none;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+  .nav-toggle{display:block;width:40px;height:40px;top:10px;right:20px}
+  .nav-toggle:checked ~ .nav .nav-links{display:flex}
+  .nav-toggle:focus-visible ~ .nav .burger{outline:2px solid var(--accent);outline-offset:2px}
+  .nav-links a{padding:11px 14px}
+  .nav-links a.nav-cta{text-align:center;margin:4px 0 0}
+}
+@media(max-width:640px){
+  .wrap,.nav-inner{padding:0 16px}
+  .nav-links{right:16px}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:120;background:rgba(10,10,15,.9);backdrop-filter:saturate(180%) blur(22px);-webkit-backdrop-filter:saturate(180%) blur(22px);border-top:1px solid var(--border);padding:7px 4px calc(7px + env(safe-area-inset-bottom));justify-content:space-around;gap:2px}
+  .tabbar .tab{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 2px;color:var(--text-faint);font-size:10px;font-weight:600;cursor:pointer}
+  .tabbar .tab svg{width:23px;height:23px}
+  .tabbar .tab.active{color:var(--accent)}
+  .tabbar .tab.pr{color:var(--yellow)}
+  body{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
+  .h1{font-size:clamp(46px,14.2vw,72px);letter-spacing:-.05em}
+  .hide-s{display:none}
+  .kicker{font-size:12px;letter-spacing:.1em}
+  .door{border-radius:24px}
+  .door-copy{padding:26px 22px 0}
+  .door h2{font-size:34px}
+  .door p.txt{font-size:16px}
+  .door-stage{min-height:270px;margin-top:26px}
+  .browser{left:18px;right:-40px}
+  .phone{right:14px;top:36px;width:30%;border-width:4px;border-radius:18px}
+  .sticker{width:84px;height:84px;font-size:11px;top:-20px;left:8px}
+  .sticker b{font-size:18px}
+  .fan{padding:26px 8px 0}
+  .pcard{width:36%;padding:6px 6px 10px;border-radius:14px}
+  .pcard .lbl{font-size:12px;padding-top:7px}
+  .pcard .lbl b{font-size:14px}
+  .pcard .pr{font-size:11px}
+  .pc1{transform:rotate(-7deg) translate(14px,8px)}
+  .pc3{transform:rotate(7deg) translate(-14px,8px)}
+  .ticker{margin-top:36px;padding:14px 0}
+  .h2{font-size:clamp(36px,11vw,52px)}
+  .svc-row{grid-template-columns:36px minmax(0,1fr) 22px;gap:12px;padding:22px 2px}
+  .svc-row h3{font-size:23px}
+  .svc-row p{font-size:15px}
+  .shop{border-radius:26px}
+  .shop-imgs{gap:8px}
+  .shop-imgs b{font-size:13px}
+  .cats a{font-size:13px;min-height:36px;padding:6px 12px}
+  .proj{grid-template-columns:1fr}
+  .pj{min-height:0;padding:26px 22px;gap:28px;border-radius:24px}
+  .refs a{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:20px 2px}
+  .refs .t{grid-column:1/-1;grid-row:2}
+  .refs .h{grid-row:1;grid-column:2}
+  .cta{border-radius:26px}
+  .btn{width:100%;justify-content:center}
+  .btns .more{margin:0 auto}
+  .idx-cols{grid-template-columns:1fr}
+  .idx-cols ul{columns:2;column-gap:16px}
+  .idx-cols ul a{font-size:14px;break-inside:avoid}
+  .d-print .door-stage{min-height:220px}
+  .foot-grid{grid-template-columns:1fr 1fr}
+  .foot-col a{padding:6px 0;margin-bottom:2px}
+}
+@media(max-width:380px){
+  .door-no{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .ticker{white-space:normal}
+  .ticker-track{flex-wrap:wrap}
+  .ticker-track span[aria-hidden]{display:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<input type="checkbox" id="navtoggle" class="nav-toggle" aria-label="Menü öffnen">
+<header class="nav" id="top">
+  <div class="nav-inner">
+    <a class="brand" href="/"><span class="mark"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="FS Creative Logo"></span> FS Creative</a>
+    <label for="navtoggle" class="burger" aria-label="Menü"><span></span><span></span><span></span></label>
+    <nav class="nav-links" aria-label="Hauptnavigation">
+      <a href="/" class="active" aria-current="page">Start</a>
+      <a href="/leistungen">Leistungen</a>
+      <a href="/print" class="nav-print">Druckshop</a>
+      <a href="/blitzdings">Blitzdings</a>
+      <a href="/valuero">VALUERO</a>
+      <a href="/kochdu">kochdu</a>
+      <a href="/kantineur">Kantineur</a>
+      <a href="/referenzen">Referenzen</a>
+      <a href="/ueber-uns">Über uns</a>
+      <a href="/kontakt" class="nav-cta">Kontakt</a>
+    </nav>
+  </div>
+</header>
+<nav class="tabbar" aria-label="Schnellnavigation">
+  <a class="tab active" href="/" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.8 12 3.5l9 7.3"/><path d="M5.2 9.6V20a1 1 0 0 0 1 1H10v-5.4h4V21h3.8a1 1 0 0 0 1-1V9.6"/></svg><span>Start</span></a>
+  <a class="tab" href="/leistungen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg><span>Leistungen</span></a>
+  <a class="tab pr" href="/print"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V3.5h10V8"/><rect x="3.5" y="8" width="17" height="8.5" rx="2"/><path d="M7 14h10v6.5H7z"/></svg><span>Druckshop</span></a>
+  <a class="tab" href="/kontakt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.6"/><path d="M4 7.5l8 5.6 8-5.6"/></svg><span>Kontakt</span></a>
+  <label class="tab" for="navtoggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menü</span></label>
+</nav>
+
+<main id="main">
+  <!-- ============ HERO ============ -->
+  <section class="hero" aria-labelledby="hero-h">
+    <div class="wrap">
+      <span class="kicker"><span class="dot" aria-hidden="true"></span> Webdesign &amp; Druck · Gaschurn im Montafon</span>
+      <h1 class="h1" id="hero-h">
+        <span class="ln"><span class="w">Websites</span></span>
+        <span class="ln"><span><span class="s">&amp;</span> <span class="p">Drucksachen</span><span class="s">.</span></span></span>
+        <span class="ln sm"><span>aus dem Montafon.</span></span>
+      </h1>
+      <div class="hero-meta">
+        <p class="lead"><strong>Webdesign-Agentur &amp; Online-Druckshop</strong> aus Vorarlberg. Wir bauen Websites, Shops und Plattformen für Betriebe in Vorarlberg und Tirol – und drucken, was dein Betrieb sonst noch braucht.</p>
+        <ul class="hero-facts" aria-label="Auf einen Blick">
+          <li>Gratis Entwurf</li>
+          <li>Über 900 Druckprodukte</li>
+          <li>Persönlich betreut</li>
+        </ul>
+      </div>
+
+      <div class="doors">
+        <!-- Tür 1: Web -->
+        <article class="door d-web" aria-labelledby="door-web-h">
+          <div class="door-copy">
+            <p class="door-no"><span>01 — Webdesign-Agentur</span><span class="hide-s">Vorarlberg &amp; Tirol</span></p>
+            <h2 id="door-web-h"><a href="/leistungen">Websites &amp; Plattformen.</a></h2>
+            <p class="txt">Websites, Online-Shops und Buchungs&shy;plattformen für Betriebe in Vorarlberg und Tirol – schnell, mobil und durchdacht bis ins Detail.<span class="note">Im Bild: unsere eigenen Plattformen VALUERO und kochdu</span></p>
+            <div class="btns">
+              <a href="/kontakt?von=start" class="btn blue">Gratis Entwurf anfragen <span class="arr" aria-hidden="true">→</span></a>
+              <a href="#projekte" class="more">Unsere Projekte <span aria-hidden="true">›</span></a>
+            </div>
+          </div>
+          <div class="door-stage">
+            <span class="sticker" aria-hidden="true"><span><b>Gratis</b>Entwurf</span></span>
+            <div class="browser">
+              <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>valuero.at</span></div>
+              <img src="/logos/hero-valuero.webp" alt="VALUERO – Plattform für Ferienwohnungen im Hochmontafon (Ansicht der Website)" width="880" height="550" decoding="async" fetchpriority="high">
+            </div>
+            <div class="phone"><img src="/logos/hero-kochdu.webp" alt="kochdu – Essen bestellen im Montafon (Ansicht am Handy)" width="240" height="480" loading="lazy" decoding="async"></div>
+          </div>
+        </article>
+
+        <!-- Tür 2: Druck -->
+        <article class="door d-print" aria-labelledby="door-print-h">
+          <div class="door-copy">
+            <p class="door-no"><span>02 — Online-Druckshop</span><span class="badge">Neu</span></p>
+            <h2 id="door-print-h"><a href="/print">Druck &amp; Werbe&shy;artikel.</a></h2>
+            <p class="txt">Über 900 Produkte von Flyer bis T-Shirt. Online gestalten oder Datei hochladen, Preis sofort sehen.<span class="note">Endpreise inkl. 20&nbsp;% USt und Versand in Österreich</span></p>
+            <div class="btns">
+              <a href="/print" class="btn ink">Zum Druckshop <span class="arr" aria-hidden="true">→</span></a>
+              <a href="/druck" class="more">Gestaltung vom Profi <span aria-hidden="true">›</span></a>
+            </div>
+          </div>
+          <div class="door-stage">
+            <div class="fan">
+              <a class="pcard pc1" href="/print/visitenkarten"><img src="/print/bild/ez9mp376cw6o/2c8N0Vf6jRQuKJv3baJVTt/67ddba9cfd0c24f6fdee18538f2c2165/Business_Cards.jpg?fm=webp&amp;w=400" alt="Visitenkarten drucken – Beispiel" width="400" height="400" decoding="async"><span class="lbl"><b>Visitenkarten</b><span class="pr" data-from="visitenkarten" data-part="p" hidden></span><span class="cp" data-from="visitenkarten" data-part="c" hidden></span></span></a>
+              <a class="pcard pc2" href="/print/flyer"><img src="/print/bild/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/fb45b1d11b0e56c2cce9b9b6543bfe63/Flyers.jpg?fm=webp&amp;w=400" alt="Flyer drucken – Beispiel" width="400" height="400" decoding="async"><span class="lbl"><b>Flyer</b><span class="pr" data-from="flyer" data-part="p" hidden></span><span class="cp" data-from="flyer" data-part="c" hidden></span></span></a>
+              <a class="pcard pc3" href="/print/rollups"><img src="/print/bild/ez9mp376cw6o/7AtzlkKgHLuI3HHG4DpopX/57fccfc1b6b849e5d06b77741900758a/Groupshot-Banner.jpg?fm=webp&amp;w=400" alt="Banner und Roll-ups drucken – Beispiel" width="400" height="400" decoding="async"><span class="lbl"><b>Roll-ups</b><span class="pr" data-from="rollups" data-part="p" hidden></span><span class="cp" data-from="rollups" data-part="c" hidden></span></span></a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="ticker" aria-hidden="true">
+      <div class="ticker-track">
+        <span>Websites</span><span><i>●</i></span><span>Flyer</span><span><i>●</i></span><span>Online-Shops</span><span><i>●</i></span><span>Visitenkarten</span><span><i>●</i></span><span>Buchungsplattformen</span><span><i>●</i></span><span>Roll-ups</span><span><i>●</i></span><span>Branding</span><span><i>●</i></span><span>T-Shirts</span><span><i>●</i></span>
+        <span aria-hidden="true">Websites</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">Flyer</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">Online-Shops</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">Visitenkarten</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">Buchungsplattformen</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">Roll-ups</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">Branding</span><span aria-hidden="true"><i>●</i></span><span aria-hidden="true">T-Shirts</span><span aria-hidden="true"><i>●</i></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LEISTUNGEN ============ -->
+  <section class="sec" id="leistungen" aria-labelledby="svc-h">
+    <div class="wrap">
+      <div class="sec-top">
+        <div><span class="eyebrow">Was wir machen</span><h2 class="h2" id="svc-h">Eine Agentur, die selbst baut.</h2></div>
+        <p>Wir beraten nicht nur – wir betreiben unsere eigenen Produkte. Diese Erfahrung fließt in jedes Kundenprojekt ein.</p>
+      </div>
+      <ul class="svc">
+        <li><a class="svc-row" href="/webentwicklung-vorarlberg"><span class="n">01</span><h3>Web &amp; Plattformen</h3><p>Moderne Websites, Buchungs- und Bestellsysteme – schnell, mobil und durchdacht bis ins Detail.</p><span class="go" aria-hidden="true">→</span></a></li>
+        <li><a class="svc-row" href="/grafikdesign"><span class="n">02</span><h3>Design &amp; Branding</h3><p>Logos, Corporate Design und visuelle Sprache, die regional verwurzelt und trotzdem zeitlos sind.</p><span class="go" aria-hidden="true">→</span></a></li>
+        <li><a class="svc-row" href="/online-shop-erstellen"><span class="n">03</span><h3>E-Commerce</h3><p>Vom Warenkorb bis zur Lieferung – wir bauen Bestell- und Liefersysteme, die funktionieren.</p><span class="go" aria-hidden="true">→</span></a></li>
+        <li><a class="svc-row" href="/fotobox-mieten-montafon"><span class="n">04</span><h3>Event &amp; Media</h3><p>Fotobox, 360°-Videobooth und Medienproduktion für Events in ganz Vorarlberg.</p><span class="go" aria-hidden="true">→</span></a></li>
+        <li><a class="svc-row" href="/website-betreuung"><span class="n">05</span><h3>Betrieb &amp; Wartung</h3><p>Hosting, Updates und laufende Betreuung. Wir bleiben dran, auch nach dem Go-Live.</p><span class="go" aria-hidden="true">→</span></a></li>
+        <li><div class="svc-row"><span class="n">06</span><h3>Logistik &amp; Service</h3><p>Lokale Services wie unser Paketshop für GLS &amp; Hermes – digital organisiert, persönlich betreut.</p><span class="go" aria-hidden="true"></span></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ DRUCKSHOP ============ -->
+  <section class="wrap" id="druckshop" aria-labelledby="shop-h">
+    <div class="shop">
+      <div>
+        <img src="/logos/druckshop-logo-dunkel.svg" alt="FS Creative Druckshop" width="2170" height="690" style="height:40px;width:auto;margin-bottom:26px" loading="lazy" decoding="async">
+        <h2 class="h2" id="shop-h">Drucksachen online bestellen.</h2>
+        <p class="l">Flyer, Visitenkarten, Plakate, Roll-ups, Aufkleber und T-Shirts – im Designer gestalten oder Druckdatei hochladen, Preis sofort sehen und bequem bestellen. Jede Datei wird automatisch geprüft, auf Wunsch auch persönlich vom Profi.</p>
+        <ul class="checks">
+          <li>Über 900 Produkte, Preise inkl. Versand in Österreich</li>
+          <li>Automatischer Datencheck, Profi-Check optional</li>
+          <li>Sicher online bezahlen oder auf Rechnung</li>
+        </ul>
+        <div class="btns">
+          <a href="/print" class="btn ink">Zum Druckshop <span class="arr" aria-hidden="true">→</span></a>
+          <a href="/druck" class="more">Gestaltung vom Profi <span aria-hidden="true">›</span></a>
+        </div>
+      </div>
+      <div>
+        <div class="shop-imgs">
+          <a href="/print/plakate"><span><img src="/print/bild/ez9mp376cw6o/6BujIpUeRjqQOkMQw38hL3/fb6daa3e62933e2be71331f8491afff3/Magnet_Poster.jpg?fm=webp&amp;w=400" alt="Plakate drucken – Beispiel" width="400" height="400" loading="lazy" decoding="async"></span><b>Plakate</b></a>
+          <a href="/print/aufkleber"><span><img src="/print/bild/ez9mp376cw6o/6noTheBvvThVaN0y8S25go/0635d35785a03c21ef2b900f406906fe/individual_stickers_contour-group.jpg?fm=webp&amp;w=400" alt="Aufkleber in eigener Form drucken – Beispiel" width="400" height="400" loading="lazy" decoding="async"></span><b>Aufkleber</b></a>
+          <a href="/print/tshirt-basic"><span><img src="/print/bild/ez9mp376cw6o/3W8tP5rIT9iiwxDgtO2kWY/dddbee1966c4fdcc86fa74531c6cd7c0/Fotl-FruitoftheLoomOriginalFull-CutT610820azureblue13378.jpg?fm=webp&amp;w=400" alt="T-Shirt mit Logo bedrucken – Beispiel" width="400" height="400" loading="lazy" decoding="async"></span><b>T-Shirts</b></a>
+        </div>
+        <nav class="cats" aria-labelledby="cats-h">
+          <h3 id="cats-h">Online drucken in ganz Österreich – aus dem Montafon</h3>
+          <ul>
+            <li><a href="/print/visitenkarten-karten-drucken">Visitenkarten &amp; Karten</a></li>
+            <li><a href="/print/flyer-plakate-drucken">Flyer &amp; Plakate</a></li>
+            <li><a href="/print/banner-drucken">Banner &amp; Planen</a></li>
+            <li><a href="/print/rollup-drucken">Roll-ups</a></li>
+            <li><a href="/print/aufkleber-drucken">Aufkleber</a></li>
+            <li><a href="/print/etiketten-auf-rolle-drucken">Etiketten auf Rolle</a></li>
+            <li><a href="/print/kalender-drucken">Kalender</a></li>
+            <li><a href="/print/broschueren-drucken">Broschüren</a></li>
+            <li><a href="/print/geschaeftsdrucksachen-drucken">Briefpapier &amp; Blöcke</a></li>
+            <li><a href="/print/beachflags-bedrucken">Beachflags</a></li>
+            <li><a href="/print/t-shirts-bedrucken">T-Shirts &amp; Hoodies</a></li>
+            <li><a href="/print/taschen-bedrucken">Taschen mit Logo</a></li>
+            <li><a href="/print/tassen-trinkflaschen-mit-logo">Tassen &amp; Flaschen</a></li>
+            <li><a href="/print/kugelschreiber-mit-logo">Kugelschreiber</a></li>
+            <li><a href="/print/schokolade-suessigkeiten-mit-logo">Süßes mit Logo</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PROJEKTE ============ -->
+  <section class="sec" id="projekte" aria-labelledby="proj-h">
+    <div class="wrap">
+      <div class="sec-top">
+        <div><span class="eyebrow">Unsere Projekte</span><h2 class="h2" id="proj-h">Marken, die wir selbst betreiben.</h2></div>
+        <p>Jedes dieser Projekte ist bei FS Creative entstanden – entwickelt, gestaltet und betrieben.</p>
+      </div>
+      <div class="proj">
+        <a class="pj" href="/blitzdings" style="--c:#5fb0ff"><div><span class="tag">Eventservice</span><h3>Blitzdings</h3><p>Edle Fotoboxen &amp; 360°-Videobooth für Hochzeiten, Galas und Firmenfeiern in ganz Vorarlberg.</p></div><span class="foot-l">Mehr erfahren <span class="arr" aria-hidden="true">→</span></span></a>
+        <a class="pj" href="/valuero" style="--c:#5fe08a"><div><span class="tag">Plattform</span><h3>VALUERO</h3><p>Plattform für Unterkünfte, Gastro &amp; Events im Hochmontafon – plus Hosting-Service für Ferienwohnungen.</p></div><span class="foot-l">Mehr erfahren <span class="arr" aria-hidden="true">→</span></span></a>
+        <a class="pj" href="/kochdu" style="--c:#bd8cff"><div><span class="tag">Lieferservice</span><h3>kochdu</h3><p>Online Essen bestellen bei Restaurants im Montafon – mit Lieferung oder Abholung.</p></div><span class="foot-l">Mehr erfahren <span class="arr" aria-hidden="true">→</span></span></a>
+        <a class="pj" href="/kantineur" style="--c:#7cc9ee"><div><span class="tag">Plattform</span><h3>Kantineur</h3><p>Kantinen-Kasse für Vereinsheime, Feuerwehrhäuser &amp; Firmenküchen – die Strichliste wird zum Tablet.</p></div><span class="foot-l">Mehr erfahren <span class="arr" aria-hidden="true">→</span></span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DROHNE ============ -->
+  <section class="wrap" aria-labelledby="drone-h">
+    <div class="drone">
+      <div>
+        <span class="eyebrow">Neu im Programm</span>
+        <h2 id="drone-h">Drohnenaufnahmen aus der Vogelperspektive.</h2>
+        <p>Spektakuläre Luftbilder und -videos für Immobilien, Unterkünfte, Events und Landschaft – aufgenommen mit einer offiziell <strong>registrierten und versicherten Drohne</strong>. Legal, sicher und in bester Qualität.</p>
+      </div>
+      <ul class="chips">
+        <li>Registrierte Drohne</li>
+        <li>Foto &amp; Video</li>
+        <li>Immobilien &amp; Events</li>
+        <li>Vorarlberg &amp; Montafon</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ REFERENZEN ============ -->
+  <section class="sec" id="referenzen" aria-labelledby="ref-h">
+    <div class="wrap">
+      <div class="sec-top">
+        <div><span class="eyebrow">Referenzen</span><h2 class="h2" id="ref-h">Live im Einsatz.</h2></div>
+        <p>Eine Auswahl unserer Websites &amp; Plattformen – entwickelt und betreut von FS Creative.</p>
+      </div>
+      <div class="refs">
+        <a href="https://www.antonhaus.at" target="_blank" rel="noopener"><h3>Antonhaus Gaschurn</h3><span class="t"><small>Unterkunft</small>Chalets &amp; Wellness im Montafon.</span><span class="h">antonhaus.at <span aria-hidden="true">↗</span><span class="vh"> (öffnet in neuem Tab)</span></span></a>
+        <a href="https://www.alpinappart.at" target="_blank" rel="noopener"><h3>Alpinappart Wachter</h3><span class="t"><small>Unterkunft</small>Ferienapartments im Montafon.</span><span class="h">alpinappart.at <span aria-hidden="true">↗</span><span class="vh"> (öffnet in neuem Tab)</span></span></a>
+        <a href="https://www.steincult.com" target="_blank" rel="noopener"><h3>Steincult</h3><span class="t"><small>Unternehmen</small>Naturstein, Design &amp; Handwerk.</span><span class="h">steincult.com <span aria-hidden="true">↗</span><span class="vh"> (öffnet in neuem Tab)</span></span></a>
+        <a href="https://www.la-torteria.at" target="_blank" rel="noopener"><h3>La Torteria</h3><span class="t"><small>Konditorei</small>Café &amp; Konditorei mit feinen Torten in Gaschurn.</span><span class="h">la-torteria.at <span aria-hidden="true">↗</span><span class="vh"> (öffnet in neuem Tab)</span></span></a>
+      </div>
+      <div class="refs-more"><a href="/referenzen" class="btn ghost">Alle Referenzen ansehen <span class="arr" aria-hidden="true">→</span></a></div>
+    </div>
+  </section>
+
+  <!-- ============ CTA ============ -->
+  <section class="wrap" aria-labelledby="cta-h">
+    <div class="cta">
+      <span class="eyebrow">Eine Idee im Kopf?</span>
+      <h2 class="h2" id="cta-h">Erzähl uns <span>davon.</span></h2>
+      <div class="cta-row">
+        <p class="person"><img src="/logos/simon-avatar.jpg" alt="Simon Felder, FS Creative" width="56" height="56" loading="lazy" decoding="async"><span>Ob Website, Plattform oder Eventservice – <strong>wir melden uns persönlich.</strong> Oder ruf direkt an: <a href="tel:+436641430620">+43&nbsp;664&nbsp;1430620</a></span></p>
+        <div class="btns">
+          <a href="/kontakt?von=start" class="btn blue">Gratis Entwurf anfragen <span class="arr" aria-hidden="true">→</span></a>
+          <a href="/kontakt" class="btn ghost">Kontakt aufnehmen</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ INDEX: Leistungen & Regionen ============ -->
+  <section class="sec" style="padding-bottom:0" aria-labelledby="themen-h">
+    <div class="wrap idx">
+      <div class="idx-top">
+        <h2 id="themen-h">Webdesign für Vorarlberg und Tirol.</h2>
+        <p>Vom Montafon bis an den Bodensee und über den Arlberg: Wir bauen Websites, Shops und Plattformen für Betriebe, Vereine und Gastgeber – persönlich betreut, mit kostenlosem Entwurf zum Start.</p>
+      </div>
+      <div class="idx-cols">
+        <div>
+          <h3>Leistungen</h3>
+          <ul>
+            <li><a href="/webdesign-montafon">Webdesign</a></li>
+            <li><a href="/webentwicklung-vorarlberg">Webentwicklung &amp; Plattformen</a></li>
+            <li><a href="/seo-montafon">SEO &amp; Google-Sichtbarkeit</a></li>
+            <li><a href="/online-shop-erstellen">Online-Shop erstellen</a></li>
+            <li><a href="/website-relaunch">Website-Relaunch</a></li>
+            <li><a href="/website-betreuung">Betreuung &amp; Hosting</a></li>
+            <li><a href="/grafikdesign">Grafikdesign &amp; Branding</a></li>
+            <li><a href="/druck">Druck &amp; Printdesign</a></li>
+            <li><a href="/print">Druck online bestellen</a></li>
+            <li><a href="/fotobox-mieten-montafon">Fotobox mieten</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Branchen &amp; Fragen</h3>
+          <ul>
+            <li><a href="/website-ferienwohnung">Website für Ferienwohnungen</a></li>
+            <li><a href="/website-gastronomie">Website für Restaurants</a></li>
+            <li><a href="/website-handwerker">Website für Handwerker</a></li>
+            <li><a href="/website-verein">Website für Vereine</a></li>
+            <li><a href="/website-kosten">Was kostet eine Website?</a></li>
+            <li><a href="/leistungen">Alle Leistungen</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>Regionen</h3>
+          <ul class="two">
+            <li><a href="/webdesign-vorarlberg">Webdesign Vorarlberg</a></li>
+            <li><a href="/webdesign-bregenz">Bregenz</a></li>
+            <li><a href="/webdesign-dornbirn">Dornbirn</a></li>
+            <li><a href="/webdesign-feldkirch">Feldkirch</a></li>
+            <li><a href="/webdesign-bludenz">Bludenz</a></li>
+            <li><a href="/webdesign-bregenzerwald">Bregenzerwald</a></li>
+            <li><a href="/webdesign-tirol">Webdesign Tirol</a></li>
+            <li><a href="/webdesign-innsbruck">Innsbruck</a></li>
+            <li><a href="/webdesign-landeck">Landeck</a></li>
+            <li><a href="/webdesign-imst">Imst</a></li>
+            <li><a href="/webdesign-kufstein">Kufstein</a></li>
+            <li><a href="/webdesign-zillertal">Zillertal</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="/"><span class="mark"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="FS Creative Logo"></span> FS Creative</a>
+        <p>Kreativ- und Digitalagentur aus Gaschurn im Montafon. Websites, Plattformen und digitale Projekte für Vorarlberg.</p>
+      </div>
+      <nav class="foot-col" aria-labelledby="f-l"><h2 id="f-l">Leistungen</h2>
+        <a href="/webdesign-montafon">Websites &amp; Shops</a>
+        <a href="/website-betreuung">Betreuung &amp; Hosting</a>
+        <a href="/grafikdesign">Grafik &amp; Marke</a>
+        <a href="/druck">Druck &amp; Werbemittel</a>
+        <a href="/fotobox-mieten-montafon">Fotobox mieten</a>
+        <a href="/seo-montafon">SEO</a>
+        <a href="/leistungen">Alle Leistungen &rarr;</a>
+      </nav>
+      <nav class="foot-col" aria-labelledby="f-p"><h2 id="f-p">Projekte</h2>
+        <a href="/blitzdings">Blitzdings</a>
+        <a href="/valuero">VALUERO</a>
+        <a href="/kochdu">kochdu</a>
+        <a href="/kantineur">Kantineur</a>
+        <a href="/print">Druckshop</a>
+      </nav>
+      <nav class="foot-col" aria-labelledby="f-a"><h2 id="f-a">Agentur</h2>
+        <a href="/">Start</a>
+        <a href="/referenzen">Referenzen</a>
+        <a href="/ueber-uns">Über uns</a>
+        <a href="/kontakt">Kontakt</a>
+        <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a>
+        <a href="tel:+436641430620">+43 664 1430620</a>
+      </nav>
+      <div class="foot-col"><h2>Standort</h2>
+        <span>Dorfstraße 3/1</span>
+        <span>6793 Gaschurn</span>
+        <span>Vorarlberg, AT</span>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>&copy; 2026 FS Creative &middot; Gaschurn &middot; <a href="/impressum">Impressum</a> &middot; <a href="/datenschutz">Datenschutz</a> &middot; <a href="/nutzungsbedingungen">Nutzungsbedingungen</a> &middot; <a href="#cookie-einstellungen">Cookie-Einstellungen</a></span>
+      <span>Mit &hearts; im Montafon gebaut</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* Nav-Rand beim Scrollen */
+(function(){var n=document.querySelector('header.nav');function f(){n.classList.toggle('scrolled',scrollY>8);}addEventListener('scroll',f,{passive:true});f();})();
+/* Druck-Tür: „ab“-Preise einmal laden, wenn sichtbar (gleiche Quelle wie die bestehende Startseite: /print/api/from). Fehler → Preis bleibt ausgeblendet. */
+(function(){
+  var door=document.querySelector('.d-print');if(!door)return;
+  var els=door.querySelectorAll('[data-from]'),done=false;
+  function run(){
+    var keys=[];els.forEach(function(e){var k=e.getAttribute('data-from');if(keys.indexOf(k)<0)keys.push(k);});
+    fetch('/print/api/from?keys='+encodeURIComponent(keys.join(','))).then(function(r){return r.ok?r.json():null;}).then(function(j){
+      if(!j||!j.ok||!j.from)return;
+      var nf=new Intl.NumberFormat('de-AT',{minimumFractionDigits:2,maximumFractionDigits:2}),ni=new Intl.NumberFormat('de-AT'),sp=String.fromCharCode(160);
+      els.forEach(function(e){var f=j.from[e.getAttribute('data-from')];if(!f||!(f.gross>0))return;
+        var part=e.getAttribute('data-part');
+        if(part==='p'){e.textContent='ab'+sp+nf.format(f.gross)+sp+'€';e.hidden=false;}
+        else if(part==='c'&&f.copies>0){e.textContent='für '+ni.format(f.copies)+sp+'Stk.';e.hidden=false;}
+      });
+    }).catch(function(){});
+  }
+  function load(){if(done)return;done=true;if(window.requestIdleCallback)requestIdleCallback(run,{timeout:2000});else setTimeout(run,200);}
+  if(!('IntersectionObserver' in window)){addEventListener('load',load,{once:true});return;}
+  var io=new IntersectionObserver(function(en){if(en[en.length-1].isIntersecting){io.disconnect();if(document.readyState==='complete')load();else addEventListener('load',load,{once:true});}});io.observe(door);
+})();
+</script>
+<script src="/chat/w.js?v=13" defer></script>
+<script src="/fs-consent.js?v=3" defer></script>
+</body>
+</html>
