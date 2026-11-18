@@ -2482,31 +2482,3 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-v2q input{align-self:stretch;height:100%}
 /* Designer offen: Chat-Hinweis nie über der Arbeitsfläche (16.11.2026) */
 body.pd-open .ps-chatnudge{display:none}
-/* Einfach-/Profi-Modus (Simon 18.11.2026) */
-.ps-modebar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px}
-.ps-modebar-l{font-size:13px;color:var(--text-dim);font-weight:600}
-.ps-modebar button{border:1px solid var(--ps-line2);background:var(--surface);color:var(--text-dim);border-radius:999px;padding:7px 16px;min-height:36px;font:600 14px/1 inherit;cursor:pointer}
-.ps-modebar button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
-.ps-modebar small{color:var(--text-dim);font-size:12.5px;margin-left:4px}
-.ps-simh{max-width:1100px;margin:0 auto;padding:8px 0 40px}
-.ps-simh h1{font-size:clamp(26px,4vw,38px);margin:6px 0 6px}
-.ps-simh .sub{color:var(--text-dim);margin:0 0 20px;max-width:640px}
-.ps-simg{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
-.ps-simpc{margin:22px 0 0;color:var(--text-dim);font-size:14px}
-.ps-svs .ps-preb small{min-height:0}
-.ps-svs .ps-svd{color:var(--text);font-size:13px;font-weight:600}
-.ps-svs .ps-preb .pp{font-size:16px}
-.ps-onlypc{text-align:center;max-width:520px;margin:20px auto}
-.ps-onlypc .ic{font-size:44px}
-.ps-onlypc .btns{display:flex;flex-direction:column;gap:10px;margin:18px 0 6px}
-.ps-simhint{margin:14px 0 0;padding:12px 14px;border-radius:14px;background:var(--surface);font-size:14px;color:var(--text-dim);display:flex;gap:10px}
-.ps-simf{display:flex;flex-direction:column;gap:4px}
-.ps-simok{margin:6px 0;font-size:14px}.ps-simok summary{cursor:pointer;color:var(--text-dim)}
-.ps-simpv .ps-pfv-c{max-height:420px;overflow:auto;margin:8px 0}
-.ps-simck{margin-top:14px;display:flex;flex-direction:column;gap:8px}
-.ps-simck h3{margin:0 0 4px;font-size:17px}
-.ps-simo{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px 16px;border-radius:16px;border:1px solid var(--ps-line2);background:var(--ps-card,var(--surface));color:var(--text);font:inherit;cursor:pointer}
-.ps-simo i{width:18px;height:18px;border-radius:50%;border:2px solid var(--border-2);flex:none;margin-top:2px}
-.ps-simo span{display:flex;flex-direction:column;gap:3px}.ps-simo small{color:var(--text-dim);font-size:13px;line-height:1.4}
-.ps-simo.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.ps-simo.on i{border-color:var(--accent);background:radial-gradient(var(--accent) 45%,transparent 50%)}
-.ps-simo:disabled{opacity:.45;cursor:not-allowed}
