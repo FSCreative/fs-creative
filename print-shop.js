@@ -1796,7 +1796,8 @@ module.exports = function (D) {
   }
 
   // Sonderfarben im PDF (pdfkit kennt keine): Separation-Farbraum je Seite, Ersatzfarbe nur für die Bildschirmanzeige; Überdrucken per ExtGState
-  const SPOT_ALT = { White: [0.6, 0, 0.25, 0], Thrucut: [0, 1, 0, 0], Kisscut: [0, 0.45, 1, 0], Creasing: [1, 0, 1, 0], Perforation: [1, 0.2, 0, 0], Drilling: [0, 1, 1, 0] };
+  const SPOT_ALT = { White: [0.4, 0.1, 0, 0],   // Weiß immer hellblau anzeigen (Simon 18.11.2026)
+ Thrucut: [0, 1, 0, 0], Kisscut: [0, 0.45, 1, 0], Creasing: [1, 0, 1, 0], Perforation: [1, 0.2, 0, 0], Drilling: [0, 1, 1, 0] };
   function spotCs(doc, name) {
     const k = "Fsc" + name; if (!doc.page.colorSpaces[k]) { const fn = doc.ref({ FunctionType: 2, Domain: [0, 1], C0: [0, 0, 0, 0], C1: SPOT_ALT[name], N: 1 }); fn.end(); doc.page.colorSpaces[k] = ["Separation", name, "DeviceCMYK", fn]; }
     if (!doc.page.ext_gstates.FscOP) { const g = doc.ref({ Type: "ExtGState", OP: true, op: true, OPM: 1 }); g.end(); doc.page.ext_gstates.FscOP = g; }
@@ -1885,7 +1886,7 @@ module.exports = function (D) {
     return meta;
   }
   const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: (m.checks || []).filter(c => !c.admin), blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
-    needBack: needBackOf(m), back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
+    needBack: needBackOf(m), bleedFix: m.bleedFix || "", back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
   // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
   // Datei aufs Format setzen: „fill“ = füllt die Seite inkl. Beschnitt (Ränder werden angeschnitten), „fit“ = ganz sichtbar im Endformat (Rest weiß),
@@ -1902,7 +1903,8 @@ module.exports = function (D) {
     const out = await PDFDocument.create(), b = (+bleed || 0) * MM_PT, W = size.w * MM_PT + 2 * b, H = size.h * MM_PT + 2 * b;
     const o0 = o;
     let items = [];
-    if (type === "pdf") { const src = await PDFDocument.load(buf); for (const sp of src.getPages()) items.push(sp.node.Contents() ? { el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true, sp } : { blank: true }); }
+    if (type === "pdf") { const src = await PDFDocument.load(buf), nc = o.bg !== "white" ? await noCutDoc(buf) : null; let k = -1;
+      for (const sp of src.getPages()) { k++; items.push(sp.node.Contents() ? { el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true, sp, spM: nc ? nc.getPage(k) : null } : { blank: true }); } }
     else items.push({ el: type === "png" ? await out.embedPng(buf) : await out.embedJpg(buf), rot: 0 });
     for (let pi = 0; pi < items.length; pi++) { const it = items[pi], o = pagePlace(o0, pi + 1);
       const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.05, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
@@ -1926,7 +1928,7 @@ module.exports = function (D) {
       if (gap && o.bg !== "white" && mw > 1 && mh > 1) {
         try {
           const tmp = await PDFDocument.create(), tp = tmp.addPage([mw, mh]);
-          const tel = it.page ? await tmp.embedPage(it.sp) : type === "png" ? await tmp.embedPng(buf) : await tmp.embedJpg(buf);
+          const tel = it.page ? await tmp.embedPage(it.spM || it.sp) : type === "png" ? await tmp.embedPng(buf) : await tmp.embedJpg(buf);
           const tx = mw / 2 - (a / 2 * cos - c / 2 * sin), ty = mh / 2 - (a / 2 * sin + c / 2 * cos);
           if (it.page) tp.drawPage(tel, { x: tx, y: ty, xScale: f, yScale: f, rotate: opt.rotate }); else tp.drawImage(tel, { x: tx, y: ty, width: a, height: c, rotate: opt.rotate });
           const mem = await out.embedPage((await PDFDocument.load(await tmp.save())).getPage(0)), e = 0.4;
@@ -1942,9 +1944,17 @@ module.exports = function (D) {
     return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] && !items[0].blank ? items[0].usedRot : 0, mode: o0.mode === "fit" ? "fit" : "fill", mirrored: items.some(it => it.mirrored) };
   }
   // Fehlender Beschnitt: automatisch ergänzen – „mirror“ = Randbereiche spiegeln (Motiv bleibt 1:1), „zoom“ = Motiv minimal vergrößern (Ränder werden angeschnitten)
+  // Schneide-/Rill-/Stanzlinien (Thrucut, „Cutkontur“ …) dürfen nie in den Beschnitt gespiegelt werden (Simon 18.11.2026): für die gespiegelten Kopien
+  // eine Fassung der PDF, in der diese Sonderfarben „None“ heißen (zeichnet laut PDF-Norm nichts). Weiß bleibt – es gehört zum Motiv.
+  const isCutSpot = s => { s = String(s || "").trim(); return s !== "White" && !SPOT_ALIAS.White.test(s) && (SPOT_TECH.test(s) || Object.keys(SPOT_ALIAS).some(k => k !== "White" && SPOT_ALIAS[k].test(s))); };
+  async function noCutDoc(buf) {
+    try { const sc = await FILEINFO.spotScan(buf), hit = sc.spots.filter(isCutSpot); if (!hit.length) return null; FILEINFO.stripSpotPaint(sc.doc, isCutSpot); hit.forEach(s => sc.rename(s, "None")); return sc.doc; }
+    catch (e) { return null; }
+  }
   async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
+    const nc = mode === "zoom" ? null : await noCutDoc(buf);
     let pi = -1;
     for (const sp of src.getPages()) { pi++;
       if (!sp.node.Contents()) { out.addPage([W + 2 * b, H + 2 * b]).setTrimBox(b, b, W, H); continue; }   // leere Seite (z. B. weiße Rückseite): bleibt leer, nur im Beschnitt-Format
@@ -1959,10 +1969,11 @@ module.exports = function (D) {
         const sx = W / pw, sy = H / ph, e = 1.5, ins = (Array.isArray(insets) ? insets[pi] : insets) || {}, lim = v => Math.max(0, Math.min(6 * MM_PT, (+v || 0) * MM_PT));
         const L = Math.min(lim(ins.l), W * 0.1), R = Math.min(lim(ins.r), W * 0.1), T = Math.min(lim(ins.t), H * 0.1), Bo = Math.min(lim(ins.b), H * 0.1), any = L + R + T + Bo > 0;
         const xa = [b + L, b + W - R], ya = [b + Bo, b + H - T];   // Spiegelachsen = Motivkanten
+        const ncp = nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(ncp)) : emb;   // Kopien ohne Schneidelinien
         for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
           const cx = dx < 0 ? 0 : dx === 0 ? xa[0] : xa[1], cw = dx < 0 ? xa[0] : dx === 0 ? xa[1] - xa[0] : W + 2 * b - xa[1], cy = dy < 0 ? 0 : dy === 0 ? ya[0] : ya[1], ch = dy < 0 ? ya[0] : dy === 0 ? ya[1] - ya[0] : H + 2 * b - ya[1];
           pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
-          pg.drawPage(emb, { x: dx === 0 ? b : dx < 0 ? 2 * xa[0] - b + e : 2 * xa[1] - b - e, y: dy === 0 ? b : dy < 0 ? 2 * ya[0] - b + e : 2 * ya[1] - b - e, xScale: dx === 0 ? sx : -sx, yScale: dy === 0 ? sy : -sy });
+          pg.drawPage(embM, { x: dx === 0 ? b : dx < 0 ? 2 * xa[0] - b + e : 2 * xa[1] - b - e, y: dy === 0 ? b : dy < 0 ? 2 * ya[0] - b + e : 2 * ya[1] - b - e, xScale: dx === 0 ? sx : -sx, yScale: dy === 0 ? sy : -sy });
           pg.pushOperators(popGraphicsState());
         }
         if (any) pg.pushOperators(pushGraphicsState(), rectangle(xa[0], ya[0], xa[1] - xa[0], ya[1] - ya[0]), clip(), endPath());
@@ -1972,6 +1983,17 @@ module.exports = function (D) {
       pg.setTrimBox(b, b, W, H); pg.setBleedBox(0, 0, W + 2 * b, H + 2 * b);
     }
     return Buffer.from(await out.save());
+  }
+  // „Rand spiegeln“ ausschalten: wieder die Kunden-PDF (src) ohne Beschnitt – Format-Prüfung neu, übrige Hinweise (Sonderfarben, Schriften …) bleiben
+  async function noBleedFile(fm, extra, srcId) {
+    srcId = srcId || fm.src; const sm = await store.fileMeta(srcId), data = sm && await store.fileData(srcId);
+    if (!data || !(data[0] === 0x25 && data[1] === 0x50)) return { error: "Original nicht mehr vorhanden – bitte Datei neu hochladen" };
+    const info = await pdfInfoX(data); if (!info || info.encrypted || !info.media) return { error: "Für diese Datei nicht möglich" };
+    if ((+info.pages || 1) !== (+fm.pages || 1)) return { error: "Bei dieser Datei nicht möglich (Seiten wurden zusammengeführt) – bitte neu hochladen" };
+    const multi = (+fm.sides || 1) > 2, keep = (fm.checks || []).filter(c => c && !c.admin && !/^(Angepasst|Beschnitt (automatisch )?ergänzt|Erweiterte Prüfung)|Seitengröße|Endformat|Beschnitt|Seitenverhältnis|Seite\(n\) –|Seiten –|Quer-|Hochformat|Querformat|gedreht|skaliert|eingepasst|Bitte in der Vorschau kontrollieren|Motiv vergrößert/i.test(c.text || ""));
+    const checks = [{ level: "ok", text: "Rand spiegeln ausgeschaltet – deine Datei wie hochgeladen." }].concat(checkPdf(info, fm.size, +fm.bleed || 0, +fm.sides || 1, multi), keep);
+    const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/ \((mit Beschnitt|angepasst)\)(?=\.pdf$|$)/i, ""), data, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, Object.assign({ original: "pdf", src: fm.src, from: fm.id, noBleed: true }, extra || {}));
+    return { meta };
   }
   async function newFile(kind, name, pdf, target, checks, extra) {
     const meta = Object.assign({ id: "f" + crypto.randomBytes(12).toString("hex"), kind, name: clip(name, 120) || "druck.pdf", bytes: pdf.length, createdAt: nowIso(), product: target.product, sel: target.sel, size: target.size, bleed: target.bleed, sides: target.sides, pages: target.pages || null, checks, orderId: null, sha256: crypto.createHash("sha256").update(pdf).digest("hex") }, extra || {});
@@ -5745,6 +5767,14 @@ module.exports = function (D) {
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: o, px: fm.px, dpi: fm.dpi });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
+      if (p === "/print/api/file/nobleed" && req.method === "POST") {   // „Rand spiegeln“ wieder ausschalten (Simon 18.11.2026): zurück zur Kunden-PDF ohne Beschnitt
+        if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const b = await readJson(req, 2000), id = String(b.fileId || "");
+        if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
+        const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.bleedFix || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const r = await noBleedFile(fm); if (r.error) return J(res, 400, { ok: false, error: r.error });
+        return J(res, 200, Object.assign({ ok: true }, fileView(r.meta)));
+      }
       if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
         if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const b = await readJson(req, 2000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
@@ -6181,11 +6211,11 @@ module.exports = function (D) {
         }
         return J(res, 200, { ok: true, vouchers: Object.values(all).map(v => Object.assign({}, v, { usedBy: undefined, customers: (v.usedBy || []).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
       }
-      if (p === "/admin/api/print/whiteview" && req.method === "GET") {   // „Weiß ansehen“: Druckdatei mit der Weiß-Ebene in Pink (zeigt, wo Weiß druckt)
+      if (p === "/admin/api/print/whiteview" && req.method === "GET") {   // „Weiß ansehen“: Druckdatei mit der Weiß-Ebene in Hellblau (zeigt, wo Weiß druckt)
         const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
         if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
         const data = await store.fileData(fid); if (!data) return J(res, 404, { ok: false, error: "Datei nicht mehr vorhanden" });
-        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [1, 0, 0.6]); out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
+        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [0.45, 0.75, 1]);   // hellblau (Simon 18.11.2026) out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
         catch (e) { return J(res, 400, { ok: false, error: "Weiß-Ansicht nicht möglich: " + String(e.message || e).slice(0, 80) }); }
         return D.send(res, 200, out, "application/pdf", { "Content-Length": String(out.length), "Content-Disposition": 'inline; filename="' + o.nr + '-weiss.pdf"', "Cache-Control": "private, no-store" });
       }
@@ -6213,7 +6243,7 @@ module.exports = function (D) {
           const hemMm = sleeveMm(o.sel); let rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
             noBleed: ck.some(c => BLEED_RX.test(c.text || "")), hem: hemMm ? "Tunnelsaum " + hemMm / 10 + " cm: in diesem Bereich steckt die Stange – keine Texte/Logos hinein." : /eyelet|oese|öse/i.test(JSON.stringify(o.sel || {})) ? "Ösen sitzen im Rand – Texte und Logos nicht in die Ecken bzw. an den Rand legen." : "" });
           if (spot) rec = rec.filter(r => r.title !== "Technische Farben");
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
@@ -6326,6 +6356,17 @@ module.exports = function (D) {
         await prSwap(o, motif, curId, meta, "Cockpit (Seite " + pg + (pg === (+fm.pages || 1) + 1 ? " ergänzt)" : " ersetzt)"));
         hist(o, "Druckdaten im Cockpit: Seite " + pg + (motif > -1 ? " von Motiv " + (motif + 1) : "") + " " + (pg === (+fm.pages || 1) + 1 ? "ergänzt" : "ersetzt") + " (" + name + ")"); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o, checks: meta.checks || [] });
+      }
+      if (p === "/admin/api/print/nobleed" && req.method === "POST") {   // „Rand spiegeln“ ausschalten (Simon 18.11.2026): Datei vor dem Spiegeln wieder als Druckdatei
+        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1;
+        const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId);
+        if (!fm || !(fm.bleedFix || fm.place) || !fm.size || !(fm.src || fm.from)) return J(res, 400, { ok: false, error: "Diese Datei wurde weder gespiegelt noch angepasst" });
+        const r = await noBleedFile(fm, { orderId: o.id }, fm.src || fm.from); if (r.error) return J(res, 400, { ok: false, error: r.error });
+        await prSwap(o, motif, curId, r.meta, "Cockpit (Rand spiegeln aus)");
+        hist(o, "Druckdaten im Cockpit: Rand spiegeln ausgeschaltet – Datei ohne Beschnitt" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/bleed" && req.method === "POST") {   // Beschnitt im Cockpit ergänzen: Rand spiegeln oder Motiv leicht vergrößern (nur wenn die Datei keinen Beschnitt hat)
         const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });

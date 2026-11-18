@@ -254,4 +254,34 @@ async function spotScan(buf, doc) {
   return { doc: d, spots: Array.from(names.keys()), overprint: op, rename, recolor };
 }
 
-module.exports = { fileInfo, recommend, spotScan, _t: { jpgInfo, pngInfo, iccInfo } };
+// Pfade in bestimmten Sonderfarben (z. B. Schneidekontur) aus den Content-Streams entfernen: Malen (S/f/B) → n. Für gespiegelte Beschnitt-Kopien,
+// damit keine Kontur in den Beschnitt gespiegelt wird (Simon 18.11.2026). Gibt die Zahl geänderter Streams zurück.
+function stripSpotPaint(doc, isCut) {
+  const { PDFName, PDFArray, PDFDict, PDFRawStream, PDFRef, decodePDFRawStream } = require("pdf-lib"); const ctx = doc.context; let n = 0;
+  const csName = (res, nm) => { if (/^\/(DeviceRGB|DeviceCMYK|DeviceGray|Pattern)$/.test(nm)) return ""; const cs = res && res.lookup(PDFName.of("ColorSpace")); const a = cs instanceof PDFDict ? ctx.lookup(cs.get(PDFName.of(nm.slice(1)))) : null;
+    if (a instanceof PDFArray && String(a.get(0)) === "/Separation") return decodeURIComponent(String(a.get(1)).slice(1).replace(/#([0-9a-f]{2})/gi, "%$1")); return ""; };
+  const fix = (txt, res) => {
+    if (/\bBI\b/.test(txt)) return null;
+    const toks = txt.match(/\((?:\\.|[^\\)])*\)|<[^>]*>|\[|\]|\/[^\s\/\[\]()<>{}%]+|[^\s\/\[\]()<>{}%]+|%[^\n]*/g) || [];
+    let st = { s: false, f: false }; const stack = []; let changed = false; const out = [];
+    for (let i = 0; i < toks.length; i++) { const t = toks[i];
+      if (t === "q") stack.push(Object.assign({}, st)); else if (t === "Q") st = stack.pop() || { s: false, f: false };
+      else if (t === "CS" || t === "cs") { const p = toks[i - 1] || ""; const cut = p[0] === "/" && isCut(csName(res, p)); if (t === "CS") st.s = cut; else st.f = cut; }
+      else if (t === "G" || t === "RG" || t === "K") st.s = false; else if (t === "g" || t === "rg" || t === "k") st.f = false;
+      else if (/^(S|s)$/.test(t) && st.s) { out.push("n"); changed = true; continue; }
+      else if (/^(f|F|f\*)$/.test(t) && st.f) { out.push("n"); changed = true; continue; }
+      else if (/^(B|B\*|b|b\*)$/.test(t) && (st.s || st.f)) { out.push(st.s && st.f ? "n" : st.s ? (t.indexOf("*") > -1 ? "f*" : "f") : "S"); changed = true; continue; }
+      out.push(t); }
+    return changed ? out.join(" ") : null; };
+  const doStream = (ref, res, seen) => { const s = ctx.lookup(ref); if (!(s instanceof PDFRawStream) || seen.has(s)) return; seen.add(s);
+    let txt; try { txt = Buffer.from(decodePDFRawStream(s).decode()).toString("latin1"); } catch (e) { return; }
+    const nt = fix(txt, res); if (nt != null && ref instanceof PDFRef) { const ns = ctx.flateStream(Buffer.from(nt, "latin1"), {}); s.dict.entries().forEach(([k, v]) => { if (!/^\/(Length|Filter|DecodeParms)$/.test(String(k))) ns.dict.set(k, v); }); ctx.assign(ref, ns); n++; }
+    const r2 = s.dict.lookup(PDFName.of("Resources")); forms(r2 instanceof PDFDict ? r2 : res, seen); };
+  const forms = (res, seen) => { const xo = res && res.lookup(PDFName.of("XObject")); if (!(xo instanceof PDFDict)) return;
+    for (const [, v] of xo.entries()) { const s = ctx.lookup(v); if (s && s.dict && String(s.dict.get(PDFName.of("Subtype"))) === "/Form") doStream(v, s.dict.lookup(PDFName.of("Resources")) || res, seen); } };
+  for (const pg of doc.getPages()) { const res = pg.node.Resources(), seen = new Set(), c = pg.node.get(PDFName.of("Contents"));
+    const refs = c instanceof PDFArray ? c.asArray() : [c];
+    refs.forEach(r => doStream(r, res, seen)); forms(res, seen); }
+  return n;
+};
+module.exports = { fileInfo, recommend, spotScan, stripSpotPaint, _t: { jpgInfo, pngInfo, iccInfo } };
