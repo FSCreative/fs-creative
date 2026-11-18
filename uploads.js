@@ -346,6 +346,10 @@ module.exports = function (D) {
     '.stand{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-color:#ffe60066;background:linear-gradient(135deg,#1c1a08,#14141b 60%)}.stand h2{margin:0 0 4px;font-size:22px}.stand .sub{margin:0}.stand-a{display:flex;flex-direction:column;gap:8px;align-items:stretch}' +
     '.btn.big{font-size:19px;padding:18px 30px;justify-content:center;box-shadow:0 8px 30px #ffe60033}' +
     '.bk-ov{position:fixed;inset:0;z-index:50;background:radial-gradient(ellipse at center,#2a2a33,#08080b);display:flex;flex-direction:column}.bk-top{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap}' +
+    '.bk-main{flex:1;min-height:0;display:flex}.bk-main .bk-stage{flex:1;min-width:0}.bk-side{width:132px;flex:none;overflow-y:auto;padding:8px 10px 20px;display:grid;align-content:start;gap:10px;border-right:1px solid #ffffff14;scrollbar-width:thin}' +
+    '.bk-th{display:grid;gap:3px;justify-items:center;background:none;border:0;padding:4px;border-radius:8px;cursor:pointer;color:var(--dim);font:inherit}.bk-th:hover{background:#ffffff10}.bk-th.on{background:#ffe60022;color:var(--y)}.bk-th.on .bk-thi{outline:2px solid var(--y)}' +
+    '.bk-thi{display:block;width:100%;background:#fff;border-radius:2px;overflow:hidden;box-shadow:0 2px 8px #0008}.bk-thi img{display:block;width:100%;height:100%;object-fit:cover}.bk-th small{font-size:11.5px}.bk-sbt{display:none}' +
+    '@media(max-width:760px){.bk-side{position:absolute;left:0;top:64px;bottom:70px;z-index:20;background:#101017f2;transform:translateX(-105%);transition:transform .25s}.bk-ov.side .bk-side{transform:none}.bk-sbt{display:inline-flex}.bk-main{position:relative}}' +
     '.bk-t{display:flex;flex-direction:column}.bk-t small{color:var(--dim)}.bk-a{display:flex;gap:8px;flex-wrap:wrap}.bk-stage{flex:1;min-height:0;display:grid;place-items:center;padding:8px;perspective:2600px}' +
     '.bk-book{position:relative;display:grid;grid-template-columns:1fr 1fr;cursor:pointer;transform-style:preserve-3d;user-select:none;transition:transform .8s cubic-bezier(.45,.05,.35,1)}.bk-l:not(.bk-empty),.bk-r:not(.bk-empty),.bk-leaf{box-shadow:0 30px 80px #000c}.bk-book.one{grid-template-columns:1fr}.bk-book.one .bk-l{display:none}' +
     '.bk-l,.bk-r,.bk-f,.bk-b{background:#fff;overflow:hidden;position:relative}.bk-l.bk-empty,.bk-r.bk-empty{background:transparent}.bk-l img,.bk-r img,.bk-f img,.bk-b img{display:block;width:100%;height:100%;object-fit:contain}' +
@@ -478,7 +482,7 @@ module.exports = function (D) {
   }
   // Buchansicht (pdf.js): Doppelseiten wie ein aufgeschlagenes Heft, Umblättern mit 3D-Animation; am Handy Einzelseiten. Tasten ← →, Wischen, Klick auf die Seite.
   function bookClient(D) {
-    var ov = null, pdf = null, n = 0, s = 0, busy = false, IM = {}, ratio = 0.7071, spread = true;
+    var ov = null, pdf = null, n = 0, s = 0, busy = false, IM = {}, TH = {}, ratio = 0.7071, spread = true, thObs = null;
     function lib() { return new Promise(function (res, rej) { if (window.pdfjsLib) return res(window.pdfjsLib); var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
       sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = rej; document.head.appendChild(sc); }); }
     function pw() { var bk = ov.querySelector(".bk-book"); return bk ? bk.clientWidth / (spread ? 2 : 1) : 600; }
@@ -490,6 +494,18 @@ module.exports = function (D) {
         return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { return c.toDataURL("image/jpeg", 0.88); }); });
       return IM[i];
     }
+    // Schnellübersicht links (Simon 18.11.2026): kleine Vorschaubilder aller Seiten, Klick springt direkt hin, aktuelle Seiten markiert
+    function thumb(i) { if (TH[i]) return TH[i]; TH[i] = pdf.getPage(i).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 220 / v0.width }), c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { return c.toDataURL("image/jpeg", 0.8); }); }); return TH[i]; }
+    function sideBuild() { var sd = ov.querySelector(".bk-side"); if (!sd) return; var h = "";
+      for (var i = 1; i <= n; i++) h += '<button type="button" class="bk-th" data-pg="' + i + '" aria-label="Seite ' + i + '"><span class="bk-thi" style="aspect-ratio:' + ratio + '"></span><small>' + i + "</small></button>";
+      sd.innerHTML = h; if (thObs) thObs.disconnect();
+      thObs = "IntersectionObserver" in window ? new IntersectionObserver(function (es) { es.forEach(function (e) { if (!e.isIntersecting) return; var b = e.target, i = +b.getAttribute("data-pg"); thObs.unobserve(b); thumb(i).then(function (u) { var im = b.querySelector(".bk-thi"); if (im) im.innerHTML = '<img src="' + u + '" alt="">'; }); }); }, { root: sd, rootMargin: "300px" }) : null;
+      [].forEach.call(sd.querySelectorAll(".bk-th"), function (b) { if (thObs) thObs.observe(b); else thumb(+b.getAttribute("data-pg")).then(function (u) { b.querySelector(".bk-thi").innerHTML = '<img src="' + u + '" alt="">'; }); }); }
+    function sideMark() { var sd = ov && ov.querySelector(".bk-side"); if (!sd) return; var p = pages(s), first = null;
+      [].forEach.call(sd.querySelectorAll(".bk-th"), function (b) { var on = p.indexOf(+b.getAttribute("data-pg")) > -1; b.classList.toggle("on", on); if (on && !first) first = b; });
+      if (first) { var r = first.getBoundingClientRect(), R = sd.getBoundingClientRect(); if (r.top < R.top || r.bottom > R.bottom) sd.scrollTop += r.top - R.top - R.height / 2 + r.height / 2; } }
+    function jump(i) { if (!pdf || busy) return; var t = spread ? Math.floor(i / 2) : i - 1; if (t === s) return; s = Math.max(0, Math.min(maxS(), t)); draw(); if (window.innerWidth <= 760) ov.classList.remove("side"); }
     function pages(st) { return spread ? (st === 0 ? [0, 1] : [2 * st, 2 * st + 1]) : [st + 1]; }
     function maxS() { return spread ? Math.floor(n / 2) : n - 1; }
     function face(el, i) { return img(i).then(function (u) { el.innerHTML = u ? '<img src="' + u + '" alt="Seite ' + i + '" draggable="false">' : ""; el.classList.toggle("bk-empty", !u); }); }
@@ -499,7 +515,7 @@ module.exports = function (D) {
     function place(st) { var bk = ov.querySelector(".bk-book"); if (bk) bk.style.transform = "translateX(" + shift(st) + "%)"; }
     function draw() { var p = pages(s), L = ov.querySelector(".bk-l"), R = ov.querySelector(".bk-r"); place(s);
       if (spread) { face(L, p[0]); face(R, p[1]); } else face(R, p[0]);
-      label(); pages(s + 1).concat(pages(s - 1)).forEach(function (i) { img(i); }); }   // Nachbarseiten vorladen
+      label(); sideMark(); pages(s + 1).concat(pages(s - 1)).forEach(function (i) { img(i); }); }   // Nachbarseiten vorladen
     function flip(dir) {
       if (busy || !pdf) return; var t = s + dir; if (t < 0 || t > maxS()) return; busy = true;
       var bk = ov.querySelector(".bk-book"), cur = pages(s), nx = pages(t), leaf = document.createElement("div"), fr = document.createElement("div"), bkf = document.createElement("div");
@@ -518,18 +534,20 @@ module.exports = function (D) {
       if (ov) return; document.documentElement.style.overflow = "hidden";
       ov = document.createElement("div"); ov.className = "bk-ov"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Aktueller Stand");
       ov.innerHTML = '<div class="bk-top"><div class="bk-t"><b>' + D.title + '</b><small>Stand: ' + D.at + '</small></div><div class="bk-a"><a class="btn sm" href="' + D.u + '" target="_blank" rel="noopener">🖨 Drucken (Druckqualität)</a><a class="btn ghost sm" href="' + D.dl + '" download>⤓ PDF</a><button type="button" class="btn ghost sm bk-x" aria-label="Schließen">✕</button></div></div>' +
-        '<div class="bk-stage"><div class="bk-book"><div class="bk-l"></div><div class="bk-r"></div><div class="bk-load">Seiten werden geladen …</div></div></div>' +
-        '<div class="bk-nav"><button type="button" class="btn ghost bk-prev" aria-label="Zurückblättern">‹</button><span class="bk-pg"></span><button type="button" class="btn ghost bk-next" aria-label="Weiterblättern">›</button></div>';
+        '<div class="bk-main"><nav class="bk-side" aria-label="Seitenübersicht"></nav><div class="bk-stage"><div class="bk-book"><div class="bk-l"></div><div class="bk-r"></div><div class="bk-load">Seiten werden geladen …</div></div></div></div>' +
+        '<div class="bk-nav"><button type="button" class="btn ghost sm bk-sbt" aria-label="Seitenübersicht">☰ Seiten</button><button type="button" class="btn ghost bk-prev" aria-label="Zurückblättern">‹</button><span class="bk-pg"></span><button type="button" class="btn ghost bk-next" aria-label="Weiterblättern">›</button></div>';
       document.body.appendChild(ov);
       ov.querySelector(".bk-x").onclick = close; ov.querySelector(".bk-prev").onclick = function () { flip(-1); }; ov.querySelector(".bk-next").onclick = function () { flip(1); };
+      ov.querySelector(".bk-sbt").onclick = function () { ov.classList.toggle("side"); };
+      ov.querySelector(".bk-side").addEventListener("click", function (e) { var b = e.target.closest(".bk-th"); if (b) jump(+b.getAttribute("data-pg")); });
       ov.querySelector(".bk-book").addEventListener("click", function (e) { var r = this.getBoundingClientRect(); flip(e.clientX - r.left > r.width / 2 ? 1 : -1); });
-      var x0 = null; ov.addEventListener("touchstart", function (e) { x0 = e.touches[0].clientX; }, { passive: true });
-      ov.addEventListener("touchend", function (e) { if (x0 == null) return; var d = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(d) > 45) flip(d < 0 ? 1 : -1); });
+      var x0 = null; ov.querySelector(".bk-stage").addEventListener("touchstart", function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+      ov.querySelector(".bk-stage").addEventListener("touchend", function (e) { if (x0 == null) return; var d = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(d) > 45) flip(d < 0 ? 1 : -1); });
       size();
-      lib().then(function (L) { return L.getDocument({ url: D.u }).promise; }).then(function (p) { pdf = p; n = p.numPages; return p.getPage(1); }).then(function (pg) { var v = pg.getViewport({ scale: 1 }); ratio = v.width / v.height; size(); var ld = ov.querySelector(".bk-load"); if (ld) ld.remove(); draw(); })
+      lib().then(function (L) { return L.getDocument({ url: D.u }).promise; }).then(function (p) { pdf = p; n = p.numPages; return p.getPage(1); }).then(function (pg) { var v = pg.getViewport({ scale: 1 }); ratio = v.width / v.height; size(); var ld = ov.querySelector(".bk-load"); if (ld) ld.remove(); sideBuild(); draw(); })
         .catch(function () { var ld = ov && ov.querySelector(".bk-load"); if (ld) ld.innerHTML = 'Vorschau nicht möglich – <a href="' + D.u + '" target="_blank" rel="noopener">PDF direkt öffnen</a>'; });
     }
-    function close() { if (!ov) return; ov.remove(); ov = null; pdf = null; IM = {}; s = 0; busy = false; document.documentElement.style.overflow = ""; if (location.hash === "#stand") history.replaceState(null, "", location.pathname + location.search); }
+    function close() { if (!ov) return; if (thObs) thObs.disconnect(); thObs = null; ov.remove(); ov = null; pdf = null; IM = {}; TH = {}; s = 0; busy = false; document.documentElement.style.overflow = ""; if (location.hash === "#stand") history.replaceState(null, "", location.pathname + location.search); }
     document.addEventListener("keydown", function (e) { if (!ov) return; if (e.key === "Escape") close(); else if (e.key === "ArrowRight") flip(1); else if (e.key === "ArrowLeft") flip(-1); });
     var rt = 0; window.addEventListener("resize", function () { if (!ov) return; clearTimeout(rt); rt = setTimeout(function () { var was = spread; size(); if (was !== spread) { s = was ? Math.max(0, 2 * s - 1) : Math.floor((s + 1) / 2); } IM = {}; draw(); }, 200); });
     [].forEach.call(document.querySelectorAll("[data-book]"), function (b) { b.addEventListener("click", function (e) { e.preventDefault(); open(); }); });
