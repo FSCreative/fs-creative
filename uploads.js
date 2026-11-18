@@ -372,7 +372,7 @@ module.exports = function (D) {
     '@media(prefers-reduced-motion:reduce){.bk-leaf.go{animation-duration:.01s!important}.bk-cast{display:none}}' +
     '.bk-load{position:absolute;inset:0;display:grid;place-items:center;color:#555;background:#fff}.bk-load a{color:#333}.bk-nav{display:flex;justify-content:center;align-items:center;gap:16px;padding:10px 16px 18px}.bk-nav .btn{font-size:22px;padding:8px 18px}.bk-nav .btn:disabled{opacity:.3;cursor:default}.bk-pg{color:var(--dim);font-size:14px;min-width:150px;text-align:center}' +
     '.bk-stage{overflow:hidden}.bk-wrap{transition:transform .9s cubic-bezier(.645,.045,.355,1)}.bk-pf{margin:0 auto;filter:drop-shadow(0 25px 50px #000a)}.bk-p{background:#fff;overflow:hidden}.bk-p img{display:block;width:100%;height:100%;object-fit:cover;user-select:none;-webkit-user-drag:none}' +
-    '.bk-p img:not([src]){visibility:hidden}.stf__parent{margin:0 auto}' +
+    '.bk-p img:not([src]){visibility:hidden}.stf__parent{margin:0 auto}.bk-pf{position:relative}.bk-wrap.spread .bk-pf::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:9%;transform:translateX(-50%);background:linear-gradient(90deg,#0000,#0000000d 30%,#0003 48%,#0000004d 50%,#0003 52%,#0000000d 70%,#0000);pointer-events:none;z-index:20}' +
     '@media(max-width:720px){.stand{flex-direction:column;align-items:stretch}.btn.big{width:100%}}';
   // Kunden-Seite wie OneDrive: oben Infos, links Ordner, Mitte Dateien (herunterladen/löschen), rechts Hochladen (Knopf, Auswahl oder Drag & Drop)
   /* eslint-disable */
@@ -509,7 +509,7 @@ module.exports = function (D) {
     function shown() { if (!land) return [cur + 1]; if (cur === 0) return [1]; var a = cur % 2 ? cur : cur - 1; return [a + 1, a + 2].filter(function (p) { return p <= n; }); }   // Doppelseiten 2–3, 4–5 …
     function fill() { var p = shown(), lo = Math.max(1, p[0] - 3), hi = Math.min(n, p[p.length - 1] + 4);
       for (var i = lo; i <= hi; i++) (function (i) { img(i).then(function (u) { var el = ov && ov.querySelector('.bk-p[data-p="' + i + '"] img'); if (el && el.getAttribute("src") !== u) el.src = u; }); })(i); }
-    function place() { var w = ov.querySelector(".bk-wrap"), p = shown(), x = 0; if (land && p.length === 1) x = p[0] === 1 ? -25 : 25; if (w) w.style.transform = "translateX(" + x + "%)"; }
+    function place(open) { var w = ov.querySelector(".bk-wrap"), p = shown(), x = 0; if (land && p.length === 1 && !open) x = p[0] === 1 ? -25 : 25; if (w) { w.style.transform = "translateX(" + x + "%)"; w.classList.toggle("spread", land && (p.length === 2 || !!open)); } }
     function label() { var p = shown(); ov.querySelector(".bk-pg").textContent = "Seite " + p.join("–") + " von " + n; ov.querySelector(".bk-prev").disabled = cur <= 0; ov.querySelector(".bk-next").disabled = p[p.length - 1] >= n; }
     function update() { label(); place(); fill(); sideMark(); }
     function sideBuild() { var sd = ov.querySelector(".bk-side"), h = ""; for (var i = 1; i <= n; i++) h += '<button type="button" class="bk-th" data-pg="' + i + '" aria-label="Seite ' + i + '"><span class="bk-thi" style="aspect-ratio:' + ratio + '"></span><small>' + i + "</small></button>";
@@ -529,6 +529,7 @@ module.exports = function (D) {
       pf = new window.St.PageFlip(box, { width: pgW, height: pgH, size: "fixed", showCover: true, usePortrait: !land, drawShadow: true, maxShadowOpacity: 0.55, flippingTime: 900, mobileScrollSupport: false, swipeDistance: 25, showPageCorners: true, startPage: Math.min(cur, n - 1), autoSize: false });
       pf.loadFromHTML(els);
       pf.on("flip", function (e) { cur = +e.data || 0; update(); });
+      pf.on("changeState", function (e) { if (e.data === "flipping" || e.data === "user_fold" || e.data === "fold_corner") { if (shown().length === 1) place(true); } else if (e.data === "read") place(); });   // Buch gleitet schon beim Anfassen in die Mitte
       pf.on("changeOrientation", function () { land = pf.getOrientation ? pf.getOrientation() === "landscape" : land; update(); });
       cur = pf.getCurrentPageIndex ? pf.getCurrentPageIndex() : cur; update();
     }
