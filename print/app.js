@@ -2101,7 +2101,8 @@
   function svCands() {
     var base = svBase(), q = svQ(), fin = svProp("finish"), C = [], seen = {};
     var none = fin ? fin.options.filter(function (o) { return NONE_RX.test(String(o.name).trim()) || /^(none|no|geen)$/i.test(o.slug); })[0] : null;
-    var add = function (id, sel, extra) { if (excluded(sel)) return; var k = JSON.stringify(sel); if (seen[k]) return; seen[k] = 1; C.push(Object.assign({ id: id, sel: sel, gr: q ? svGr(svOpt(q, sel[q.slug])) : 0 }, extra || {})); };
+    var coat = function (o) { return /silk|gesatineerd|bilderdruck|gestrichen|coated|matt/i.test(o.slug + " " + o.name) && !/natur|offset|recycl|kraft|invercote|karton|bio/i.test(o.slug + " " + o.name) ? 1 : 0; };
+    var add = function (id, sel, extra) { if (excluded(sel)) return; var k = JSON.stringify(sel); if (seen[k]) return; seen[k] = 1; var o = q ? svOpt(q, sel[q.slug]) : { name: "", slug: "" }; C.push(Object.assign({ id: id, sel: sel, gr: q ? svGr(o) : 0, co: coat(o) }, extra || {})); };
     add("base", Object.assign({}, base));
     if (!q) return C;
     var opts = q.options.filter(function (o) { return !NONE_RX.test(String(o.name).trim()) && o.slug !== "none"; });
@@ -2109,7 +2110,6 @@
     opts.forEach(function (o, i) { var s = Object.assign({}, base); s[q.slug] = o.slug; if (none) s.finish = none.slug; add("q" + i, s); if (none && excluded(s)) { var s2 = Object.assign({}, base); s2[q.slug] = o.slug; add("r" + i, s2); } });
     var dbl = base.printtype === "44", lams = fin ? fin.options.filter(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name) && /matt/i.test(o.slug + " " + o.name); }) : [];
     lams.sort(function (a, b) { return (/^double|beidseit/i.test(b.slug + b.name) === dbl) - (/^double|beidseit/i.test(a.slug + a.name) === dbl); });
-    var coat = function (o) { return /silk|gesatineerd|bilderdruck|gestrichen|coated|matt/i.test(o.slug + " " + o.name) && !/natur|offset|recycl|kraft|invercote|karton/i.test(o.slug + " " + o.name) ? 1 : 0; };
     q.options.filter(function (o) { return svGr(o) > 0; }).sort(function (a, b) { return (coat(b) - coat(a)) || (svGr(b) - svGr(a)); }).slice(0, 3).forEach(function (h, i) {
       lams.slice(0, 2).forEach(function (l, j) { var s = Object.assign({}, base); s[q.slug] = h.slug; s.finish = l.slug; add("p" + i + j, s, { lam: true }); }); });
     return C.slice(0, 24);
@@ -2123,8 +2123,8 @@
     if (V.prem === V.cheap || V.prem.net <= V.cheap.net + 0.01) V.prem = by.length > 1 && by[by.length - 1].net > V.cheap.net + 0.01 ? by[by.length - 1] : null;
     var lo = V.cheap.net, hi = V.prem ? V.prem.net : lo * 2, tgt = lo + (hi - lo) * 0.25, base = ok.filter(function (c) { return c.id === "base"; })[0];
     var btw = ok.filter(function (c) { return c !== V.cheap && c !== V.prem && !c.lam && c.net > lo + 0.01 && c.net < hi - 0.01 && (!hasGr || c.gr >= V.cheap.gr); });
-    var near = function (c) { return Math.abs(c.net - tgt); };
-    V.mid = base && btw.indexOf(base) > -1 && base.net <= lo + (hi - lo) * 0.45 ? base : btw.sort(function (a, b) { return near(a) - near(b); })[0] || null;
+    var near = function (c) { return Math.abs(c.net - tgt); }, fam = function (c) { return c.co === V.cheap.co ? 0 : 1; };   // gleiche Papierfamilie wie Preiswert (z. B. gestrichen), nur schwerer
+    V.mid = base && btw.indexOf(base) > -1 && base.net <= lo + (hi - lo) * 0.45 && !fam(base) ? base : btw.sort(function (a, b) { return (fam(a) - fam(b)) || (near(a) - near(b)); })[0] || null;
     return V;
   }
   function svLoad() {
