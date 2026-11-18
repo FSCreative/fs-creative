@@ -237,7 +237,8 @@
     if (coverNeed() && S.cover) { it.coverId = S.cover.fileId; it.coverToken = S.cover.token; it.coverName = S.cover.name; }
     if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30), adj: !!F0.adj, place: F0.place || null, pvk: F0.pvk || "" }; }   // adj/place: „Anpassen“ auch beim erneuten Öffnen aus dem Warenkorb
     if (S.fixByUs && S.file && S.file.blocked) { it.fixByUs = true; it.check = S.check === "graphic" ? "graphic" : "pro"; }   // „Für mich richten lassen“: Position bleibt beim Profi-Datencheck
-    S.fixByUs = false;
+    if (S.upWho === "pro" && S.file && !S.file.noFile && S.file.kind !== "design") { it.check = S.check === "graphic" ? "graphic" : "pro"; it.fixByUs = true; }   // „Profi-Datencheck – wir richten ein“ beim Hochladen gewählt
+    S.fixByUs = false; S.upWho = "";
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
     if (S.design && S.file.kind === "design" && !it.motifs && !it.textile) api("/print/api/draft", Object.assign(cfgOf(), { design: S.design, cart: true })).then(function (j) {
@@ -931,6 +932,7 @@
       return;
     }
     if (!S.prod || S.prod.key !== key) {
+      S.upWho = "";
       recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; S.autoFix = key; S.pmkImg = 0;
       // Startausführung vom Server (print-shop.js startOf: Auflage + Auswahl passend zu Druckverfahren und Ausschlussregeln – gleicher Preis wie Karten/Weihnachtsseite)
       var st = p.start && p.start.sel && p.kind !== "textile" && (p.tiers || []).indexOf(+p.start.copies) > -1 ? p.start : null;
@@ -1303,7 +1305,7 @@
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Zur Bestellübersicht & Checkout</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
     if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
       m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Weiter zur Lieferung</button>'; root.appendChild(m4); }
-    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
+    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !blk(S.file) ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) { renderPrice(); secNav(); fillRows(); dlKick(); }
   }
   // Ausführung: Listen-Kacheln stehen paarweise; bleibt eine allein in der Reihe, nimmt sie die ganze Breite
@@ -2286,7 +2288,12 @@
       var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
       return studioHtml(f, mtabs, sum, spec, top, shown, rest);
+    } else if (S.mode === "upload" && !S.upWho) {   // vor dem Hochladen: selbst einrichten oder vom Profi einrichten lassen (Simon 18.11.2026)
+      h += '<div class="ps-modes ps-upwho"><button type="button" class="ps-mode" data-act="upwho:self"><span class="ic" aria-hidden="true">🛠️</span><b>Ich richte die Datei selbst ein</b><span>Du lädst deine Druckdatei hoch, siehst sofort die automatische Prüfung und passt Format, Beschnitt &amp; Co. selbst an.</span></button>' +
+        '<button type="button" class="ps-mode ps-mode-agency" data-act="upwho:pro"><span class="ic" aria-hidden="true">✅</span><b>Profi-Datencheck · +' + eur(PRO_CHECK) + '</b><span>Du lädst deine Datei einfach hoch – wir prüfen sie persönlich und richten sie druckfertig ein (Format, Beschnitt, Farben). Bei Fragen melden wir uns.</span></button></div>' +
+        '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>';
     } else if (S.mode === "upload") {
+      h += '<p class="ps-help ps-info">' + (S.upWho === "pro" ? "✅ <b>Profi-Datencheck (+" + eur(PRO_CHECK) + ")</b> – lade deine Datei hoch, wir richten sie für dich ein." : "🛠️ <b>Du richtest die Datei selbst ein.</b>") + ' <button type="button" class="ps-link" data-act="upwho:">ändern</button></p>';
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
         : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
       h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() || multiMot() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 500 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : multiMot() ? " · mehrere Dateien auf einmal = je Datei ein Motiv (ab Motiv " + (S.mot.i + 1) + ")" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
@@ -2389,11 +2396,12 @@
     var c = f.checks || [], e = c.filter(function (x) { return x.level === "error"; }).length, w = c.filter(function (x) { return x.level === "warn"; }).length + ((f.edgeWarn || []).length); if (f.edgeErr) e++;
     var st = e ? ["bad", "Bitte korrigieren", "Die Datei kann so nicht gedruckt werden – siehe rote Punkte."] : w ? ["warn", "Druckbar – mit Hinweisen", "Bitte die gelben Hinweise prüfen. Unsicher? Wähle an der Kasse den Profi-Datencheck."] : ["ok", "Druckfertig", "Format, Beschnitt und Auflösung passen."];
     // Fehler in der Datei → mit einem Klick „für mich richten lassen“ (Profi-Datencheck): Simon richtet die Datei vor dem Druck (Simon 17.11.2026, Kundin am Handy gescheitert)
-    if (e && f.blocked && S.fixByUs) st = ["warn", "Wir richten deine Datei", "Profi-Datencheck (+" + eur(PRO_CHECK) + ") ist gewählt: Wir bringen die Datei vor dem Druck in Ordnung und melden uns, falls etwas unklar ist. Du kannst einfach weiter bestellen."];
+    if (S.upWho === "pro") return '<div class="ps-qual ok"><i aria-hidden="true"></i><div><b>Profi-Datencheck gewählt</b><span>Wir prüfen deine Datei persönlich und richten sie vor dem Druck ein – du kannst einfach weiter bestellen.' + (e || w ? " Die Hinweise unten erledigen wir für dich." : "") + '</span><div style="margin-top:8px"><button type="button" class="ps-link" data-act="upwho:self">Doch selbst einrichten</button></div></div></div>';
+    if (e && f.blocked && S.fixByUs) st =["warn", "Wir richten deine Datei", "Profi-Datencheck (+" + eur(PRO_CHECK) + ") ist gewählt: Wir bringen die Datei vor dem Druck in Ordnung und melden uns, falls etwas unklar ist. Du kannst einfach weiter bestellen."];
     var fix = e && f.blocked ? (S.fixByUs ? '<button type="button" class="ps-link" data-act="fixbyus:0">Doch selbst korrigieren</button>' : '<button type="button" class="ps-btn primary ps-fixbtn" data-act="fixbyus:1">Für mich richten lassen · Profi-Datencheck +' + eur(PRO_CHECK) + "</button>") : "";
     return '<div class="ps-qual ' + st[0] + '"><i aria-hidden="true"></i><div><b>' + st[1] + "</b><span>" + st[2] + "</span>" + (fix ? '<div style="margin-top:8px">' + fix + "</div>" : "") + "</div></div>";
   }
-  function blk(f) { return !!(f && f.blocked && !S.fixByUs); }   // gesperrt, außer der Kunde lässt die Datei von uns richten
+  function blk(f) { return !!(f && f.blocked && !S.fixByUs && S.upWho !== "pro"); }   // gesperrt, außer der Kunde lässt die Datei von uns richten
   // Vorschau der Druckdatei (pdf.js) mit Beschnitt, Endformat und Sicherheitsabstand + Randanalyse (Inhalte zu nah am Rand, fehlender Beschnitt)
   var PDFJS = null, PFV = {};
   function pdfjs() { if (PDFJS) return PDFJS; PDFJS = new Promise(function (res, rej) { var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = function () { PDFJS = null; rej(new Error("pdf.js")); }; document.head.appendChild(sc); }); return PDFJS; }
@@ -3051,6 +3059,7 @@
     if (k === "backremove") { if (S.fileFront) { S.file = S.fileFront; S.fileFront = null; } S.backEdit = false; S.previews = null; S.pmkSide = 0; render(); return; }
     if (k === "editdesign") return openDesigner();
     if (k === "adjopen") { S.adjOpen = true; render(); return; }
+    if (k === "upwho") { S.upWho = v; if (v === "pro" && S.check !== "graphic") S.check = "pro"; render(); if (v === "pro") toast("Profi-Datencheck gewählt – wir richten deine Datei ein ✓"); return; }
     if (k === "fixbyus") { S.fixByUs = v === "1"; if (S.fixByUs && S.check !== "graphic") S.check = "pro"; render(); toast(S.fixByUs ? "Profi-Datencheck gewählt – wir richten deine Datei vor dem Druck ✓" : "Ok – bitte die rot markierten Punkte selbst korrigieren"); return; }
     if (k === "next3") { if (S.file && S.file.rebinding) { toast("Einen Moment – deine Datei wird für die neue Ausführung geprüft …"); return; } if (!S.file || blk(S.file)) return; if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
       if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }

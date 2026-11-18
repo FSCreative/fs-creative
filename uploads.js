@@ -170,9 +170,9 @@ module.exports = function (D) {
     fs.createReadStream(fp).pipe(res);
   }
   // alle fertigen Dateien (oder nur ein Ordner) als ZIP mit Ordnerstruktur – ohne Kompression, gestreamt
-  async function sendZip(res, l, only) {
+  async function sendZip(res, l, only, hide) {
     only = safeDir(only);
-    const files = liveFiles(l).filter(f => inDir(f.dir, only)), total = files.reduce((a, f) => a + f.size, 0);
+    const files = liveFiles(l).filter(f => inDir(f.dir, only) && !(hide && f.dir && inDir(f.dir, hide))), total = files.reduce((a, f) => a + f.size, 0);
     if (!files.length) return J(res, 404, { ok: false, error: "Noch keine Dateien" });
     if (total > ZIP_MAX) return J(res, 413, { ok: false, error: "Zusammen über 3,8 GB – bitte einzeln oder ordnerweise herunterladen" });
     const { Zip, ZipPassThrough } = require("fflate");
@@ -196,7 +196,10 @@ module.exports = function (D) {
     if (ds.length) l.dirs = (l.dirs || []).filter(x => !ds.some(d => inDir(x, d)));
     save(); return n;
   }
-  const pubFiles = l => liveFiles(l).map(f => ({ id: f.id, name: f.name, dir: f.dir || "", size: f.size, at: f.doneAt || f.at, fs: f.by === "fs" }));
+  // Ordner „Aktueller Stand“ sieht der Kunde nicht als Ordner – nur über den großen Knopf (Simon 18.11.2026)
+  const pubHide = l => l.book ? STAND_DIR : "";
+  const pubDirs = l => (l.dirs || []).filter(x => !(pubHide(l) && inDir(x, pubHide(l)))).sort((a, b) => a.localeCompare(b, "de"));
+  const pubFiles = l => liveFiles(l).filter(f => !(pubHide(l) && inDir(f.dir || "", pubHide(l)) && (f.dir || ""))).map(f => ({ id: f.id, name: f.name, dir: f.dir || "", size: f.size, at: f.doneAt || f.at, fs: f.by === "fs" }));
 
   // ── öffentliche Seite + Upload/Download (der geheime Link ist der Zugang – wie ein geteilter Ordner) ──
   async function handlePublic(req, res, u, p) {
@@ -213,9 +216,9 @@ module.exports = function (D) {
     try {
       if (req.method === "GET") {
         if (limited("upget", ip, 3000, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
-        if (m[2] === "/list") return J(res, 200, { ok: true, dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), files: pubFiles(l), msgs: pubMsgs(l) });
+        if (m[2] === "/list") return J(res, 200, { ok: true, dirs: pubDirs(l), files: pubFiles(l), msgs: pubMsgs(l) });
         if (m[2] === "/file") { const f = liveFiles(l).find(x => x.id === String(u.searchParams.get("f") || "")); if (!f) return J(res, 404, { ok: false, error: "Datei nicht gefunden" }); return void sendFile(res, l, f, u.searchParams.get("inline") === "1"); }
-        if (m[2] === "/zip") return void await sendZip(res, l, u.searchParams.get("dir"));
+        if (m[2] === "/zip") return void await sendZip(res, l, u.searchParams.get("dir"), pubHide(l));
         return J(res, 405, { ok: false, error: "method_not_allowed" });
       }
       if (req.method !== "POST" && req.method !== "PUT") return J(res, 405, { ok: false, error: "method_not_allowed" });
@@ -576,7 +579,7 @@ module.exports = function (D) {
       '</div></div>';
     const st = standOf(l), stB = st ? "/upload/" + l.token + "/file?f=" + encodeURIComponent(st.id) : "";
     const js = (st ? "(" + bookClient.toString() + ")(" + JSON.stringify({ u: stB + "&inline=1", dl: stB, title: escH(l.title), at: escH(viennaTime(st.at)) }).replace(/</g, "\\u003c") + ");" : "") +
-      "(" + upClient.toString() + ")(" + JSON.stringify({ t: l.token, dirs: l.dirs || [] }).replace(/</g, "\\u003c") + ");document.getElementById('fi2').addEventListener('change',function(){var a=document.getElementById('fi'),b=this;try{a.files=b.files;a.dispatchEvent(new Event('change'));}catch(e){}b.value='';});";
+      "(" + upClient.toString() + ")(" + JSON.stringify({ t: l.token, dirs: pubDirs(l) }).replace(/</g, "\\u003c") + ");document.getElementById('fi2').addEventListener('change',function(){var a=document.getElementById('fi'),b=this;try{a.files=b.files;a.dispatchEvent(new Event('change'));}catch(e){}b.value='';});";
     return page("Dateien – " + l.title, body, js);
   }
 
