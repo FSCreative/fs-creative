@@ -418,6 +418,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
   .ticker-track{flex-wrap:wrap}
   .ticker-track span[aria-hidden]{display:none}
 }
+.doors:not(:has(.d-print)){grid-template-columns:minmax(0,1fr)}
 </style>
 </head>
 <body>
@@ -430,7 +431,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
     <nav class="nav-links" aria-label="Hauptnavigation">
       <a href="/" class="active" aria-current="page">Start</a>
       <a href="/leistungen">Leistungen</a>
-      <a href="/print" class="nav-print">Druckshop</a>
+      <!--PRINT_LIVE--><a href="/print" class="nav-print">Druckshop</a><!--/PRINT_LIVE-->
       <a href="/blitzdings">Blitzdings</a>
       <a href="/valuero">VALUERO</a>
       <a href="/kochdu">kochdu</a>
@@ -444,7 +445,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
 <nav class="tabbar" aria-label="Schnellnavigation">
   <a class="tab active" href="/" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.8 12 3.5l9 7.3"/><path d="M5.2 9.6V20a1 1 0 0 0 1 1H10v-5.4h4V21h3.8a1 1 0 0 0 1-1V9.6"/></svg><span>Start</span></a>
   <a class="tab" href="/leistungen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg><span>Leistungen</span></a>
-  <a class="tab pr" href="/print"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V3.5h10V8"/><rect x="3.5" y="8" width="17" height="8.5" rx="2"/><path d="M7 14h10v6.5H7z"/></svg><span>Druckshop</span></a>
+  <!--PRINT_LIVE--><a class="tab pr" href="/print"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V3.5h10V8"/><rect x="3.5" y="8" width="17" height="8.5" rx="2"/><path d="M7 14h10v6.5H7z"/></svg><span>Druckshop</span></a><!--/PRINT_LIVE--><!--PRINT_OFF--><a class="tab" href="/referenzen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg><span>Referenzen</span></a><!--/PRINT_OFF-->
   <a class="tab" href="/kontakt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.6"/><path d="M4 7.5l8 5.6 8-5.6"/></svg><span>Kontakt</span></a>
   <label class="tab" for="navtoggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menü</span></label>
 </nav>
@@ -455,15 +456,16 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
     <div class="wrap">
       <span class="kicker"><span class="dot" aria-hidden="true"></span> Webdesign &amp; Druck · Gaschurn im Montafon</span>
       <h1 class="h1" id="hero-h">
-        <span class="ln"><span class="w">Websites</span></span>
+        <!--PRINT_LIVE--><span class="ln"><span class="w">Websites</span></span>
         <span class="ln"><span><span class="s">&amp;</span> <span class="p">Drucksachen</span><span class="s">.</span></span></span>
-        <span class="ln sm"><span>aus dem Montafon.</span></span>
+        <span class="ln sm"><span>aus dem Montafon.</span></span><!--/PRINT_LIVE--><!--PRINT_OFF--><span class="ln"><span class="w">Ideen aus dem Tal,</span></span>
+        <span class="ln"><span><span class="s">gebaut für das</span> <span class="w">Netz</span><span class="s">.</span></span></span><!--/PRINT_OFF-->
       </h1>
       <div class="hero-meta">
-        <p class="lead"><strong>Webdesign-Agentur &amp; Online-Druckshop</strong> aus Vorarlberg. Wir bauen Websites, Shops und Plattformen für Betriebe in Vorarlberg und Tirol – und drucken, was dein Betrieb sonst noch braucht.</p>
+        <!--PRINT_LIVE--><p class="lead"><strong>Webdesign-Agentur &amp; Online-Druckshop</strong> aus Vorarlberg. Wir bauen Websites, Shops und Plattformen für Betriebe in Vorarlberg und Tirol – und drucken, was dein Betrieb sonst noch braucht.</p><!--/PRINT_LIVE--><!--PRINT_OFF--><p class="lead"><strong>Webdesign-Agentur</strong> aus dem Montafon. Wir bauen Websites, Shops und Plattformen für Betriebe in Vorarlberg und Tirol – persönlich betreut, mit kostenlosem Entwurf zum Start.</p><!--/PRINT_OFF-->
         <ul class="hero-facts" aria-label="Auf einen Blick">
           <li>Gratis Entwurf</li>
-          <li>Über 900 Druckprodukte</li>
+          <!--PRINT_LIVE--><li>Über 900 Druckprodukte</li><!--/PRINT_LIVE--><!--PRINT_OFF--><li>Vorarlberg &amp; Tirol</li><!--/PRINT_OFF-->
           <li>Persönlich betreut</li>
         </ul>
       </div>
@@ -490,6 +492,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
           </div>
         </article>
 
+        <!--PRINT_LIVE-->
         <!-- Tür 2: Druck -->
         <article class="door d-print" aria-labelledby="door-print-h">
           <div class="door-copy">
@@ -510,6 +513,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
             </div>
           </div>
         </article>
+        <!--/PRINT_LIVE-->
       </div>
     </div>
 
@@ -540,6 +544,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
   </section>
 
   <!-- ============ DRUCKSHOP ============ -->
+  <!--PRINT_LIVE-->
   <section class="wrap" id="druckshop" aria-labelledby="shop-h">
     <div class="shop">
       <div>
@@ -585,6 +590,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
       </div>
     </div>
   </section>
+  <!--/PRINT_LIVE-->
 
   <!-- ============ PROJEKTE ============ -->
   <section class="sec" id="projekte" aria-labelledby="proj-h">
@@ -670,7 +676,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
             <li><a href="/website-betreuung">Betreuung &amp; Hosting</a></li>
             <li><a href="/grafikdesign">Grafikdesign &amp; Branding</a></li>
             <li><a href="/druck">Druck &amp; Printdesign</a></li>
-            <li><a href="/print">Druck online bestellen</a></li>
+            <!--PRINT_LIVE--><li><a href="/print">Druck online bestellen</a></li><!--/PRINT_LIVE-->
             <li><a href="/fotobox-mieten-montafon">Fotobox mieten</a></li>
           </ul>
         </div>
@@ -728,7 +734,7 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
         <a href="/valuero">VALUERO</a>
         <a href="/kochdu">kochdu</a>
         <a href="/kantineur">Kantineur</a>
-        <a href="/print">Druckshop</a>
+        <!--PRINT_LIVE--><a href="/print">Druckshop</a><!--/PRINT_LIVE-->
       </nav>
       <nav class="foot-col" aria-labelledby="f-a"><h2 id="f-a">Agentur</h2>
         <a href="/">Start</a>
