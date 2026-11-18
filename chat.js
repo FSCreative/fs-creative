@@ -163,7 +163,7 @@ module.exports = function (D) {
   function newConv(id, page) { const t = nowIso(); return { id, no: convNo(id), created: t, updated: t, name: "", email: "", phone: "", request: "", topic: "", page: page || "", pages: page ? [page] : [], lastId: 0, last: null, unread: 0, ai: "auto", aiCount: 0, closed: false, leadId: "", flags: {} }; }
   async function addMsg(c, from, text, file) {
     const m = await store.addMsg(c, file ? { at: nowIso(), from, text, file } : { at: nowIso(), from, text });
-    c.lastId = m.id; c.updated = m.at; c.last = { from, text: text.slice(0, 160), at: m.at };
+    c.lastId = m.id; c.updated = m.at; c.last = { from, text: text.slice(0, 160), at: m.at }; if (from === "me") c.meAt = m.at;
     if (from === "v") c.unread = (c.unread || 0) + 1;
     await store.putConv(c); bump(); return m;
   }
@@ -173,7 +173,9 @@ module.exports = function (D) {
   const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", human: c.human || "", typing: BUSY.has(c.id), vSeen: c.vSeen || 0, vSeenAt: c.vSeenAt || "" });
 
   // ───────────────────────── KI ─────────────────────────
-  const aiActive = c => !c.closed && c.ai !== "off" && (c.ai === "on" || !(c.human && isOnline()));   // KI zuerst; nach Übergabe an Simon nur, solange er online ist
+  const ME_QUIET = intEnv("CHAT_ME_QUIET_MS", 12 * 3600000);   // hat Simon selbst geschrieben, antwortet die KI 12 h lang nicht mehr (auch wenn er offline ist) – Simon 18.11.2026
+  const meQuiet = c => !!c.meAt && Date.now() - Date.parse(c.meAt) < ME_QUIET;
+  const aiActive = c => !c.closed && c.ai !== "off" && (c.ai === "on" || !((c.human && isOnline()) || meQuiet(c)));   // KI zuerst; nach Übergabe an Simon nur, solange er online ist bzw. kurz nach seiner letzten Nachricht
   const SCHEMA = { type: "object", additionalProperties: false, required: ["reply", "name", "email", "phone", "request", "topic", "ready", "handoff"],
     properties: { reply: { type: "string" }, name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, request: { type: "string" }, topic: { type: "string", enum: TOPICS.concat([""]) }, ready: { type: "boolean" }, handoff: { type: "boolean" } } };
   // Wochenende (Wunsch Simon 06.11.2026): Freitag ab 16:00 bis Montag 8:00 (Wien) ist Simon nur sporadisch erreichbar – in allen Hinweisen ehrlich sagen
@@ -351,13 +353,13 @@ module.exports = function (D) {
       if (p === "/chat/api/status" && req.method === "GET") {
         const id = String(u.searchParams.get("c") || ""), a = parseInt(u.searchParams.get("a"), 10) || 0, c = CID_RX.test(id) && CONVS.get(id);
         let n = 0, me = 0; if (c && c.lastId > a) { const l = (await store.msgs(id, a, 50)).filter(m => m.from !== "v"); n = l.length; me = l.filter(m => m.from === "me").length; }
-        return J(res, 200, { ok: true, online: await online(), n, me });   // me: neue Nachrichten von Simon → Widget öffnet sich (Wunsch Simon 04.11.2026)
+        return J(res, 200, { ok: true, online: await online(), n, me, exists: !!c, closed: !!(c && c.closed) });   // me: neue Nachrichten von Simon → Widget öffnet sich (Wunsch Simon 04.11.2026)
       }
       if (p === "/chat/api/poll" && req.method === "GET") {
         const id = String(u.searchParams.get("c") || ""), a = parseInt(u.searchParams.get("after"), 10) || 0;
         if (!CID_RX.test(id)) return J(res, 400, { ok: false, error: "bad_id" });
         const c = CONVS.get(id), on = await online();
-        if (!c) return J(res, 200, { ok: true, online: on, msgs: [], typing: false, closed: false });
+        if (!c) return J(res, 200, { ok: true, online: on, msgs: [], typing: false, closed: false, exists: false });
         const msgs = c.lastId > a ? (await store.msgs(id, a, 100)).map(pubMsg) : [];
         // Gelesen: das Widget fragt nur bei offenem, sichtbarem Chat ab → alles bis lastId hat der Besucher gesehen
         if (c.lastId && (c.vSeen || 0) < c.lastId) { c.vSeen = c.lastId; c.vSeenAt = nowIso(); await store.putConv(c); bump(); }
@@ -386,7 +388,7 @@ module.exports = function (D) {
         let c = CONVS.get(id); const isNew = !c;
         try { checkFile(c, buf); } catch (e) { return fileErr(res, e); }
         if (isNew) { if (limited("n|" + ip, 10, 3600000)) return J(res, 429, { ok: false, error: "too_many" }); c = newConv(id, pageOf(dec(req.headers["x-chat-page"]))); }
-        if (c.closed) c.closed = false;
+        if (c.closed) { req.resume(); return J(res, 409, { ok: false, error: "closed" }); }   // beendet (von Simon oder Besucher): nur nachlesen (Simon 18.11.2026)
         const pg = pageOf(dec(req.headers["x-chat-page"])); if (pg) { c.page = pg; c.pages = (c.pages || []).filter(x => x !== pg).concat([pg]).slice(-10); }
         const nm = line(dec(req.headers["x-chat-name"]), 80); if (nm) c.name = nm;
         if (PEND_CART.has(id)) { setCart(c, PEND_CART.get(id)); PEND_CART.delete(id); }
@@ -408,6 +410,11 @@ module.exports = function (D) {
         const msgs = c ? (await store.msgs(id, 0, 100)).map(pubMsg) : [];
         return J(res, 200, { ok: true, online: await online(), exists: !!c, name: c ? c.name : "", msgs, typing: BUSY.has(id), closed: !!(c && c.closed), topic: (c && c.topic) || "" });
       }
+      if (p === "/chat/api/end") {   // Besucher beendet die Unterhaltung (Widget „Unterhaltung beenden“)
+        const c = CONVS.get(id); if (!c) return J(res, 200, { ok: true });
+        if (!c.closed) { c.closed = true; c.unread = 0; await addMsg(c, "sys", "Unterhaltung vom Besucher beendet."); }
+        return J(res, 200, { ok: true });
+      }
       if (p === "/chat/api/send") {
         if (d.website) return J(res, 200, { ok: true, msg: null });                              // Honeypot: Bots bekommen „ok“, nichts wird gespeichert
         if (typeof d.text !== "string") return J(res, 400, { ok: false, error: "bad_text" });
@@ -419,7 +426,7 @@ module.exports = function (D) {
         if (isNew) { if (limited("n|" + ip, 10, 3600000)) return J(res, 429, { ok: false, error: "too_many" }); c = newConv(id, pageOf(d.page)); CONVS.set(id, c); }
         const pg = pageOf(d.page); if (pg) { c.page = pg; c.pages = (c.pages || []).filter(x => x !== pg).concat([pg]).slice(-10); }
         const nm = line(d.name, 80); if (nm) c.name = nm;
-        if (c.closed) c.closed = false;
+        if (c.closed) return J(res, 409, { ok: false, error: "closed" });
         setCart(c, d.cart) || (PEND_CART.has(id) && setCart(c, PEND_CART.get(id))); PEND_CART.delete(id);
         const m = await addMsg(c, "v", text);
         const on = isOnline();

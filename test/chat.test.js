@@ -68,7 +68,7 @@ async function startServer(dir, env) {
 (async () => {
   const mock = anthropicMock(); await new Promise(r => mock.server.listen(0, "127.0.0.1", r));
   const dir = copyApp();
-  const srv = await startServer(dir, { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: "http://127.0.0.1:" + mock.server.address().port, CHAT_BEAT_TTL_MS: "1500", CHAT_AI_CONV_MAX: "5" });
+  const srv = await startServer(dir, { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: "http://127.0.0.1:" + mock.server.address().port, CHAT_BEAT_TTL_MS: "1500", CHAT_AI_CONV_MAX: "5", CHAT_ME_QUIET_MS: "1" });
   const B = srv.base;
   let ipN = 1;
   const pub = (p, body, hdr) => fetch(B + p, body ? { method: "POST", headers: Object.assign({ "Content-Type": "application/json", "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}), body: JSON.stringify(body) } : { headers: Object.assign({ "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}) });
@@ -330,7 +330,7 @@ async function startServer(dir, env) {
   await t("Beenden (Besucher sieht „beendet“, neue Nachricht öffnet wieder) und Löschen", async () => {
     const c = await adm("/admin/api/chat/op", { id: A, op: "close" }); assert.strictEqual(c.conv.closed, true);
     const p = await pj("/chat/api/poll?c=" + A + "&after=0"); assert.strictEqual(p.closed, true); assert.ok(p.msgs.some(m => m.from === "sys" && /beendet/.test(m.text)));
-    await pj("/chat/api/send", { cid: A, text: "Hallo nochmal" }); assert.strictEqual((await adm("/admin/api/chat/conv?id=" + A)).conv.closed, false);
+    const rs = await pj("/chat/api/send", { cid: A, text: "Hallo nochmal" }); assert.strictEqual(rs._status, 409, "beendet: Besucher kann nur nachlesen"); assert.strictEqual((await adm("/admin/api/chat/conv?id=" + A)).conv.closed, true); assert.strictEqual((await pj("/chat/api/status?c=" + A)).closed, true); await adm("/admin/api/chat/op", { id: A, op: "reopen" });
     const d = await adm("/admin/api/chat/op", { id: A, op: "delete" }); assert.strictEqual(d.ok, true);
     assert.ok(!(await adm("/admin/api/chat/state")).convs.some(x => x.id === A)); assert.strictEqual((await adm("/admin/api/chat/conv?id=" + A))._status, 404);
     assert.deepStrictEqual((await pj("/chat/api/poll?c=" + A + "&after=0")).msgs, []);
