@@ -6760,6 +6760,38 @@ module.exports = function (D) {
           stamp(o); await store.putOrder(o);
           return J(res, 200, { ok: true, order: o, warn });
         }
+        // Format eines Auftrags ändern (Simon 18.11.2026): neues Endformat aus den Produktoptionen, Einkaufspreis neu, Kundenpreis bleibt; Datei neu geprüft
+        if (op === "format") {
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
+          const pr = (prod.props || []).find(x => x.slug === "size"), cur = String((o.sel || {}).size || "");
+          if (b.list) return J(res, 200, { ok: true, can: canRedate(o), current: cur, gross: o.price.gross, options: pr ? pr.options.map(x => ({ slug: x.slug, name: x.name })) : [] });
+          if (!canRedate(o)) throw new Error("Schon bei Print.com bestellt – das Format lässt sich hier nicht mehr ändern");
+          const slug = String(b.size || ""), opt = pr && pr.options.find(x => x.slug === slug); if (!opt) throw new Error("Dieses Format gibt es für das Produkt nicht");
+          if (slug === cur) throw new Error("Das ist schon das aktuelle Format");
+          const sh = shipOf(o), cust = Object.assign({}, o.customer, { disc: [] }), pm = o.pcOptions && o.pcOptions.printingmethod ? String(o.pcOptions.printingmethod) : undefined;
+          const n = normalizeSel(prod, { sel: Object.assign({}, o.sel, { size: slug }), copies: o.copies, urgency: o.urgency, custom: o.custom, pm, wish: o.price.wish || "" }); n.fresh = true;
+          if (n.excluded || String(n.sel.size) !== slug) throw new Error("Diese Kombination bietet Print.com nicht an");
+          const q = await quote(prod, n, sh.country, sh.zip, cust);
+          const pu = o.price.purchase || {}, oldTotal = +pu.total || 0, total = +(q.purchase && q.purchase.total) || 0, oldName = ((pr.options.find(x => x.slug === cur) || {}).name) || cur;
+          o.sel = n.sel; o.pcOptions = n.pcOpts; o.labels = n.labels; o.size = n.size; o.sides = n.sides; o.bleed = prod.bleed;
+          o.price.purchase = Object.assign({}, q.purchase); if (!pu.actual) o.price.margin = r2((o.price.margin || 0) - (total - oldTotal));
+          let fileNote = "";
+          if (o.fileId && !(Array.isArray(o.motifs) && o.motifs.length > 1)) {
+            const fm = await store.fileMeta(o.fileId), data = fm && await store.fileData(o.fileId);
+            if (data && data[0] === 0x25 && data[1] === 0x50) { const info = await pdfInfoX(data);
+              if (info && !info.encrypted) {
+                const keep = (fm.checks || []).filter(c => c && !/^(Erweiterte Prüfung)|Seitengröße|Endformat|Beschnitt|Seitenverhältnis|Seite\(n\) –|Seiten –/i.test(c.text || ""));
+                const checks = checkPdf(info, n.size, prod.bleed, n.sides, false).concat(keep);
+                const nf = await newFile("replace", fm.name || "druck.pdf", data, { product: o.product.key, sel: n.fileSel || n.sel, size: n.size, bleed: prod.bleed, sides: n.sides, pages: info.pages }, checks, { orderId: o.id, src: fm.src, original: fm.original });
+                o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: o.fileId, new: nf.id, motif: null, name: nf.name, by: "Cockpit (Format geändert)" }]).slice(-30);
+                o.fileId = nf.id; o.fileName = nf.name; o.fileChecks = checks; fileNote = checks.some(c => c.level === "error") ? " · Datei passt noch nicht" : " · Datei neu geprüft"; } } }
+          if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
+          const diff = r2(q.gross - (o.price.gross || 0));
+          hist(o, "Format geändert (Cockpit): " + oldName + " → " + opt.name + " · Einkauf " + eur(total) + (Math.abs(total - oldTotal) > 0.004 ? " (" + (total > oldTotal ? "+" : "−") + eur(Math.abs(total - oldTotal)) + ")" : "") + " · Kundenpreis unverändert" + (Math.abs(diff) > 0.004 ? " (Shop-Preis jetzt " + eur(q.gross) + ")" : "") + fileNote);
+          stamp(o); await store.putOrder(o);
+          return J(res, 200, { ok: true, order: o, buy: total, oldBuy: oldTotal, shopGross: q.gross, diff });
+        }
         if (op === "requote") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           const prod = await findProduct(o.product.key, null, true);
