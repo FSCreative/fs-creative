@@ -2093,8 +2093,7 @@
       opts.forEach(function (o, i) { var s = Object.assign({}, base); s[q.slug] = o.slug; if (none) s.finish = none.slug; add("q" + i, s); if (none && excluded(s)) { var s2 = Object.assign({}, base); s2[q.slug] = o.slug; add("r" + i, s2); } });
       var dbl = base.printtype === "44", lams = fin ? fin.options.filter(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name) && /matt/i.test(o.slug + " " + o.name); }) : [];
       lams.sort(function (a, b) { return (/^double|beidseit/i.test(b.slug + b.name) === dbl) - (/^double|beidseit/i.test(a.slug + a.name) === dbl); });
-      var coat = function (o) { return /silk|gesatineerd|bilderdruck|gestrichen|coated|matt/i.test(o.slug + " " + o.name) && !/natur|offset|recycl|kraft|invercote|karton/i.test(o.slug + " " + o.name) ? 1 : 0; };   // Hochwertig: schweres gestrichenes Papier
-      q.options.filter(function (o) { return svGr(o) > 0; }).sort(function (a, b) { return (coat(b) - coat(a)) || (svGr(b) - svGr(a)); }).slice(0, 3).forEach(function (h, i) {
+      q.options.filter(function (o) { return svGr(o) > 0; }).sort(function (a, b) { return svGr(b) - svGr(a); }).slice(0, 3).forEach(function (h, i) {
         lams.slice(0, 2).forEach(function (l, j) { var s = Object.assign({}, base); s[q.slug] = h.slug; s.finish = l.slug; add("p" + i + j, s, { lam: true }); }); });
     }
     return C.slice(0, 24);
@@ -2104,13 +2103,11 @@
     var by = ok.slice().sort(function (a, b) { return a.net - b.net; }), hasGr = ok.some(function (c) { return c.gr > 0; });
     V.cheap = by[0];
     var pr = ok.filter(function (c) { return c.lam; }); if (!pr.length) pr = ok;
-    V.prem = pr.slice().sort(function (a, b) { return hasGr ? (b.gr - a.gr) || (a.net - b.net) : b.net - a.net; })[0];   // Kandidaten kommen schon nach „gestrichen, dann schwer“
+    V.prem = pr.slice().sort(function (a, b) { return hasGr ? (b.gr - a.gr) || (b.net - a.net) : b.net - a.net; })[0];
     if (V.prem === V.cheap || V.prem.net <= V.cheap.net + 0.01) V.prem = by.length > 1 && by[by.length - 1].net > V.cheap.net + 0.01 ? by[by.length - 1] : null;
-    // Durchschnitt = „etwas besser“ als Preiswert: schwereres Papier ohne Veredelung, preislich im unteren Viertel zwischen Preiswert und Hochwertig (Bestseller, wenn er dort liegt)
-    var lo = V.cheap.net, hi = V.prem ? V.prem.net : lo * 2, tgt = lo + (hi - lo) * 0.25, base = ok.filter(function (c) { return c.id === "base"; })[0];
-    var btw = ok.filter(function (c) { return c !== V.cheap && c !== V.prem && !c.lam && c.net > lo + 0.01 && c.net < hi - 0.01 && (!hasGr || c.gr >= V.cheap.gr); });
-    var near = function (c) { return Math.abs(c.net - tgt); };
-    V.mid = base && btw.indexOf(base) > -1 && base.net <= lo + (hi - lo) * 0.45 ? base : btw.sort(function (a, b) { return near(a) - near(b); })[0] || null;
+    var lo = V.cheap.net, hi = V.prem ? V.prem.net : Infinity, mid = V.prem ? (lo + hi) / 2 : lo * 1.3, base = ok.filter(function (c) { return c.id === "base"; })[0];
+    var btw = ok.filter(function (c) { return c !== V.cheap && c !== V.prem && c.net > lo + 0.01 && c.net < hi - 0.01; });
+    V.mid = base && btw.indexOf(base) > -1 ? base : btw.sort(function (a, b) { return Math.abs(a.net - mid) - Math.abs(b.net - mid); })[0] || null;
     return V;
   }
   function svLoad() {
