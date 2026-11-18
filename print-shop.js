@@ -6215,7 +6215,7 @@ module.exports = function (D) {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
         if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
         const data = await store.fileData(fid); if (!data) return J(res, 404, { ok: false, error: "Datei nicht mehr vorhanden" });
-        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [0.45, 0.75, 1]);   // hellblau (Simon 18.11.2026) out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
+        let out; try { const sc = await withPdf(() => FILEINFO.spotScan(Buffer.from(data))); sc.recolor(s => s === "White" || SPOT_ALIAS.White.test(String(s).trim()), [0.45, 0.75, 1]); /* hellblau (Simon 18.11.2026) */ out = Buffer.from(await withPdf(() => pdfSave(sc.doc))); }
         catch (e) { return J(res, 400, { ok: false, error: "Weiß-Ansicht nicht möglich: " + String(e.message || e).slice(0, 80) }); }
         return D.send(res, 200, out, "application/pdf", { "Content-Length": String(out.length), "Content-Disposition": 'inline; filename="' + o.nr + '-weiss.pdf"', "Cache-Control": "private, no-store" });
       }
