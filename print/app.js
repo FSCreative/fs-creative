@@ -27,6 +27,18 @@
   // Herkunft (Wunsch Simon 30.10.2026): Vorseite + Einstieg dieses Seitenaufrufs – nur im Speicher, nichts im Browser abgelegt; geht nur mit der Bestellung an uns
   var ORIGIN = { ref: String(document.referrer || "").slice(0, 400), land: (location.pathname + location.search).slice(0, 400) };
   S.page = "home"; S.check = "self"; S.cart = []; S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
+  /* Einfach-Modus (Amateure) und Profi-Modus (Simon 18.11.2026): Einfach = wenige Standardprodukte, nur Format/Menge/Motive + drei Qualitäten
+     (Preiswert / Durchschnitt / Hochwertig), Datei hochladen, automatischer Check, dann Profi-Datencheck, Grafikaufbereitung oder Freigabe.
+     Am Handy immer Einfach; am PC Schalter (Wahl wird gemerkt). Profi = der volle Shop wie bisher. */
+  var SIMPLE_KEYS = ["visitenkarten", "flyer", "folder", "plakate", "postcards", "pvc-banner", "mesh-banner", "rollups", "aufkleber", "printed-letterheads"];
+  var isMob = function () { return window.innerWidth <= 760; };
+  S.pro = false; S.forcePro = false; try { S.pro = localStorage.getItem("fsc-print-pro") === "1"; } catch (e) {}
+  /* Vorschau-Schalter bis zur Freigabe: nur mit ?einfach=1 (bleibt im Browser gemerkt, ?einfach=0 schaltet ab) – alle anderen sehen den Shop wie bisher */
+  var SIMPLE_LIVE = false; try { var qe = new URLSearchParams(location.search).get("einfach"); if (qe === "1" || qe === "0") localStorage.setItem("fsc-print-simple", qe); SIMPLE_LIVE = localStorage.getItem("fsc-print-simple") === "1"; } catch (e) {}
+  var proOn = function () { return !SIMPLE_LIVE || !!(S.forcePro || (S.pro && !isMob())); };
+  var simpleProd = function (p) { return !!p && SIMPLE_KEYS.indexOf(p.key) > -1; };
+  var simpleOn = function () { return !proOn() && simpleProd(S.prod); };
+  var onlyPc = function () { return !proOn() && !!S.prod && !simpleProd(S.prod) && isMob(); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }).replace(/\s/g, " "); };   // „€ 95,24“ nie umbrechen
   var deDate = function (iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }); };
@@ -237,7 +249,8 @@
     if (coverNeed() && S.cover) { it.coverId = S.cover.fileId; it.coverToken = S.cover.token; it.coverName = S.cover.name; }
     if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30), adj: !!F0.adj, place: F0.place || null, pvk: F0.pvk || "" }; }   // adj/place: „Anpassen“ auch beim erneuten Öffnen aus dem Warenkorb
     if (S.fixByUs && S.file && S.file.blocked) { it.fixByUs = true; it.check = S.check === "graphic" ? "graphic" : "pro"; }   // „Für mich richten lassen“: Position bleibt beim Profi-Datencheck
-    S.fixByUs = false;
+    if (simpleOn() && simCkV()) { it.check = simCkV(); if (it.check !== "self" && S.file && S.file.blocked) it.fixByUs = true; it.simple = true; }   // Einfach-Modus: Wahl nach dem automatischen Check
+    S.fixByUs = false; S.simCk = ""; S.simCkF = "";
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
     if (S.design && S.file.kind === "design" && !it.motifs && !it.textile) api("/print/api/draft", Object.assign(cfgOf(), { design: S.design, cart: true })).then(function (j) {
@@ -930,7 +943,9 @@
       api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); fixLabels([j.product]); if (p.slug && !j.product.slug) j.product.slug = p.slug; S.cat.products[i] = p.lite ? Object.assign({}, p, j.product, { lite: false }) : j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
       return;
     }
+    if (!S.pro && SIMPLE_LIVE) S.forcePro = !isMob() && !simpleProd(p);   // am PC: Produkt ohne Einfach-Variante → Profi-Ansicht
     if (!S.prod || S.prod.key !== key) {
+      S.sv = null; S.svPick = "mid"; S.simCk = ""; S.simCkF = "";
       recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; S.autoFix = key; S.pmkImg = 0;
       // Startausführung vom Server (print-shop.js startOf: Auflage + Auswahl passend zu Druckverfahren und Ausschlussregeln – gleicher Preis wie Karten/Weihnachtsseite)
       var st = p.start && p.start.sel && p.kind !== "textile" && (p.tiers || []).indexOf(+p.start.copies) > -1 ? p.start : null;
@@ -1290,12 +1305,14 @@
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
     var xnl = document.querySelector(".nav-links [data-xnav]"); if (xnl) { xnl.classList.toggle("active", S.view === "xmas"); if (S.view === "xmas") xnl.setAttribute("aria-current", "page"); else xnl.removeAttribute("aria-current"); }
     if (S.view === "xmas" && XM_HTML) { root.innerHTML = XM_HTML; headUpdate(); try { document.title = document.title; } catch (e) {} xmHotspots(); return; }
-    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
+    if (!S.view && S.step === 1 && S.forcePro && !S.pro) S.forcePro = false;   // zurück zur Auswahl: wieder Einfach
+    if (!S.view && S.step === 1 && !proOn()) { root.innerHTML = vSimpleHome(); headUpdate(); fromObserve(); return; }   // Einfach-Modus: nur die Standardprodukte
+    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = modeBar() + vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
     var h = S.step > 1 && !(S.step === 4 && !S.cart.length && !S.view) ? stepsHtml() : "";   // leerer Warenkorb: keine Bestellschritte (verwirrt nur)
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
-    if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
+    if ((S.step === 2 || S.step === 3) && onlyPc()) h = vOnlyPc(); else if (S.step === 1) h += modeBar() + vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
     var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) { setTimeout(pfvRender, 0); setTimeout(studioPaint, 0); } if (S.step === 5) setTimeout(pwMeter, 0); document.documentElement.classList.toggle("ps-stu-open", !!(S.step === 3 && S.file && !isLogo() && root.querySelector(".ps-stu"))); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
@@ -1303,7 +1320,8 @@
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Zur Bestellübersicht & Checkout</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
     if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
       m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Weiter zur Lieferung</button>'; root.appendChild(m4); }
-    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
+    if (onlyPc() && (S.step === 2 || S.step === 3)) return;
+    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : simpleOn() ? "Zum Datei-Upload" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !blk(S.file) && !simNeedPick() ?'<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) { renderPrice(); secNav(); fillRows(); dlKick(); }
   }
   // Ausführung: Listen-Kacheln stehen paarweise; bleibt eine allein in der Reihe, nimmt sie die ganze Breite
@@ -1819,14 +1837,14 @@
     if (U(p) !== "m") return ""; var n = +S.copies || 0, roll = +((JSON.stringify(p.fixed || {}).match(/(\d+)_meters?_per_roll/) || [])[1]) || 0, sz = sizeOf(), rep = sz ? Math.max(sz.w, sz.h) : 0;
     return '<span class="ps-td">Die Menge ist in Metern: ' + n.toLocaleString("de-AT") + "\u00a0m Band" + (roll && n >= roll ? ", geliefert auf " + Math.ceil(n / roll) + " Rolle" + (Math.ceil(n / roll) === 1 ? "" : "n") + " à " + roll + "\u00a0m" : "") + "." + (rep >= 100 ? " Dein Motiv wiederholt sich alle " + (rep / 10).toLocaleString("de-AT") + "\u00a0cm (also ca. " + Math.floor(n * 1000 / rep).toLocaleString("de-AT") + "× auf der ganzen Länge)." : "") + "</span>";
   }
-  function amountHtml(p) {
+  function amountHtml(p, noUr) {
     var bt = bestTiers(p), inT = p.tiers.indexOf(S.copies) > -1;
     var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + " (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + "\u00a0" + U() + "", best: bt.indexOf(n) > -1 }; }));
     var sel = ddHtml("copies", "Auflage", qi, S.copies);
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + " " + U() + '"></label>'; }
-    var ur = urTile(p);
+    var ur = noUr ? "" : urTile(p);   // Einfach-Modus: Lieferzeit bleibt Standard
     return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">' + (U(p) === "m" ? "Länge" : "Auflage") + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + meterHint(p) + motNote() + "</div>" + motHtml() + ur   // Motive direkt unter der Auflage, Lieferung/Kalender immer zuletzt (Simon 04.11.2026);
   }
   // Produktion: Schnell/Express nur zeigen, wenn sie wirklich früher liefern als eine günstigere Stufe (Termine kommen über /print/api/deltas)
@@ -2040,6 +2058,118 @@
     if (rows.length < (tx ? 1 : 2)) return "";
     return '<details class="ps-specs"' + (!p.props.length ? " open" : "") + '><summary>Technische Daten <span class="pd-muted">· ' + rows.length + " Angaben</span></summary><dl>" + rows.map(function (r) { return "<div><dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd></div>"; }).join("") + "</dl></details>";
   }
+  // ── Einfach-Modus (Simon 18.11.2026) ──
+  function modeBar() { if (isMob() || !SIMPLE_LIVE) return ""; var pro = proOn();
+    return '<div class="ps-modebar" role="group" aria-label="Bestellmodus"><span class="ps-modebar-l">Bestellen:</span><button type="button" data-act="promode:0" aria-pressed="' + !pro + '">Einfach</button><button type="button" data-act="promode:1" aria-pressed="' + pro + '">Profi</button><small>' + (pro ? "Alle Produkte und Optionen, Online-Designer, Studio" : "Standardprodukte · Format, Menge, Qualität · Datei hochladen") + "</small></div>"; }
+  function vSimpleHome() {
+    var l = SIMPLE_KEYS.map(prodByKey).filter(Boolean);
+    return '<div class="ps-simh">' + modeBar() + '<h1>Was möchtest du drucken?</h1><p class="sub">So einfach geht’s: Produkt wählen, Format und Menge einstellen, Qualität aussuchen, Datei hochladen – fertig. Jede Datei wird automatisch geprüft.</p>' +
+      '<div class="ps-simg">' + l.map(cardSm).join("") + "</div>" +
+      (isMob() ? '<p class="ps-simpc"><span aria-hidden="true">🖥️</span> Textilien, Werbeartikel, Broschüren und alle weiteren Produkte mit allen Optionen findest du am PC im Profi-Modus.</p>'
+        : '<p class="ps-simpc">Mehr Produkte und alle Optionen? <button type="button" class="ps-link" data-act="promode:1">Zum Profi-Modus</button></p>') + "</div>";
+  }
+  function vOnlyPc() { var p = S.prod;
+    return '<div class="ps-layout"><div class="ps-panel ps-onlypc"><span class="ic" aria-hidden="true">🖥️</span><h2>' + esc(p.title) + " bestellst du am PC</h2>" +
+      '<p class="sub">Dieses Produkt hat viele Optionen – am Computer im Profi-Modus geht das bequem. Am Handy findest du unsere Standardprodukte zum schnellen Bestellen.</p>' +
+      '<div class="btns"><button type="button" class="ps-btn primary" data-act="onlypcshare">Link merken oder teilen</button><button type="button" class="ps-btn" data-act="shop">Zu den Standardprodukten</button></div>' +
+      '<p class="ps-terms"><button type="button" class="ps-link" data-act="forcepro">Trotzdem hier am Handy ansehen</button></p></div></div>';
+  }
+  // Drei Qualitäten aus echten Preisen: Preiswert = wirklich das Günstigste (ohne Veredelung), Hochwertig = schweres Papier + matte Folie, Durchschnitt = dazwischen (am liebsten der Bestseller)
+  var SV_FMT = ["size", "fold", "printtype"], svBusyK = "", svTry = 0;
+  function svProp(sl) { return S.prod.props.filter(function (x) { return x.slug === sl; })[0]; }
+  function svQ() { var r = svProp("roll_up_banners"); return r && r.options.length > 1 ? r : svProp("material"); }
+  function svOpt(pr, v) { return pr.options.filter(function (o) { return o.slug === v; })[0] || { name: "", slug: "" }; }
+  var svGr = function (o) { return +((String((o.name || "") + " " + (o.slug || "")).match(/(\d{2,4})\s*(g|gr)(?![a-z])/i) || [])[1] || 0); };
+  function svKey() { return JSON.stringify([S.prod.key, S.sel.size || "", S.sel.fold || "", S.sel.printtype || "", isCustom() ? [S.custom.w, S.custom.h] : 0, S.copies, S.ctype, S.urgency, S.mot.n]); }
+  function svBase() { var b = Object.assign({}, S.presetBase || S.sel); SV_FMT.forEach(function (k) { if (S.sel[k] != null) b[k] = S.sel[k]; }); return b; }
+  function svCands() {
+    var base = svBase(), q = svQ(), fin = svProp("finish"), C = [], seen = {};
+    var none = fin ? fin.options.filter(function (o) { return NONE_RX.test(String(o.name).trim()) || /^(none|no|geen)$/i.test(o.slug); })[0] : null;
+    var add = function (id, sel, extra) { if (excluded(sel)) return; var k = JSON.stringify(sel); if (seen[k]) return; seen[k] = 1; C.push(Object.assign({ id: id, sel: sel, gr: q ? svGr(svOpt(q, sel[q.slug])) : 0 }, extra || {})); };
+    add("base", Object.assign({}, base));
+    if (q) {
+      var opts = q.options.filter(function (o) { return !NONE_RX.test(String(o.name).trim()) && o.slug !== "none"; });
+      if (opts.length > 12) { opts = opts.slice().sort(function (a, b) { return svGr(a) - svGr(b); }); var st = (opts.length - 1) / 11, pk = []; for (var i = 0; i < 12; i++) if (pk.indexOf(opts[Math.round(i * st)]) < 0) pk.push(opts[Math.round(i * st)]); opts = pk; }
+      opts.forEach(function (o, i) { var s = Object.assign({}, base); s[q.slug] = o.slug; if (none) s.finish = none.slug; add("q" + i, s); if (none && excluded(s)) { var s2 = Object.assign({}, base); s2[q.slug] = o.slug; add("r" + i, s2); } });
+      var dbl = base.printtype === "44", lams = fin ? fin.options.filter(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name) && /matt/i.test(o.slug + " " + o.name); }) : [];
+      lams.sort(function (a, b) { return (/^double|beidseit/i.test(b.slug + b.name) === dbl) - (/^double|beidseit/i.test(a.slug + a.name) === dbl); });
+      q.options.filter(function (o) { return svGr(o) > 0; }).sort(function (a, b) { return svGr(b) - svGr(a); }).slice(0, 3).forEach(function (h, i) {
+        lams.slice(0, 2).forEach(function (l, j) { var s = Object.assign({}, base); s[q.slug] = h.slug; s.finish = l.slug; add("p" + i + j, s, { lam: true }); }); });
+    }
+    return C.slice(0, 24);
+  }
+  function svPickFrom(key, ok) {
+    var V = { key: key }; if (!ok.length) return V;
+    var by = ok.slice().sort(function (a, b) { return a.net - b.net; }), hasGr = ok.some(function (c) { return c.gr > 0; });
+    V.cheap = by[0];
+    var pr = ok.filter(function (c) { return c.lam; }); if (!pr.length) pr = ok;
+    V.prem = pr.slice().sort(function (a, b) { return hasGr ? (b.gr - a.gr) || (b.net - a.net) : b.net - a.net; })[0];
+    if (V.prem === V.cheap || V.prem.net <= V.cheap.net + 0.01) V.prem = by.length > 1 && by[by.length - 1].net > V.cheap.net + 0.01 ? by[by.length - 1] : null;
+    var lo = V.cheap.net, hi = V.prem ? V.prem.net : Infinity, mid = V.prem ? (lo + hi) / 2 : lo * 1.3, base = ok.filter(function (c) { return c.id === "base"; })[0];
+    var btw = ok.filter(function (c) { return c !== V.cheap && c !== V.prem && c.net > lo + 0.01 && c.net < hi - 0.01; });
+    V.mid = base && btw.indexOf(base) > -1 ? base : btw.sort(function (a, b) { return Math.abs(a.net - mid) - Math.abs(b.net - mid); })[0] || null;
+    return V;
+  }
+  function svLoad() {
+    var key = svKey(); if (svBusyK === key) return; svBusyK = key;
+    var C = svCands(); if (!C.length) { S.sv = { key: key }; svBusyK = ""; return; }
+    var cfg = Object.assign(cfgOf(), { pm: "auto", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }), parts = [];
+    for (var i = 0; i < C.length; i += 12) parts.push(C.slice(i, i + 12));   // Server nimmt max. 12 Varianten je Abfrage (Preise relativ zur gleichen Basis)
+    Promise.all(parts.map(function (pt) { return api("/print/api/deltas", Object.assign({}, cfg, { alts: pt.map(function (c) { return { k: c.id, sel: c.sel }; }) })); })).then(function (rs) {
+      if (!S.prod || svKey() !== key) { svBusyK = ""; return; }
+      var busy = rs.some(function (r) { return r && r.busy; }), D = {}; rs.forEach(function (r) { if (r && r.ok && r.d) Object.assign(D, r.d); });
+      C.forEach(function (c) { var x = D[c.id]; if (x && x.busy) busy = true; c.net = x && !x.off && !x.busy && isFinite(x.net) ? +x.net : NaN; c.gross = x && isFinite(x.gross) ? +x.gross : NaN; });
+      var ok = C.filter(function (c) { return isFinite(c.net); });
+      if (busy && svTry++ < 4) { svBusyK = ""; setTimeout(function () { if (S.step === 2 && simpleOn()) svLoad(); }, 2500); return; }
+      svTry = 0; S.sv = svPickFrom(key, ok); svBusyK = ""; svApply(); if (S.step === 2 && simpleOn()) { render(); loadPrice(); }
+    }).catch(function () { svBusyK = ""; S.sv = { key: key }; if (S.step === 2 && simpleOn()) render(); });
+  }
+  function svApply() { var V = S.sv; if (!V || !S.prod || V.key !== svKey()) return; var x = V[S.svPick] || V.mid || V.cheap; if (!x) return; S.sel = Object.assign({}, x.sel); fixSel(); }
+  function svDesc(sel) { var q = svQ(), fin = svProp("finish"), t = []; if (q) t.push(optName(q.slug, sel[q.slug])); if (fin && sel.finish) { var fn = optName("finish", sel.finish); if (fn && !NONE_RX.test(String(fn).trim())) t.push(fn); } return t.filter(Boolean).join(" · "); }
+  function svHtml() {
+    var V = S.sv && S.sv.key === svKey() ? S.sv : null, co = S.ctype === "company";
+    var L = [["cheap", "Preiswert", "Das Günstigste – solide Standardqualität"], ["mid", "Durchschnitt", "Etwas besser – unsere Empfehlung"], ["prem", "Hochwertig", "Schwer und veredelt – macht Eindruck"]];
+    var cur = V && (V[S.svPick] || V.mid || V.cheap), avail = V ? L.filter(function (l) { return V[l[0]]; }) : [];
+    var body = !V ? '<p class="pd-muted"><span class="ps-spin"></span> Qualitäten werden berechnet …</p>' : !avail.length ? '<p class="pd-muted">Für diese Auswahl gibt es eine Standardqualität.</p>' :
+      '<div class="ps-pres ps-svs">' + avail.map(function (l) { var x = V[l[0]], on = x === cur, fk = co ? "net" : "gross", d = cur && isFinite(x[fk]) && isFinite(cur[fk]) ? x[fk] - cur[fk] : null;
+        var dd = on ? '<span class="ck">✓ gewählt</span>' : d == null ? "" : '<span class="pp">' + (Math.abs(d) < 0.005 ? "gleicher Preis" : (d > 0 ? "+ " : "− ") + eur(Math.abs(d))) + "</span>";
+        return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-act="svpick:' + l[0] + '" aria-pressed="' + on + '"><b>' + l[1] + "</b><small>" + esc(l[2]) + '</small><small class="ps-svd">' + esc(svDesc(x.sel)) + "</small>" + dd + "</button>"; }).join("") + "</div>";
+    return '<section class="ps-sec ps-pre" id="psSv"><h3>2. Qualität</h3>' + body + "</section>";
+  }
+  function vSimpleOptions() {
+    var p = S.prod; if (!S.sv || S.sv.key !== svKey()) svLoad();
+    var fmt = p.props.filter(function (pr) { return SV_FMT.indexOf(pr.slug) > -1 && propVisible(pr) && pr.options.length > 1; });
+    var custom = p.kind === "banner" && p.custom && !fmt.some(function (pr) { return pr.slug === "size"; }) ? customHtml() : "";
+    var im = galImgs(p), thumb = im.length ? '<div class="ps-cfg-ims"><button type="button" class="ps-cfg-im" data-galzoom="1" aria-label="Produktbilder ansehen"><img src="' + esc(String(im[0]).replace(/w=\d+/, "w=400")) + '" alt="' + esc(p.title) + '"></button></div>' : "";
+    return '<div class="ps-layout ps-cfgv ps-simv"><div class="ps-cfgm">' + modeBar() + '<div class="ps-cfg-h">' + thumb + "<div><h1>" + esc(p.title) + '</h1><p class="sub">Format und Menge wählen, Qualität aussuchen, Datei hochladen – fertig.</p>' + cfgBarHtml() + "</div></div>" +
+      '<section class="ps-sec"><h3>1. Format &amp; Menge</h3><div class="ps-cfg">' + sec("Format", fmt.map(tileHtml).join(""), custom) + amountHtml(p, true) + "</div></section>" + svHtml() +
+      '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">Weiter zum Datei-Upload</button></div></div>' +
+      '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
+  }
+  function simFileHtml(f) {
+    var n = simIssues(f), c = simCkV(), bad = (f.checks || []).filter(function (x) { return x.level !== "ok"; }), okN = (f.checks || []).filter(function (x) { return x.level === "ok"; });
+    var st = n === 2 ? ["bad", "Deine Datei hat Fehler", "So kann sie nicht gedruckt werden. Lass sie von uns prüfen oder herrichten – oder lade eine korrigierte Datei hoch."]
+      : n ? ["warn", "Automatisch geprüft – mit Hinweisen", "Bitte lies die Hinweise und wähle unten, wie es weitergehen soll."] : ["ok", "Automatisch geprüft – druckfertig", "Format, Beschnitt und Auflösung passen."];
+    var opt = function (v, t, d, dis) { var on = c === v; return '<button type="button" class="ps-simo' + (on ? " on" : "") + '" data-act="simck:' + v + '" aria-pressed="' + on + '"' + (dis ? " disabled" : "") + "><i aria-hidden=\"true\"></i><span><b>" + t + "</b><small>" + d + "</small></span></button>"; };
+    var pick = '<div class="ps-simck" id="psSimCk"><h3>' + (n ? "Wie soll es weitergehen?" : "Zusätzlich persönlich prüfen lassen?") + "</h3>" +
+      opt("pro", "Profi-Datencheck · +" + eur(PRO_CHECK), "Wir prüfen deine Datei persönlich vor dem Druck und melden uns, falls etwas nicht passt.") +
+      opt("graphic", "Grafikaufbereitung · +" + eur(GRAPHIC_CHECK), "Wir richten deine Datei druckfertig her – z. B. Format, Beschnitt, Schriften, Farben.") +
+      opt("self", n ? "Trotz Hinweisen so drucken" : "Nein danke, so drucken", n === 2 ? "Bei Fehlern leider nicht möglich." : n ? "Du gibst die Datei auf eigenes Risiko frei – gedruckt wird genau so, wie sie ist." : "Die Datei ist automatisch geprüft und passt.", n === 2) + "</div>";
+    return '<div class="ps-simf"><div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + "</span><div><b>" + esc(f.name || "Druckdatei") + "</b><small>" + (f.pages ? f.pages + " Seite" + (f.pages === 1 ? "" : "n") : "") + (f.bytes ? (f.pages ? " · " : "") + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act"><a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF ansehen</a><button type="button" class="ps-link" data-act="clearfile">Andere Datei</button></div></div>' +
+      '<div class="ps-qual ' + st[0] + '"><i aria-hidden="true"></i><div><b>' + st[1] + "</b><span>" + st[2] + "</span></div></div>" + backHtml(f) +
+      (bad.length ? '<div class="ps-upv-chk">' + checksHtml(bad) + "</div>" : "") + '<div id="psPfvW"></div>' + (okN.length ? '<details class="ps-simok"><summary>Was automatisch geprüft wurde (' + okN.length + ")</summary>" + checksHtml(okN) + "</details>" : "") +
+      (f.preflight && f.preflight.status === "PROCESSING" ? '<p class="pd-muted"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>' : "") +
+      '<div class="ps-pfv ps-simpv" id="psPfv" data-fid="' + esc(f.fileId) + '"><div class="ps-pfv-c"></div></div>' + pick + "</div>";
+  }
+  function vSimpleDesign(p, mtabs, spec, h) {
+    var f = S.file, sz = sizeOf(), sd = sides(); if (!S.mode) S.mode = "upload";
+    h = h.replace(/<h2>[\s\S]*?<\/h2>/, "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": Datei hochladen" : "Datei hochladen") + "</h2>");
+    if (!f) h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() || multiMot() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 500 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : multiMot() ? " · mehrere Dateien auf einmal = je Datei ein Motiv" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() + reqHtml(true) +
+      '<p class="ps-simhint"><span aria-hidden="true">💡</span> Keine Sorge: Wir prüfen deine Datei sofort automatisch. Passt etwas nicht, kannst du sie von uns prüfen oder herrichten lassen.</p>';
+    else h += simFileHtml(f);
+    var ok = f && !blk(f) && !simNeedPick();
+    return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button>' + (ok ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (f ? "Bitte oben wählen, wie es weitergehen soll." : "Lade deine Druckdatei hoch.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
+  }
   // ── Schnellauswahl: drei fertige Pakete (Beliebt / Günstig / Hochwertig) – ein Klick, darunter weiterhin die volle Auswahl ──
   var PRE = {};
   function presetsOf(p) {
@@ -2088,6 +2218,7 @@
       '<p class="ps-newbie"><span aria-hidden="true">👋</span> <span><b>Neu beim Drucken?</b> Die Vorauswahl passt für die meisten – einfach auf „Weiter zur Gestaltung“. Dort lädst du deine Datei hoch, gestaltest online oder lässt uns gestalten. Unsicher? <a class="ps-link" href="#" data-chat-open>Frag uns im Chat</a>.</span></p></section>';
   }
   function vOptions() {
+    if (simpleOn()) return vSimpleOptions();
     var p = S.prod, v = selValues(), k = kind();
     var props = presetHtml(p) + sectionsHtml(p), cust = "";
     var amount = k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" : amountHtml(p);
@@ -2101,7 +2232,7 @@
         return '<button type="button" data-galpop="' + (i + 1) + '" aria-label="' + (rest ? "Alle " + im.length + " Bilder ansehen" : "Bild " + (i + 2) + " ansehen") + '"><img src="' + esc(String(u).replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy">' + (rest ? "<span>+" + rest + "</span>" : "") + "</button>"; }).join("") + "</div>" : "") + "</div>" : "";
     var fct = facts(p), sz = sizeOf(), b0 = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Eigene Datei: bitte rundherum " + String(b0).replace(".", ",") + " mm mehr Hintergrund anlegen, der beim Schneiden wegfällt (" + mmF(sz.w + 2 * b0) + " × " + mmF(sz.h + 2 * b0) + " mm)" + (p.designer ? " – im Online-Designer automatisch" : "") : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
-    return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h1>' + esc(p.title) + '</h1><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + cfgBarHtml() + "</div></div>" +
+    return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + modeBar() + crumbs +'<div class="ps-cfg-h">' + thumb + '<div><h1>' + esc(p.title) + '</h1><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + cfgBarHtml() + "</div></div>" +
       (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + (p.mustTpl ? '<p class="ps-musttpl" role="note"><b>⚠️ Vorlage verwenden:</b> ' + esc(p.mustTpl) + "</p>" : "") + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) + accHtml(p) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
@@ -2282,6 +2413,7 @@
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = cbackHtml() + '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0" + U() + " · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
     var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
+    if (simpleOn()) return vSimpleDesign(p, mtabs, spec, h);
     if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
       var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
@@ -2393,7 +2525,11 @@
     var fix = e && f.blocked ? (S.fixByUs ? '<button type="button" class="ps-link" data-act="fixbyus:0">Doch selbst korrigieren</button>' : '<button type="button" class="ps-btn primary ps-fixbtn" data-act="fixbyus:1">Für mich richten lassen · Profi-Datencheck +' + eur(PRO_CHECK) + "</button>") : "";
     return '<div class="ps-qual ' + st[0] + '"><i aria-hidden="true"></i><div><b>' + st[1] + "</b><span>" + st[2] + "</span>" + (fix ? '<div style="margin-top:8px">' + fix + "</div>" : "") + "</div></div>";
   }
-  function blk(f) { return !!(f && f.blocked && !S.fixByUs); }   // gesperrt, außer der Kunde lässt die Datei von uns richten
+  function blk(f) { var c = simCkV(); return !!(f && f.blocked && !S.fixByUs && !(simpleOn() && (c === "pro" || c === "graphic"))); }
+  // Einfach-Modus: Datei mit Hinweisen/Fehlern → Kunde muss wählen (Profi-Datencheck, Grafikaufbereitung oder trotzdem freigeben); Wahl gilt nur für diese Datei
+  function simCkV() { return S.file && S.simCkF === S.file.fileId ? S.simCk || "" : ""; }
+  function simIssues(f) { f = f || S.file; if (!f || f.noFile) return 0; var c = f.checks || []; return c.some(function (x) { return x.level === "error"; }) || f.blocked || f.edgeErr ? 2 : c.some(function (x) { return x.level === "warn"; }) || (f.edgeWarn || []).length ? 1 : 0; }
+  function simNeedPick() { if (!simpleOn() || !S.file) return false; var n = simIssues(), c = simCkV(); return n > 0 && !(c === "pro" || c === "graphic" || (c === "self" && n < 2)); }   // gesperrt, außer der Kunde lässt die Datei von uns richten
   // Vorschau der Druckdatei (pdf.js) mit Beschnitt, Endformat und Sicherheitsabstand + Randanalyse (Inhalte zu nah am Rand, fehlender Beschnitt)
   var PDFJS = null, PFV = {};
   function pdfjs() { if (PDFJS) return PDFJS; PDFJS = new Promise(function (res, rej) { var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = function () { PDFJS = null; rej(new Error("pdf.js")); }; document.head.appendChild(sc); }); return PDFJS; }
@@ -3051,8 +3187,15 @@
     if (k === "backremove") { if (S.fileFront) { S.file = S.fileFront; S.fileFront = null; } S.backEdit = false; S.previews = null; S.pmkSide = 0; render(); return; }
     if (k === "editdesign") return openDesigner();
     if (k === "adjopen") { S.adjOpen = true; render(); return; }
+    if (k === "promode") { S.pro = v === "1"; S.forcePro = false; try { localStorage.setItem("fsc-print-pro", S.pro ? "1" : "0"); } catch (e2) {}
+      if (!S.pro && S.prod && !simpleProd(S.prod) && (S.step === 2 || S.step === 3)) { setPage("home"); toast("Einfach-Modus: hier findest du die Standardprodukte"); return; }
+      if (S.step === 3 && !S.file) S.mode = ""; if (S.step === 2 && simpleOn()) svApply(); render(); if (S.step === 2) loadPrice(); toast(S.pro ? "Profi-Modus: alle Produkte und Optionen" : "Einfach-Modus: Format, Menge, Qualität – fertig"); return; }
+    if (k === "forcepro") { S.forcePro = true; render(); if (S.step === 2) loadPrice(); return; }
+    if (k === "onlypcshare") { shareLink(location.href, S.prod ? S.prod.title + " – FS Creative Druckshop" : "FS Creative Druckshop", "Am PC öffnen: alle Optionen im Profi-Modus"); return; }
+    if (k === "simck") { S.simCk = v; S.simCkF = S.file ? S.file.fileId : ""; render(); return; }
+    if (k === "svpick") { S.svPick = v; svApply(); render(); loadPrice(); return; }
     if (k === "fixbyus") { S.fixByUs = v === "1"; if (S.fixByUs && S.check !== "graphic") S.check = "pro"; render(); toast(S.fixByUs ? "Profi-Datencheck gewählt – wir richten deine Datei vor dem Druck ✓" : "Ok – bitte die rot markierten Punkte selbst korrigieren"); return; }
-    if (k === "next3") { if (S.file && S.file.rebinding) { toast("Einen Moment – deine Datei wird für die neue Ausführung geprüft …"); return; } if (!S.file || blk(S.file)) return; if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
+    if (k === "next3") { if (S.file && S.file.rebinding) { toast("Einen Moment – deine Datei wird für die neue Ausführung geprüft …"); return; } if (!S.file || blk(S.file)) return; if (simNeedPick()) { toast("Bitte wähle noch, wie es mit deiner Datei weitergehen soll", true); var sp9 = document.getElementById("psSimCk"); if (sp9) sp9.scrollIntoView({ behavior: "smooth", block: "center" }); return; } if (coverNeed() && !(S.cover && !S.cover.blocked)) { toast("Bitte noch die Umschlag-Datei hochladen", true); return; } if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
       if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }
         if (miss > -1) { motLoad(miss); toast("Jetzt Motiv " + (miss + 1) + " gestalten oder hochladen"); render(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
         if (motSum() !== +S.copies) { toast("Die Stückzahlen der Motive ergeben nicht die Auflage – bitte in „Ausführung“ anpassen", true); return; } }
