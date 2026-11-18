@@ -139,14 +139,32 @@ module.exports = function (D) {
     BUSY.add(f.id);
     try {
       await appendChunk(req, l, f, offset);
-      if (f.got >= f.size) { f.done = true; f.doneAt = nowIso(); if (f.by !== "fs") { l.lastAt = f.doneAt; notify(l); } save(); log("Datei fertig:", l.title, "·", f.name, "·", human(f.size), f.by === "fs" ? "(Cockpit)" : ""); }
+      if (f.got >= f.size) { f.done = true; f.doneAt = nowIso(); if (f.by !== "fs") { l.lastAt = f.doneAt; notify(l); } save(); log("Datei fertig:", l.title, "·", f.name, "·", human(f.size), f.by === "fs" ? "(Cockpit)" : "");
+        if (isStand(f)) setImmediate(() => makeTrim(l, f)); }
       else save(true);
       return { ok: true, got: f.got, done: !!f.done };
     } finally { BUSY.delete(f.id); }
   }
+  /* Zeitung als „Aktueller Stand“ ohne weißen Rand (Simon 18.11.2026): jede Seite auf ihr Endformat (TrimBox) zuschneiden –
+     Beschnittzugabe und Schnittmarken fallen weg. Fassung liegt neben der Datei (<id>.trim); Download bleibt das Original. */
+  const isStand = f => f.by === "fs" && (f.dir || "") === STAND_DIR && /\.pdf$/i.test(f.name);
+  const TRIMQ = new Set();
+  async function makeTrim(l, f) {
+    if (TRIMQ.has(f.id) || f.trim) return; TRIMQ.add(f.id);
+    try {
+      if (f.size > 400 * 1024 * 1024) { f.trim = "big"; return; }
+      const PL = require("pdf-lib"), doc = await PL.PDFDocument.load(fs.readFileSync(fileOf(l, f)), { updateMetadata: false, ignoreEncryption: true });
+      let ch = 0; doc.getPages().forEach(p => { const t = p.getTrimBox(), m = p.getMediaBox(); if (t.width > 10 && t.height > 10 && (t.width < m.width - 1 || t.height < m.height - 1)) { p.setMediaBox(t.x, t.y, t.width, t.height); p.setCropBox(t.x, t.y, t.width, t.height); p.setBleedBox(t.x, t.y, t.width, t.height); ch++; } });
+      if (!ch) { f.trim = "same"; return; }
+      fs.writeFileSync(fileOf(l, f) + ".trim", Buffer.from(await doc.save({ useObjectStreams: false })));
+      f.trim = "ok"; log("Stand zugeschnitten:", l.title, "·", f.name, "·", ch, "Seiten");
+    } catch (e) { f.trim = "err"; log("Stand zuschneiden:", e.message); } finally { TRIMQ.delete(f.id); save(true); }
+  }
   const liveFiles = l => (l.files || []).filter(f => f.done && !f.deleted);
   function sendFile(res, l, f, inline) {
-    const fp = fileOf(l, f); let st; try { st = fs.statSync(fp); } catch (e) { return J(res, 404, { ok: false, error: "Datei fehlt auf dem Speicher" }); }
+    let fp = fileOf(l, f), st;
+    if (inline && isStand(f)) { if (f.trim === "ok") { try { fs.statSync(fp + ".trim"); fp += ".trim"; } catch (e) { f.trim = ""; } } if (!f.trim) setImmediate(() => makeTrim(l, f)); }   // Ansicht/Druck: zugeschnittene Fassung
+    try { st = fs.statSync(fp); } catch (e) { return J(res, 404, { ok: false, error: "Datei fehlt auf dem Speicher" }); }
     const pdfIn = !!inline && /\.pdf$/i.test(f.name);   // Buchansicht/Drucken: PDF im Browser öffnen statt herunterladen
     res.writeHead(200, Object.assign({}, SEC, { "Content-Type": pdfIn ? "application/pdf" : "application/octet-stream", "Content-Length": String(st.size), "Content-Disposition": (pdfIn ? "inline" : "attachment") + "; filename*=UTF-8''" + encodeURIComponent(f.name) }, pdfIn ? { "X-Frame-Options": "SAMEORIGIN" } : {}));
     fs.createReadStream(fp).pipe(res);
@@ -174,7 +192,7 @@ module.exports = function (D) {
   // Dateien und/oder Ordner (samt Inhalt) endgültig löschen → Anzahl gelöschter Dateien
   function removeItems(l, ids, dirs) {
     const idS = new Set([].concat(ids || []).map(String)), ds = [].concat(dirs || []).map(safeDir).filter(Boolean); let n = 0;
-    (l.files || []).forEach(f => { if (f.deleted) return; if (idS.has(f.id) || (f.dir && ds.some(d => inDir(f.dir, d)))) { try { fs.unlinkSync(fileOf(l, f)); } catch (e) {} f.deleted = nowIso(); n++; } });
+    (l.files || []).forEach(f => { if (f.deleted) return; if (idS.has(f.id) || (f.dir && ds.some(d => inDir(f.dir, d)))) { try { fs.unlinkSync(fileOf(l, f)); } catch (e) {} try { fs.unlinkSync(fileOf(l, f) + ".trim"); } catch (e) {} f.deleted = nowIso(); n++; } });
     if (ds.length) l.dirs = (l.dirs || []).filter(x => !ds.some(d => inDir(x, d)));
     save(); return n;
   }
@@ -285,7 +303,7 @@ module.exports = function (D) {
         if (b.op === "deleteFile") { const f = (l.files || []).find(x => x.id === String(b.file || "")); if (!f) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
           removeItems(l, [f.id], []); return J(res, 200, { ok: true, link: summary(l) }); }
         if (b.op === "deleteDir") { const d = safeDir(b.dir); if (!d) return J(res, 400, { ok: false, error: "Ordner fehlt" }); removeItems(l, [], [d]); return J(res, 200, { ok: true, link: summary(l) }); }
-        if (b.op === "deleteLink") { (l.files || []).forEach(f => { try { fs.unlinkSync(fileOf(l, f)); } catch (e) {} }); try { fs.rmdirSync(path.join(DIR, l.id)); } catch (e) {}
+        if (b.op === "deleteLink") { (l.files || []).forEach(f => { try { fs.unlinkSync(fileOf(l, f)); } catch (e) {} try { fs.unlinkSync(fileOf(l, f) + ".trim"); } catch (e) {} }); try { fs.rmdirSync(path.join(DIR, l.id)); } catch (e) {}
           L = load().filter(x => x !== l); save(); return J(res, 200, { ok: true }); }
       }
     } catch (e) { if (res.headersSent) return void res.destroy(); return J(res, e.status || 500, { ok: false, error: e.message || "Fehler" }); }
