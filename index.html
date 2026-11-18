@@ -1758,6 +1758,7 @@ html.light{
   // /leistungen landing pages) must load natively, not via the SPA router.
   var SPA_ROUTES = { '/': 1 };
   pages.forEach(function(p){ var r = p.getAttribute('data-route'); if(r){ SPA_ROUTES[r] = 1; } });
+  delete SPA_ROUTES['/'];   /* Startseite ist seit 18.11.2026 eigene Seite (start.html) – Links auf / laden sie neu */
 
   function currentRoute(){
     var p = (location.pathname || '/').replace(/\/+$/, '');

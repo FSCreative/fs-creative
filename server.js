@@ -5537,11 +5537,12 @@ const server = http.createServer((req, res) => {
     if (p === "/admin/api/uploads" || p.indexOf("/admin/api/uploads/") === 0) return void guard(res, UPLOADS.handleAdmin(req, res, u, p));
     // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml; Ersatz bei Shop offline in <!--PRINT_OFF-->…<!--/PRINT_OFF-->)
     if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/leistungen" || p === "/leistungen.html" || p === "/sitemap.xml")) {
-      const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
+      // Startseite seit 18.11.2026 eigene Datei start.html (Entwurf A); die übrigen Seiten (/referenzen, /blitzdings …) bleiben in index.html
+      const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "start.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
       // Shop-Einstellungen (Schalter „live“) erst laden – sonst fehlt die Druckshop-Werbung nach einem Neustart, bis jemand /print öffnet
       return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found");
         Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
-          const out = f === "index.html" ? renderIndex(data, "/", on).html : f === "sitemap.xml" ? await sitemapXml(data, on) : printLiveBlocks(data, on);   // Startseite: Titel/Beschreibung je nach Shop-Schalter (ROUTE_META_PRINT)
+          const out = f === "start.html" ? renderIndex(data, "/", on).html : f === "sitemap.xml" ? await sitemapXml(data, on) : printLiveBlocks(data, on);   // Startseite: Titel/Beschreibung je nach Shop-Schalter (ROUTE_META_PRINT)
           sendGz(req, res, 200, out, TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); }); });
     }
     // IndexNow-Schlüsseldatei /<Schlüssel>.txt (indexnow.js)
