@@ -172,7 +172,7 @@ function buildHome(p){
   hm.appendChild(main); hm.appendChild(ls); p.appendChild(hm);
 }
 function drawHome(){ if(!built) return; var L=convs(); el.hmLast.textContent=""; el.hmLast.style.display=L.length?"":"none";
-  if(L.length){ el.hmLast.appendChild(convBtn(L[0])); var all=h("button","fscc-all"); all.type="button"; all.innerHTML='Unterhaltungen ('+L.length+') <span aria-hidden="true">›</span>'; all.addEventListener("click",function(){ drawList(); el.hm.classList.add("lst"); }); el.hmLast.appendChild(all); }
+  if(L.length){ el.hmLast.appendChild(convBtn(L[0])); var all=h("button","fscc-all"); all.type="button"; all.appendChild(d.createTextNode("Unterhaltungen ("+L.length+")")); var ar=h("span",null,"›"); ar.setAttribute("aria-hidden","true"); all.appendChild(ar); all.addEventListener("click",function(){ drawList(); el.hm.classList.add("lst"); }); el.hmLast.appendChild(all); }
   el.hmHint.textContent=online?"Der KI-Assistent antwortet sofort · Simon ist gerade online":"Der KI-Assistent antwortet sofort · Simon meldet sich bei Bedarf persönlich"; }
 function drawList(){ el.hmList.textContent=""; convs().forEach(function(x){ el.hmList.appendChild(convBtn(x)); }); }
 function reset(){ msgs=[]; last=0; painted={}; typing=false; meSeen=0; tyWho=""; if(built){ el.list.textContent=""; el.err.textContent=""; } }

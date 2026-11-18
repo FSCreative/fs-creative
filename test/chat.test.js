@@ -339,7 +339,7 @@ async function startServer(dir, env) {
 
   await t("Clients rendern Nachrichten nur als Text; Cockpit-Ansicht und Push-Thema „chat“ registriert", async () => {
     const w = fs.readFileSync(path.join(ROOT, "chat-widget.js"), "utf8");
-    (w.match(/\.innerHTML\s*=\s*[^;]+/g) || []).forEach(s => assert.ok(/=\s*(IC|'<svg)/.test(s), "innerHTML nur für feste Symbole: " + s));
+    (w.match(/\.innerHTML\s*=\s*[^;]+/g) || []).forEach(s => assert.ok(/=\s*(IC|SV_[A-Z]+|on\?SV_[A-Z]+:SV_[A-Z]+|'<svg)\s*$/.test(s) || /=\s*'<svg/.test(s), "innerHTML nur für feste Symbole: " + s));
     assert.ok(/createTextNode\(m\.text\)/.test(w));
     const z = fs.readFileSync(path.join(ROOT, "admin-cockpit", "zchat.js"), "utf8"); assert.ok(/esc\(m\.text\)/.test(z) && /F\.view\(\{id:"chat",label:"Chat"/.test(z));
     const html = await (await fetch(B + "/admin", { headers: { cookie: COOKIE } })).text(); assert.ok(/zchat\.js/.test(html));
