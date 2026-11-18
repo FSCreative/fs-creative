@@ -5,7 +5,7 @@
 "use strict";
 var W=window, d=document;
 if(W.__fscChat||/^\/admin/.test(location.pathname)||!W.fetch||!W.JSON) return; W.__fscChat=1;
-var vw="home", meSeen=0, tyWho="", tySent=0, K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
+var vw="home", topic="", meSeen=0, tyWho="", tySent=0, K="fsc-chat", st={}, online=false, built=false, isOpen=false, msgs=[], last=0, pollT=null, bgT=null, typing=false, sending=false, closed=false, el={}, upQ=[], upBusy=false;
 var FMAX=15*1024*1024, FTYPES={"image/jpeg":1,"image/png":1,"image/webp":1,"application/pdf":1};
 try{ st=JSON.parse(localStorage.getItem(K)||"null")||{}; }catch(e){ st={}; }
 function save(){ try{ localStorage.setItem(K,JSON.stringify(st)); }catch(e){} }
@@ -145,7 +145,7 @@ function toggle(on,auto){
 }
 function start(){
   paint();
-  api("/chat/api/start",{cid:cid(),page:location.pathname,cart:cartSum()}).then(function(j){ if(!j||!j.ok) return; online=!!j.online; closed=!!j.closed; typing=!!j.typing; msgs=j.msgs||[]; msgs.forEach(function(m){ painted[m.id]=1; }); last=msgs.length?msgs[msgs.length-1].id:0; if(j.name&&!el.nm.value) el.nm.value=j.name; seen(); head(); paint(); schedule(); }).catch(function(){ schedule(); });
+  api("/chat/api/start",{cid:cid(),page:location.pathname,cart:cartSum()}).then(function(j){ if(!j||!j.ok) return; online=!!j.online; closed=!!j.closed; typing=!!j.typing; topic=j.topic||""; msgs=j.msgs||[]; msgs.forEach(function(m){ painted[m.id]=1; }); last=msgs.length?msgs[msgs.length-1].id:0; if(j.name&&!el.nm.value) el.nm.value=j.name; seen(); head(); paint(); schedule(); }).catch(function(){ schedule(); });
 }
 /* ── Startseite (Simon 18.11.2026): Begrüßung, letzte Unterhaltung, alle Unterhaltungen, „Neue Unterhaltung starten“ ──
    Mehrere Unterhaltungen je Browser: st.convs = [{c: ID, t: Zeit, p: Vorschau}], st.cid = die gerade offene */
@@ -155,11 +155,12 @@ function convs(){ if(!Array.isArray(st.convs)){ st.convs=st.cid&&st.started?[{c:
   if(st.convs.length!==n) save(); return st.convs; }
 function note(){ if(!st.started||!st.cid) return; var L=convs(), m=null, i; for(i=msgs.length-1;i>=0;i--){ if(msgs[i].from!=="sys"){ m=msgs[i]; break; } }
   var e=L.filter(function(x){ return x.c===st.cid; })[0]; if(!e){ e={c:st.cid,t:new Date().toISOString(),p:""}; L.unshift(e); }
-  if(m){ e.w=m.from; var p=(m.from==="v"?"Du: ":"")+(m.file?"📎 "+(m.file.name||"Datei"):String(m.text||"")).replace(/\s+/g," ").slice(0,120); if(e.p===p&&e.t===m.at) return; e.p=p; e.t=m.at||""; }
+  var p=topic?"Thema: "+topic:"Neue Anfrage";   /* in der Übersicht nur das Thema, nicht der Text (Simon 18.11.2026) */
+  if(m){ if(e.p===p&&e.t===m.at&&e.w===m.from) return; e.w=m.from; e.t=m.at||""; } e.p=p;
   L.sort(function(a,b){ return String(b.t).localeCompare(String(a.t)); }); st.convs=L.slice(0,30); save(); }
 function when(iso){ var t=new Date(iso); if(isNaN(t)) return ""; var n=new Date(); return t.toDateString()===n.toDateString()?fmt(iso):t.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"}); }
 function convBtn(x){ var b=h("button","fscc-cv"), im=h("img"), tx=h("span","tx"), nm=h("b"); b.type="button"; im.src=x.w==="me"?"/logos/simon-avatar.jpg":KI_AV; im.alt=""; im.width=42; im.height=42; im.style.objectFit="cover";
-  nm.appendChild(d.createTextNode(x.w==="me"?"Simon Felder":"FS Creative · Assistent")); nm.appendChild(h("small",null,when(x.t))); tx.appendChild(nm); tx.appendChild(h("span",null,x.p||"Unterhaltung öffnen"));
+  nm.appendChild(d.createTextNode(x.w==="me"?"Simon Felder":"FS Creative · Assistent")); nm.appendChild(h("small",null,when(x.t))); tx.appendChild(nm); tx.appendChild(h("span",null,/^(Thema:|Neue Anfrage)/.test(x.p||"")?x.p:"Unterhaltung"));
   b.appendChild(im); b.appendChild(tx); b.addEventListener("click",function(){ openConv(x.c); }); return b; }
 function buildHome(p){
   var hm=el.hm=h("div","fscc-hm"), main=h("div","main"), hero=h("div","fscc-hero"), top=h("div","top"), x=h("button","fscc-x");
@@ -179,7 +180,7 @@ function drawHome(){ if(!built) return; var L=convs(); el.hmLast.textContent="";
   if(L.length){ L.slice(0,3).forEach(function(x){ el.hmLast.appendChild(convBtn(x)); });   /* immer die letzten 3 Unterhaltungen (Simon 18.11.2026) */ var all=h("button","fscc-all"); all.type="button"; all.appendChild(d.createTextNode("Unterhaltungen ("+L.length+")")); var ar=h("span",null,"›"); ar.setAttribute("aria-hidden","true"); all.appendChild(ar); all.addEventListener("click",function(){ drawList(); el.hm.classList.add("lst"); }); el.hmLast.appendChild(all); }
   el.hmHint.textContent=online?"Der KI-Assistent antwortet sofort · Simon ist gerade online":"Der KI-Assistent antwortet sofort · Simon meldet sich bei Bedarf persönlich"; }
 function drawList(){ el.hmList.textContent=""; convs().forEach(function(x){ el.hmList.appendChild(convBtn(x)); }); }
-function reset(){ msgs=[]; last=0; painted={}; typing=false; meSeen=0; tyWho=""; if(built){ el.list.textContent=""; el.err.textContent=""; } }
+function reset(){ topic=""; msgs=[]; last=0; painted={}; typing=false; meSeen=0; tyWho=""; if(built){ el.list.textContent=""; el.err.textContent=""; } }
 function view(v,auto){ vw=v; el.p.classList.toggle("home",v!=="chat"); if(v!=="chat"){ clearTimeout(pollT); el.hm.classList.remove("lst"); drawHome(); setTimeout(function(){ try{ el.hmNew.focus({preventScroll:true}); }catch(e){} },60); return; }
   start(); if(!auto) setTimeout(function(){ try{ el.in.focus({preventScroll:true}); }catch(e){ el.in.focus(); } },60); }
 function openConv(c){ if(c!==st.cid){ st.cid=c; st.started=1; st.seen=0; save(); reset(); } view("chat"); }
@@ -188,7 +189,7 @@ function seen(){ if(last&&last!==st.seen){ st.seen=last; save(); } }
 function schedule(){ clearTimeout(pollT); if(isOpen&&vw==="chat") pollT=setTimeout(poll,typing?2000:online?3000:4000); }
 function poll(){
   if(!isOpen||vw!=="chat"){ return; } if(d.hidden){ schedule(); return; }
-  api("/chat/api/poll?c="+cid()+"&after="+last).then(function(j){ if(j&&j.ok){ var ch=online!==!!j.online||typing!==!!j.typing||tyWho!==(j.who||"")||meSeen!==(j.seen||0); meSeen=j.seen||0; online=!!j.online; typing=!!j.typing; tyWho=j.who||""; closed=!!j.closed; add(j.msgs||[]); if(ch){ head(); paint(); } } schedule(); }).catch(schedule);
+  api("/chat/api/poll?c="+cid()+"&after="+last).then(function(j){ if(j&&j.ok){ var ch=online!==!!j.online||typing!==!!j.typing||tyWho!==(j.who||"")||meSeen!==(j.seen||0); meSeen=j.seen||0; online=!!j.online; typing=!!j.typing; tyWho=j.who||""; closed=!!j.closed; if(j.topic&&j.topic!==topic){ topic=j.topic; note(); } add(j.msgs||[]); if(ch){ head(); paint(); } } schedule(); }).catch(schedule);
 }
 function add(arr){ var n=0; arr.forEach(function(m){ if(m.id>last){ msgs.push(m); last=m.id; n++; } }); if(n){ seen(); head(); paint(); } }
 function fmt(iso){ var t=new Date(iso); return isNaN(t)?"":t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }

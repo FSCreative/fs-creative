@@ -361,7 +361,7 @@ module.exports = function (D) {
         const msgs = c.lastId > a ? (await store.msgs(id, a, 100)).map(pubMsg) : [];
         // Gelesen: das Widget fragt nur bei offenem, sichtbarem Chat ab → alles bis lastId hat der Besucher gesehen
         if (c.lastId && (c.vSeen || 0) < c.lastId) { c.vSeen = c.lastId; c.vSeenAt = nowIso(); await store.putConv(c); bump(); }
-        return J(res, 200, { ok: true, online: on, seen: c.meSeen || 0, msgs, typing: BUSY.has(id) || typingOf(ATYP, id), who: BUSY.has(id) ? "ki" : typingOf(ATYP, id) ? "me" : "", closed: !!c.closed });
+        return J(res, 200, { ok: true, online: on, seen: c.meSeen || 0, msgs, typing: BUSY.has(id) || typingOf(ATYP, id), who: BUSY.has(id) ? "ki" : typingOf(ATYP, id) ? "me" : "", closed: !!c.closed, topic: c.topic || "" });
       }
       if (p === "/chat/api/typing" && req.method === "POST") {   // Besucher tippt (gedrosselt im Widget, ~alle 3 s)
         req.resume(); const id = String(u.searchParams.get("c") || "");
@@ -406,7 +406,7 @@ module.exports = function (D) {
         if (c) { const pg = pageOf(d.page), ch = setCart(c, d.cart); if ((pg && pg !== c.page) || ch) { if (pg) c.page = pg; await store.putConv(c); } }
         else if (CID_RX.test(id) && cartOf(d.cart)) { PEND_CART.set(id, d.cart); if (PEND_CART.size > 2000) PEND_CART.delete(PEND_CART.keys().next().value); }
         const msgs = c ? (await store.msgs(id, 0, 100)).map(pubMsg) : [];
-        return J(res, 200, { ok: true, online: await online(), exists: !!c, name: c ? c.name : "", msgs, typing: BUSY.has(id), closed: !!(c && c.closed) });
+        return J(res, 200, { ok: true, online: await online(), exists: !!c, name: c ? c.name : "", msgs, typing: BUSY.has(id), closed: !!(c && c.closed), topic: (c && c.topic) || "" });
       }
       if (p === "/chat/api/send") {
         if (d.website) return J(res, 200, { ok: true, msg: null });                              // Honeypot: Bots bekommen „ok“, nichts wird gespeichert
