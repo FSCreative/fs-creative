@@ -53,6 +53,7 @@ function headHtml(l){ var part=(l.files||[]).filter(function(f){ return !f.done;
     (l.note?'<div class="up-meta">Hinweis für den Kunden: '+esc(l.note)+'</div>':'')+
     '<div class="up-url"><code>'+esc(l.url)+'</code></div>'+
     '</div>'+
+    standBox(l)+
     '<div class="up-acts"><button type="button" class="btn sm" data-act="upcopy:'+esc(l.id)+'">'+F.svg("link")+' Link kopieren</button><button type="button" class="btn sm" data-act="upmail:'+esc(l.id)+'">'+F.svg("send")+' Per Mail</button>'+
     '<a class="btn sm" href="'+esc(l.url)+'" target="_blank" rel="noopener">'+F.svg("external")+' Kundenansicht</a>'+
     '<button type="button" class="btn sm" data-act="uptoggle:'+esc(l.id)+'">'+F.svg("lock")+' '+(l.active?"Schließen":"Wieder öffnen")+'</button>'+
@@ -152,11 +153,11 @@ document.addEventListener("drop",function(e){ if(!osFiles(e)) return; var t=e.ta
     out.filter(function(o){ return o.mk; }).forEach(function(o){ F.api("/admin/api/uploads",{body:{op:"mkdir",id:id,parent:"",name:o.mk}}); });
     var it=out.filter(function(o){ return o.f&&o.f.size>0; }); if(it.length) upQueue(id,it); }); });
 function render(){
-  if(!ST){ load(); return F.head("Uploads","Links für Kunden-Dateien")+'<div class="muted" style="padding:20px">Lade …</div>'; }
-  if(!ST.ok) return F.head("Uploads","")+'<div class="notice"><span>'+esc(ST.error)+'</span><button type="button" class="btn sm" data-act="upreload">Erneut</button></div>';
+  if(!ST){ load(); return F.head("FS Cloud","Geteilte Ordner für Kunden-Dateien")+'<div class="muted" style="padding:20px">Lade …</div>'; }
+  if(!ST.ok) return F.head("FS Cloud","")+'<div class="notice"><span>'+esc(ST.error)+'</span><button type="button" class="btn sm" data-act="upreload">Erneut</button></div>';
   var L=ST.links||[], tot=L.reduce(function(a,l){ return a+l.bytes; },0);
-  return F.head("Uploads",'Kunden laden über einen Link Dateien hoch – ohne Anmeldung, beliebig viele und groß'+(ST.free!=null?' · Speicher frei: '+hb(ST.free):'')+(tot?' · belegt: '+hb(tot):''),'<button type="button" class="btn primary" data-act="upnew">'+F.svg("plus")+' Neuer Upload-Link</button>')+
-    (L.length?'<div class="up-tabs">'+L.map(tabHtml).join("")+'</div>'+linkView(cur()):'<div class="panel"><div class="muted" style="padding:20px">Noch keine Upload-Links. Lege einen an und schick ihn dem Kunden.</div></div>');
+  return F.head("FS Cloud",'Kunden laden über einen Link Dateien hoch – ohne Anmeldung, beliebig viele und groß'+(ST.free!=null?' · Speicher frei: '+hb(ST.free):'')+(tot?' · belegt: '+hb(tot):''),'<button type="button" class="btn primary" data-act="upnew">'+F.svg("plus")+' Neuer geteilter Ordner</button>')+
+    (L.length?'<div class="up-tabs">'+L.map(tabHtml).join("")+'</div>'+linkView(cur()):'<div class="panel"><div class="muted" style="padding:20px">Noch keine geteilten Ordner. Lege einen an und schick dem Kunden den Link.</div></div>');
 }
 function link(id){ return ((ST&&ST.links)||[]).find(function(l){ return l.id===id; })||null; }
 function post(body,msg){ return F.api("/admin/api/uploads",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return null; } if(msg) F.toast(msg); load(); return j; }); }
@@ -189,9 +190,20 @@ document.addEventListener("dragover",function(e){ var t=dropT(e); if(!t||[].inde
 document.addEventListener("dragleave",function(e){ var t=dropT(e); if(t) t.classList.remove("drop"); });
 document.addEventListener("drop",function(e){ var t=dropT(e); if(!t) return; var v=e.dataTransfer.getData("text/x-fsupload"); if(!v) return; e.preventDefault(); t.classList.remove("drop");
   var a=v.split("|"), b=t.getAttribute("data-updrop"), i=b.indexOf("|"); if(a[0]!==b.slice(0,i)) return; post({op:"moveFiles",id:a[0],files:[a[1]],dir:b.slice(i+1)},"Verschoben"); });
+/* Aktueller Stand als Buch (Simon 18.11.2026, Gemeinde Gaschurn): PDF in „Aktueller Stand“ hochladen → Kunde sieht großen Knopf mit Uhrzeit, Buchvorschau, Druck-PDF */
+F.css('.up-stand{flex:1 1 100%;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));background:color-mix(in srgb,var(--warn) 8%,var(--panel))}.up-stand .btn.big{font-size:16px;padding:12px 20px}.up-stand small{color:var(--ink-3)}');
+function standBox(l){
+  if(!l.book) return '<div class="up-meta" style="margin-top:8px"><button type="button" class="btn sm" data-act="upbook:'+esc(l.id)+'|1">📖 Buchansicht „Aktueller Stand“ einschalten</button></div>';
+  var st=l.stand;
+  return '<div class="up-stand">'+(st?'<a class="btn primary big" href="'+esc(l.url)+'#stand" target="_blank" rel="noopener">📖 Aktuellen Stand ansehen</a><span><b>Stand: '+dt(st.at)+'</b><br><small>'+esc(st.name)+' · '+hb(st.size)+'</small></span>':'<span><b>Noch kein Stand hochgeladen</b><br><small>PDF hochladen – der Kunde sieht dann oben einen großen Knopf zum Durchblättern und Drucken.</small></span>')+
+    '<label class="btn sm">'+F.svg("upload")+' '+(st?'Neuen Stand hochladen (PDF)':'Stand hochladen (PDF)')+'<input type="file" accept="application/pdf,.pdf" hidden data-upstand="'+esc(l.id)+'"></label>'+
+    '<button type="button" class="btn sm" data-act="upbook:'+esc(l.id)+'|0" title="Buchansicht für den Kunden ausblenden">Ausschalten</button></div>'; }
+F.action("upbook",function(v){ var p=String(v).split("|"); post({op:"update",id:p[0],book:p[1]==="1"},p[1]==="1"?"Buchansicht eingeschaltet – lade jetzt den Stand als PDF hoch":"Buchansicht ausgeschaltet"); });
+document.addEventListener("change",function(e){ var t=e.target; if(!t.getAttribute||!t.getAttribute("data-upstand")) return; var id=t.getAttribute("data-upstand"), l=link(id), f=t.files&&t.files[0]; t.value=""; if(!l||!f) return;
+  if(!/\.pdf$/i.test(f.name)){ F.toast("Bitte eine PDF auswählen",true); return; } upQueue(id,[{f:f,dir:l.standDir||"Aktueller Stand"}]); });
 F.action("upreload",function(){ ST=null; F.render(); });
 F.action("upnew",function(){
-  F.modal('<form data-form="upnew" class="stackf"><div class="row-between"><h2 style="font-size:20px">Neuer Upload-Link</h2>'+F.btnClose()+'</div>'+
+  F.modal('<form data-form="upnew" class="stackf"><div class="row-between"><h2 style="font-size:20px">Neuer geteilter Ordner</h2>'+F.btnClose()+'</div>'+
     '<label class="fl">Titel (Kunde / Projekt)<input class="f" name="title" required maxlength="120" placeholder="z. B. SV Gaschurn – Logos"></label>'+
     '<label class="fl"><span>E-Mail des Kunden <span class="muted small">(optional – zum Senden des Links)</span></span><input class="f" name="email" type="email" maxlength="160"></label>'+
     '<label class="fl"><span>Hinweis auf der Upload-Seite <span class="muted small">(optional)</span></span><textarea class="f" name="note" rows="2" maxlength="600" placeholder="z. B. Bitte Logo als PDF oder PNG und alle Fotos in Originalgröße"></textarea></label>'+
@@ -201,7 +213,7 @@ F.action("upnew",function(){
 F.forms.upnew=function(form){
   var b={op:"create",title:form.title.value.trim(),email:form.email.value.trim(),note:form.note.value.trim(),days:form.days.value};
   if(!b.title){ document.getElementById("upErr").textContent="Bitte einen Titel angeben."; return; }
-  post(b).then(function(j){ if(!j) return; F.closeModal(); SEL=j.link.id; copy(j.link.url); F.toast("Upload-Link angelegt und kopiert",false,j.link.email?"Per Mail senden":null,j.link.email?function(){ mail(j.link); }:null); });
+  post(b).then(function(j){ if(!j) return; F.closeModal(); SEL=j.link.id; copy(j.link.url); F.toast("Geteilter Ordner angelegt – Link kopiert",false,j.link.email?"Per Mail senden":null,j.link.email?function(){ mail(j.link); }:null); });
 };
 function mail(l){
   if(!F.compose){ copy(l.url); return; }
@@ -218,9 +230,9 @@ function ask(title,text,yes,fn){ F.modal('<div class="stackf"><div class="row-be
 F.action("updelf",function(v){ var p=String(v).split("|"), l=link(p[0]), f=l&&(l.files||[]).find(function(x){ return x.id===p[1]; }); if(!f) return;
   ask("Datei löschen?","„"+f.name+"“ wird endgültig vom Server gelöscht.","Endgültig löschen",function(){ post({op:"deleteFile",id:p[0],file:p[1],confirm:true},"Datei gelöscht"); }); });
 F.action("updell",function(id){ var l=link(id); if(!l) return;
-  ask("Upload-Link löschen?","Der Link „"+l.title+"“ funktioniert danach nicht mehr und alle "+l.count+" Datei(en) werden endgültig vom Server gelöscht.","Link und Dateien löschen",function(){ post({op:"deleteLink",id:id,confirm:true},"Link gelöscht"); }); });
-F.view({id:"uploads",label:"Uploads",short:"Uploads",icon:"upload",order:37,count:function(){ return ST&&ST.ok?(ST.links||[]).filter(isNew).length:0; },render:render,after:function(){ if(!ST) load(); else if(ST.ok) markSeen(cur()); var c=document.querySelector(".up-cv"); if(c) c.scrollTop=c.scrollHeight; }});
+  ask("Geteilten Ordner löschen?","Der Link „"+l.title+"“ funktioniert danach nicht mehr und alle "+l.count+" Datei(en) werden endgültig vom Server gelöscht.","Link und Dateien löschen",function(){ post({op:"deleteLink",id:id,confirm:true},"Link gelöscht"); }); });
+F.view({id:"uploads",label:"FS Cloud",short:"Cloud",icon:"upload",order:37,count:function(){ return ST&&ST.ok?(ST.links||[]).filter(isNew).length:0; },render:render,after:function(){ if(!ST) load(); else if(ST.ok) markSeen(cur()); var c=document.querySelector(".up-cv"); if(c) c.scrollTop=c.scrollHeight; }});
 if(F.whenIdle) F.whenIdle(function(){ if(!ST) load(); },F.current==="uploads"?0:20000); else setTimeout(load,4000);   // Zähler nachrangig (Simon 16.11.2026)
-/* offen auf „Uploads“: alle 30 s (neue Nachrichten im Chat), sonst alle 10 Min. (vorher 2, Energie – Simon 16.11.2026); nie während du tippst (Eingabe bliebe zwar erhalten, aber der Fokus ginge verloren) */
+/* offen auf „FS Cloud“: alle 30 s (neue Nachrichten im Chat), sonst alle 10 Min. (vorher 2, Energie – Simon 16.11.2026); nie während du tippst (Eingabe bliebe zwar erhalten, aber der Fokus ginge verloren) */
 var tick=0; setInterval(function(){ tick++; var a=document.activeElement; if(document.visibilityState!=="visible"||(a&&a.getAttribute&&a.getAttribute("data-updraft"))) return; if(F.current==="uploads"||tick%20===0) load(); },30000);
 })();

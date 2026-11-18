@@ -11,7 +11,7 @@ const CHUNK = 16 * 1024 * 1024, MAX_CHUNK = 32 * 1024 * 1024, MIN_FREE = 2 * 102
 
 module.exports = function (D) {
   const DIR = path.join(D.DATA_DIR, "uploads"), IDX = path.join(DIR, "links.json");
-  const log = (...a) => console.log("[Uploads]", ...a);
+  const log = (...a) => console.log("[FS Cloud]", ...a);
   const nowIso = () => new Date().toISOString();
   const clip = (s, n) => String(s == null ? "" : s).slice(0, n);
   const escH = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -41,9 +41,18 @@ module.exports = function (D) {
     for (let i = 1; i <= parts.length; i++) { const x = parts.slice(0, i).join("/"); if (!l.dirs.includes(x)) { if (l.dirs.length >= 1000) throw Object.assign(new Error("Zu viele Ordner"), { status: 400 }); l.dirs.push(x); } }
     return d; }
 
+  /* Aktueller Stand als Buch (Simon 18.11.2026, Gemeinde Gaschurn): neueste PDF, die FS Creative in den Ordner „Aktueller Stand“ lädt –
+     Kunde sieht oben einen großen Knopf mit Uhrzeit, blättert wie in einem Buch und kann die Original-PDF (Druckqualität) drucken/laden */
+  const STAND_DIR = "Aktueller Stand";
+  function standOf(l) {
+    if (!l.book) return null;
+    const f = liveFiles(l).filter(x => x.by === "fs" && /\.pdf$/i.test(x.name) && (x.dir || "") === STAND_DIR).sort((a, b) => String(b.doneAt || b.at).localeCompare(String(a.doneAt || a.at)))[0];
+    return f ? { id: f.id, name: f.name, at: f.doneAt || f.at, size: f.size } : null;
+  }
+  const viennaTime = iso => { try { return new Date(iso).toLocaleString("de-AT", { timeZone: "Europe/Vienna", weekday: "short", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " Uhr"; } catch (e) { return String(iso || "").slice(0, 16).replace("T", " "); } };
   function summary(l) {
     const files = (l.files || []).filter(f => !f.deleted);
-    return { id: l.id, token: l.token, url: D.ORIGIN + "/upload/" + l.token, title: l.title, customer: l.customer, email: l.email, note: l.note, createdAt: l.createdAt, expires: l.expires || "", active: l.active !== false, open: open(l),
+    return { id: l.id, token: l.token, url: D.ORIGIN + "/upload/" + l.token, title: l.title, customer: l.customer, email: l.email, note: l.note, createdAt: l.createdAt, expires: l.expires || "", active: l.active !== false, open: open(l), book: !!l.book, stand: standOf(l), standDir: STAND_DIR,
       dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), lastAt: l.lastAt || "", msgs: (l.msgs || []).slice(-50).map(m => ({ at: m.at, text: m.text, by: m.by === "fs" ? "fs" : "kunde", mailed: !!m.mailed })), seenAt: l.seenAt || "", count: files.filter(f => f.done).length, bytes: files.filter(f => f.done).reduce((a, f) => a + f.size, 0),
       files: files.map(f => ({ id: f.id, name: f.name, dir: f.dir || "", fs: f.by === "fs", size: f.size, got: f.got, done: !!f.done, at: f.at, doneAt: f.doneAt || "" })).reverse() };
   }
@@ -64,7 +73,7 @@ module.exports = function (D) {
     NOTE.set(l.id, setTimeout(() => { NOTE.delete(l.id); const fresh = (l.files || []).filter(f => f.done && !f.deleted && (!l.notifiedAt || f.doneAt > l.notifiedAt)); if (!fresh.length) return;
       l.notifiedAt = nowIso(); save(true);
       const bytes = fresh.reduce((a, f) => a + f.size, 0);
-      if (D.push) D.push("lead", { title: "Upload: " + l.title, body: fresh.length + " Datei" + (fresh.length === 1 ? "" : "en") + " (" + human(bytes) + ") hochgeladen" + (fresh.length <= 3 ? ": " + fresh.map(f => f.name).join(", ") : ""), url: "/admin#uploads", tag: "upload-" + l.id }).catch(() => {});
+      if (D.push) D.push("lead", { title: "FS Cloud: " + l.title, body: fresh.length + " Datei" + (fresh.length === 1 ? "" : "en") + " (" + human(bytes) + ") hochgeladen" + (fresh.length <= 3 ? ": " + fresh.map(f => f.name).join(", ") : ""), url: "/admin#uploads", tag: "upload-" + l.id }).catch(() => {});
     }, 3 * 60 * 1000));
   }
   const human = n => n >= 1073741824 ? (n / 1073741824).toFixed(1).replace(".", ",") + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
@@ -138,7 +147,8 @@ module.exports = function (D) {
   const liveFiles = l => (l.files || []).filter(f => f.done && !f.deleted);
   function sendFile(res, l, f, inline) {
     const fp = fileOf(l, f); let st; try { st = fs.statSync(fp); } catch (e) { return J(res, 404, { ok: false, error: "Datei fehlt auf dem Speicher" }); }
-    res.writeHead(200, Object.assign({}, SEC, { "Content-Type": "application/octet-stream", "Content-Length": String(st.size), "Content-Disposition": "attachment; filename*=UTF-8''" + encodeURIComponent(f.name) }));
+    const pdfIn = !!inline && /\.pdf$/i.test(f.name);   // Buchansicht/Drucken: PDF im Browser öffnen statt herunterladen
+    res.writeHead(200, Object.assign({}, SEC, { "Content-Type": pdfIn ? "application/pdf" : "application/octet-stream", "Content-Length": String(st.size), "Content-Disposition": (pdfIn ? "inline" : "attachment") + "; filename*=UTF-8''" + encodeURIComponent(f.name) }, pdfIn ? { "X-Frame-Options": "SAMEORIGIN" } : {}));
     fs.createReadStream(fp).pipe(res);
   }
   // alle fertigen Dateien (oder nur ein Ordner) als ZIP mit Ordnerstruktur – ohne Kompression, gestreamt
@@ -186,7 +196,7 @@ module.exports = function (D) {
       if (req.method === "GET") {
         if (limited("upget", ip, 3000, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
         if (m[2] === "/list") return J(res, 200, { ok: true, dirs: (l.dirs || []).slice().sort((a, b) => a.localeCompare(b, "de")), files: pubFiles(l), msgs: pubMsgs(l) });
-        if (m[2] === "/file") { const f = liveFiles(l).find(x => x.id === String(u.searchParams.get("f") || "")); if (!f) return J(res, 404, { ok: false, error: "Datei nicht gefunden" }); return void sendFile(res, l, f); }
+        if (m[2] === "/file") { const f = liveFiles(l).find(x => x.id === String(u.searchParams.get("f") || "")); if (!f) return J(res, 404, { ok: false, error: "Datei nicht gefunden" }); return void sendFile(res, l, f, u.searchParams.get("inline") === "1"); }
         if (m[2] === "/zip") return void await sendZip(res, l, u.searchParams.get("dir"));
         return J(res, 405, { ok: false, error: "method_not_allowed" });
       }
@@ -209,14 +219,14 @@ module.exports = function (D) {
         if (limited("updel", ip, 300, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen" });
         const b = await readJson(req, 200000); if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bestätigung fehlt" });
         const n = removeItems(l, b.files, b.dirs); log("Kunde hat gelöscht:", l.title, "·", n, "Datei(en)", (b.dirs || []).length ? "+ Ordner" : "");
-        if (n && D.push) D.push("lead", { title: "Upload: " + l.title, body: "Kunde hat " + n + " Datei" + (n === 1 ? "" : "en") + " gelöscht", url: "/admin#uploads", tag: "updel-" + l.id }).catch(() => {});
+        if (n && D.push) D.push("lead", { title: "FS Cloud: " + l.title, body: "Kunde hat " + n + " Datei" + (n === 1 ? "" : "en") + " gelöscht", url: "/admin#uploads", tag: "updel-" + l.id }).catch(() => {});
         return J(res, 200, { ok: true, deleted: n });
       }
       if (m[2] === "/note") {   // optionale Nachricht zum Upload
         if (limited("upnote", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Nachrichten" });
         const b = await readJson(req, 8000), t = clip(b.text, 2000).trim(); if (!t) return J(res, 400, { ok: false, error: "Leer" });
         l.msgs = (l.msgs || []).concat([{ at: nowIso(), text: t, name: clip(b.name, 100).trim() }]).slice(-50); l.lastAt = nowIso(); save();
-        if (D.push) D.push("lead", { title: "Upload-Nachricht: " + l.title, body: t.slice(0, 200), url: "/admin#uploads", tag: "upmsg-" + l.id }).catch(() => {});
+        if (D.push) D.push("lead", { title: "FS Cloud – Nachricht: " + l.title, body: t.slice(0, 200), url: "/admin#uploads", tag: "upmsg-" + l.id }).catch(() => {});
         return J(res, 200, { ok: true, msgs: pubMsgs(l) });
       }
     } catch (e) { if (res.headersSent) return void res.destroy(); return J(res, e.status || 500, { ok: false, error: e.status ? e.message : "Fehler beim Hochladen" }); }
@@ -245,7 +255,7 @@ module.exports = function (D) {
         if (b.op === "create") { const l = create(b); return J(res, 200, { ok: true, link: summary(l) }); }
         const l = byId(String(b.id || "")); if (!l) return J(res, 404, { ok: false, error: "Nicht gefunden" });
         if (b.op === "init") return J(res, 200, initFile(l, b, "fs"));
-        if (b.op === "update") { if (b.title != null && clip(b.title, 120).trim()) l.title = clip(b.title, 120).trim(); if (b.note != null) l.note = clip(b.note, 600).trim(); if (b.active != null) l.active = !!b.active;
+        if (b.op === "update") { if (b.title != null && clip(b.title, 120).trim()) l.title = clip(b.title, 120).trim(); if (b.note != null) l.note = clip(b.note, 600).trim(); if (b.active != null) l.active = !!b.active; if (b.book != null) { l.book = !!b.book; if (l.book) addDir(l, STAND_DIR); }
           if (b.days != null) { const d = parseInt(b.days, 10) || 0; l.expires = d > 0 ? new Date(Date.now() + Math.min(365, d) * 864e5).toISOString() : ""; } save(); return J(res, 200, { ok: true, link: summary(l) }); }
         if (b.op === "seen") { l.seenAt = nowIso(); save(true); return J(res, 200, { ok: true }); }
         if (b.op === "reply") {   // Antwort im Chat; auf Wunsch kurze Mail an den Kunden mit dem Link (nur wenn eine Adresse hinterlegt ist)
@@ -314,7 +324,19 @@ module.exports = function (D) {
     '.empty{text-align:center;color:var(--dim);padding:48px 12px;border:2px dashed #2a2a35;border-radius:14px}.od-main.on .empty,.od-main.on{outline:2px dashed var(--y);outline-offset:-2px}.tr.on.on,.rw.on{outline:none}' +
     '.od-up h2{margin:0;font-size:18px}.tgt{margin:2px 0 12px;color:var(--dim);font-size:14px}.od-up .drop{padding:26px 12px}.ubtn{display:grid;gap:8px;margin-top:10px}.ubtn .btn{justify-content:center}.od-up .msg{margin-top:16px}' +
     '@media(max-width:1100px){.od-grid{grid-template-columns:220px minmax(0,1fr)}.od-up{grid-column:1/-1;order:-1}}@media(max-width:720px){.od-head{grid-template-columns:minmax(0,1fr)}.od-grid{grid-template-columns:minmax(0,1fr)}.od-up .tip{display:none}.rw{grid-template-columns:22px minmax(0,1fr) 64px 76px}.rw .d,.nm em{display:none}}' +
-    '.up-foot{color:var(--dim);font-size:13px;text-align:center;padding:20px}.up-foot a{color:var(--dim)}.tip{color:var(--dim);font-size:13px;margin-top:14px}';
+    '.up-foot{color:var(--dim);font-size:13px;text-align:center;padding:20px}.up-foot a{color:var(--dim)}.tip{color:var(--dim);font-size:13px;margin-top:14px}' +
+    '.stand{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-color:#ffe60066;background:linear-gradient(135deg,#1c1a08,#14141b 60%)}.stand h2{margin:0 0 4px;font-size:22px}.stand .sub{margin:0}.stand-a{display:flex;flex-direction:column;gap:8px;align-items:stretch}' +
+    '.btn.big{font-size:19px;padding:18px 30px;justify-content:center;box-shadow:0 8px 30px #ffe60033}' +
+    '.bk-ov{position:fixed;inset:0;z-index:50;background:radial-gradient(ellipse at center,#2a2a33,#08080b);display:flex;flex-direction:column}.bk-top{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap}' +
+    '.bk-t{display:flex;flex-direction:column}.bk-t small{color:var(--dim)}.bk-a{display:flex;gap:8px;flex-wrap:wrap}.bk-stage{flex:1;min-height:0;display:grid;place-items:center;padding:8px;perspective:2600px}' +
+    '.bk-book{position:relative;display:grid;grid-template-columns:1fr 1fr;box-shadow:0 30px 80px #000c;cursor:pointer;transform-style:preserve-3d;user-select:none}.bk-book.one{grid-template-columns:1fr}.bk-book.one .bk-l{display:none}' +
+    '.bk-l,.bk-r,.bk-f,.bk-b{background:#fff;overflow:hidden;position:relative}.bk-l.bk-empty,.bk-r.bk-empty{background:transparent}.bk-l img,.bk-r img,.bk-f img,.bk-b img{display:block;width:100%;height:100%;object-fit:contain}' +
+    '.bk-book:not(.one) .bk-l:not(.bk-empty)::after{content:"";position:absolute;inset:0 0 0 auto;width:12%;background:linear-gradient(90deg,transparent,#0003)}.bk-book:not(.one) .bk-r:not(.bk-empty)::after{content:"";position:absolute;inset:0 auto 0 0;width:12%;background:linear-gradient(270deg,transparent,#0002)}' +
+    '.bk-leaf{position:absolute;top:0;width:50%;height:100%;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.45,.05,.35,1);z-index:5}.bk-leaf.fw{left:50%;transform-origin:left center}.bk-leaf.bw{left:0;transform-origin:right center}' +
+    '.bk-leaf.one{width:100%;left:0}.bk-leaf.fw.go{transform:rotateY(-180deg)}.bk-leaf.bw.go{transform:rotateY(180deg)}.bk-leaf.one.bw.go{transform:rotateY(180deg)}' +
+    '.bk-f,.bk-b{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}.bk-b{transform:rotateY(180deg)}.bk-leaf.go .bk-f::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0000,#0004);transition:opacity .8s}' +
+    '.bk-load{position:absolute;inset:0;display:grid;place-items:center;color:#555;background:#fff}.bk-load a{color:#333}.bk-nav{display:flex;justify-content:center;align-items:center;gap:16px;padding:10px 16px 18px}.bk-nav .btn{font-size:22px;padding:8px 18px}.bk-nav .btn:disabled{opacity:.3;cursor:default}.bk-pg{color:var(--dim);font-size:14px;min-width:150px;text-align:center}' +
+    '@media(max-width:720px){.stand{flex-direction:column;align-items:stretch}.btn.big{width:100%}}';
   // Kunden-Seite wie OneDrive: oben Infos, links Ordner, Mitte Dateien (herunterladen/löschen), rechts Hochladen (Knopf, Auswahl oder Drag & Drop)
   /* eslint-disable */
   function upClient(D) {
@@ -436,11 +458,73 @@ module.exports = function (D) {
       post(B + "/note", { text: t }).then(function (j) { o.textContent = j.ok ? "Gesendet ✓" : (j.error || "Fehler"); if (j.ok) { $("mt").value = ""; if (j.msgs) chat(j.msgs); } }); });
     draw(); reload(); setInterval(function () { if (!Q.length && document.visibilityState === "visible") reload(); }, 20000);   // 20 s: Antworten von FS Creative erscheinen bald
   }
+  // Buchansicht (pdf.js): Doppelseiten wie ein aufgeschlagenes Heft, Umblättern mit 3D-Animation; am Handy Einzelseiten. Tasten ← →, Wischen, Klick auf die Seite.
+  function bookClient(D) {
+    var ov = null, pdf = null, n = 0, s = 0, busy = false, IM = {}, ratio = 0.7071, spread = true;
+    function lib() { return new Promise(function (res, rej) { if (window.pdfjsLib) return res(window.pdfjsLib); var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = rej; document.head.appendChild(sc); }); }
+    function pw() { var bk = ov.querySelector(".bk-book"); return bk ? bk.clientWidth / (spread ? 2 : 1) : 600; }
+    function img(i) {   // Seite i (1…n) als Bild, passend zur Anzeigegröße (scharf auf Retina)
+      if (i < 1 || i > n) return Promise.resolve("");
+      if (IM[i]) return IM[i];
+      IM[i] = pdf.getPage(i).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), w = Math.min(2200, Math.max(500, pw() * (window.devicePixelRatio || 1) * 1.15)), vp = pg.getViewport({ scale: w / v0.width });
+        var c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height); var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+        return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { return c.toDataURL("image/jpeg", 0.88); }); });
+      return IM[i];
+    }
+    function pages(st) { return spread ? (st === 0 ? [0, 1] : [2 * st, 2 * st + 1]) : [st + 1]; }
+    function maxS() { return spread ? Math.floor(n / 2) : n - 1; }
+    function face(el, i) { return img(i).then(function (u) { el.innerHTML = u ? '<img src="' + u + '" alt="Seite ' + i + '" draggable="false">' : ""; el.classList.toggle("bk-empty", !u); }); }
+    function label() { var p = pages(s).filter(function (i) { return i >= 1 && i <= n; }); ov.querySelector(".bk-pg").textContent = p.length ? "Seite " + p.join("–") + " von " + n : ""; ov.querySelector(".bk-prev").disabled = s <= 0; ov.querySelector(".bk-next").disabled = s >= maxS(); }
+    function draw() { var p = pages(s), L = ov.querySelector(".bk-l"), R = ov.querySelector(".bk-r");
+      if (spread) { face(L, p[0]); face(R, p[1]); } else face(R, p[0]);
+      label(); pages(s + 1).concat(pages(s - 1)).forEach(function (i) { img(i); }); }   // Nachbarseiten vorladen
+    function flip(dir) {
+      if (busy || !pdf) return; var t = s + dir; if (t < 0 || t > maxS()) return; busy = true;
+      var bk = ov.querySelector(".bk-book"), cur = pages(s), nx = pages(t), leaf = document.createElement("div"), fr = document.createElement("div"), bkf = document.createElement("div");
+      leaf.className = "bk-leaf " + (dir > 0 ? "fw" : "bw") + (spread ? "" : " one"); fr.className = "bk-f"; bkf.className = "bk-b"; leaf.appendChild(fr); leaf.appendChild(bkf);
+      var under = spread ? ov.querySelector(dir > 0 ? ".bk-r" : ".bk-l") : ov.querySelector(".bk-r");
+      var frontI = spread ? (dir > 0 ? cur[1] : cur[0]) : cur[0], backI = spread ? (dir > 0 ? nx[0] : nx[1]) : 0, underI = spread ? (dir > 0 ? nx[1] : nx[0]) : nx[0];
+      Promise.all([face(fr, frontI), face(bkf, backI), img(underI)]).then(function () {
+        bk.appendChild(leaf); face(under, underI); void leaf.offsetWidth; leaf.classList.add("go");
+        var end = function () { if (!leaf.parentNode) return; leaf.remove(); s = t; draw(); busy = false; };
+        leaf.addEventListener("transitionend", end); setTimeout(end, 1100);
+      }).catch(function () { busy = false; });
+    }
+    function size() { if (!ov) return; spread = window.innerWidth > 760; var bk = ov.querySelector(".bk-book"), st = ov.querySelector(".bk-stage"), W = st.clientWidth - 16, H = st.clientHeight - 16, per = spread ? 2 : 1, w = Math.min(W, H * ratio * per);
+      bk.style.width = Math.floor(w) + "px"; bk.style.height = Math.floor(w / per / ratio) + "px"; bk.classList.toggle("one", !spread); if (s > maxS()) s = maxS(); }
+    function open() {
+      if (ov) return; document.documentElement.style.overflow = "hidden";
+      ov = document.createElement("div"); ov.className = "bk-ov"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Aktueller Stand");
+      ov.innerHTML = '<div class="bk-top"><div class="bk-t"><b>' + D.title + '</b><small>Stand: ' + D.at + '</small></div><div class="bk-a"><a class="btn sm" href="' + D.u + '" target="_blank" rel="noopener">🖨 Drucken (Druckqualität)</a><a class="btn ghost sm" href="' + D.dl + '" download>⤓ PDF</a><button type="button" class="btn ghost sm bk-x" aria-label="Schließen">✕</button></div></div>' +
+        '<div class="bk-stage"><div class="bk-book"><div class="bk-l"></div><div class="bk-r"></div><div class="bk-load">Seiten werden geladen …</div></div></div>' +
+        '<div class="bk-nav"><button type="button" class="btn ghost bk-prev" aria-label="Zurückblättern">‹</button><span class="bk-pg"></span><button type="button" class="btn ghost bk-next" aria-label="Weiterblättern">›</button></div>';
+      document.body.appendChild(ov);
+      ov.querySelector(".bk-x").onclick = close; ov.querySelector(".bk-prev").onclick = function () { flip(-1); }; ov.querySelector(".bk-next").onclick = function () { flip(1); };
+      ov.querySelector(".bk-book").addEventListener("click", function (e) { var r = this.getBoundingClientRect(); flip(e.clientX - r.left > r.width / 2 ? 1 : -1); });
+      var x0 = null; ov.addEventListener("touchstart", function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+      ov.addEventListener("touchend", function (e) { if (x0 == null) return; var d = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(d) > 45) flip(d < 0 ? 1 : -1); });
+      size();
+      lib().then(function (L) { return L.getDocument({ url: D.u }).promise; }).then(function (p) { pdf = p; n = p.numPages; return p.getPage(1); }).then(function (pg) { var v = pg.getViewport({ scale: 1 }); ratio = v.width / v.height; size(); var ld = ov.querySelector(".bk-load"); if (ld) ld.remove(); draw(); })
+        .catch(function () { var ld = ov && ov.querySelector(".bk-load"); if (ld) ld.innerHTML = 'Vorschau nicht möglich – <a href="' + D.u + '" target="_blank" rel="noopener">PDF direkt öffnen</a>'; });
+    }
+    function close() { if (!ov) return; ov.remove(); ov = null; pdf = null; IM = {}; s = 0; busy = false; document.documentElement.style.overflow = ""; if (location.hash === "#stand") history.replaceState(null, "", location.pathname + location.search); }
+    document.addEventListener("keydown", function (e) { if (!ov) return; if (e.key === "Escape") close(); else if (e.key === "ArrowRight") flip(1); else if (e.key === "ArrowLeft") flip(-1); });
+    var rt = 0; window.addEventListener("resize", function () { if (!ov) return; clearTimeout(rt); rt = setTimeout(function () { var was = spread; size(); if (was !== spread) { s = was ? Math.max(0, 2 * s - 1) : Math.floor((s + 1) / 2); } IM = {}; draw(); }, 200); });
+    [].forEach.call(document.querySelectorAll("[data-book]"), function (b) { b.addEventListener("click", function (e) { e.preventDefault(); open(); }); });
+    if (location.hash === "#stand") open();
+  }
+  function standHtml(l) {
+    const st = standOf(l); if (!st) return "";
+    const B = "/upload/" + l.token + "/file?f=" + encodeURIComponent(st.id);
+    return '<section class="up-card stand"><div><p class="kick">Aktueller Stand</p><h2>' + escH(l.title) + '</h2><p class="sub">Stand: <b>' + escH(viennaTime(st.at)) + "</b></p></div>" +
+      '<div class="stand-a"><a class="btn big" href="' + B + '&inline=1" data-book>📖 Aktuellen Stand ansehen</a><a class="btn ghost sm" href="' + B + '&inline=1" target="_blank" rel="noopener">🖨 PDF in Druckqualität drucken</a></div></section>';
+  }
   function uploadPage(l) {
-    const UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 19.5h15"/></svg>';
+    const UP ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 19.5h15"/></svg>';
     const body = '<div class="od">' +
-      '<section class="up-card od-head"><div><p class="kick">Geteilter Ordner · FS Creative</p><h1>' + escH(l.title) + '</h1><p class="sub">Hier tauschen wir Dateien aus – ohne Anmeldung, beliebig viele und beliebig große Dateien. Du kannst alles hochladen, herunterladen und auch wieder löschen.</p>' +
-      (l.note ? '<p class="note">' + escH(l.note) + "</p>" : "") + '</div><ul class="facts"><li>🔒 Nur mit diesem Link erreichbar – bitte nicht öffentlich teilen</li><li>📁 Ordner anlegen und ganze Ordner hochladen</li><li>⤓ Einzeln oder alles als ZIP herunterladen</li></ul></section>' +
+      '<section class="up-card od-head"><div><p class="kick">FS Cloud · Geteilter Ordner</p><h1>' + escH(l.title) + '</h1><p class="sub">Hier tauschen wir Dateien aus – ohne Anmeldung, beliebig viele und beliebig große Dateien. Du kannst alles hochladen, herunterladen und auch wieder löschen.</p>' +
+      (l.note ? '<p class="note">' + escH(l.note) + "</p>" : "") + '</div><ul class="facts"><li>🔒 Nur mit diesem Link erreichbar – bitte nicht öffentlich teilen</li><li>📁 Ordner anlegen und ganze Ordner hochladen</li><li>⤓ Einzeln oder alles als ZIP herunterladen</li></ul></section>' + standHtml(l) +
       '<div class="od-grid">' +
       '<aside class="up-card od-tree"><div class="od-th"><b>Ordner</b><button class="btn ghost sm" type="button" id="nd">+ Neuer Ordner</button></div><nav id="tree" aria-label="Ordner"></nav></aside>' +
       '<section class="up-card od-main od-drop"><div class="od-bar"><nav class="crumb" id="crumb" aria-label="Pfad"></nav><a class="btn ghost sm" id="zip" download hidden>⤓ <span id="zipt">Alles herunterladen</span></a></div>' +
@@ -451,7 +535,9 @@ module.exports = function (D) {
       '<ul class="list" id="list"></ul><p class="sum" id="sum"></p><p class="tip">Lass das Fenster offen, bis alles „Fertig“ zeigt. Bricht die Verbindung ab, wähle die Datei erneut – es geht dort weiter, wo es aufgehört hat.</p>' +
       '<div class="msg"><label for="mt"><b>Nachrichten mit FS Creative</b></label><div class="chat" id="chat" aria-live="polite"></div><textarea id="mt" maxlength="2000" placeholder="z. B. was die Dateien sind oder was damit passieren soll"></textarea><div><button class="btn ghost sm" type="button" id="ms">Nachricht senden</button> <span id="mo" style="color:var(--dim);font-size:14px"></span></div></div></aside>' +
       '</div></div>';
-    const js = "(" + upClient.toString() + ")(" + JSON.stringify({ t: l.token, dirs: l.dirs || [] }).replace(/</g, "\\u003c") + ");document.getElementById('fi2').addEventListener('change',function(){var a=document.getElementById('fi'),b=this;try{a.files=b.files;a.dispatchEvent(new Event('change'));}catch(e){}b.value='';});";
+    const st = standOf(l), stB = st ? "/upload/" + l.token + "/file?f=" + encodeURIComponent(st.id) : "";
+    const js = (st ? "(" + bookClient.toString() + ")(" + JSON.stringify({ u: stB + "&inline=1", dl: stB, title: escH(l.title), at: escH(viennaTime(st.at)) }).replace(/</g, "\\u003c") + ");" : "") +
+      "(" + upClient.toString() + ")(" + JSON.stringify({ t: l.token, dirs: l.dirs || [] }).replace(/</g, "\\u003c") + ");document.getElementById('fi2').addEventListener('change',function(){var a=document.getElementById('fi'),b=this;try{a.files=b.files;a.dispatchEvent(new Event('change'));}catch(e){}b.value='';});";
     return page("Dateien – " + l.title, body, js);
   }
 
