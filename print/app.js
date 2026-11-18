@@ -2044,7 +2044,7 @@
   }
   // ── Schnellauswahl: drei fertige Pakete (Beliebt / Günstig / Hochwertig) – ein Klick, darunter weiterhin die volle Auswahl ──
   var PRE = {};
-  function presetsOf(p) {
+  function presetsOldOf(p) {   // bis 18.11.2026 (Beliebt / Hochwertig) – ersetzt durch drei Stufen weiter unten
     if (kind() === "banner" && S.presetBase && p.custom) {   // Banner (Wunsch Simon 05.11.2026): klassisch (PVC) und winddurchlässig (Mesh), je 2 × 1 m
       var bm = p.props.filter(function (x) { return x.slug === "material"; })[0]; if (!bm) return [];
       var pvc = bm.options.filter(function (o) { return /frontlit/i.test(o.name + o.slug) && /510/.test(o.name + o.slug); })[0] || bm.options.filter(function (o) { return /frontlit|pvc/i.test(o.name + o.slug) && !/blockout|mesh/i.test(o.name + o.slug); })[0],
@@ -2068,7 +2068,7 @@
     prem = prem.filter(ok)[0];
     return { base: mk({}), cheap: cheap, prem: prem, fin: fin };
   }
-  function presetHtml(p) {
+  function presetOldHtml(p) {
     var P = presetsOf(p); if (!P || !P.base) return "";
     var co = S.ctype === "company", key = function (sel) { return JSON.stringify([sel, S.copies, S.urgency, S.ctype, S.pm || "auto", P.custom || null]); }, price = function (sel) { return PRE[key(sel)]; };
     var desc = function (sel) { return (P.sizeTxt ? [P.sizeTxt] : []).concat([optName("material", sel.material)]).concat(sel.finish && P.fin ? [optName("finish", sel.finish)] : []).filter(function (t) { return t && !NONE_RX.test(t); }).join(" · "); };
@@ -2088,6 +2088,81 @@
       return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + (lite ? '<div class="ps-preb ps-prepc"><span class="pi" aria-hidden="true">🖥️</span><b>Weitere Optionen</b><small>Alle Papiere, Formate und Veredelungen findest du am PC.</small><button type="button" class="ps-link" data-act="moball">Hier alle zeigen</button></div>' : "") + "</div>" +
       '<p class="ps-pre-more">' + (lite ? "Unten siehst du die beliebtesten Optionen – Format, Papier, Veredelung und Auflage." : (kind() === "banner" ? "Oder unten alles selbst einstellen – Größe, Material, Konfektion und Stückzahl." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.")) + "</p>" +
       '<p class="ps-newbie"><span aria-hidden="true">👋</span> <span><b>Neu beim Drucken?</b> Die Vorauswahl passt für die meisten – einfach auf „Weiter zur Gestaltung“. Dort lädst du deine Datei hoch, gestaltest online oder lässt uns gestalten. Unsicher? <a class="ps-link" href="#" data-chat-open>Frag uns im Chat</a>.</span></p></section>';
+  }
+  /* Schnellauswahl in drei Stufen (Simon 18.11.2026): Preiswert = wirklich das Günstigste (ohne Veredelung), Durchschnitt = etwas besser
+     (unteres Viertel zwischen den beiden, gern der Bestseller), Hochwertig = schweres gestrichenes Material + matte Folie. Aus echten Preisen (/print/api/deltas). */
+  var SV = null, svBusyK = "", svTry = 0, SV_FMT = ["size", "fold", "printtype"];
+  function svProp(sl) { return S.prod.props.filter(function (x) { return x.slug === sl; })[0]; }
+  function svQ() { var r = svProp("roll_up_banners"); return r && r.options.length > 1 ? r : svProp("material"); }
+  function svOpt(pr, v) { return pr.options.filter(function (o) { return o.slug === v; })[0] || { name: "", slug: "" }; }
+  var svGr = function (o) { return +((String((o.name || "") + " " + (o.slug || "")).match(/(\d{2,4})\s*(g|gr)(?![a-z])/i) || [])[1] || 0); };
+  function svKey() { return JSON.stringify([S.prod.key, S.sel.size || "", S.sel.fold || "", S.sel.printtype || "", isCustom() ? [S.custom.w, S.custom.h] : 0, S.copies, S.ctype, S.urgency]); }
+  function svBase() { var b = Object.assign({}, S.presetBase || S.sel); SV_FMT.forEach(function (k) { if (S.sel[k] != null) b[k] = S.sel[k]; }); return b; }
+  function svCands() {
+    var base = svBase(), q = svQ(), fin = svProp("finish"), C = [], seen = {};
+    var none = fin ? fin.options.filter(function (o) { return NONE_RX.test(String(o.name).trim()) || /^(none|no|geen)$/i.test(o.slug); })[0] : null;
+    var add = function (id, sel, extra) { if (excluded(sel)) return; var k = JSON.stringify(sel); if (seen[k]) return; seen[k] = 1; C.push(Object.assign({ id: id, sel: sel, gr: q ? svGr(svOpt(q, sel[q.slug])) : 0 }, extra || {})); };
+    add("base", Object.assign({}, base));
+    if (!q) return C;
+    var opts = q.options.filter(function (o) { return !NONE_RX.test(String(o.name).trim()) && o.slug !== "none"; });
+    if (opts.length > 12) { opts = opts.slice().sort(function (a, b) { return svGr(a) - svGr(b); }); var st = (opts.length - 1) / 11, pk = []; for (var i = 0; i < 12; i++) if (pk.indexOf(opts[Math.round(i * st)]) < 0) pk.push(opts[Math.round(i * st)]); opts = pk; }
+    opts.forEach(function (o, i) { var s = Object.assign({}, base); s[q.slug] = o.slug; if (none) s.finish = none.slug; add("q" + i, s); if (none && excluded(s)) { var s2 = Object.assign({}, base); s2[q.slug] = o.slug; add("r" + i, s2); } });
+    var dbl = base.printtype === "44", lams = fin ? fin.options.filter(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name) && /matt/i.test(o.slug + " " + o.name); }) : [];
+    lams.sort(function (a, b) { return (/^double|beidseit/i.test(b.slug + b.name) === dbl) - (/^double|beidseit/i.test(a.slug + a.name) === dbl); });
+    var coat = function (o) { return /silk|gesatineerd|bilderdruck|gestrichen|coated|matt/i.test(o.slug + " " + o.name) && !/natur|offset|recycl|kraft|invercote|karton/i.test(o.slug + " " + o.name) ? 1 : 0; };
+    q.options.filter(function (o) { return svGr(o) > 0; }).sort(function (a, b) { return (coat(b) - coat(a)) || (svGr(b) - svGr(a)); }).slice(0, 3).forEach(function (h, i) {
+      lams.slice(0, 2).forEach(function (l, j) { var s = Object.assign({}, base); s[q.slug] = h.slug; s.finish = l.slug; add("p" + i + j, s, { lam: true }); }); });
+    return C.slice(0, 24);
+  }
+  function svPickFrom(key, ok) {
+    var V = { key: key }; if (!ok.length) return V;
+    var by = ok.slice().sort(function (a, b) { return a.net - b.net; }), hasGr = ok.some(function (c) { return c.gr > 0; });
+    V.cheap = by[0];
+    var pr = ok.filter(function (c) { return c.lam; }); if (!pr.length) pr = ok;
+    V.prem = pr.slice().sort(function (a, b) { return hasGr ? (b.gr - a.gr) || (a.net - b.net) : b.net - a.net; })[0];
+    if (V.prem === V.cheap || V.prem.net <= V.cheap.net + 0.01) V.prem = by.length > 1 && by[by.length - 1].net > V.cheap.net + 0.01 ? by[by.length - 1] : null;
+    var lo = V.cheap.net, hi = V.prem ? V.prem.net : lo * 2, tgt = lo + (hi - lo) * 0.25, base = ok.filter(function (c) { return c.id === "base"; })[0];
+    var btw = ok.filter(function (c) { return c !== V.cheap && c !== V.prem && !c.lam && c.net > lo + 0.01 && c.net < hi - 0.01 && (!hasGr || c.gr >= V.cheap.gr); });
+    var near = function (c) { return Math.abs(c.net - tgt); };
+    V.mid = base && btw.indexOf(base) > -1 && base.net <= lo + (hi - lo) * 0.45 ? base : btw.sort(function (a, b) { return near(a) - near(b); })[0] || null;
+    return V;
+  }
+  function svLoad() {
+    var key = svKey(); if (svBusyK === key) return; svBusyK = key;
+    var C = svCands(); if (C.length < 2) { SV = { key: key }; svBusyK = ""; return; }
+    var cfg = Object.assign(cfgOf(), { pm: "auto", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }), parts = [];
+    for (var i = 0; i < C.length; i += 12) parts.push(C.slice(i, i + 12));   // Server: max. 12 Varianten je Abfrage, Preise relativ zur gleichen Basis
+    Promise.all(parts.map(function (pt) { return api("/print/api/deltas", Object.assign({}, cfg, { alts: pt.map(function (c) { return { k: c.id, sel: c.sel }; }) })); })).then(function (rs) {
+      if (!S.prod || svKey() !== key) { svBusyK = ""; return; }
+      var busy = rs.some(function (r) { return r && r.busy; }), D = {}; rs.forEach(function (r) { if (r && r.ok && r.d) Object.assign(D, r.d); });
+      C.forEach(function (c) { var x = D[c.id]; if (x && x.busy) busy = true; c.net = x && !x.off && !x.busy && isFinite(x.net) ? +x.net : NaN; });
+      var ok = C.filter(function (c) { return isFinite(c.net); });
+      if (busy && svTry++ < 4) { svBusyK = ""; setTimeout(function () { if (S.step === 2) svLoad(); }, 2500); return; }
+      svTry = 0; SV = svPickFrom(key, ok); svBusyK = ""; var box = document.getElementById("psPre"); if (box && S.step === 2) box.outerHTML = presetHtml(S.prod);
+    }).catch(function () { svBusyK = ""; SV = { key: key }; });
+  }
+  function presetsOf(p) {
+    if (!(kind() === "flat" || kind() === "banner") || !S.presetBase || !svQ()) return null;
+    if (!SV || SV.key !== svKey()) { svLoad(); return { wait: true }; }
+    var L = [["cheap", "Preiswert", "€"], ["mid", "Durchschnitt", "★"], ["prem", "Hochwertig", "◆"]].filter(function (l) { return SV[l[0]]; });
+    return { list: L.map(function (l) { return { id: l[0], name: l[1], icon: l[2], sel: SV[l[0]].sel }; }) };
+  }
+  function presetHtml(p) {
+    var P = presetsOf(p); if (!P) return "";
+    if (P.wait) return '<section class="ps-sec ps-pre" id="psPre"><h3>Schnellauswahl <span class="pd-muted">· Preiswert, Durchschnitt oder Hochwertig</span></h3><p class="pd-muted"><span class="ps-spin"></span> Stufen werden berechnet …</p></section>';
+    if (P.list.length < 2) return "";
+    var co = S.ctype === "company", cust = isCustom() && S.custom ? { w: S.custom.w, h: S.custom.h } : null, key = function (sel) { return JSON.stringify([sel, S.copies, S.urgency, S.ctype, S.pm || "auto", cust]); }, price = function (sel) { return PRE[key(sel)]; };
+    var q = svQ(), fin = svProp("finish"), desc = function (sel) { var t = [optName(q.slug, sel[q.slug])]; if (fin && sel.finish) { var fn = optName("finish", sel.finish); if (fn && !NONE_RX.test(String(fn).trim())) t.push(fn); } return t.filter(Boolean).join(" · "); };
+    var isOn = function (sel) { return Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
+    var HINT = { cheap: "Das Günstigste – solide Standardqualität", mid: "Etwas besser – unsere Empfehlung", prem: "Schwer und veredelt – macht Eindruck" };
+    window.__presets = P.list;
+    var todo = P.list.map(function (x) { return x.sel; }).filter(function (sel) { return !(key(sel) in PRE); });
+    if (todo.length) setTimeout(function () { var left = todo.length; todo.forEach(function (sel) { var k = key(sel); PRE[k] = null;
+      api("/print/api/price", Object.assign(cfgOf(), { sel: sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { PRE[k] = j.ok ? j.price : false; }).catch(function () { PRE[k] = false; }).then(function () {
+        if (--left) return; var box = document.getElementById("psPre"); if (box && S.step === 2) box.outerHTML = presetHtml(S.prod); }); }); }, 0);
+    return '<section class="ps-sec ps-pre" id="psPre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + P.list.map(function (x) { var pr = price(x.sel), on = isOn(x.sel);
+      return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(HINT[x.id] + " · " + desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + "</div>" +
+      '<p class="ps-pre-more">' + (kind() === "banner" ? "Oder unten alles selbst einstellen – Größe, Material, Konfektion und Stückzahl." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.") + "</p></section>";
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
