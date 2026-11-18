@@ -342,6 +342,7 @@ module.exports = function (D) {
     '.rw{display:grid;grid-template-columns:22px minmax(0,1fr) 140px 80px 76px;gap:10px;align-items:center;padding:6px 8px;border-radius:10px;font-size:14px}.rw+.rw{border-top:1px solid #1f1f29}.rw:not(.hd):hover,.rw.on{background:#1a1a23}.rw.hd{color:var(--dim);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}' +
     '.rw input{width:16px;height:16px;accent-color:#ffe600}.nm{display:flex;gap:10px;align-items:center;min-width:0;color:var(--ink);text-decoration:none;background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left}.nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nm em{font-style:normal;font-size:11.5px;color:#111;background:var(--y);border-radius:999px;padding:1px 7px;white-space:nowrap}' +
     '.mt{color:var(--dim);white-space:nowrap;font-size:13px}.ac{display:flex;gap:2px;justify-content:flex-end}.ib{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:8px;border:0;background:none;color:var(--dim);cursor:pointer}.ib:hover{background:#262631;color:var(--ink)}' +
+    '.dz{outline:2px dashed var(--y)!important;outline-offset:-2px;background:#17170f!important}.dzt{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;background:var(--y);color:#111;font-weight:700;font-size:14px;padding:10px 16px;border-radius:999px;box-shadow:0 8px 30px #0008;pointer-events:none;max-width:92vw;text-align:center}' +
     '.empty{text-align:center;color:var(--dim);padding:48px 12px;border:2px dashed #2a2a35;border-radius:14px}.od-main.on .empty,.od-main.on{outline:2px dashed var(--y);outline-offset:-2px}.tr.on.on,.rw.on{outline:none}' +
     '.od-up h2{margin:0;font-size:18px}.tgt{margin:2px 0 12px;color:var(--dim);font-size:14px}.od-up .drop{padding:26px 12px}.ubtn{display:grid;gap:8px;margin-top:10px}.ubtn .btn{justify-content:center}.od-up .msg{margin-top:16px}' +
     '@media(max-width:1100px){.od-grid{grid-template-columns:220px minmax(0,1fr)}.od-up{grid-column:1/-1;order:-1}}@media(max-width:720px){.od-head{grid-template-columns:minmax(0,1fr)}.od-grid{grid-template-columns:minmax(0,1fr)}.od-up .tip{display:none}.rw{grid-template-columns:22px minmax(0,1fr) 64px 76px}.rw .d,.nm em{display:none}}' +
@@ -476,13 +477,31 @@ module.exports = function (D) {
         (function more() { r.readEntries(function (es) { if (!es.length) { Promise.all(all.map(function (x) { return walk(x, d, out); })).then(res); return; } all = all.concat([].slice.call(es)); more(); }, function () { res(); }); })();
       });
     }
-    function target(e) { var t = e.target.closest && e.target.closest("[data-drop]"); return t ? t.getAttribute("data-drop") : e.target.closest && e.target.closest(".od-drop") ? cur : null; }
+    // Ziel beim Ziehen (Simon 18.11.2026): Standard ist immer der gerade offene Ordner. In einen Unterordner der Liste nur, wenn man
+    // bewusst ~1 s auf ihm verweilt (wie am Mac); die Ordner links im Baum nehmen sofort an. Ein Hinweis zeigt immer das Ziel.
+    var aim = null, pend = null, since = 0, DWELL = 1000;
+    function nameOf(d) { return d ? short(d) : "Alle Dateien"; }
+    function pick(e) {
+      var el = e.target.closest && e.target.closest("[data-drop]"), main = e.target.closest && e.target.closest(".od-drop");
+      if (el && el.classList.contains("rw")) {
+        if (pend !== el) { pend = el; since = Date.now(); }
+        if (Date.now() - since < DWELL) el = null;
+      } else pend = null;
+      if (el) return { el: el, dir: el.getAttribute("data-drop") };
+      if (main || pend) { var m = document.querySelector(".od-main"); return { el: m, dir: cur }; }
+      return null;
+    }
     function hasFiles(e) { return e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], "Files") >= 0; }
-    var hot = null; function heat(el) { if (hot && hot !== el) hot.classList.remove("on"); hot = el; if (el) el.classList.add("on"); }
-    document.addEventListener("dragover", function (e) { if (!hasFiles(e)) return; e.preventDefault(); var t = e.target.closest && (e.target.closest("[data-drop]") || e.target.closest(".od-drop")); heat(t || null); e.dataTransfer.dropEffect = t ? "copy" : "none"; });
-    document.addEventListener("dragleave", function (e) { if (!e.relatedTarget) heat(null); });
+    var hot = null, tip = null;
+    function heat(t) {
+      var el = t && t.el; if (hot && hot !== el) hot.classList.remove("dz"); hot = el; if (el) el.classList.add("dz");
+      if (!tip) { tip = document.createElement("div"); tip.className = "dzt"; document.body.appendChild(tip); }
+      tip.hidden = !t; if (t) tip.textContent = "Loslassen zum Ablegen in: " + nameOf(t.dir) + (pend && t.el !== pend ? "  ·  kurz auf dem Ordner halten, um hineinzulegen" : "");
+    }
+    document.addEventListener("dragover", function (e) { if (!hasFiles(e)) return; e.preventDefault(); var t = pick(e); aim = t ? t.dir : null; heat(t); e.dataTransfer.dropEffect = t ? "copy" : "none"; });
+    document.addEventListener("dragleave", function (e) { if (!e.relatedTarget) { heat(null); aim = null; pend = null; } });
     document.addEventListener("drop", function (e) {
-      if (!hasFiles(e)) return; e.preventDefault(); heat(null); var to = target(e); if (to == null) return;
+      if (!hasFiles(e)) return; e.preventDefault(); var to = aim; heat(null); aim = null; pend = null; if (to == null) return;
       var dt = e.dataTransfer, ens = dt.items && dt.items.length && dt.items[0].webkitGetAsEntry ? [].map.call(dt.items, function (i) { return i.webkitGetAsEntry && i.webkitGetAsEntry(); }).filter(Boolean) : null;
       if (!ens || !ens.some(function (x) { return x.isDirectory; })) { add([].map.call(dt.files || [], function (f) { return { f: f, dir: to }; })); return; }
       var out = []; Promise.all(ens.map(function (x) { return walk(x, to, out); })).then(function () {
