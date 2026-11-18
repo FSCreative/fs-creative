@@ -354,12 +354,22 @@ module.exports = function (D) {
     '.bk-thi{display:block;width:100%;background:#fff;border-radius:2px;overflow:hidden;box-shadow:0 2px 8px #0008}.bk-thi img{display:block;width:100%;height:100%;object-fit:cover}.bk-th small{font-size:11.5px}.bk-sbt{display:none}' +
     '@media(max-width:760px){.bk-side{position:absolute;left:0;top:64px;bottom:70px;z-index:20;background:#101017f2;transform:translateX(-105%);transition:transform .25s}.bk-ov.side .bk-side{transform:none}.bk-sbt{display:inline-flex}.bk-main{position:relative}}' +
     '.bk-t{display:flex;flex-direction:column}.bk-t small{color:var(--dim)}.bk-a{display:flex;gap:8px;flex-wrap:wrap}.bk-stage{flex:1;min-height:0;display:grid;place-items:center;padding:8px;perspective:2600px}' +
-    '.bk-book{position:relative;display:grid;grid-template-columns:1fr 1fr;cursor:pointer;transform-style:preserve-3d;user-select:none;transition:transform .8s cubic-bezier(.45,.05,.35,1)}.bk-l:not(.bk-empty),.bk-r:not(.bk-empty),.bk-leaf{box-shadow:0 30px 80px #000c}.bk-book.one{grid-template-columns:1fr}.bk-book.one .bk-l{display:none}' +
+    '.bk-book{position:relative;display:grid;grid-template-columns:1fr 1fr;cursor:pointer;transform-style:preserve-3d;user-select:none;transition:transform .8s cubic-bezier(.45,.05,.35,1)}.bk-l:not(.bk-empty),.bk-r:not(.bk-empty){box-shadow:0 30px 80px #000c}.bk-leaf .bk-f,.bk-leaf .bk-b{box-shadow:0 10px 40px #0006}.bk-book.one{grid-template-columns:1fr}.bk-book.one .bk-l{display:none}' +
     '.bk-l,.bk-r,.bk-f,.bk-b{background:#fff;overflow:hidden;position:relative}.bk-l.bk-empty,.bk-r.bk-empty{background:transparent}.bk-l img,.bk-r img,.bk-f img,.bk-b img{display:block;width:100%;height:100%;object-fit:contain}' +
     '.bk-book:not(.one) .bk-l:not(.bk-empty)::after{content:"";position:absolute;inset:0 0 0 auto;width:12%;background:linear-gradient(90deg,transparent,#0003)}.bk-book:not(.one) .bk-r:not(.bk-empty)::after{content:"";position:absolute;inset:0 auto 0 0;width:12%;background:linear-gradient(270deg,transparent,#0002)}' +
-    '.bk-leaf{position:absolute;top:0;width:50%;height:100%;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.45,.05,.35,1);z-index:5}.bk-leaf.fw{left:50%;transform-origin:left center}.bk-leaf.bw{left:0;transform-origin:right center}' +
-    '.bk-leaf.one{width:100%;left:0}.bk-leaf.fw.go{transform:rotateY(-180deg)}.bk-leaf.bw.go{transform:rotateY(180deg)}.bk-leaf.one.bw.go{transform:rotateY(180deg)}' +
-    '.bk-f,.bk-b{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}.bk-b{transform:rotateY(180deg)}.bk-leaf.go .bk-f::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0000,#0004);transition:opacity .8s}' +
+    '.bk-leaf{position:absolute;top:0;width:50%;height:100%;transform-style:preserve-3d;z-index:5;will-change:transform}.bk-leaf.fw{left:50%;transform-origin:left center}.bk-leaf.bw{left:0;transform-origin:right center}' +
+    '.bk-leaf.one{width:100%;left:0}.bk-leaf.fw.go{animation:bkFw .95s cubic-bezier(.645,.045,.355,1) forwards}.bk-leaf.bw.go{animation:bkBw .95s cubic-bezier(.645,.045,.355,1) forwards}' +
+    '@keyframes bkFw{0%{transform:rotateY(0)}45%{transform:rotateY(-80deg) skewY(-2deg) scaleX(.98)}100%{transform:rotateY(-180deg)}}@keyframes bkBw{0%{transform:rotateY(0)}45%{transform:rotateY(80deg) skewY(2deg) scaleX(.98)}100%{transform:rotateY(180deg)}}' +
+    '.bk-f,.bk-b{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}.bk-b{transform:rotateY(180deg)}' +
+    '.bk-f::after,.bk-b::after{content:"";position:absolute;inset:0;opacity:0;pointer-events:none}.bk-leaf.fw .bk-f::after{background:linear-gradient(90deg,#0008,#0002 35%,#0000 70%,#fff2)}.bk-leaf.bw .bk-f::after{background:linear-gradient(270deg,#0008,#0002 35%,#0000 70%,#fff2)}' +
+    '.bk-leaf.fw .bk-b::after{background:linear-gradient(270deg,#0007,#0001 40%,#0000)}.bk-leaf.bw .bk-b::after{background:linear-gradient(90deg,#0007,#0001 40%,#0000)}' +
+    '.bk-leaf.go .bk-f::after{animation:bkDark .95s cubic-bezier(.645,.045,.355,1) forwards}.bk-leaf.go .bk-b::after{animation:bkLight .95s cubic-bezier(.645,.045,.355,1) forwards}' +
+    '@keyframes bkDark{0%{opacity:0}45%{opacity:1}100%{opacity:1}}@keyframes bkLight{0%,45%{opacity:1}100%{opacity:0}}' +
+    '.bk-cast{position:absolute;inset:0;pointer-events:none;opacity:0;z-index:2}.bk-cast.fw.u{background:linear-gradient(90deg,#0009,#0003 25%,#0000 60%)}.bk-cast.bw.u{background:linear-gradient(270deg,#0009,#0003 25%,#0000 60%)}' +
+    '.bk-cast.fw.l{background:linear-gradient(270deg,#0008,#0002 30%,#0000 65%)}.bk-cast.bw.l{background:linear-gradient(90deg,#0008,#0002 30%,#0000 65%)}' +
+    '.bk-cast.u.go{animation:bkCastU .95s cubic-bezier(.645,.045,.355,1) forwards}.bk-cast.l.go{animation:bkCastL .95s cubic-bezier(.645,.045,.355,1) forwards}' +
+    '@keyframes bkCastU{0%{opacity:.9}55%{opacity:.35}100%{opacity:0}}@keyframes bkCastL{0%,40%{opacity:0}80%{opacity:.85}100%{opacity:0}}' +
+    '@media(prefers-reduced-motion:reduce){.bk-leaf.go{animation-duration:.01s!important}.bk-cast{display:none}}' +
     '.bk-load{position:absolute;inset:0;display:grid;place-items:center;color:#555;background:#fff}.bk-load a{color:#333}.bk-nav{display:flex;justify-content:center;align-items:center;gap:16px;padding:10px 16px 18px}.bk-nav .btn{font-size:22px;padding:8px 18px}.bk-nav .btn:disabled{opacity:.3;cursor:default}.bk-pg{color:var(--dim);font-size:14px;min-width:150px;text-align:center}' +
     '@media(max-width:720px){.stand{flex-direction:column;align-items:stretch}.btn.big{width:100%}}';
   // Kunden-Seite wie OneDrive: oben Infos, links Ordner, Mitte Dateien (herunterladen/löschen), rechts Hochladen (Knopf, Auswahl oder Drag & Drop)
@@ -526,9 +536,13 @@ module.exports = function (D) {
       var under = spread ? ov.querySelector(dir > 0 ? ".bk-r" : ".bk-l") : ov.querySelector(".bk-r");
       var frontI = spread ? (dir > 0 ? cur[1] : cur[0]) : cur[0], backI = spread ? (dir > 0 ? nx[0] : nx[1]) : 0, underI = spread ? (dir > 0 ? nx[1] : nx[0]) : nx[0];
       Promise.all([face(fr, frontI), face(bkf, backI), img(underI)]).then(function () {
-        bk.appendChild(leaf); face(under, underI); void leaf.offsetWidth; leaf.classList.add("go"); place(t);
-        var end = function () { if (!leaf.parentNode) return; leaf.remove(); s = t; draw(); busy = false; };
-        leaf.addEventListener("transitionend", end); setTimeout(end, 1100);
+        bk.appendChild(leaf); face(under, underI);
+        // Schatten (Simon 18.11.2026 „flüssiger und realistischer“): Wurfschatten auf der freigelegten Seite (weicht zurück) und auf der Landeseite (wächst, dann weg)
+        var mk = function (el, cls) { if (!el || el.classList.contains("bk-empty")) return null; var c = document.createElement("i"); c.className = "bk-cast " + cls; el.appendChild(c); return c; };
+        var land = spread ? ov.querySelector(dir > 0 ? ".bk-l" : ".bk-r") : null, c1 = mk(under, (dir > 0 ? "fw" : "bw") + " u"), c2 = mk(land, (dir > 0 ? "fw" : "bw") + " l");
+        void leaf.offsetWidth; leaf.classList.add("go"); [c1, c2].forEach(function (c) { if (c) c.classList.add("go"); }); place(t);
+        var end = function () { if (!leaf.parentNode) return; leaf.remove(); [c1, c2].forEach(function (c) { if (c && c.parentNode) c.remove(); }); s = t; draw(); busy = false; };
+        leaf.addEventListener("animationend", function (e) { if (e.target === leaf) end(); }); setTimeout(end, 1300);
       }).catch(function () { busy = false; });
     }
     function size() { if (!ov) return; spread = window.innerWidth > 760; var bk = ov.querySelector(".bk-book"), st = ov.querySelector(".bk-stage"), W = st.clientWidth - 16, H = st.clientHeight - 16, per = spread ? 2 : 1, w = Math.min(W, H * ratio * per);
