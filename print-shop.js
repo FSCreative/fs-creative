@@ -1531,6 +1531,15 @@ module.exports = function (D) {
     });
     return out;
   }
+  /* Freie Kontur (Thrucut/Kisscut nach Kundenform): Beschnitt am Seitenrand ist egal – geschnitten wird an der Kontur (Simon 18.11.2026).
+     Hinweise „kein Beschnitt“ entfallen dann für Kunde und Cockpit, und es wird auch nichts automatisch gespiegelt. */
+  const freeCutOf = (prod, sel) => { try { return spotNeedsOf(prod, sel || {}).some(n => /^(Thrucut|Kisscut)$/.test(n[0]) && n[2]); } catch (e) { return false; } };
+  const CUT_BLEED_RX = /keinen Beschnitt|ohne Beschnitt|Blitzer|bleed to be|Beschnitt fehlt/i;
+  const CUT_BLEED_OK = "Konturschnitt: Beschnitt am Seitenrand ist nicht nötig – geschnitten wird entlang deiner Kontur. Reicht dein Motiv bis an die Kontur, lass es ca. 2 mm darüber hinausragen.";
+  function cutBleed(checks, on) {
+    if (!on || !Array.isArray(checks) || !checks.some(c => c && CUT_BLEED_RX.test(c.text || ""))) return checks;
+    return checks.filter(c => !(c && CUT_BLEED_RX.test(c.text || ""))).concat(checks.some(c => c && c.text === CUT_BLEED_OK) ? [] : [{ level: "ok", text: CUT_BLEED_OK }]);
+  }
   // häufige falsche Namen → richtige Sonderfarbe (Illustrator/Corel/Affinity-Vorlagen anderer Druckereien)
   const SPOT_ALIAS = { White: /^(spot ?)?(white|weiss|weiß|weißdruck|weissdruck|wei(ß|ss) ?(ebene|layer|unterdruck)|white ?(ink|layer|underprint)|wit|blanc|w1|rdg_white)( ?\d)?$/i, Thrucut: /^(cut ?contour|cut ?kontur|contour ?cut|cutcontour|schneide ?(kontur|linie)|kontur ?linie|stanz ?form|cut|cutline|cut line|die ?cut|diecut|stanz(e|kontur|linie)?|kontur(schnitt)?|schnitt(kontur|linie)?|thru ?cut|through ?cut|cutter|plotter|plot)$/i,
     Kisscut: /^(kiss ?cut|kisscutcontour|anschnitt|halbschnitt)$/i, Creasing: /^(creas(e|ing)|rill(ung|linie)?|nut(linie)?|falz(linie)?|score|fold(line)?)$/i, Perforation: /^(perf(o|oration)?|perforier(ung|linie))$/i, Drilling: /^(drill(ing)?|bohr(ung|loch)?|hole)$/i };
@@ -2205,7 +2214,7 @@ module.exports = function (D) {
       const info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
       target.pages = info.pages;
       const spc = input.cover ? { checks: [] } : await spotCheck(buf, prod, t0.n.sel); if (spc.buf) buf = spc.buf;   // Sonderfarben prüfen (ggf. umbenannt → ab hier die korrigierte PDF)
-      const checks = checkPdf(info, target.size, target.bleed, target.sides, target.multi).concat(spc.checks), src = target.multi ? null : await keepSrc(buf, "pdf", name);
+      const checks = cutBleed(checkPdf(info, target.size, target.bleed, target.sides, target.multi), !input.cover && freeCutOf(prod, t0.n.sel)).concat(spc.checks), src = target.multi ? null : await keepSrc(buf, "pdf", name);
       if (checks.some(c => /mehr als nötig\. Das Endformat passt/.test(c.text || ""))) {   // überschüssigen Beschnitt abschneiden: Seitenboxen = TrimBox + Beschnitt (alle Seiten)
         try { const { PDFDocument } = require("pdf-lib"), doc = await PDFDocument.load(buf, { updateMetadata: false }), bp = target.bleed * MM_PT;
           doc.getPages().forEach(pg => { const t = pg.getTrimBox(); const x = t.x - bp, y = t.y - bp, w = t.width + 2 * bp, h = t.height + 2 * bp; pg.setMediaBox(x, y, w, h); pg.setCropBox(x, y, w, h); pg.setBleedBox(x, y, w, h); });
@@ -6239,11 +6248,11 @@ module.exports = function (D) {
           if (m && m.spotRev && m.spotRev.k === spK) spot = m.spotRev.r;
           else if (m && m.id && (m.bytes || 0) < 150e6) { try { const data = await store.fileData(fid); if (data) { spot = await spotReview(Buffer.from(data), prodX, o.sel); m.spotRev = { k: spK, r: spot }; await store.putFile(m).catch(() => {}); } } catch (e) { log("Sonderfarben-Prüfung", fid, e.message); } }
           const srcInfo = await infoOf(m.src || fid).catch(() => null), effDpi = m.dpi ? Math.round(m.dpi / Math.max(0.05, +(m.place && m.place.scale) || 1)) : 0;
-          const ck = (m.checks || []).filter(c => !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))));
+          const ck = (m.checks || []).filter(c => !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))));
           const hemMm = sleeveMm(o.sel); let rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
             noBleed: ck.some(c => BLEED_RX.test(c.text || "")), hem: hemMm ? "Tunnelsaum " + hemMm / 10 + " cm: in diesem Bereich steckt die Stange – keine Texte/Logos hinein." : /eyelet|oese|öse/i.test(JSON.stringify(o.sel || {})) ? "Ösen sitzen im Rand – Texte und Logos nicht in die Ecken bzw. an den Rand legen." : "" });
           if (spot) rec = rec.filter(r => r.title !== "Technische Farben");
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !(m.bleedFix && (BLEED_RX.test(c.text || "") || /Blitzer/.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
