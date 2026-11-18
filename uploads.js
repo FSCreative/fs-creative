@@ -347,7 +347,7 @@ module.exports = function (D) {
     '.btn.big{font-size:19px;padding:18px 30px;justify-content:center;box-shadow:0 8px 30px #ffe60033}' +
     '.bk-ov{position:fixed;inset:0;z-index:50;background:radial-gradient(ellipse at center,#2a2a33,#08080b);display:flex;flex-direction:column}.bk-top{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;flex-wrap:wrap}' +
     '.bk-t{display:flex;flex-direction:column}.bk-t small{color:var(--dim)}.bk-a{display:flex;gap:8px;flex-wrap:wrap}.bk-stage{flex:1;min-height:0;display:grid;place-items:center;padding:8px;perspective:2600px}' +
-    '.bk-book{position:relative;display:grid;grid-template-columns:1fr 1fr;box-shadow:0 30px 80px #000c;cursor:pointer;transform-style:preserve-3d;user-select:none}.bk-book.one{grid-template-columns:1fr}.bk-book.one .bk-l{display:none}' +
+    '.bk-book{position:relative;display:grid;grid-template-columns:1fr 1fr;cursor:pointer;transform-style:preserve-3d;user-select:none;transition:transform .8s cubic-bezier(.45,.05,.35,1)}.bk-l:not(.bk-empty),.bk-r:not(.bk-empty),.bk-leaf{box-shadow:0 30px 80px #000c}.bk-book.one{grid-template-columns:1fr}.bk-book.one .bk-l{display:none}' +
     '.bk-l,.bk-r,.bk-f,.bk-b{background:#fff;overflow:hidden;position:relative}.bk-l.bk-empty,.bk-r.bk-empty{background:transparent}.bk-l img,.bk-r img,.bk-f img,.bk-b img{display:block;width:100%;height:100%;object-fit:contain}' +
     '.bk-book:not(.one) .bk-l:not(.bk-empty)::after{content:"";position:absolute;inset:0 0 0 auto;width:12%;background:linear-gradient(90deg,transparent,#0003)}.bk-book:not(.one) .bk-r:not(.bk-empty)::after{content:"";position:absolute;inset:0 auto 0 0;width:12%;background:linear-gradient(270deg,transparent,#0002)}' +
     '.bk-leaf{position:absolute;top:0;width:50%;height:100%;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.45,.05,.35,1);z-index:5}.bk-leaf.fw{left:50%;transform-origin:left center}.bk-leaf.bw{left:0;transform-origin:right center}' +
@@ -494,7 +494,10 @@ module.exports = function (D) {
     function maxS() { return spread ? Math.floor(n / 2) : n - 1; }
     function face(el, i) { return img(i).then(function (u) { el.innerHTML = u ? '<img src="' + u + '" alt="Seite ' + i + '" draggable="false">' : ""; el.classList.toggle("bk-empty", !u); }); }
     function label() { var p = pages(s).filter(function (i) { return i >= 1 && i <= n; }); ov.querySelector(".bk-pg").textContent = p.length ? "Seite " + p.join("–") + " von " + n : ""; ov.querySelector(".bk-prev").disabled = s <= 0; ov.querySelector(".bk-next").disabled = s >= maxS(); }
-    function draw() { var p = pages(s), L = ov.querySelector(".bk-l"), R = ov.querySelector(".bk-r");
+    // Titel- und letzte Seite allein in der Mitte (Simon 18.11.2026): das Buch rückt um eine halbe Seite, beim Aufblättern gleitet es mit
+    function shift(st) { if (!spread) return 0; var p = pages(st); return p[0] < 1 ? -25 : p[1] > n ? 25 : 0; }
+    function place(st) { var bk = ov.querySelector(".bk-book"); if (bk) bk.style.transform = "translateX(" + shift(st) + "%)"; }
+    function draw() { var p = pages(s), L = ov.querySelector(".bk-l"), R = ov.querySelector(".bk-r"); place(s);
       if (spread) { face(L, p[0]); face(R, p[1]); } else face(R, p[0]);
       label(); pages(s + 1).concat(pages(s - 1)).forEach(function (i) { img(i); }); }   // Nachbarseiten vorladen
     function flip(dir) {
@@ -504,7 +507,7 @@ module.exports = function (D) {
       var under = spread ? ov.querySelector(dir > 0 ? ".bk-r" : ".bk-l") : ov.querySelector(".bk-r");
       var frontI = spread ? (dir > 0 ? cur[1] : cur[0]) : cur[0], backI = spread ? (dir > 0 ? nx[0] : nx[1]) : 0, underI = spread ? (dir > 0 ? nx[1] : nx[0]) : nx[0];
       Promise.all([face(fr, frontI), face(bkf, backI), img(underI)]).then(function () {
-        bk.appendChild(leaf); face(under, underI); void leaf.offsetWidth; leaf.classList.add("go");
+        bk.appendChild(leaf); face(under, underI); void leaf.offsetWidth; leaf.classList.add("go"); place(t);
         var end = function () { if (!leaf.parentNode) return; leaf.remove(); s = t; draw(); busy = false; };
         leaf.addEventListener("transitionend", end); setTimeout(end, 1100);
       }).catch(function () { busy = false; });
