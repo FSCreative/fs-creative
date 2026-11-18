@@ -2678,7 +2678,7 @@
             var rows = 0; for (k = Math.round(sp); k < sd[2] - Math.round(sp); k++) { for (d = 0; d <= s0 - b0; d++) { var q = sd[1](k, d); if (dist(px(q[0], q[1]), med) > 120) { rows++; break; } } }
             if (rows / pxmm > 1.2) { hit++; sideNames.push(sd[0]); } });
           var cmk = cropMarks(data, W, H, pxmm);
-          if (cmk >= 2) warns.push("!" + lab + "Die Datei enthält Schnittmarken (Beschnittmarken) an den Ecken – die würden mitgedruckt. Bitte die PDF ohne Schnittmarken exportieren (nur mit " + (r.b || S.prod.bleed || 2) + " mm Beschnitt), z. B. in InDesign/Illustrator unter „Marken und Anschnitt“ die Schnittmarken abwählen.");
+          if (cmk >= 2) warns.push(lab + "Möglicherweise Schnittmarken an den Ecken – bitte in der Vorschau prüfen. Falls ja: PDF ohne Schnittmarken exportieren (nur mit " + (r.b || S.prod.bleed || 2) + " mm Beschnitt), sonst werden sie mitgedruckt. Falls nein: einfach weitermachen.");
           else if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
           if (r.b > 0) { var wo = 0, ci = 0, tot = 0; for (var yy = Math.round(sp); yy < H - sp; yy += 5) { tot++; var o1 = px(Math.max(0, Math.round(bp * 0.4)), yy), i1 = px(Math.round(bp) + 2, yy); if (o1[0] > 245 && o1[1] > 245 && o1[2] > 245 && !(i1[0] > 245 && i1[1] > 245 && i1[2] > 245)) wo++; }
             if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden kann ein feiner weißer Rand sichtbar sein. Hintergrund bitte bis ganz an den Rand der Datei ziehen."); }
