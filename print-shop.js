@@ -1964,12 +1964,61 @@ module.exports = function (D) {
     catch (e) { return null; }
   }
   function stretchPt() { return 0.3 * MM_PT; }   // Breite des Randstreifens, dessen Farben in Beschnitt/freie Flächen gezogen werden
-  // Randfarben aus dem Browser prüfen: {l,r,t,b} je 1–400 Farben "#rrggbb" → pdf-lib-Farben, sonst null
-  function edgeColors(c) {
-    if (!c || typeof c !== "object") return null; const { rgb } = require("pdf-lib"), o = {};
-    for (const k of ["l", "r", "t", "b"]) { const a = c[k]; if (!Array.isArray(a) || !a.length || a.length > 1200) return null;
-      o[k] = []; for (const h of a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(h)); if (!m) return null; const n = parseInt(m[1], 16); o[k].push(rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255)); } }
-    return o;
+  /* Lücken je Kante aus dem Browser (Text/Detail direkt an der Kante): [von, bis, Quelle davor, Quelle danach] in mm entlang der Kante
+     (l/r von unten, t/b von links, ab der Motivkante); Quelle = saubere Fläche neben der Lücke, -1 = keine. → pt, sortiert, zusammengefasst */
+  function bleedGaps(g, len) {
+    if (!Array.isArray(g)) return []; const out = [];
+    const q = v => { v = +v; return isFinite(v) && v >= 0 ? Math.min(len, v * MM_PT) : -1; };
+    for (const x of g.slice(0, 300)) { if (!Array.isArray(x)) continue; const a = Math.max(0, (+x[0] || 0) * MM_PT), c = Math.min(len, (+x[1] || 0) * MM_PT); if (c - a > 0.05) out.push([a, c, x.length > 2 ? q(x[2]) : null, x.length > 3 ? q(x[3]) : null]); }
+    out.sort((p, r) => p[0] - r[0]); const m = [];
+    for (const x of out) { const l = m[m.length - 1]; if (l && x[0] <= l[1]) { if (x[1] > l[1]) { l[1] = x[1]; l[3] = x[3]; } } else m.push(x); }
+    return m;
+  }
+  /* „Farben erweitern“ (Simon 19.11.2026, im Labor an echten Dateien getestet): der Beschnitt entsteht aus der Datei selbst – exakte Druckfarben, Vektor, pixelgenau.
+     Ein 0,3 mm schmaler Streifen 0,1 mm innerhalb der Motivkante wird nach außen gezogen: Balken, Linien, Flächen und Fotos laufen nahtlos weiter.
+     Wo laut Browser-Analyse Text/Detail an der Kante liegt, wird stattdessen ein winziges Stück der sauberen Fläche daneben über die Lücke gezogen.
+     Vergrößerung höchstens 10-fach (sonst scheitern Renderer an riesig skalierten Bildern), kleine Überlappungen gegen Haarlinien in der Vorschau. */
+  function bleedFill(pg, embM, ops, o) {
+    const { pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = ops;
+    const { W, H, b, sx, sy, xa, ya, gaps } = o, OW = W + 2 * b, OH = H + 2 * b, e = 1.5, J = 0.4, JA = 0.3;
+    const OFF = 0.1 * MM_PT, SW0 = 0.3 * MM_PT, NB = 0.1 * MM_PT, KMAX = 10, MID = OFF + SW0 / 2, CL = 0.08 * MM_PT, ID = { A: 0, p: 0, sg: 1, k: 1 };
+    const draw = (rects, X, Y) => {
+      const r = rects.filter(q => q[2] > 0.01 && q[3] > 0.01); if (!r.length) return;
+      pg.pushOperators(pushGraphicsState(), ...r.map(q => rectangle(q[0], q[1], q[2], q[3])), clip(), endPath());
+      pg.drawPage(embM, { x: X.A + X.sg * X.k * (b - X.p), y: Y.A + Y.sg * Y.k * (b - Y.p), xScale: X.sg * X.k * sx, yScale: Y.sg * Y.k * sy });
+      pg.pushOperators(popGraphicsState());
+    };
+    const LX = xa[1] - xa[0], LY = ya[1] - ya[0];
+    /* Quellpunkt entlang einer Kante: liegt er in einer Lücke, auf die saubere Stelle daneben ausweichen */
+    const free = (gl, pos, len) => { for (const [a, c, sA, sC] of gl) if (pos >= a && pos <= c) { const lo = sA != null && sA >= 0 ? sA : a - NB, hi = sC != null && sC >= 0 ? sC : c + NB; const okLo = lo >= MID / 2 && lo <= a, okHi = hi <= len - MID / 2 && hi >= c; return okLo && (!okHi || pos - lo <= hi - pos) ? lo : okHi ? hi : pos; } return pos; };
+    /* 1) Ecken: kleine Zelle an der Motivecke auf die ganze Ecke ziehen */
+    const corners = [[0, 0, xa[0], ya[0], "l", "b", 0, 0], [xa[1], 0, OW - xa[1], ya[0], "r", "b", 0, LX], [0, ya[1], xa[0], OH - ya[1], "l", "t", LY, 0], [xa[1], ya[1], OW - xa[1], OH - ya[1], "r", "t", LY, LX]];
+    for (const [cx, cy, cw, ch, sv, sh, alongV, alongH] of corners) {
+      if (cw <= 0.01 || ch <= 0.01) continue;
+      const py = ya[0] + free(gaps[sv], alongV === 0 ? MID : LY - MID, LY), pxx = xa[0] + free(gaps[sh], alongH === 0 ? MID : LX - MID, LX);
+      draw([[Math.max(0, cx - J), Math.max(0, cy - J), cw + 2 * J, ch + 2 * J]], { A: cx + cw / 2, p: pxx, sg: 1, k: Math.min(KMAX, (cw + 2 * J) / CL) }, { A: cy + ch / 2, p: py, sg: 1, k: Math.min(KMAX, (ch + 2 * J) / CL) });
+    }
+    /* 2) Kanten: Randstreifen exakt nach außen ziehen (ohne Überlappung in die Lücken), danach die Lücken aus der sauberen Fläche daneben füllen */
+    const sides = [
+      { s: "l", v: true, ax: xa[0], p: xa[0] + OFF, band: [0, xa[0] + e] },
+      { s: "r", v: true, ax: xa[1], p: xa[1] - OFF, band: [xa[1] - e, OW] },
+      { s: "b", v: false, ax: ya[0], p: ya[0] + OFF, band: [0, ya[0] + e] },
+      { s: "t", v: false, ax: ya[1], p: ya[1] - OFF, band: [ya[1] - e, OH] }];
+    for (const sd of sides) {
+      const bw = sd.band[1] - sd.band[0]; if (bw <= e + 0.01) continue;
+      const SW = Math.max(SW0, (bw - e) / KMAX), perp = { A: sd.ax, p: sd.p, sg: -1, k: Math.max(1, (bw - e) / SW + 0.5) }, org = sd.v ? ya[0] : xa[0], len = sd.v ? LY : LX, gl = gaps[sd.s] || [];
+      const rect = (u0, u1) => sd.v ? [sd.band[0], org + u0 - JA, bw, u1 - u0 + 2 * JA] : [org + u0 - JA, sd.band[0], u1 - u0 + 2 * JA, bw];
+      const rectG = (u0, u1) => sd.v ? [sd.band[0], org + u0, bw, u1 - u0] : [org + u0, sd.band[0], u1 - u0, bw];
+      const put = (rects, al) => sd.v ? draw(rects, perp, al) : draw(rects, al, perp);
+      const good = []; let pos = 0; for (const [a, c] of gl) { if (a > pos) good.push(rectG(pos === 0 ? -1 : pos, a)); pos = Math.max(pos, c); } if (pos < len) good.push(rectG(pos === 0 ? -1 : pos, len + 1));
+      put(good, ID);
+      const SEG = KMAX * CL - 2 * JA;
+      const fill = (u0, u1, s) => { const ns = Math.max(1, Math.ceil((u1 - u0) / SEG)), sl = (u1 - u0) / ns; for (let i = 0; i < ns; i++) { const u = u0 + i * sl, v = u + sl; put([rect(u, v)], { A: org + (u + v) / 2, p: org + s, sg: 1, k: (sl + 2 * JA) / CL }); } };
+      for (const [a, c, sA, sC] of gl) {
+        const m = (a + c) / 2, lo = sA != null ? sA : a - NB, hi = sC != null ? sC : c + NB, okLo = lo >= CL / 2 && lo <= a, okHi = hi <= len - CL / 2 && hi >= c;
+        if (okLo && okHi) { fill(a, m, lo); fill(m, c, hi); } else if (okLo) fill(a, c, lo); else if (okHi) fill(a, c, hi); else put([rect(a, c)], ID);
+      }
+    }
   }
   async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
@@ -1991,26 +2040,9 @@ module.exports = function (D) {
         const sx = W / pw, sy = H / ph, e = 1.5, ins = (Array.isArray(insets) ? insets[pi] : insets) || {}, lim = v => Math.max(0, Math.min(6 * MM_PT, (+v || 0) * MM_PT));
         const L = Math.min(lim(ins.l), W * 0.1), R = Math.min(lim(ins.r), W * 0.1), T = Math.min(lim(ins.t), H * 0.1), Bo = Math.min(lim(ins.b), H * 0.1), any = L + R + T + Bo > 0;
         const xa = [b + L, b + W - R], ya = [b + Bo, b + H - T];   // Spiegelachsen = Motivkanten
-        // Vom Browser gemessene Randfarben (je Kante die vorherrschende Farbe pro mm, Text/feine Linien herausgefiltert, Simon 19.11.2026): Beschnitt als Farbflächen –
-        // sonst (ältere Aufrufe) wird ein 0,3 mm Randstreifen nach außen gezogen
-        const ec = edgeColors(ins.c);
-        if (ec) {
-          const OW = W + 2 * b, OH = H + 2 * b, ov = 0.3, put = (x, y, w, h, c) => pg.drawRectangle({ x, y, width: w, height: h, color: c, borderWidth: 0 });
-          const vert = (arr, x, w) => { const n = arr.length, h = (ya[1] - ya[0]) / n; arr.forEach((c, i) => put(x, ya[1] - (i + 1) * h - ov, w, h + 2 * ov, c)); };   // l/r: oben → unten
-          const horz = (arr, y, h) => { const n = arr.length, w = (xa[1] - xa[0]) / n; arr.forEach((c, i) => put(xa[0] + i * w - ov, y, w + 2 * ov, h, c)); };   // t/b: links → rechts
-          vert(ec.l, 0, xa[0] + e); vert(ec.r, xa[1] - e, OW - xa[1] + e); horz(ec.t, ya[1] - e, OH - ya[1] + e); horz(ec.b, 0, ya[0] + e);
-          put(0, ya[1] - e, xa[0] + e, OH - ya[1] + e, ec.t[0]); put(xa[1] - e, ya[1] - e, OW - xa[1] + e, OH - ya[1] + e, ec.t[ec.t.length - 1]);
-          put(0, 0, xa[0] + e, ya[0] + e, ec.b[0]); put(xa[1] - e, 0, OW - xa[1] + e, ya[0] + e, ec.b[ec.b.length - 1]);
-        }
-        const ncp = !ec && nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, box) : await out.embedPage(ncp)) : emb;   // Kopien ohne Schneidelinien
-        if (!ec) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
-          const cx = dx < 0 ? 0 : dx === 0 ? xa[0] : xa[1], cw = dx < 0 ? xa[0] : dx === 0 ? xa[1] - xa[0] : W + 2 * b - xa[1], cy = dy < 0 ? 0 : dy === 0 ? ya[0] : ya[1], ch = dy < 0 ? ya[0] : dy === 0 ? ya[1] - ya[0] : H + 2 * b - ya[1];
-          pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
-          // Farben erweitern statt spiegeln (Simon 19.11.2026): nur ein 0,3 mm schmaler Streifen an der Motivkante wird nach außen gezogen – keine gespiegelten Texte im Beschnitt
-          const kx = dx === 0 ? 1 : Math.max(1, (cw + 2 * e) / stretchPt()), ky = dy === 0 ? 1 : Math.max(1, (ch + 2 * e) / stretchPt()), ax = dx < 0 ? xa[0] : xa[1], ay = dy < 0 ? ya[0] : ya[1];
-          pg.drawPage(embM, { x: dx === 0 ? b : ax + kx * (ax - b) + (dx < 0 ? e : -e), y: dy === 0 ? b : ay + ky * (ay - b) + (dy < 0 ? e : -e), xScale: dx === 0 ? sx : -sx * kx, yScale: dy === 0 ? sy : -sy * ky });
-          pg.pushOperators(popGraphicsState());
-        }
+        const g = ins.g || {}, gaps = { l: bleedGaps(g.l, ya[1] - ya[0]), r: bleedGaps(g.r, ya[1] - ya[0]), t: bleedGaps(g.t, xa[1] - xa[0]), b: bleedGaps(g.b, xa[1] - xa[0]) };
+        const ncp = nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, box) : await out.embedPage(ncp)) : emb;   // Beschnitt ohne Schneidelinien
+        bleedFill(pg, embM, { pushGraphicsState, popGraphicsState, rectangle, clip, endPath }, { W, H, b, sx, sy, xa, ya, gaps });
         if (any) pg.pushOperators(pushGraphicsState(), rectangle(xa[0], ya[0], xa[1] - xa[0], ya[1] - ya[0]), clip(), endPath());
         pg.drawPage(emb, { x: b, y: b, xScale: sx, yScale: sy });
         if (any) pg.pushOperators(popGraphicsState());
@@ -5813,7 +5845,7 @@ module.exports = function (D) {
       if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
         if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const b = await readJson(req, 1500000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
-      const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, c: x && x.c })) : null;   // Randfarben aus dem Browser (Farben erweitern)
+      const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, g: x && x.g })) : null;   // Randanalyse aus dem Browser (Farben erweitern)
         if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(id), info = await pdfInfoX(data); if (info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
@@ -6410,7 +6442,7 @@ module.exports = function (D) {
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, mode = b.mode === "zoom" ? "zoom" : "mirror";
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId); if (!fm || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(curId), info = data && await pdfInfoX(data); if (!info || info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
-        const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, c: x && x.c })) : null;
+        const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, g: x && x.g })) : null;
         let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randfarben nach außen erweitert – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });

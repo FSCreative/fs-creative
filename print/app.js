@@ -2815,30 +2815,66 @@
   function pmkHtml() { var sd = pmkSides() ? '<div class="ps-pmk-sd" role="group" aria-label="Seite">' + sideNames().map(function (n, i) { return '<button type="button" data-pmkside="' + i + '" aria-pressed="' + ((S.pmkSide || 0) === i) + '">' + n + "</button>"; }).join("") + "</div>" : "";
     return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div>' + sd + '<div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }
   function fileUrl(f) { return "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1"; }
-  /* „Farben erweitern“ (Simon 19.11.2026): Randfarben je Kante im Browser messen – pro mm die vorherrschende Farbe in ±3 mm entlang der Kante,
-     so fallen Text und feine Linien am Rand heraus und Farbflächen bleiben. Der Server füllt damit den Beschnitt. Fehler/Timeout → null (Server zieht dann den Rand nach außen). */
-  function edgeCols(d, W, H, pxmm) {
-    /* je ~0,25 mm ein Wert, gemessen 0,2–0,5 mm innerhalb der Kante. Klare Fläche (mind. 45 % gleiche Farbe in ±1,5 mm) → diese Farbe, Text fällt heraus; sonst (Foto/Verlauf) Mittelwert in ±0,4 mm */
-    /* neu: läuft eine Farbe mind. 4 mm gerade nach innen (Balken, Trennlinie, Flächengrenze) → genau so mit harter Kante verlängern; sonst (Text, Details) die vorherrschende Hintergrundfarbe in ±1,5 mm, nie gemittelt */
-    var hx = function (n) { n = Math.max(0, Math.min(255, Math.round(n))); return (n < 16 ? "0" : "") + n.toString(16); }, d0 = Math.max(1, Math.round(0.2 * pxmm)), dN = Math.round(4 * pxmm), dS = Math.max(1, Math.round(0.25 * pxmm));
-    var near = function (o, q) { return Math.abs(d[o] - d[q]) <= 26 && Math.abs(d[o + 1] - d[q + 1]) <= 26 && Math.abs(d[o + 2] - d[q + 2]) <= 26; };
-    var one = function (o) { return "#" + hx(d[o]) + hx(d[o + 1]) + hx(d[o + 2]); };
-    var pick = function (n, at, depth) { var lim = Math.min(dN, Math.round(depth * 0.25)), seg = Math.max(pxmm / 5, n / 1200), win = 1.5 * pxmm, res = [];
-      for (var s = 0; s < n - 0.5 && res.length < 1200; s += seg) { var c = Math.min(n - 1, Math.round(s + seg / 2)), o0 = at(c, d0), bar = lim > d0;
-        for (var q = d0 + dS; bar && q <= lim; q += dS) if (!near(o0, at(c, q))) bar = false;
-        if (bar) { res.push(one(o0)); continue; }
-        var a = Math.max(0, Math.round(c - win)), z = Math.min(n, Math.round(c + win)), h = {}, best = null;
-        for (var k = a; k < z; k++) for (var q2 = d0; q2 <= d0 + 2 * dS; q2 += dS) { var o = at(k, q2), key = (d[o] >> 4) + "," + (d[o + 1] >> 4) + "," + (d[o + 2] >> 4), e = h[key] || (h[key] = { n: 0, r: 0, g: 0, b: 0 }); e.n++; e.r += d[o]; e.g += d[o + 1]; e.b += d[o + 2]; if (!best || e.n > best.n) best = e; }
-        res.push(best ? "#" + hx(best.r / best.n) + hx(best.g / best.n) + hx(best.b / best.n) : one(o0)); }
-      return res; };
+  /* Beschnitt „Farben erweitern“ – Randanalyse im Browser (Simon 19.11.2026). Identisch im Cockpit (zprint.js) und im Shop (app.js).
+     d = RGBA-Pixel der gerenderten Seite (weißer Hintergrund), W/H = Pixelmaße, R = Endformat-Rechteck in Pixeln {x0,y0,x1,y1}, pxmm = Pixel je mm.
+     Ergebnis: weiße Randstreifen je Kante in mm (l/r/t/b) + Lücken g je Kante [von, bis, Quelle davor, Quelle danach] in mm entlang der Kante – dort liegt
+     Text/feines Detail direkt an der Kante, der Server füllt diese Stellen mit der sauberen Fläche daneben statt den Text nach außen zu ziehen.
+     Kantenrichtung wie im PDF: l/r von unten nach oben, t/b von links nach rechts – gemessen ab der Motivkante (nach den weißen Streifen). */
+  function bleedScan(d, W, H, R, pxmm) {
+    var x0 = R.x0, y0 = R.y0, x1 = R.x1, y1 = R.y1;
+    var mmr = function (c) { var v = c / pxmm; return v >= 0.2 ? Math.round((v + 0.15) * 10) / 10 : 0; };
+    var wsh = function (a, b2, horiz, fixed) { var nW = 0, tot = 0; for (var k = a; k < b2; k += 2) { var px = horiz ? k : fixed, py = horiz ? fixed : k, o = (py * W + px) * 4; tot++; if (d[o] >= 244 && d[o + 1] >= 244 && d[o + 2] >= 244) nW++; } return tot ? nW / tot : 0; };
+    var maxX = Math.round(Math.min(6 * pxmm, (x1 - x0) * 0.1)), maxY = Math.round(Math.min(6 * pxmm, (y1 - y0) * 0.1));
+    /* weißer Randstreifen nur, wenn danach wirklich das Motiv beginnt (Spalte/Zeile überwiegend farbig) – endet das Weiß nur an etwas Text, ist es eine weiße Fläche im Design */
+    var run = function (start, step, lim, horiz) { var c = 0, sh = function (pos) { return horiz ? wsh(x0, x1, true, pos) : wsh(y0, y1, false, pos); };
+      for (var k = 0; k < lim; k++) { if (sh(start + step * k) < 0.985) break; c++; }
+      if (c >= lim || !c) return 0; var k2 = Math.min(lim - 1, c + Math.max(1, Math.round(0.3 * pxmm))); return sh(start + step * c) < 0.6 && sh(start + step * k2) < 0.6 ? c : 0; };
+    var L = mmr(run(x0 + 1, 1, maxX, false)), Rr = mmr(run(x1 - 2, -1, maxX, false)), T = mmr(run(y0 + 1, 1, maxY, true)), B = mmr(run(y1 - 2, -1, maxY, true));
+    var mx0 = x0 + Math.round(L * pxmm), mx1 = x1 - Math.round(Rr * pxmm), my0 = y0 + Math.round(T * pxmm), my1 = y1 - Math.round(B * pxmm);
     var px = function (x, y) { return (y * W + x) * 4; };
-    return { l: pick(H, function (k, q) { return px(q, k); }, W), r: pick(H, function (k, q) { return px(W - 1 - q, k); }, W), t: pick(W, function (k, q) { return px(k, q); }, H), b: pick(W, function (k, q) { return px(k, H - 1 - q); }, H) };
+    var near = function (o, q, tol) { return Math.abs(d[o] - d[q]) <= tol && Math.abs(d[o + 1] - d[q + 1]) <= tol && Math.abs(d[o + 2] - d[q + 2]) <= tol; };
+    var detect = function (n, at, depth, fromEnd) {
+      if (n < 4) return [];
+      /* Fläche = Farbe läuft von der Kante aus mind. 70 % von 5 mm gerade nach innen (Hintergrund, Balken, Linie). Text/Detail = keine Fläche und
+         deutlich anders als die nächste breite Fläche daneben (max. 3 mm entfernt). Fotos/Verläufe haben keine Flächen → werden nie als Lücke markiert. */
+      var qs = Math.max(1, Math.round(0.25 * pxmm)), dS = Math.max(1, Math.round(0.25 * pxmm)), lim = Math.min(Math.round(5 * pxmm), Math.round(depth * 0.3));
+      var solid = new Uint8Array(n), reach = Math.round(3 * pxmm);
+      /* Streifen, der nach außen gezogen wird: 0,1–0,6 mm innerhalb der Kante – alle Tiefen prüfen (Buchstaben beginnen oft erst knapp unter der Kante); Streifen muss wirklich einfarbig sein */
+      var sq = []; for (var z0 = Math.max(1, Math.round(0.1 * pxmm)); z0 <= Math.max(2, Math.round(0.6 * pxmm)); z0 += Math.max(1, Math.round(0.1 * pxmm))) sq.push(z0);
+      for (var k = 0; k < n; k++) { var o = at(k, qs), ok = true, same = 0, tot = 0; for (var j = 0; ok && j < sq.length; j++) if (!near(o, at(k, sq[j]), 14)) ok = false;
+        if (ok) for (var q = qs + dS; q <= lim; q += dS) { tot++; if (near(o, at(k, q), 30)) same++; } solid[k] = ok && tot >= 4 && same / tot >= 0.7 ? 1 : 0; }
+      /* nur breite Flächen (ab 0,4 mm) dienen als Hintergrund-Bezug/Quelle – dünne Linien laufen zwar weiter, sind aber kein Hintergrund */
+      var wide = new Uint8Array(n), minW = Math.max(2, Math.round(0.4 * pxmm)); for (var r0 = 0; r0 < n;) { if (!solid[r0]) { r0++; continue; } var r1 = r0; while (r1 < n && solid[r1] && near(at(r0, qs), at(r1, qs), 30)) r1++; if (r1 - r0 >= minW) for (var r2 = r0; r2 < r1; r2++) wide[r2] = 1; r0 = r1; }
+      var prev = new Int32Array(n), next = new Int32Array(n), last = -1; for (var k1 = 0; k1 < n; k1++) { if (wide[k1]) last = k1; prev[k1] = last; } last = -1; for (var k3 = n - 1; k3 >= 0; k3--) { if (wide[k3]) last = k3; next[k3] = last; }
+      var fl = new Uint8Array(n);
+      for (var k2 = 0; k2 < n; k2++) { if (solid[k2]) continue; var pv = prev[k2], nx = next[k2], dp = pv < 0 ? 1e9 : k2 - pv, dn = nx < 0 ? 1e9 : nx - k2, ref = dp <= dn ? pv : nx;
+        if (ref < 0 || Math.min(dp, dn) > reach) continue; var o3 = at(ref, qs);
+        for (var j2 = 0; j2 < sq.length; j2++) { var o2 = at(k2, sq[j2]); if (Math.max(Math.abs(d[o2] - d[o3]), Math.abs(d[o2 + 1] - d[o3 + 1]), Math.abs(d[o2 + 2] - d[o3 + 2])) > 50) { fl[k2] = 1; break; } } }
+      /* Lücken nie über Flächen/Linien hinweg (die laufen exakt weiter) – Zusammenfassen und Rand nur über nicht-flächige Stellen */
+      var iv = [], join = Math.max(1, Math.round(0.3 * pxmm)), pad = Math.max(1, Math.round(0.15 * pxmm)), i = 0;
+      while (i < n) { if (!fl[i]) { i++; continue; } var a2 = i, z2 = i, gap = 0; i++;
+        while (i < n && gap <= join && !solid[i]) { if (fl[i]) { z2 = i; gap = 0; } else gap++; i++; }
+        for (var p1 = 0; p1 < pad && a2 > 0 && !solid[a2 - 1]; p1++) a2--; z2++; for (var p2 = 0; p2 < pad && z2 < n && !solid[z2]; p2++) z2++; var l0 = iv[iv.length - 1];
+        if (l0 && a2 <= l0[1]) l0[1] = Math.max(l0[1], z2); else iv.push([a2, z2]); }
+      /* je Lücke die nächste saubere Fläche davor/danach (Quelle für die Füllung), sonst -1 */
+      var src = function (k, dir) { var s2 = dir < 0 ? prev[Math.max(0, k)] : next[Math.min(n - 1, k)]; if (s2 < 0 || Math.abs(s2 - k) > reach) return -1; var s3 = s2 + 2 * dir; return s3 >= 0 && s3 < n && wide[s3] ? s3 : s2; };
+      var mm = function (k) { return Math.round((fromEnd ? n - k : k) / pxmm * 100) / 100; };
+      return iv.slice(0, 300).map(function (g) { var sL = g[0] > 0 ? src(g[0] - 1, -1) : -1, sR = g[1] < n ? src(g[1], 1) : -1, A = mm(fromEnd ? g[1] : g[0]), Z = mm(fromEnd ? g[0] : g[1]);
+        var pa = fromEnd ? sR : sL, pz = fromEnd ? sL : sR; return [A, Z, pa < 0 ? -1 : Math.round((fromEnd ? n - pa - 0.5 : pa + 0.5) / pxmm * 100) / 100, pz < 0 ? -1 : Math.round((fromEnd ? n - pz - 0.5 : pz + 0.5) / pxmm * 100) / 100]; })
+        .sort(function (p, q3) { return p[0] - q3[0]; });
+    };
+    var w = mx1 - mx0, h2 = my1 - my0;
+    return { l: L, r: Rr, t: T, b: B, g: {
+      l: detect(h2, function (k, q) { return px(mx0 + q, my0 + k); }, w, true),
+      r: detect(h2, function (k, q) { return px(mx1 - 1 - q, my0 + k); }, w, true),
+      t: detect(w, function (k, q) { return px(mx0 + k, my0 + q); }, h2, false),
+      b: detect(w, function (k, q) { return px(mx0 + k, my1 - 1 - q); }, h2, false) } };
   }
   function edgeInsets(f) {
     var work = pdfjs().then(function (L) { return L.getDocument({ url: fileUrl(f), withCredentials: true }).promise; }).then(function (doc) { var out = [], n = Math.min(doc.numPages, 8);
       var one = function (i) { if (i > n) return out; return doc.getPage(i).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(5, 1200 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
         var x = cv.getContext("2d", { willReadFrequently: true }); x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height);
-        return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { out.push({ l: 0, r: 0, t: 0, b: 0, c: edgeCols(x.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, cv.width / (v0.width / 72 * 25.4)) }); return one(i + 1); }); }); };
+        return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { out.push(bleedScan(x.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, { x0: 0, y0: 0, x1: cv.width, y1: cv.height }, cv.width / (v0.width / 72 * 25.4))); return one(i + 1); }); }); };
       return one(1); });
     return Promise.race([work, new Promise(function (r) { setTimeout(function () { r(null); }, 15000); })]).catch(function () { return null; });
   }
