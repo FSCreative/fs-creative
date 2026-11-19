@@ -1967,7 +1967,7 @@ module.exports = function (D) {
   // Randfarben aus dem Browser prüfen: {l,r,t,b} je 1–400 Farben "#rrggbb" → pdf-lib-Farben, sonst null
   function edgeColors(c) {
     if (!c || typeof c !== "object") return null; const { rgb } = require("pdf-lib"), o = {};
-    for (const k of ["l", "r", "t", "b"]) { const a = c[k]; if (!Array.isArray(a) || !a.length || a.length > 400) return null;
+    for (const k of ["l", "r", "t", "b"]) { const a = c[k]; if (!Array.isArray(a) || !a.length || a.length > 1200) return null;
       o[k] = []; for (const h of a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(h)); if (!m) return null; const n = parseInt(m[1], 16); o[k].push(rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255)); } }
     return o;
   }
@@ -5810,7 +5810,7 @@ module.exports = function (D) {
       }
       if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
         if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
-        const b = await readJson(req, 400000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
+        const b = await readJson(req, 1500000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
       const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, c: x && x.c })) : null;   // Randfarben aus dem Browser (Farben erweitern)
         if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
@@ -6403,7 +6403,7 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/bleed" && req.method === "POST") {   // Beschnitt im Cockpit ergänzen: Rand spiegeln oder Motiv leicht vergrößern (nur wenn die Datei keinen Beschnitt hat)
-        const b = await readJson(req, 400000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const b = await readJson(req, 1500000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, mode = b.mode === "zoom" ? "zoom" : "mirror";
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId); if (!fm || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
