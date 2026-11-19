@@ -513,12 +513,16 @@ function sdPosShow(){ sdToolsSync(sdPl()); }
 /* Randfarben je Kante (Simon 19.11.2026 „Farben erweitern“): pro mm die vorherrschende Farbe in ±3 mm entlang der Motivkante – Text und feine Linien am Rand
    fallen so heraus, Farbflächen (z. B. roter Balken) bleiben. l/r von oben nach unten, t/b von links nach rechts; max. 400 Werte je Kante. */
 function prEdgeCols(d,W,x0,y0,x1,y1,pxmm){ try{
-  var hx=function(v){ v=Math.max(0,Math.min(255,Math.round(v))); return (v<16?"0":"")+v.toString(16); };
-  var pick=function(n,at){ var seg=Math.max(pxmm,n/400), win=3*pxmm, res=[]; for(var s=0;s<n-0.5;s+=seg){ var c=s+seg/2, a=Math.max(0,Math.round(c-win)), z=Math.min(n,Math.round(c+win)), h={}, best=null;
-      for(var k=a;k<z;k++){ var o=at(k), key=(d[o]>>4)+","+(d[o+1]>>4)+","+(d[o+2]>>4), e=h[key]||(h[key]={n:0,r:0,g:0,b:0}); e.n++; e.r+=d[o]; e.g+=d[o+1]; e.b+=d[o+2]; if(!best||e.n>best.n) best=e; }
-      if(best) res.push("#"+hx(best.r/best.n)+hx(best.g/best.n)+hx(best.b/best.n)); if(res.length>=400) break; } return res; };
-  var px=function(x,y){ return (y*W+x)*4; }, h=y1-y0, w=x1-x0;
-  var c={l:pick(h,function(k){ return px(x0+1,y0+k); }),r:pick(h,function(k){ return px(x1-2,y0+k); }),t:pick(w,function(k){ return px(x0+k,y0+1); }),b:pick(w,function(k){ return px(x0+k,y1-2); })};
+  /* je ~0,25 mm ein Wert; gemessen 0,2–0,5 mm innerhalb der Kante (keine Randlinie/Kantenglättung). Klare Fläche (≥ 45 % gleiche Farbe in ±1,5 mm) → diese Farbe,
+     Text darauf fällt heraus; sonst (Foto/Verlauf) Mittelwert in ±0,4 mm – fließend statt blockig. */
+  var hx=function(v){ v=Math.max(0,Math.min(255,Math.round(v))); return (v<16?"0":"")+v.toString(16); }, dz=[], dA=Math.max(1,Math.round(0.2*pxmm)), dB=Math.max(dA+1,Math.round(0.5*pxmm));
+  for(var q=dA;q<=dB;q++) dz.push(q);
+  var pick=function(n,at){ var seg=Math.max(pxmm/4,n/400), win=1.5*pxmm, sm=Math.max(1,0.4*pxmm), res=[]; for(var s=0;s<n-0.5&&res.length<400;s+=seg){ var c=s+seg/2, a=Math.max(0,Math.round(c-win)), z=Math.min(n,Math.round(c+win)), h={}, best=null, tot=0, ar=0,ag=0,ab=0,an=0;
+      for(var k=a;k<z;k++) for(var j=0;j<dz.length;j++){ var o=at(k,dz[j]), key=(d[o]>>4)+","+(d[o+1]>>4)+","+(d[o+2]>>4), e=h[key]||(h[key]={n:0,r:0,g:0,b:0}); e.n++; tot++; e.r+=d[o]; e.g+=d[o+1]; e.b+=d[o+2]; if(!best||e.n>best.n) best=e;
+        if(Math.abs(k-c)<=sm){ ar+=d[o]; ag+=d[o+1]; ab+=d[o+2]; an++; } }
+      if(best&&best.n/tot>=0.45) res.push("#"+hx(best.r/best.n)+hx(best.g/best.n)+hx(best.b/best.n)); else if(an) res.push("#"+hx(ar/an)+hx(ag/an)+hx(ab/an)); else if(best) res.push("#"+hx(best.r/best.n)+hx(best.g/best.n)+hx(best.b/best.n)); } return res; };
+  var px=function(x,y){ return (y*W+x)*4; };
+  var c={l:pick(y1-y0,function(k,q){ return px(x0+q,y0+k); }),r:pick(y1-y0,function(k,q){ return px(x1-1-q,y0+k); }),t:pick(x1-x0,function(k,q){ return px(x0+k,y0+q); }),b:pick(x1-x0,function(k,q){ return px(x0+k,y1-1-q); })};
   return c.l.length&&c.r.length&&c.t.length&&c.b.length?c:undefined; }catch(e){ return undefined; } }
 function prInsets(oid,fid,size,bleed){ return prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(oid,fid,false),withCredentials:true,disableAutoFetch:true,disableStream:true,rangeChunkSize:524288}).promise; }).then(function(doc){ var out=[], n=Math.min(doc.numPages,8);
   var one=function(i){ if(i>n) return Promise.resolve(out); return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(6,1400/v0.width), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height); var x=cv.getContext("2d",{willReadFrequently:true}); x.fillStyle="#fff"; x.fillRect(0,0,cv.width,cv.height);

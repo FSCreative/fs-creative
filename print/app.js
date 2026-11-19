@@ -2778,12 +2778,16 @@
   /* „Farben erweitern“ (Simon 19.11.2026): Randfarben je Kante im Browser messen – pro mm die vorherrschende Farbe in ±3 mm entlang der Kante,
      so fallen Text und feine Linien am Rand heraus und Farbflächen bleiben. Der Server füllt damit den Beschnitt. Fehler/Timeout → null (Server zieht dann den Rand nach außen). */
   function edgeCols(d, W, H, pxmm) {
-    var hx = function (n) { n = Math.max(0, Math.min(255, Math.round(n))); return (n < 16 ? "0" : "") + n.toString(16); };
-    var pick = function (n, at) { var seg = Math.max(pxmm, n / 400), win = 3 * pxmm, res = []; for (var s = 0; s < n - 0.5 && res.length < 400; s += seg) { var c = s + seg / 2, a = Math.max(0, Math.round(c - win)), z = Math.min(n, Math.round(c + win)), h = {}, best = null;
-        for (var k = a; k < z; k++) { var o = at(k), key = (d[o] >> 4) + "," + (d[o + 1] >> 4) + "," + (d[o + 2] >> 4), e = h[key] || (h[key] = { n: 0, r: 0, g: 0, b: 0 }); e.n++; e.r += d[o]; e.g += d[o + 1]; e.b += d[o + 2]; if (!best || e.n > best.n) best = e; }
-        if (best) res.push("#" + hx(best.r / best.n) + hx(best.g / best.n) + hx(best.b / best.n)); } return res; };
+    /* je ~0,25 mm ein Wert, gemessen 0,2–0,5 mm innerhalb der Kante. Klare Fläche (mind. 45 % gleiche Farbe in ±1,5 mm) → diese Farbe, Text fällt heraus; sonst (Foto/Verlauf) Mittelwert in ±0,4 mm */
+    var hx = function (n) { n = Math.max(0, Math.min(255, Math.round(n))); return (n < 16 ? "0" : "") + n.toString(16); }, dz = [], dA = Math.max(1, Math.round(0.2 * pxmm)), dB = Math.max(dA + 1, Math.round(0.5 * pxmm));
+    for (var q = dA; q <= dB; q++) dz.push(q);
+    var col = function (e, n) { return "#" + hx(e.r / n) + hx(e.g / n) + hx(e.b / n); };
+    var pick = function (n, at) { var seg = Math.max(pxmm / 4, n / 400), win = 1.5 * pxmm, sm = Math.max(1, 0.4 * pxmm), res = []; for (var s = 0; s < n - 0.5 && res.length < 400; s += seg) { var c = s + seg / 2, a = Math.max(0, Math.round(c - win)), z = Math.min(n, Math.round(c + win)), h = {}, best = null, tot = 0, av = { r: 0, g: 0, b: 0 }, an = 0;
+        for (var k = a; k < z; k++) for (var j = 0; j < dz.length; j++) { var o = at(k, dz[j]), key = (d[o] >> 4) + "," + (d[o + 1] >> 4) + "," + (d[o + 2] >> 4), e = h[key] || (h[key] = { n: 0, r: 0, g: 0, b: 0 }); e.n++; tot++; e.r += d[o]; e.g += d[o + 1]; e.b += d[o + 2]; if (!best || e.n > best.n) best = e;
+          if (Math.abs(k - c) <= sm) { av.r += d[o]; av.g += d[o + 1]; av.b += d[o + 2]; an++; } }
+        if (best && best.n / tot >= 0.45) res.push(col(best, best.n)); else if (an) res.push(col(av, an)); else if (best) res.push(col(best, best.n)); } return res; };
     var px = function (x, y) { return (y * W + x) * 4; };
-    return { l: pick(H, function (k) { return px(1, k); }), r: pick(H, function (k) { return px(W - 2, k); }), t: pick(W, function (k) { return px(k, 1); }), b: pick(W, function (k) { return px(k, H - 2); }) };
+    return { l: pick(H, function (k, q) { return px(q, k); }), r: pick(H, function (k, q) { return px(W - 1 - q, k); }), t: pick(W, function (k, q) { return px(k, q); }), b: pick(W, function (k, q) { return px(k, H - 1 - q); }) };
   }
   function edgeInsets(f) {
     var work = pdfjs().then(function (L) { return L.getDocument({ url: fileUrl(f), withCredentials: true }).promise; }).then(function (doc) { var out = [], n = Math.min(doc.numPages, 8);
