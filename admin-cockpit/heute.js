@@ -71,7 +71,7 @@ F.feed(function(){
 F.action("hnoinv",function(id){ var ok=F.ls("fsc_noinv_ok")||{}; ok[id]=Date.now(); F.ls("fsc_noinv_ok",ok); F.toast("Ausgeblendet – für diesen Auftrag kommt kein Hinweis mehr"); F.render(); });
 
 /* „Meine Aufgaben“ (früher To-Dos): offene Aufgaben aus „Aufträge“, nächste Frist zuerst; Haken = erledigt (mit Rückgängig), + legt eine Aufgabe ohne Auftrag an */
-function openTasks(){ var T=(F.D.auftraege&&F.D.auftraege.tasks)||[]; return T.filter(function(x){ return x.status!=="erledigt"; }).sort(function(a,b){ var pa=a.prio==="dringend"?0:a.prio==="hoch"?1:2, pb=b.prio==="dringend"?0:b.prio==="hoch"?1:2; return String(a.due||"9999").localeCompare(String(b.due||"9999"))||pa-pb; }); }
+function openTasks(){ var T=(F.D.auftraege&&F.D.auftraege.tasks)||[]; return T.filter(function(x){ return x.status!=="erledigt"&&!(F.tkIsLeadInq&&F.tkIsLeadInq(x)); }).sort(function(a,b){ var pa=a.prio==="dringend"?0:a.prio==="hoch"?1:2, pb=b.prio==="dringend"?0:b.prio==="hoch"?1:2; return String(a.due||"9999").localeCompare(String(b.due||"9999"))||pa-pb; }); }
 F.taskList=function(n){ var t=F.D.today, arr=openTasks().slice(0,n||8), P=(F.D.auftraege&&F.D.auftraege.projects)||[];
   return arr.length?arr.map(function(x){ var p=P.find(function(y){ return y.id===x.projectId; });
     return '<div class="tdrow"><input type="checkbox" data-tkdone="'+esc(x.id)+'" aria-label="Erledigt"><button type="button" class="todo-t" data-act="tkopen:'+esc(x.id)+'" title="'+esc(x.title||"")+'">'+esc(x.title||"")+(x.due?' <span class="due'+(x.due<t?" late":"")+'">'+(x.due<t?"überfällig · ":"")+de(x.due)+'</span>':'')+(p?' <span class="due">· '+esc(p.name)+'</span>':'')+'</button></div>'; }).join(""):'<div class="empty">Keine offenen Aufgaben.</div>'; };
@@ -163,8 +163,9 @@ function druckTile(){
   var M=F.prMargin?F.prMargin():null;
   if(!M) return tileHtml({k:"Druckshop-Marge",icon:"print",v:"Lade …",d:"Bestellungen im Druckshop",act:"go:print"});
   var m=M.m||{}, y=M.y||{}, mon=new Date(F.D.today+"T12:00:00").toLocaleDateString("de-AT",{month:"long"});
-  return tileHtml({k:"Druckshop-Marge",icon:"print",tag:["grey",mon],act:"go:print",v:eur(m.margin||0),
-    d:(m.n||0)+((m.n||0)===1?" Bestellung":" Bestellungen")+" · Umsatz "+eur(m.net||0)+" netto · "+String(F.D.today).slice(0,4)+": "+eur(y.margin||0)}); }
+  /* Durchsicht 19.11.2026: kurzer Titel (wurde abgeschnitten), klar „Marge“ beim Betrag, ohne verwirrenden Jahreswert */
+  return tileHtml({k:"Druckshop",icon:"print",tag:["grey",mon],act:"go:print",v:eur(m.margin||0),
+    d:"Marge · "+(m.n||0)+((m.n||0)===1?" Bestellung":" Bestellungen")+" · "+eur(m.net||0)+" Umsatz netto"}); }
 function kochduTile(){
   var kd=F.D.kochduDay; if(!kd) return tileHtml({k:"kochdu-Provision",icon:"euro",v:"Nicht verbunden",d:"kochdu-Statistik fehlt",act:"pltab:kochdu"});
   var when=kd.weekend?"Fr–So, "+de(kd.from).slice(0,6)+"–"+de(kd.to).slice(0,6):"gestern, "+dShort(kd.to);
@@ -302,7 +303,8 @@ function projectsPanel(){
     .sort(function(a,b){ return (b.over-a.over)||String(a.due||"9999").localeCompare(String(b.due||"9999")); }).slice(0,5);
   var body=P.length?P.map(function(x){ var c=PC[x.p.color||0]||PC[0];
     return '<button type="button" class="ab-r" data-act="tkprojopen:'+esc(x.p.id)+'" title="'+esc(x.p.name)+'"><span class="ab-t"><i style="background:'+c+'"></i><b>'+esc(x.p.name)+'</b><span class="ab-m'+(x.over?" bad-t":"")+'">'+(x.open?x.open+" offen":"alles erledigt")+(x.over?" · überfällig":x.due?" · Abgabe "+esc(deShort?deShort(x.due):de(x.due)):"")+'</span></span><span class="ab-b"><span style="width:'+x.pct+'%;background:'+c+'"></span></span></button>'; }).join("")
-    :'<p class="ag-none">Keine aktiven Aufträge. <button type="button" class="link" data-act="newproj">Auftrag anlegen</button></p>';
+    :(function(){ var loose=(A.tasks||[]).filter(function(t){ return t.status!=="erledigt"&&!t.projectId&&!t.print&&!(F.tkIsLeadInq&&F.tkIsLeadInq(t)); }).length;
+      return '<p class="ag-none">Keine aktiven Aufträge'+(loose?' – <button type="button" class="link" data-go="auftraege">'+loose+(loose===1?" offene Aufgabe":" offene Aufgaben")+' ohne Auftrag</button>':'')+'. <button type="button" class="link" data-act="newproj">Auftrag anlegen</button></p>'; })();
   return '<section class="panel agp ag-proj">'+hdr("Aufträge im Blick",lnk("Alle",'data-go="auftraege"'))+'<div class="ab">'+body+'</div></section>'; }
 
 /* ---------- Geschätztes Monatseinkommen (Desktop offen, Handy zum Aufklappen) ---------- */

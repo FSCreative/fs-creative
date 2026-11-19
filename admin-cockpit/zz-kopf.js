@@ -29,6 +29,8 @@ F.css(
     "color:var(--ink-2);font:700 11px/1 var(--f-mono,inherit);font-style:normal;font-variant-numeric:tabular-nums;opacity:1}"+
   sel(ON," b")+","+sel(ON," i")+"{background:color-mix(in srgb,var(--ground) 22%,transparent);color:inherit}"+
   ":root .mfs.warn:not([aria-current]){color:var(--bad)}"+
+  /* Postfach am PC: Ordner stehen links in der Ordnerspalte bzw. (schmaler) als Reiter – nie doppelt (Durchsicht 19.11.2026) */
+  "@media (min-width:901px){:root .view-post .fpill{display:none}}@media (min-width:1181px){:root .view-post .mfstrip{display:none}}"+
   /* Ebene 2: Filter-Chips im Postfach – leichter als die Reiter */
   ":root .mchips .chip{height:30px;min-height:30px;padding:0 11px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--ink-2);font-size:13px;font-weight:600}"+
   ":root .mchips .chip[aria-pressed=true]{background:color-mix(in srgb,var(--ink) 12%,transparent);border-color:transparent;color:var(--ink)}"

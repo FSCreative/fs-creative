@@ -120,7 +120,8 @@ function moveTargets(acc){ var out=[{path:"INBOX",name:"Posteingang"}]; customFo
 
 /* ---------- Daten übernehmen ---------- */
 // Vorschautext: CSS-Reste aus HTML-Mails entfernen (z. B. „body,table,td,a{-webkit-text-size-adjust:100%} …“)
-function cleanPrev(t){ t=String(t||"").replace(/@import\s+(url\()?[^;)\s]*\)?;?/gi," ").replace(/@(font-face|media|charset|keyframes)[^{]*/gi," "); if(!/\{[^}]*[a-z-]+:[^}]*(\}|$)/i.test(t)) return t.replace(/\s+/g," ").trim(); return t.replace(/[^{}]{0,400}\{[^{}]*\}/g," ").replace(/[^{}]{0,400}\{[^}]*$/," ").replace(/^[^{}]*?[a-z-]+:[^;{}]+;[^{}]*\}/i," ").replace(/[{}]/g," ").replace(/\s+/g," ").trim(); }
+function cleanPrev(t){ t=String(t||""); if(/<\/?(html|head|body|meta|title|style|div|p|br|table|tr|td|span|font|a|img|b|i|u|strong|em|ul|ol|li|h[1-6]|center|o:p)(?=[\s>\/])/i.test(t)) t=t.replace(/<(head|style|script|title)\b[^>]*>[\s\S]*?(<\/\1\s*>|$)/gi," ").replace(/<!--[\s\S]*?(-->|$)/g," ").replace(/<\/?[a-z][a-z0-9:]*(?=[\s>\/])[^>]*(>|$)/gi," ").replace(/<!doctype[^>]*>/gi," ").replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&quot;/gi,'"').replace(/&#0?39;/g,"'");   /* Vorschau aus HTML-Mails ohne Tags (Durchsicht 19.11.2026) */
+  t=t.replace(/@import\s+(url\()?[^;)\s]*\)?;?/gi," ").replace(/@(font-face|media|charset|keyframes)[^{]*/gi," "); if(!/\{[^}]*[a-z-]+:[^}]*(\}|$)/i.test(t)) return t.replace(/\s+/g," ").trim(); return t.replace(/[^{}]{0,400}\{[^{}]*\}/g," ").replace(/[^{}]{0,400}\{[^}]*$/," ").replace(/^[^{}]*?[a-z-]+:[^;{}]+;[^{}]*\}/i," ").replace(/[{}]/g," ").replace(/\s+/g," ").trim(); }
 function norm(m){ return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:cleanPrev(m.preview),body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:!!m.read,starred:!!m.starred,deleted:false,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!m.answered,forwarded:!!m.forwarded,answeredAt:m.answeredAt||null,account:m.account||"",invite:m.invite||null}; }
 function applyOv(m){
   var o=OV[m.id]; if(!o) return m;
@@ -496,7 +497,7 @@ function avTone(s){ s=String(s||"?"); var h=0; for(var i=0;i<s.length;i++) h=(h*
 function initials(n,a){ var s=String(n||a||"?").trim(); if(!n&&s.indexOf("@")>-1) return s.charAt(0).toUpperCase(); var p=s.replace(/[",<>]/g,"").split(/\s+/).filter(Boolean); return (((p[0]||"?").charAt(0))+((p[1]||"").charAt(0))).toUpperCase(); }
 function av(name,addr,cls,attrs,inner){ var t=avTone(name||addr); return '<span class="mav '+(cls||"")+'" style="background:var(--'+t+'-soft);color:var(--'+t+')"'+(attrs||"")+'><span class="i">'+esc(initials(name,addr))+'</span>'+(inner||"")+'</span>'; }
 M.av=av;
-function accPill(m){ if(!multiAcc()||UI.macct!=="all"||m.outbox||m.draftLocal) return ""; var k=accOf(m), t=accTone(k); return '<span class="accpill" style="background:var(--'+t+'-soft);color:var(--'+t+')">'+esc(accInfo(k).label)+'</span>'; }
+function accPill(m){ if(!multiAcc()||UI.macct!=="all"||m.outbox||m.draftLocal) return ""; var k=accOf(m), t=accTone(k); if(k===primaryAcct()) return "";   /* Hauptkonto ohne Etikett – nur kochdu/Gmail usw. gekennzeichnet */ return '<span class="accpill" style="background:var(--'+t+'-soft);color:var(--'+t+')">'+esc(accInfo(k).label)+'</span>'; }
 function linkify(s){ return esc(s).replace(/https?:\/\/[^\s<>"')]+/g,function(u){ return '<a href="'+u+'" target="_blank" rel="noopener noreferrer">'+u+'</a>'; }); }
 M.attHref=function(m,a){ return "/admin/api/mail-attachment?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOf(m)); };
 M.isVoucherAtt=function(a){ return /\.(pdf|png|jpe?g|xml)$/i.test(a.filename||"")||/pdf|image\/(png|jpe?g)|xml/i.test(a.contentType||""); };
@@ -828,7 +829,7 @@ function readerHtml(){
   var tos=(m.toList&&m.toList.length?m.toList:(m.to?[{name:m.toName,address:m.to}]:[])).map(function(x){ return esc(x.name||x.address); });
   var ccs=(m.ccList||[]).map(function(x){ return esc(x.name||x.address); });
   var toLine=sent?("von "+esc(accInfo(accOf(m)).user||S.account||"")):((tos.length?"an "+tos.join(", "):"")+(ccs.length?" · Cc "+ccs.join(", "):""));
-  var tags=(multiAcc()?'<span class="tag" style="background:var(--'+accTone(accOf(m))+'-soft);color:var(--'+accTone(accOf(m))+')">'+esc(accInfo(accOf(m)).label)+'</span>':'')+
+  var tags=(multiAcc()&&accOf(m)!==primaryAcct()?'<span class="tag" style="background:var(--'+accTone(accOf(m))+'-soft);color:var(--'+accTone(accOf(m))+')">'+esc(accInfo(accOf(m)).label)+'</span>':'')+
     '<span class="tag grey">'+esc(m.deleted?"Papierkorb":((m.folder||"INBOX")==="INBOX"?"Posteingang":folderName(m.folder,accOf(m))))+'</span>'+
     (m.starred?'<span class="tag glow">★ Markiert</span>':'')+(m.attachments&&m.attachments.length?'<span class="tag grey">'+m.attachments.length+(m.attachments.length>1?" Anhänge":" Anhang")+'</span>':'');
   var rs=replyState(m);
@@ -982,6 +983,8 @@ function after(){
   wantMeta();
 }
 M.render=function(){ F.render(); };
+/* Fenster schmäler/breiter gezogen, während eine Mail offen ist: Vollbild-Lesemodus am Handy passend umschalten */
+window.addEventListener("resize",function(){ if(F.current!=="post") return; var on=window.innerWidth<=900&&!!UI.msel; if(document.body.classList.contains("m-read")!==on) document.body.classList.toggle("m-read",on); });
 
 /* ---------- Öffnen ---------- */
 M.open=function(id,opts){
@@ -1786,7 +1789,7 @@ F.css([
 ".rb.pri{background:var(--btn-pri,var(--glow));border-color:var(--btn-pri,var(--glow));color:var(--btn-pri-ink,var(--on-glow));box-shadow:0 4px 14px rgb(0 0 0/.16)}.rb.pri:hover{background:var(--btn-pri,var(--glow));color:var(--btn-pri-ink,var(--on-glow));filter:brightness(1.07)}",
 ".rsep{width:1px;height:22px;background:var(--line);margin:0 4px;flex:none}.rsp{flex:1}",
 ".rb-back{display:none}",
-".rin{padding:18px 22px 24px;overflow-y:auto;display:grid;gap:14px;align-content:start;min-width:0;flex:1;overscroll-behavior:contain}",
+".rin{padding:18px 22px 24px;overflow-y:auto;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-content:start;min-width:0;flex:1;overscroll-behavior:contain}",
 ".rsubj{font-size:21px;font-weight:700;overflow-wrap:anywhere;line-height:1.25;text-wrap:balance;hyphens:auto}",
 ".rtags{display:flex;gap:6px;flex-wrap:wrap;margin-top:-6px}",
 ".tagbtn{border:0;cursor:pointer}",

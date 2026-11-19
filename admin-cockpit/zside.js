@@ -46,7 +46,9 @@ function deadlinesHtml(){ var l=deadlines(6);
 
 var last="";
 /* Heute hat eine eigene rechte Spalte → dort keine Statusleiste (und kein Schalter) */
-function onHeute(){ return F.current==="heute"; }
+/* Ausgeblendet, wo die Seite selbst schon Kalender/Mails/Board in voller Breite braucht (Cockpit-Durchsicht 19.11.2026): Heute, Postfach, Kalender, Kunden-Board, Aufträge */
+var NOSIDE={heute:1,post:1,kal:1,kunden:1,auftraege:1};
+function onHeute(){ return !!NOSIDE[F.current]; }
 F.sideVisible=function(){ return !!(UI.sideOn&&(!MQ||MQ.matches)&&!onHeute()); };
 F.renderSide=function(){
   var el=document.getElementById("side"), app=document.querySelector(".app"); if(!el||!app) return;

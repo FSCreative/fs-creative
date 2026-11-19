@@ -19,6 +19,12 @@ var GL=':root[data-theme="glas"] ';
 UI.tkView=UI.tkView||F.ls("fsc_tk_view")||"board"; UI.tkProj=UI.tkProj||""; UI.tkPrio=UI.tkPrio||""; UI.tkQ=UI.tkQ||""; UI.tkDoneAll=!!UI.tkDoneAll;
 
 function A(){ var a=F.D&&F.D.auftraege; return a&&a.tasks?a:{projects:[],tasks:[],trash:[]}; }
+/* Automatische „Anfrage: …“-Aufgabe (vom Server zu jedem Website-/Chat-Lead angelegt): solange der Lead existiert, steht die Anfrage nur unter
+   „Kunden & Leads“ – nicht zusätzlich im Board, in „Meine Aufgaben“, Fristen und Zählern (Cockpit-Durchsicht 19.11.2026: keine doppelten Infos).
+   Ohne Lead (gelöscht) bleibt sie sichtbar; in der Kundenakte und in der Suche ist sie immer da. */
+function isLeadInq(x){ if(!x||!x.leadId||!/^Anfrage: /.test(x.title||"")) return false; return leads().some(function(y){ return y.id===x.leadId; }); }
+F.tkIsLeadInq=isLeadInq;
+function TV(){ return A().tasks.filter(function(x){ return !isLeadInq(x); }); }
 function proj(id){ return A().projects.find(function(p){ return p.id===id; })||null; }
 function today(){ return (F.D&&F.D.today)||F.ymd(); }
 function addDays(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return F.ymd(d); }
@@ -60,12 +66,12 @@ function printBlock(t){ var o=t.print, c=pCan(t), eur=F.eur;
     '<small class="mu">Der Status kommt von der Druck-Seite: Freigeben → In Arbeit, Versendet/Abschließen/Ablehnen → Erledigt.</small></div>'; }
 
 /* ---------- Kennzahlen, Filter ---------- */
-function stats(){ var T=A().tasks, t=today(), we=weekEnd(), ws=weekStart();
+function stats(){ var T=TV(), t=today(), we=weekEnd(), ws=weekStart();
   var open=T.filter(function(x){ return x.status!=="erledigt"; });
   return {open:open.length, week:open.filter(function(x){ return x.due&&x.due>=t&&x.due<=we; }).length, over:open.filter(function(x){ return x.due&&x.due<t; }).length,
     done:T.filter(function(x){ return x.status==="erledigt"&&x.doneAt&&x.doneAt>=ws; }).length, projects:A().projects.filter(function(p){ return p.status!=="abgeschlossen"; }).length}; }
 function filtered(){ var q=UI.tkQ.trim().toLowerCase();
-  return A().tasks.filter(function(x){ if(UI.tkProj&&x.projectId!==UI.tkProj) return false;
+  return TV().filter(function(x){ if(UI.tkProj&&x.projectId!==UI.tkProj) return false;
     if(UI.tkPrio==="hoch"&&x.prio==="normal") return false; if(UI.tkPrio==="dringend"&&x.prio!=="dringend") return false;
     if(q){ var p=proj(x.projectId); if((x.title+" "+(x.notes||"")+" "+(p?p.name+" "+(p.customer||""):"")).toLowerCase().indexOf(q)<0) return false; }
     return true; }); }
@@ -94,6 +100,8 @@ function vAuftraege(){
     '<button type="button" class="btn" data-act="tktrash" title="Gelöschte Aufgaben der letzten 30 Tage">'+F.svg("trash")+'Papierkorb'+((A().trash||[]).length?' ('+A().trash.length+')':'')+'</button>'+'<button type="button" class="btn" data-act="tkprojects">Aufträge verwalten</button><button type="button" class="btn primary" data-act="tknew:">+ Neue Aufgabe</button>');
   var kpi=function(k,v,cls,act0){ return '<button type="button" class="tk-kpi'+(cls?" "+cls:"")+'"'+(act0?' data-act="'+act0+'"':'')+'><span>'+k+'</span><b class="num">'+v+'</b></button>'; };
   var kpis='<div class="tk-kpis">'+kpi("Offen",s.open)+kpi("Diese Woche fällig",s.week)+kpi("Überfällig",s.over,s.over?"bad":"")+kpi("Diese Woche erledigt",s.done,"ok")+'</div>';
+  var nInq=A().tasks.filter(function(x){ return x.status!=="erledigt"&&isLeadInq(x); }).length;
+  if(nInq) kpis+='<div class="tk-inq"><span class="tk-inq-i">'+F.svg("kunden")+'</span><span><b>'+nInq+(nInq===1?" Kundenanfrage":" Kundenanfragen")+'</b> stehen unter „Kunden & Leads“ – dort beantworten oder als Auftrag übernehmen.</span><button type="button" class="btn sm" data-go="kunden">Zu den Anfragen →</button></div>';
   var bar='<div class="tk-bar2"><select class="f" data-tkf="proj" aria-label="Auftrag"><option value="">Alle Aufträge</option>'+act.concat(A().projects.filter(function(p){ return p.status==="abgeschlossen"; })).map(function(p){ return '<option value="'+esc(p.id)+'"'+(UI.tkProj===p.id?" selected":"")+'>'+esc(p.name)+(p.status==="abgeschlossen"?" (abgeschlossen)":"")+'</option>'; }).join("")+'</select>'+
     '<select class="f" data-tkf="prio" aria-label="Priorität"><option value="">Jede Priorität</option><option value="hoch"'+(UI.tkPrio==="hoch"?" selected":"")+'>Hoch und dringend</option><option value="dringend"'+(UI.tkPrio==="dringend"?" selected":"")+'>Nur dringend</option></select>'+
     '<input class="f tk-q" type="search" data-tkf="q" data-keepfocus="tkq" placeholder="Nach Titel, Auftrag oder Kunde filtern …" value="'+esc(UI.tkQ)+'" aria-label="Aufgaben filtern"></div>';
@@ -292,9 +300,9 @@ F.tkFromMail=function(m){ if(!m) return;
     mailRef:F.mailRef?F.mailRef(m):{id:m.id,account:m.account||"",folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}}); };
 
 /* ---------- für Statusleiste & Suche ---------- */
-F.tkOpenDue=function(){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,project:p?p.name:""}; }); };
-F.tkDeadlines=function(n){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due)||(a.prio==="dringend"?-1:0); }).slice(0,n||6).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,label:dueLabel(t.due),cls:dueCls(t),color:p?PCOL[p.color||0]:"var(--ink-3)",project:p?p.name:"",prio:t.prio}; }); };
-F.tkDueDays=function(){ var o={}; A().tasks.forEach(function(t){ if(t.status!=="erledigt"&&t.due) o[t.due]=(o[t.due]||0)+1; }); return o; };
+F.tkOpenDue=function(){ return TV().filter(function(t){ return t.status!=="erledigt"&&t.due; }).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,project:p?p.name:""}; }); };
+F.tkDeadlines=function(n){ return TV().filter(function(t){ return t.status!=="erledigt"&&t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due)||(a.prio==="dringend"?-1:0); }).slice(0,n||6).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,label:dueLabel(t.due),cls:dueCls(t),color:p?PCOL[p.color||0]:"var(--ink-3)",project:p?p.name:"",prio:t.prio}; }); };
+F.tkDueDays=function(){ var o={}; TV().forEach(function(t){ if(t.status!=="erledigt"&&t.due) o[t.due]=(o[t.due]||0)+1; }); return o; };
 /* Suche: Aufgaben auch über Auftragsname und Kunde, dazu die Aufträge selbst */
 F.searcher(function(q){ q=q.toLowerCase(); return A().tasks.filter(function(t){ var p=proj(t.projectId); return (t.title+" "+(p?p.name+" "+(p.customer||""):"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(t){ var p=proj(t.projectId); return {group:"Aufgaben",label:t.title,sub:(p?p.name+" · ":"")+(t.due?"fällig "+dueLabel(t.due):"ohne Frist"),act:"tkopen:"+t.id}; }); });
 F.searcher(function(q){ q=q.toLowerCase(); return A().projects.filter(function(p){ return (p.name+" "+(p.customer||"")).toLowerCase().indexOf(q)>-1; }).sort(function(a,b){ return (a.status==="abgeschlossen")-(b.status==="abgeschlossen"); }).slice(0,4).map(function(p){
@@ -347,6 +355,6 @@ GL+'.tk-col{background:color-mix(in srgb,var(--ground) 45%,var(--panel))}'+GL+'.
 F.css('.tk-docs{display:grid;gap:0}.tk-dr{display:flex;gap:6px;align-items:center;min-width:0}.tk-dr .tk-lr{flex:1;min-width:0}.tk-dr>.btn{flex:none;margin-top:6px}'+
   '.tk-lr b{overflow-wrap:anywhere}.tk-lr b>.tag{display:inline-flex;margin-left:6px;font-size:11px;vertical-align:1px}.tk-lr small>.tk-due{display:inline-flex;font-size:inherit}.tk-lr small>.num{display:inline}.tk-dsum{font-size:12.5px;color:var(--ink-2);margin-top:8px;text-wrap:pretty}');
 F.view({id:"auftraege",label:"Aufträge",short:"Aufträge",icon:"board",order:22,mobile:false,
-  count:function(){ var t=today(); return A().tasks.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t; }).length; },
+  count:function(){ var t=today(); return TV().filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t; }).length; },
   render:vAuftraege});
 })();
