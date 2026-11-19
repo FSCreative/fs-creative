@@ -130,11 +130,13 @@
     if (!(me.type === "company" && me.uidValid)) { toast("Kauf auf Rechnung braucht eine gültige UID – bitte im Profil hinterlegen", true); return; }
     var ov = document.createElement("div"); ov.className = "ps-pop bc-pop"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Bestellung bestätigen");
     var f = function (k, l, w) { return '<label class="bc-fld' + (w ? " " + w : "") + '">' + l + '<input data-s="' + k + '" value="' + esc(s[k] || "") + '"></label>'; };
-    ov.innerHTML = '<div class="ps-pop-c"><h3>Bestellung bestätigen</h3><p class="pd-muted">' + esc(o.t.name) + " · " + o.copies + " Stück · <b>" + C.eur(o.price.net) + "</b> netto</p>" +
-      '<h4>Lieferadresse (Standort)</h4><div class="bc-grid2">' + f("company", "Firma / Standort", "w2") + f("firstName", "Vorname") + f("lastName", "Nachname") + f("street", "Straße & Nr.", "w2") + f("zip", "PLZ") + f("city", "Ort") + f("phone", "Telefon (für den Paketdienst)", "w2") + "</div>" +
-      '<h4>Rechnung an</h4><p class="pd-muted">' + esc([me.company, [me.firstName, me.lastName].join(" "), me.street, [me.zip, me.city].join(" "), me.uid].filter(function (x) { return String(x || "").trim(); }).join(" · ")) + "</p>" +
-      '<label class="ps-cb"><input type="checkbox" data-agb><span>Ich bestelle verbindlich auf Rechnung – es gelten die <a href="/print/agb" target="_blank" rel="noopener">AGB</a>. Die Vorschau habe ich geprüft.</span></label>' +
-      '<div class="foot"><button type="button" class="ps-btn" data-x>Abbrechen</button><button type="button" class="ps-btn primary" data-ok>Jetzt bestellen</button></div></div>';
+    var inv = [me.company, [me.firstName, me.lastName].join(" "), me.street, [me.zip, me.city].join(" ")].filter(function (x) { return String(x || "").trim(); });
+    ov.innerHTML = '<div class="ps-pop-c"><button type="button" class="bc-pop-x" data-x aria-label="Schließen">×</button><div class="bc-pop-b">' +
+      '<h3>Bestellung bestätigen</h3><div class="bc-pop-sum"><span>' + esc(o.t.name) + '</span><span>' + o.copies + ' Stück</span><b>' + C.eur(o.price.net) + ' netto</b></div>' +
+      '<section class="bc-pop-s"><h4>Lieferadresse (Standort)</h4><div class="bc-grid2">' + f("company", "Firma / Standort", "w2") + f("firstName", "Vorname", "t3") + f("lastName", "Nachname", "t3") + f("phone", "Telefon (Paketdienst)", "t3") + f("street", "Straße & Nr.", "w2") + f("zip", "PLZ", "zp") + f("city", "Ort", "ct") + "</div></section>" +
+      '<section class="bc-pop-s"><h4>Rechnung an</h4><div class="bc-pop-inv">' + "<b>" + esc(inv[0] || "") + "</b>" + (me.uid ? ' <span class="pd-muted">· UID ' + esc(me.uid) + "</span>" : "") + "<br>" + esc(inv.slice(1).join(" · ")) + "</div></section>" +
+      '<label class="ps-cb bc-pop-cb"><input type="checkbox" data-agb><span>Ich bestelle verbindlich auf Rechnung – es gelten die <a href="/print/agb" target="_blank" rel="noopener">AGB</a>. Die Vorschau habe ich geprüft.</span></label></div>' +
+      '<div class="bc-pop-f"><button type="button" class="ps-btn" data-x>Abbrechen</button><button type="button" class="ps-btn primary" data-ok>Jetzt bestellen</button></div></div>';
     document.body.appendChild(ov);
     var close = function () { ov.remove(); };
     ov.addEventListener("click", function (ev) { if (ev.target === ov || ev.target.closest("[data-x]")) { close(); return; }
