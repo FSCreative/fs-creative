@@ -2302,6 +2302,7 @@
         ["✒️", "Logo", "Am besten als <b>Vektor</b> (PDF, AI, EPS oder SVG); Schriften in Pfade umwandeln, feine Linien ab 0,3 pt" + (pms ? ". Fotos und Farbverläufe sind im " + esc(labelOf("printtype")) + " nicht möglich" : "")],
         ["🎨", "Farben", pms ? "<b>Pantone-Farben</b> laut gewählter Farbanzahl – bitte die Pantone-Nummern in der Datei angeben" : "<b>CMYK</b> (Druckfarben) anlegen – RGB wird beim Druck umgerechnet"],
         ["📦", "Datei", "<b>PDF</b> mit nur dem Motiv – ohne Hintergrundfläche, ohne Rahmen und Schnittmarken · max. 500 MB"]]; }
+    var casR = cassetteMm(sz); if (casR) items.splice(2, 0, ["🧾", "Kassette unten", "Die unteren <b>ca. " + casR + " mm</b> verschwinden im Standfuß (Kassette) – dort nur Hintergrund, keine Texte oder Logos. Die Vorschau zeigt den Bereich grau."]);
     if (p.mustTpl) items.unshift(["⚠️", "Vorlage verwenden – Pflicht", esc(p.mustTpl) + " " + wfHtml("soft"), "wide"]);
     var spi = spotItem(); if (spi && !p.imprint) items.splice(5, 0, spi);
     // Transparentes Material (Plexiglas, Fensterfolie, transparente Aufkleber …): was bleibt durchsichtig, wozu Weiß? (Wunsch Simon 05.11.2026 nach Kundenfrage)
@@ -2737,6 +2738,11 @@
             var spread = ref.map(function (p2) { return dist(p2, med); }).sort(function (m, n2) { return m - n2; }); if (spread.length && spread[Math.floor(spread.length * 0.6)] > 45) return;
             var rows = 0; for (k = Math.round(sp); k < sd[2] - Math.round(sp); k++) { for (d = 0; d <= s0 - b0; d++) { var q = sd[1](k, d); if (dist(px(q[0], q[1]), med) > 120) { rows++; break; } } }
             if (rows / pxmm > 1.2) { hit++; sideNames.push(sd[0]); } });
+          /* Roll-up: unterer Streifen verschwindet in der Kassette – erkennbare Texte/Logos dort melden (Simon 19.11.2026) */
+          var cas = cassetteMm(trim); if (cas && idx === 0 && H > W) { var zy0 = Math.round(H - bp - cas * pxmm), zy1 = Math.round(H - bp) - 1, xa0 = Math.round(bp + 2), xa1 = Math.round(W - bp - 2), stp = Math.max(1, Math.round(0.3 * pxmm)), rowsT = 0;
+            var lum = function (xx, yy) { var o = (yy * W + xx) * 4; return 0.3 * data[o] + 0.59 * data[o + 1] + 0.11 * data[o + 2]; };
+            for (var zy = Math.max(0, zy0); zy <= zy1; zy++) { var ed = 0; for (var zx = xa0; zx + stp <= xa1; zx += stp) if (Math.abs(lum(zx, zy) - lum(zx + stp, zy)) > 90) ed++; if (ed >= 6) rowsT++; }
+            if (rowsT >= 2) warns.push(lab + "Im unteren Bereich (ca. " + cas + " mm über der Unterkante) sind Texte oder Logos erkennbar – dieser Streifen verschwindet beim Roll-up in der Kassette. Bitte nur Hintergrund dort platzieren und Inhalte weiter nach oben rücken."); }
           var cmk = cropMarks(data, W, H, pxmm);
           if (cmk >= 2) warns.push(lab + "Möglicherweise Schnittmarken an den Ecken – bitte in der Vorschau prüfen. Falls ja: PDF ohne Schnittmarken exportieren (nur mit " + (r.b || S.prod.bleed || 2) + " mm Beschnitt), sonst werden sie mitgedruckt. Falls nein: einfach weitermachen.");
           else if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
@@ -2771,6 +2777,7 @@
         else if (!S.pfvOff) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
           x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.setLineDash([]); if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
           x.strokeStyle = "#30d158"; x.setLineDash([6, 4]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp);
+          var cas2 = cassetteMm(trim); if (cas2 && idx === 0 && H > W) { var cz = cas2 * pxmm; x.fillStyle = "rgba(60,60,67,.35)"; x.fillRect(bp, H - bp - cz, W - 2 * bp, cz); x.fillStyle = "#fff"; x.font = "600 " + Math.max(10, Math.round(cz * 0.35)) + "px -apple-system,Segoe UI,sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText("Kassette – nicht sichtbar", W / 2, H - bp - cz / 2); }
           var fo = S.price && S.price.folds; if (fo && trim.w === (S.price.size || {}).w) { x.strokeStyle = "#bf5af2"; x.lineWidth = 2; x.setLineDash([8, 5]);
             fo.x.forEach(function (fx) { var X = bp + (idx % 2 ? trim.w - fx : fx) * pxmm; x.beginPath(); x.moveTo(X, 0); x.lineTo(X, H); x.stroke(); });
             fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); }); }
@@ -2788,6 +2795,8 @@
     }).catch(function () { var b3 = document.getElementById("psPfv"); if (b3) b3.querySelector(".ps-pfv-c").innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – bitte „PDF ansehen“ nutzen.</p>'; });
   }
   // Kein Beschnitt in der PDF → automatisch ergänzen lassen (Ränder spiegeln oder Motiv minimal vergrößern), jederzeit rückgängig
+  /* Roll-up: Höhe des Streifens, der in der Kassette verschwindet (Druckhöhe minus sichtbare Höhe aus der Größe, sonst ca. 60 mm) */
+  function cassetteMm(trim) { if (!S.prod || S.prod.key !== "rollups" || !trim) return 0; var m = /(\d+)_x_(\d+)/.exec(String((S.sel || {}).size || "")), vis = m ? +m[2] * 10 : 0, hid = vis ? Math.round(trim.h - vis) : 0; return hid > 0 && hid < 300 ? hid : 60; }
   function bleedFixHtml(f) {
     if (S.fileOrig && S.fileOrig.next === f.fileId) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedMode === "zoom" ? "Motiv minimal vergrößert." : "Randfarben nach außen erweitert – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="bleedundo">Rückgängig</button></div>';
     // beim Hochladen automatisch gespiegelt → jederzeit wieder ausschaltbar (Simon 18.11.2026)
