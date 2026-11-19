@@ -162,7 +162,9 @@ async function pdfInfo(buf) {
           else if (op === "Do" && xo && lastName) {
             try { const ref = xo.get(N(lastName)), x = ctx.lookup(ref);
               if (x && x.dict) { const st = String(x.dict.lookup(N("Subtype")) || "");
-                if (st === "/Image") { const im = imgByRef.get(String(ref)); if (im && im.w) { const sx = Math.hypot(ctm[0], ctm[1]), sy = Math.hypot(ctm[2], ctm[3]); if (sx > 0.5 && sy > 0.5 && out.images.length < 40) out.images.push({ page: pi + 1, w: im.w, h: im.h, space: im.space, mm: [r1(sx / MM), r1(sy / MM)], dpi: Math.round(Math.min(im.w / (sx / 72), im.h / (sy / 72))) }); } }
+                if (st === "/Image") { const im = imgByRef.get(String(ref)); if (im && im.w) { const sx = Math.hypot(ctm[0], ctm[1]), sy = Math.hypot(ctm[2], ctm[3]); if (sx > 0.5 && sy > 0.5) { const e = { page: pi + 1, ref: String(ref), w: im.w, h: im.h, space: im.space, mm: [r1(sx / MM), r1(sy / MM)], dpi: Math.round(Math.min(im.w / (sx / 72), im.h / (sy / 72))) };
+                  // dasselbe Bild mehrfach auf der Seite (z. B. vergrößert im ergänzten Beschnitt „Farben erweitern“): beste Platzierung zählt – sonst falsche „30 dpi“-Warnung (Simon 19.11.2026)
+                  const ix = out.images.findIndex(x => x.ref === e.ref && x.page === e.page); if (ix > -1) { if (e.dpi > out.images[ix].dpi) out.images[ix] = e; } else if (out.images.length < 40) out.images.push(e); } } }
                 else if (st === "/Form") { const fm = x.dict.lookup(N("Matrix")); const mx = fm instanceof PDFArray ? fm.asArray().map(v => v.asNumber ? v.asNumber() : 0) : [1, 0, 0, 1, 0, 0]; walk([x], x.dict.lookup(N("Resources")) || res, mul(mx, ctm), depth + 1); } } } catch (e) {}
           }
           nums = [];

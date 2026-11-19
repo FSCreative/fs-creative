@@ -2484,15 +2484,15 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 body.pd-open .ps-chatnudge{display:none}
 
 /* Studio: Schritt zurück/vor (Simon 19.11.2026) */
-.ps-undo{display:inline-flex;gap:4px;align-items:center}.ps-undo .ps-btn{min-width:38px;padding:6px 10px;font-size:16px;line-height:1}.ps-undo .ps-btn[disabled]{opacity:.35;cursor:default}
+.ps-undo{display:inline-flex;gap:4px;align-items:center}.ps-undo .ps-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:0;line-height:1}.ps-undo .ps-btn[disabled]{opacity:.35;cursor:default}
 /* Drei Felder, aktives Feld, Shirt-Designer hervorgehoben, Frage als Box statt neuer Ansicht (Simon 19.11.2026) */
-@media(min-width:900px){.ps-modes3{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media(min-width:1240px){.ps-modes3{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
 .ps-mode.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
-.ps-modes3.sel .ps-mode:not(.on){opacity:.7}
-.ps-mode-hi{position:relative;border:2px solid var(--accent)!important;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface) 70%)}
+.ps-modes3.sel .ps-mode:not(.on){opacity:.7}.ps-modes3.sel .ps-mode-hi:not(.on){border:1px solid var(--ps-line2)!important;background:var(--surface)}
+.ps-mode-hi{position:relative;border:2px solid var(--accent)!important;background:var(--surface);background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface) 70%)}
 .ps-mode-hi b{color:var(--text)}
-.ps-mode .ps-mode-badge{align-self:flex-start;font-style:normal;font-size:12px;font-weight:700;color:#fff;background:var(--accent);border-radius:999px;padding:3px 10px}
-.ps-hibox{margin-top:16px;padding:18px;border-radius:20px;border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));animation:psHi .35s ease}
+.ps-mode .ps-mode-badge{align-self:flex-start;justify-self:start;font-style:normal;font-size:12px;font-weight:700;color:#fff;background:var(--accent);border-radius:999px;padding:3px 10px}
+.ps-hibox{margin-top:16px;padding:18px;border-radius:20px;border:2px solid var(--accent);background:var(--surface);background:color-mix(in srgb,var(--accent) 9%,var(--surface));animation:psHi .35s ease}
 @keyframes psHi{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .ps-hibox-t{display:block;font-size:17px;margin-bottom:12px}
 .ps-hibox-o{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -2504,4 +2504,11 @@ body.pd-open .ps-chatnudge{display:none}
 .ps-req-fold{min-width:0;flex:1}.ps-req-fold summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:2px}.ps-req-fold summary::-webkit-details-marker{display:none}
 .ps-req-fold summary b{font-size:14px}.ps-req-fold summary em{font-style:normal;font-size:13px;color:var(--accent)}.ps-req-fold[open] summary em{display:none}
 .ps-req-fold>span{display:block;margin-top:6px;font-size:13.5px;color:var(--text-dim);line-height:1.45;overflow-wrap:anywhere;hyphens:auto}
-.ps-undo .ps-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:36px;padding:0}
+/* Review 19.11.2026: Meldungen über dem Studio sichtbar, Fokus, reduzierte Bewegung, Badge am Handy, deaktivierte Kachel ohne Pfeil */
+html.ps-stu-open .ps-toast{z-index:9500}html.ps-stu-open .ps-pop,html.ps-stu-open .ps-lb{z-index:9400}
+.ps-hibox-b:focus-visible,.ps-mode:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.ps-hibox{animation:none}}
+@media(max-width:640px){.ps-mode .ps-mode-badge{grid-column:2}}
+.ps-mode[disabled]::after{display:none}
+.ps-req-fold summary::after{content:"";}.ps-req-fold[open] summary em{display:block}.ps-req-fold[open] summary em::before{content:"Weniger anzeigen";}.ps-req-fold[open] summary em{font-size:0}.ps-req-fold[open] summary em::before{font-size:13px}
+.ps-req-l.ps-req-w{align-items:start}

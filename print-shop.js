@@ -1489,16 +1489,18 @@ module.exports = function (D) {
   const fits = (box, w, h, tol) => box && ((near(box.w, w, tol) && near(box.h, h, tol)) || (near(box.w, h, tol) && near(box.h, w, tol)));
   function checkPdf(info, size, bleed, sides, multi) {
     const out = [], W = size.w + 2 * bleed, H = size.h + 2 * bleed;
-    if (info.trim && fits(info.trim, size.w, size.h, 1)) out.push({ level: "ok", text: "Endformat (TrimBox) " + size.w + " × " + size.h + " mm passt." });
-    if (fits(info.media, W, H, 1.2)) out.push({ level: "ok", text: "Seitengröße inkl. " + bleed + " mm Beschnitt passt (" + W + " × " + H + " mm)." });
+    if (info.trim && fits(info.trim, size.w, size.h, 1)) out.push({ level: "ok", text: "Endformat " + fmtMm(size.w) + " × " + fmtMm(size.h) + " mm passt." });
+    // knapp daneben (z. B. 107 × 76 statt 108 × 77 mm): passt, aber ehrlich sagen, dass der Beschnitt etwas schmäler ist (Review 19.11.2026 – „passt“ widersprach Print.com)
+    if (fits(info.media, W, H, 1.2) && !fits(info.media, W, H, 0.4)) out.push({ level: "ok", text: "Seitengröße " + fmtMm(r2(info.media.w)) + " × " + fmtMm(r2(info.media.h)) + " mm – Beschnitt etwas schmäler als " + fmtMm(bleed) + " mm, wird mittig übernommen. Reicht der Hintergrund über den Rand, passt das." });
+    else if (fits(info.media, W, H, 1.2)) out.push({ level: "ok", text: "Seitengröße inkl. " + fmtMm(bleed) + " mm Beschnitt passt (" + fmtMm(W) + " × " + fmtMm(H) + " mm)." });
     // mehr Beschnitt als nötig (z. B. 3 mm statt 2 mm), Endformat laut TrimBox stimmt → nicht skalieren, sondern den Überschuss abschneiden (Simon 12.11.2026, Programmheft 154 × 216 mm)
     else if (info.trim && fits(info.trim, size.w, size.h, 1) && fits(info.media, info.trim.w + 2 * Math.max(0, (info.media.w - info.trim.w) / 2), info.trim.h + 2 * Math.max(0, (info.media.h - info.trim.h) / 2), 0.5) && Math.min(info.media.w - info.trim.w, info.media.h - info.trim.h) / 2 > bleed + 0.3)
       out.push({ level: "ok", text: "Die Datei hat " + fmtMm(r2(Math.min(info.media.w - info.trim.w, info.media.h - info.trim.h) / 2)) + " mm Beschnitt – mehr als nötig. Das Endformat passt, der überschüssige Beschnitt wird auf " + fmtMm(bleed) + " mm abgeschnitten (nichts wird verkleinert)." });
     else if (fits(info.media, size.w, size.h, 1)) out.push({ level: "warn", text: "Die Datei hat keinen Beschnitt. Bitte im Format " + fmtMm(W) + " × " + fmtMm(H) + " mm anliefern (Endformat " + fmtMm(size.w) + " × " + fmtMm(size.h) + " mm + " + fmtMm(bleed) + " mm Beschnitt je Seite) – reicht der Hintergrund nicht über den Rand, kann nach dem Schneiden ein feiner weißer Rand sichtbar sein." });
     else if (info.media) {
       const ar = (info.media.w / info.media.h), arT = W / H;
-      if (near(ar, arT, 0.02) || near(1 / ar, arT, 0.02)) out.push({ level: "warn", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm weicht ab, Seitenverhältnis passt – die Datei wird auf " + W + " × " + H + " mm skaliert." });
-      else out.push({ level: "error", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm passt nicht zum gewählten Format (" + W + " × " + H + " mm inkl. Beschnitt)." });
+      if (near(ar, arT, 0.02) || near(1 / ar, arT, 0.02)) out.push({ level: "warn", text: "Seitengröße " + fmtMm(r2(info.media.w)) + " × " + fmtMm(r2(info.media.h)) + " mm weicht ab, Seitenverhältnis passt – die Datei wird auf " + fmtMm(W) + " × " + fmtMm(H) + " mm skaliert." });
+      else out.push({ level: "error", text: "Seitengröße " + fmtMm(r2(info.media.w)) + " × " + fmtMm(r2(info.media.h)) + " mm passt nicht zum gewählten Format (" + fmtMm(W) + " × " + fmtMm(H) + " mm inkl. Beschnitt)." });
     } else out.push({ level: "warn", text: "Seitengröße konnte nicht automatisch gelesen werden – bitte kontrolliere das Format selbst oder wähle an der Kasse den Profi-Datencheck." });
     if (info.media && Math.abs(size.w - size.h) >= 3 && (info.media.w > info.media.h) !== (W > H) && (fits(info.media, W, H, 1.2) || fits(info.media, size.w, size.h, 1)))   // quer statt hoch (oder umgekehrt): wird beim Übergeben an die Druckerei gedreht (rotateForPrint)
       out.push({ level: "ok", text: "Die Datei ist im " + (info.media.w > info.media.h ? "Querformat" : "Hochformat") + " angelegt – sie wird für den Druck automatisch passend gedreht, dein Motiv bleibt unverändert." });
@@ -2058,7 +2060,7 @@ module.exports = function (D) {
     const info = await pdfInfoX(data); if (!info || info.encrypted || !info.media) return { error: "Für diese Datei nicht möglich" };
     if ((+info.pages || 1) !== (+fm.pages || 1)) return { error: "Bei dieser Datei nicht möglich (Seiten wurden zusammengeführt) – bitte neu hochladen" };
     const multi = (+fm.sides || 1) > 2, keep = (fm.checks || []).filter(c => c && !c.admin && !/^(Angepasst|Beschnitt (automatisch )?ergänzt|Erweiterte Prüfung)|Seitengröße|Endformat|Beschnitt|Seitenverhältnis|Seite\(n\) –|Seiten –|Quer-|Hochformat|Querformat|gedreht|skaliert|eingepasst|Bitte in der Vorschau kontrollieren|Motiv vergrößert/i.test(c.text || ""));
-    const checks = [{ level: "ok", text: "Rand spiegeln ausgeschaltet – deine Datei wie hochgeladen." }].concat(checkPdf(info, fm.size, +fm.bleed || 0, +fm.sides || 1, multi), keep);
+    const checks = [{ level: "ok", text: "Farben erweitern rückgängig gemacht – deine Datei wie hochgeladen." }].concat(checkPdf(info, fm.size, +fm.bleed || 0, +fm.sides || 1, multi), keep);
     const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/ \((mit Beschnitt|angepasst)\)(?=\.pdf$|$)/i, ""), data, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, Object.assign({ original: "pdf", src: fm.src, from: fm.id, noBleed: true }, extra || {}));
     return { meta };
   }
@@ -2286,13 +2288,13 @@ module.exports = function (D) {
       if (+target.bleed > 0 && checks.some(c => /Die Datei hat keinen Beschnitt/.test(c.text || ""))) {
         try { const m0 = info.media, sz2 = m0 && near(m0.w, target.size.h, 1) && near(m0.h, target.size.w, 1) && !near(m0.w, target.size.w, 1) ? { w: target.size.h, h: target.size.w } : target.size;   // quer angelegt: im eigenen Format ergänzen, gedreht wird beim Übergeben
           const out = await withPdf(() => addBleed(buf, sz2, +target.bleed, "mirror"));
-          const ck = [{ level: "ok", text: "Deine Datei hatte keinen Beschnitt – wir haben ihn automatisch ergänzt (Randbereiche " + fmtMm(target.bleed) + " mm gespiegelt, dein Motiv bleibt unverändert). Seite jetzt " + fmtMm(sz2.w + 2 * target.bleed) + " × " + fmtMm(sz2.h + 2 * target.bleed) + " mm – bitte in der Vorschau kontrollieren." }].concat(checks.filter(c => !/Die Datei hat keinen Beschnitt/.test(c.text || "")));
+          const ck = [{ level: "ok", text: "Deine Datei hatte keinen Beschnitt – wir haben ihn automatisch ergänzt (Randfarben " + fmtMm(target.bleed) + " mm nach außen erweitert, dein Motiv bleibt unverändert). Seite jetzt " + fmtMm(sz2.w + 2 * target.bleed) + " × " + fmtMm(sz2.h + 2 * target.bleed) + " mm – bitte in der Vorschau kontrollieren." }].concat(checks.filter(c => !/Die Datei hat keinen Beschnitt/.test(c.text || "")));
           return newFile("upload", name, out, target, ck, { original: "pdf", src, bleedFix: "mirror" });
         } catch (e) { log("Beschnitt beim Hochladen ergänzen:", e.message); }
       }
       if (sc > -1) {   // nur die Größe weicht ab → jetzt wirklich skalieren (vorher stand nur der Hinweis da); auch mehrseitige PDFs (vorher nur mit Original-Kopie)
         try { const r = await withPdf(() => placeFile(buf, "pdf", target.size, target.bleed, { mode: "fill" }, target.sides));
-          checks[sc] = { level: "ok", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm automatisch auf " + (target.size.w + 2 * target.bleed) + " × " + (target.size.h + 2 * target.bleed) + " mm (inkl. Beschnitt) skaliert" + (r.rot ? " und gedreht" : "") + " – bitte in der Vorschau kontrollieren." };
+          checks[sc] = { level: "ok", text: "Seitengröße " + fmtMm(r2(info.media.w)) + " × " + fmtMm(r2(info.media.h)) + " mm automatisch auf " + fmtMm(target.size.w + 2 * target.bleed) + " × " + fmtMm(target.size.h + 2 * target.bleed) + " mm (inkl. Beschnitt) skaliert" + (r.rot ? " und gedreht" : "") + " – bitte in der Vorschau kontrollieren." };
           return newFile("upload", name, r.pdf, target, checks, { original: "pdf", src, place: { mode: "fill", rotate: r.rot, scale: 1 } });
         } catch (e) { log("Auto-Skalierung:", e.message); }
       }
@@ -2313,7 +2315,7 @@ module.exports = function (D) {
     else checks.push({ level: "error", text: "Auflösung viel zu gering (" + dpi + " dpi) für " + W + " × " + H + " mm." });
     if (rot) checks.push({ level: "ok", text: "Bild ist " + (dm.w > dm.h ? "quer" : "hoch") + ", das Format " + (W > H ? "quer" : "hoch") + " – automatisch um 90° gedreht. Unter „Anpassen“ kannst du die Drehung ändern." });
     const ar = ((rot ? dm.h : dm.w) / (rot ? dm.w : dm.h)) / (W / H), far = Math.abs(ar - 1) > 0.25, mode = far ? "fit" : "fill";   // stark abweichend: ganz einpassen statt große Teile abzuschneiden
-    if (far) checks.push({ level: "warn", text: "Das Bild hat ein ganz anderes Seitenverhältnis als das Format – es wurde ganz eingepasst, freie Flächen sind mit den gespiegelten Rändern gefüllt. Unter „Anpassen“ kannst du stattdessen randlos füllen (dann wird angeschnitten) oder die Flächen weiß lassen." });
+    if (far) checks.push({ level: "warn", text: "Das Bild hat ein ganz anderes Seitenverhältnis als das Format – es wurde ganz eingepasst, freie Flächen sind mit den Randfarben gefüllt. Unter „Anpassen“ kannst du stattdessen randlos füllen (dann wird angeschnitten) oder die Flächen weiß lassen." });
     else if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten. Unter „Anpassen“ kannst du es stattdessen ganz einpassen." });
     spotNeedsOf(prod, t0.n.sel).forEach(([n, label, crit]) => checks.push({ level: "warn", text: label + ": Ein Bild (JPG/PNG) kann keine Sonderfarbe „" + n + "“ enthalten" + (crit ? " – ohne Schnittlinie kann nicht geschnitten werden. Bitte eine PDF mit der Kontur in „" + n + "“ hochladen oder die Kontur im Online-Designer zeichnen." : ". Für " + label + " bitte eine PDF mit dieser Sonderfarbe hochladen.") }));
     if (target.sides > 1) checks.push({ level: "warn", text: "Bild-Upload füllt nur die Vorderseite – die Rückseite bleibt weiß. Für zwei Seiten bitte eine 2-seitige PDF hochladen." });
@@ -6445,7 +6447,8 @@ module.exports = function (D) {
         const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, g: x && x.g })) : null;
         let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randfarben nach außen erweitert – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
-        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
+        const uniq = (c, i, a) => a.findIndex(x => x.text === c.text) === i;   // keine doppelten Prüfzeilen (Review 19.11.2026)
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "").replace(/( \((mit Beschnitt|angepasst)\))+$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)).filter(uniq), { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
         await prSwap(o, motif, curId, meta, "Cockpit (Beschnitt " + (mode === "zoom" ? "vergrößert" : "Farben erweitert") + ")");
         hist(o, "Druckdaten im Cockpit: Beschnitt ergänzt (" + (mode === "zoom" ? "Motiv leicht vergrößert" : "Randfarben erweitert") + ")" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
