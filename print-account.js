@@ -69,7 +69,7 @@ module.exports = function (D) {
     uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c), saved: savedOf(c),
     features: { bc: !!(c.features && c.features.bc) } });
   // ── Visitenkarten-Vorlagen (Simon 19.11.2026): vom Cockpit je Konto freigeschaltet – eigene Schriften + Vorlagen (Designer-Stand) im Konto ──
-  const bcOn = c => !!(c && c.features && c.features.bc);
+  const bcOn = c => !!(c && c.features && c.features.bc && c.type === "company");   // nur Firmenkonten
   const FONT_MAX = 10 * 1048576, TPL_MAX = 30 * 1048576;
   const fontKind = b => { if (!b || b.length < 12) return ""; const h = b.subarray(0, 4).toString("binary"); return h === "\u0000\u0001\u0000\u0000" || h === "true" ? "ttf" : h === "OTTO" ? "otf" : h === "wOFF" ? "woff" : h === "wOF2" ? "woff2" : ""; };
   const FONT_CT = { ttf: "font/ttf", otf: "font/otf", woff: "font/woff", woff2: "font/woff2" };

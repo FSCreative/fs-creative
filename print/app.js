@@ -357,6 +357,13 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
   function acctField(id, label, type, val, ac) { return '<div class="ps-field"><label for="ac_' + id + '">' + label + '</label><input id="ac_' + id + '" name="' + id + '" type="' + (type || "text") + '" value="' + esc(val || "") + '"' + (ac ? ' autocomplete="' + ac + '"' : "") + "></div>"; }
+  /* Visitenkarten-Editor (print/bcard.js) erst bei Bedarf laden */
+  var bcP = null;
+  function bcMount() {
+    if (!bcP) bcP = new Promise(function (res, rej) { if (window.PrintBCard) return res(); var s = document.createElement("script"); s.src = "/print/bcard.js?v=" + (window.PRINT_V || "1"); s.onload = res; s.onerror = function () { bcP = null; rej(new Error("Konnte nicht geladen werden")); }; document.head.appendChild(s); });
+    bcP.then(function () { var el = document.getElementById("psBcard"); if (el && window.PrintBCard) window.PrintBCard.mount(el, { me: S.me, fonts: (S.cat && S.cat.fonts) || [], toast: toast, eur: eur, onOrder: function () { refreshMe(); } }); })
+      .catch(function (e) { var el = document.getElementById("psBcard"); if (el) el.innerHTML = '<p class="ps-err">' + esc(e.message) + "</p>"; });
+  }
   function vAccount() {
     var A = S.acct, h = '<div class="ps-acct">';
     var back = '<button type="button" class="ps-link" data-act="shop">← Zurück zum Shop</button>';
@@ -380,10 +387,11 @@
     }
     var me = S.me, co = me.type === "company", tab = A.tab || "start", fm = function (k) { return A.form === k ? msg : ""; };
     var TABS = [["start", "Übersicht"], ["orders", "Bestellungen" + (S.orders.length ? " (" + S.orders.length + ")" : "")], ["saved", "Merkliste" + ((me.saved || []).length ? " (" + me.saved.length + ")" : "")], ["drafts", "Entwürfe" + ((me.drafts || []).length ? " (" + me.drafts.length + ")" : "")], ["address", "Adresse"], ["settings", "Einstellungen"]];
+    var bcOk = !!(me.features && me.features.bc && me.type === "company"); if (bcOk) TABS.splice(1, 0, ["bc", "Visitenkarten"]); else if (tab === "bc") tab = "start";   /* Visitenkarten-Vorlagen: nur freigeschaltete Firmenkonten (Simon 19.11.2026) */
     var ini = ((me.firstName || "")[0] || "") + ((me.lastName || "")[0] || "") || (me.email || "?")[0];
     if (V2) {   // Vorschau Kundenportal (Entwurf Simon 04.11.2026): Menü links, Begrüßung, Kennzahlen, letzte Bestellungen als Tabelle
-      var AIC = { start: V2I.home, orders: V2I.box, saved: V2I.heart, drafts: V2I.pen, address: V2I.pin, settings: V2I.user };
-      var NM = { address: "Adressbuch", settings: "Profil & Einstellungen" };
+      var AIC = { start: V2I.home, orders: V2I.box, saved: V2I.heart, drafts: V2I.pen, address: V2I.pin, settings: V2I.user, bc: V2I.pen };
+      var NM = { address: "Adressbuch", settings: "Profil & Einstellungen", bc: "Visitenkarten" };
       h += '<div class="ps-v2acct"><aside class="side"><h2>Mein Konto</h2><nav role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + v2Ic(AIC[t[0]]) + "<span>" + esc(NM[t[0]] || t[1]) + "</span></button>"; }).join("") +
         '<button type="button" class="out" data-act="aclogout">' + v2Ic(V2I.logout) + "<span>Abmelden</span></button></nav></aside><div class=\"main\"><h1 class=\"hi\">Hallo" + (me.firstName ? ", " + esc(me.firstName + (me.lastName ? " " + me.lastName : "")) : "") + ' <span aria-hidden="true">👋</span></h1><p class="pd-muted sub">Verwalte hier deine Bestellungen, Merkliste und Kontodaten.' + (co && me.company ? " · " + esc(me.company) : "") + "</p>";
     } else
@@ -394,7 +402,8 @@
     var orderRow = function (o) {
       return '<li class="ps-ord"><div class="hd"><a class="t" href="' + ordUrl(o) + '"><b>' + esc(o.product) + "</b>" + ordMeta(o) + "</a>" + price(o) + "</div>" +
         '<div class="ft">' + miniTrack(o) + ordActs(o) + "</div></li>"; };
-    if (tab === "start" && V2) {
+    if (tab === "bc") h += '<div class="ps-panel ps-bcard" id="psBcard"><p class="pd-muted"><span class="ps-spin"></span> Wird geladen …</p></div>';
+    else if (tab === "start" && V2) {
       var st = [[S.orders.length, "Bestellungen", "atab:orders"], [(me.saved || []).length, "Gemerkt", "atab:saved"], [(me.drafts || []).length, "Gespeicherte Entwürfe", "atab:drafts"], [S.cart.length, "Im Warenkorb", ""]];
       h += '<div class="ps-v2stats">' + st.map(function (x) { return '<button type="button" ' + (x[2] ? 'data-act="' + x[2] + '"' : "data-cart-link") + "><b>" + x[0] + "</b><span>" + x[1] + "</span></button>"; }).join("") + "</div>";
       h += '<section class="ps-v2last"><div class="hd"><h2>Letzte Bestellungen</h2>' + (S.orders.length ? '<button type="button" class="ps-link" data-act="atab:orders">Alle Bestellungen →</button>' : "") + "</div>" +
@@ -1296,7 +1305,7 @@
     if (S.view === "xmas" && XM_HTML) { root.innerHTML = XM_HTML; headUpdate(); try { document.title = document.title; } catch (e) {} xmHotspots(); return; }
     if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
     var h = S.step > 1 && !(S.step === 4 && !S.cart.length && !S.view) ? stepsHtml() : "";   // leerer Warenkorb: keine Bestellschritte (verwirrt nur)
-    if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
+    if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); if (document.getElementById("psBcard")) bcMount(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     fileTrack();
