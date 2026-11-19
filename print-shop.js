@@ -1618,6 +1618,8 @@ module.exports = function (D) {
   function fontBuf(name) { if (!(name in FONT_BUF)) { try { FONT_BUF[name] = fs.readFileSync(path.join(__dirname, "print", "fonts", name + ".woff")); } catch (e) { FONT_BUF[name] = null; } } return FONT_BUF[name]; }
   function fontFor(doc, family, bold, italic, fo) {
     const first = String(family || "").split(",")[0].replace(/['"]/g, "").trim().toLowerCase();
+    // eigene Schrift des Kunden (Visitenkarten-Vorlagen, Simon 19.11.2026): Familie „cf-<Datei-ID>“, vorher aus dem Speicher geladen (preloadCustFonts)
+    if (/^cf-[a-z0-9]{6,40}$/.test(first) && FONT_BUF[first]) { try { if (!doc._registeredFonts || !doc._registeredFonts[first]) doc.registerFont(first, FONT_BUF[first]); if (fo) { if (bold) fo.fauxBold = true; if (italic) fo.fauxItalic = true; } return first; } catch (e) { FONT_BUF[first] = null; } }
     const f = FONTS.find(x => x.family.toLowerCase() === first);
     if (f) {
       const b = bold && f.bold, i = italic && f.italic && !b;   // Fett+Kursiv: fette Schrift, kursiv gerechnet
@@ -2433,6 +2435,9 @@ module.exports = function (D) {
     const SPOT_OK = /^(Thrucut|Kisscut|Creasing|Perforation|Drilling)$/;
     const extra = clean.map((_, i) => { const w = Array.isArray(input.white) ? String(input.white[i] || "") : "", sp = Array.isArray(input.spots) && Array.isArray(input.spots[i]) ? input.spots[i] : [];
       return { white: /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(w) && w.length < 30 * 1024 * 1024 ? w : "", spots: sp.filter(x => x && SPOT_OK.test(String(x.name))).slice(0, 5).map(x => ({ name: String(x.name), svg: svgSafe(x.svg).replace(/(?:stroke-|fill-)?opacity\s*[:=]\s*["']?[\d.]+["']?;?/gi, "") })) }; });   // Linien immer 100 % (sonst Gruppe/XObject ohne Farbraum)
+    // eigene Schriften (cf-<id>) aus dem Speicher holen, bevor das PDF gebaut wird
+    { const ids = new Set(); clean.forEach(s => (String(s).match(/cf-[a-z0-9]{6,40}/g) || []).forEach(x => ids.add(x)));
+      for (const k of ids) if (!(k in FONT_BUF)) { const fid = k.slice(3), m = await store.fileMeta(fid).catch(() => null); FONT_BUF[k] = m && m.kind === "font" ? await store.fileData(fid).catch(() => null) : null; } }
     let r; try { r = await svgPagesToPdf(clean, target.size, target.bleed, extra); } catch (e) { log("Designer-PDF:", e.message); throw Object.assign(new Error("PDF konnte nicht erstellt werden"), { status: 400 }); }
     const W = r2(target.size.w + 2 * target.bleed), H = r2(target.size.h + 2 * target.bleed);
     // Endkontrolle: Seitengröße des erzeugten PDFs = Endformat + 2 × Beschnitt
@@ -3611,7 +3616,8 @@ module.exports = function (D) {
     // Druckdaten gespeicherter Warenkörbe (Erinnerung) nicht löschen, solange der Warenkorb gespeichert ist – inkl. Original (src) und Vorschau-Kopie
     const keep = new Set(); (await crGet().catch(() => [])).forEach(r => (r.items || []).forEach(x => { [x.fileId].concat((x.motifs || []).map(m => m.fileId)).filter(Boolean).forEach(id => keep.add(String(id))); }));
     files.forEach(f => { if (keep.has(f.id) && f.src) keep.add(f.src); });
-    for (const f of files) if (!f.orderId && !keep.has(f.id) && !(f.of && keep.has(f.of)) && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : f.kind === "preview" ? 30 : 3) * 864e5) { await store.delFile(f.id); n++; }
+    // Schriften und Vorlagen aus dem Kundenkonto (Visitenkarten-Vorlagen) bleiben, solange der Kunde sie nicht selbst löscht
+    for (const f of files) if (!f.orderId && !keep.has(f.id) && !(f.of && keep.has(f.of)) && !(f.customerId && (f.kind === "font" || f.kind === "bctpl" || f.kind === "bcasset")) && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : f.kind === "preview" ? 30 : 3) * 864e5) { await store.delFile(f.id); n++; }
     return n;
   }
   let lastDaily = 0, lastFb = 0;
@@ -6281,12 +6287,14 @@ module.exports = function (D) {
       if (p === "/admin/api/print/newsletter") return await nlMod().handleAdmin(req, res, p, J, readJson);
       if (p === "/admin/api/print/customers") {
         const A = accountMod();
-        if (req.method === "POST") { const b = await readJson(req, 4000); if (b.op !== "discount") return J(res, 400, { ok: false, error: "op" }); const c = await A.setDiscount(String(b.id || ""), b.pct, b.note); return c ? J(res, 200, { ok: true }) : J(res, 404, { ok: false, error: "Kunde nicht gefunden" }); }
+        if (req.method === "POST") { const b = await readJson(req, 4000);
+          if (b.op === "flags") { const c = await A.setFlags(String(b.id || ""), { bc: b.bc === true }); return c ? J(res, 200, { ok: true }) : J(res, 404, { ok: false, error: "Kunde nicht gefunden" }); }   // Visitenkarten-Vorlagen freischalten
+          if (b.op !== "discount") return J(res, 400, { ok: false, error: "op" }); const c = await A.setDiscount(String(b.id || ""), b.pct, b.note); return c ? J(res, 200, { ok: true }) : J(res, 404, { ok: false, error: "Kunde nicht gefunden" }); }
         const list = await A.listAll(), orders = await ordersCached();
         const out = await Promise.all(list.map(async c => { const mine = orders.filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)), paid = mine.filter(o => BONUS_COUNTS[o.status]);
           const bo = await bonusOf(c, orders), rev12 = bo.revenue, tier = bo.name;
           return { id: c.id, email: c.email, name: [c.firstName, c.lastName].filter(Boolean).join(" "), company: c.company || "", type: c.type || "private", uid: c.uid || "", phone: c.phone || "", city: [c.zip, c.city].filter(Boolean).join(" "), verified: !!c.verified, createdAt: c.createdAt, lastLogin: c.lastLogin || "",
-            orders: mine.length, revenue: r2(paid.reduce((a, o) => a + (+(o.price && o.price.net) || 0), 0)), revenue12: rev12, tier, discountPct: +c.discountPct || 0, discountNote: c.discountNote || "", newsletter: !!c.newsletter, lastOrder: mine.map(o => o.createdAt).sort().pop() || "" }; }));
+            orders: mine.length, revenue: r2(paid.reduce((a, o) => a + (+(o.price && o.price.net) || 0), 0)), revenue12: rev12, tier, discountPct: +c.discountPct || 0, discountNote: c.discountNote || "", newsletter: !!c.newsletter, bc: !!(c.features && c.features.bc), bcCount: c.bcCount || 0, lastOrder: mine.map(o => o.createdAt).sort().pop() || "" }; }));
         return J(res, 200, { ok: true, customers: out.sort((a, b) => String(b.lastOrder || b.createdAt).localeCompare(String(a.lastOrder || a.createdAt))), tiers: BONUS_TIERS });
       }
       if (p === "/admin/api/print/vouchers") {

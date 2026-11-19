@@ -66,7 +66,56 @@ module.exports = function (D) {
     c.type = c.type === "company" ? "company" : "private"; c.country = "AT"; if (c.uid) c.uid = c.uid.replace(/[\s.\-]/g, "").toUpperCase(); }
   const pub = c => ({ id: c.id, email: c.email, verified: !!c.verified, createdAt: c.createdAt, type: c.type || "private", company: c.company || "", uid: c.uid || "", firstName: c.firstName || "", lastName: c.lastName || "",
     phone: c.phone || "", street: c.street || "", zip: c.zip || "", city: c.city || "", country: c.country || "AT", newsletter: !!c.newsletter,
-    uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c), saved: savedOf(c) });
+    uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c), saved: savedOf(c),
+    features: { bc: !!(c.features && c.features.bc) } });
+  // ── Visitenkarten-Vorlagen (Simon 19.11.2026): vom Cockpit je Konto freigeschaltet – eigene Schriften + Vorlagen (Designer-Stand) im Konto ──
+  const bcOn = c => !!(c && c.features && c.features.bc);
+  const FONT_MAX = 10 * 1048576, TPL_MAX = 30 * 1048576;
+  const fontKind = b => { if (!b || b.length < 12) return ""; const h = b.subarray(0, 4).toString("binary"); return h === "\u0000\u0001\u0000\u0000" || h === "true" ? "ttf" : h === "OTTO" ? "otf" : h === "wOFF" ? "woff" : h === "wOF2" ? "woff2" : ""; };
+  const FONT_CT = { ttf: "font/ttf", otf: "font/otf", woff: "font/woff", woff2: "font/woff2" };
+  const readRaw = (req, max) => new Promise((ok, no) => { const parts = []; let n = 0; req.on("data", d => { n += d.length; if (n > max) { no(Object.assign(new Error("Datei zu groß"), { status: 413 })); req.destroy(); } else parts.push(d); }); req.on("end", () => ok(Buffer.concat(parts))); req.on("error", no); });
+  const newId = pre => pre + crypto.randomBytes(10).toString("hex");
+  const bcOf = c => ({ fonts: (c.bcFonts || []).slice(0, 40), templates: (c.bcTemplates || []).slice(0, 60) });
+  async function bcHandle(req, res, p, ip, J) {
+    const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
+    if (!bcOn(c)) return J(res, 403, { ok: false, error: "Visitenkarten-Vorlagen sind für dein Konto nicht freigeschaltet." });
+    const m = await all(), x = m[c.email];
+    if (p === "/print/api/account/bc" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, bcOf(x)));
+    const fm = p.match(/^\/print\/api\/account\/bc\/font\/([a-z0-9]{6,40})$/);
+    if (fm && req.method === "GET") { const f = (x.bcFonts || []).find(y => y.id === fm[1]); if (!f) return J(res, 404, { ok: false, error: "not_found" });
+      const buf = await store.fileData(f.id); if (!buf) return J(res, 404, { ok: false, error: "not_found" });
+      res.writeHead(200, { "Content-Type": FONT_CT[f.fmt] || "application/octet-stream", "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" }); return res.end(buf); }
+    const tm = p.match(/^\/print\/api\/account\/bc\/tpl\/([a-z0-9]{6,40})$/);
+    if (tm && req.method === "GET") { const t = (x.bcTemplates || []).find(y => y.id === tm[1]); if (!t) return J(res, 404, { ok: false, error: "Vorlage nicht gefunden" });
+      const buf = await store.fileData(t.id); if (!buf) return J(res, 404, { ok: false, error: "Vorlage nicht gefunden" });
+      let design = null; try { design = JSON.parse(buf.toString("utf8")); } catch (e) {} return J(res, 200, { ok: true, template: t, design }); }
+    if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
+    if (limited("acctbc", ip, 400, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
+    if (p === "/print/api/account/bc/font") {   // Body = Schriftdatei (TTF/OTF/WOFF/WOFF2), Name im Header
+      if ((x.bcFonts || []).length >= 40) return J(res, 400, { ok: false, error: "Höchstens 40 Schriften je Konto." });
+      let buf; try { buf = await readRaw(req, FONT_MAX); } catch (e) { return J(res, e.status || 400, { ok: false, error: e.message }); }
+      const fmt = fontKind(buf); if (!fmt) return J(res, 400, { ok: false, error: "Bitte eine Schriftdatei hochladen (TTF, OTF, WOFF oder WOFF2)." });
+      const file = clip(decodeURIComponent(String(req.headers["x-file-name"] || "schrift")), 120), name = clip(decodeURIComponent(String(req.headers["x-font-name"] || "")), 60) || file.replace(/\.(ttf|otf|woff2?)$/i, "");
+      const id = newId("fnt"); await store.putFile({ id, kind: "font", customerId: c.id, name: file, fmt, bytes: buf.length, createdAt: nowIso() }, buf);
+      x.bcFonts = (x.bcFonts || []).concat([{ id, name, file, fmt, at: nowIso() }]); await save(); return J(res, 200, Object.assign({ ok: true }, bcOf(x)));
+    }
+    if (p === "/print/api/account/bc/tpl") {   // Vorlage speichern: Designer-Stand (JSON) + Produkt/Ausführung + kleine Vorschau
+      let b; try { b = JSON.parse((await readRaw(req, TPL_MAX)).toString("utf8")); } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Ungültige Vorlage" }); }
+      if (!b || !b.design || !Array.isArray(b.design.pages) || typeof b.product !== "string") return J(res, 400, { ok: false, error: "Ungültige Vorlage" });
+      const old = b.id ? (x.bcTemplates || []).find(y => y.id === String(b.id)) : null; if (!old && (x.bcTemplates || []).length >= 60) return J(res, 400, { ok: false, error: "Höchstens 60 Vorlagen je Konto." });
+      const id = old ? old.id : newId("tpl"), buf = Buffer.from(JSON.stringify(b.design), "utf8");
+      await store.putFile({ id, kind: "bctpl", customerId: c.id, name: clip(b.name, 80), bytes: buf.length, createdAt: old ? old.createdAt || nowIso() : nowIso() }, buf);
+      const t = { id, name: clip(b.name, 80) || "Visitenkarte", product: clip(b.product, 80), sel: b.sel && typeof b.sel === "object" ? JSON.parse(JSON.stringify(b.sel)) : {}, sides: Math.max(1, Math.min(2, +b.sides || 1)),
+        preview: /^data:image\/jpeg;base64,/.test(b.preview || "") && b.preview.length < 60000 ? b.preview : (old && old.preview) || "", fields: Array.isArray(b.fields) ? b.fields.slice(0, 20).map(f => clip(f, 40)) : [], at: nowIso(), createdAt: old ? old.createdAt : nowIso() };
+      x.bcTemplates = [t].concat((x.bcTemplates || []).filter(y => y.id !== id)); await save(); return J(res, 200, Object.assign({ ok: true, id }, bcOf(x)));
+    }
+    let b; try { b = JSON.parse((await readRaw(req, 4000)).toString("utf8") || "{}"); } catch (e) { return J(res, 400, { ok: false, error: "Ungültige Anfrage" }); }
+    if (p === "/print/api/account/bc/font-del") { const id = String(b.id || ""); if ((x.bcFonts || []).some(y => y.id === id)) { x.bcFonts = x.bcFonts.filter(y => y.id !== id); await store.delFile(id).catch(() => {}); await save(); } return J(res, 200, Object.assign({ ok: true }, bcOf(x))); }
+    if (p === "/print/api/account/bc/font-name") { const f = (x.bcFonts || []).find(y => y.id === String(b.id || "")); if (f) { f.name = clip(b.name, 60) || f.name; await save(); } return J(res, 200, Object.assign({ ok: true }, bcOf(x))); }
+    if (p === "/print/api/account/bc/tpl-del") { const id = String(b.id || ""); if ((x.bcTemplates || []).some(y => y.id === id)) { x.bcTemplates = x.bcTemplates.filter(y => y.id !== id); await store.delFile(id).catch(() => {}); await save(); } return J(res, 200, Object.assign({ ok: true }, bcOf(x))); }
+    if (p === "/print/api/account/bc/tpl-name") { const t = (x.bcTemplates || []).find(y => y.id === String(b.id || "")); if (t) { t.name = clip(b.name, 80) || t.name; await save(); } return J(res, 200, Object.assign({ ok: true }, bcOf(x))); }
+    return J(res, 404, { ok: false, error: "not_found" });
+  }
   // Merkliste: gespeicherte Konfigurationen (Produkt + Optionen als Link-Code, Preis beim Merken), max. 30
   const savedOf = c => (c.saved || []).slice(0, 30);
   // Produktbild: intern immer als images.ctfassets.net-Adresse speichern (der Browser lädt es über unseren Bild-Proxy /print/bild/…)
@@ -95,6 +144,7 @@ module.exports = function (D) {
   async function handle(req, res, p, ip, J, readJson, ordersOf, bonusOf) {
     const full = async c => ({ ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c), bonus: bonusOf ? await bonusOf(c) : null });
     const send = (code, o, ck) => { if (ck) res.setHeader("Set-Cookie", ck); return J(res, code, o); };
+    if (p === "/print/api/account/bc" || p.indexOf("/print/api/account/bc/") === 0) return bcHandle(req, res, p, ip, J);
     if (p === "/print/api/account/me" && req.method === "GET") {
       const c = await current(req); if (!c) return send(200, { ok: true, customer: null });
       return send(200, await full(c));
@@ -201,8 +251,10 @@ module.exports = function (D) {
     return J(res, 404, { ok: false, error: "not_found" });
   }
   // Cockpit: alle Kunden, eigener Rabatt je Kunde (zusätzlich zum Bonusprogramm – der höhere gilt)
-  async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { newsletterAt: c.newsletterAt || "", lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "" })); }
+  async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { newsletterAt: c.newsletterAt || "", lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "", bcCount: (c.bcTemplates || []).length })); }
+  // Cockpit: Funktionen je Konto freischalten (bc = Visitenkarten-Vorlagen)
+  async function setFlags(id, flags) { const c = await byId(id); if (!c) return null; c.features = Object.assign({}, c.features || {}); if (flags && "bc" in flags) c.features.bc = flags.bc === true; await save(); return c; }
   async function setDiscount(id, pct, note) { const c = await byId(id); if (!c) return null; const n = parseFloat(String(pct == null ? "" : pct).replace(",", ".")); c.discountPct = isFinite(n) && n > 0 ? Math.min(50, Math.round(n * 10) / 10) : 0; c.discountNote = clip(note, 200); await save(); return c; }
   const byEmail = async e => (await all())[normMail(e)] || null;   // gibt es zu dieser Adresse schon ein Konto?
-  return { handle, current, createFromCheckout, byEmail, pub, listAll, setDiscount, addDraft, _test: { codeOk, newCode, hash } };
+  return { handle, current, createFromCheckout, byEmail, pub, listAll, setDiscount, setFlags, addDraft, _test: { codeOk, newCode, hash, fontKind } };
 };
