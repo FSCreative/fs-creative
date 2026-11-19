@@ -1964,6 +1964,13 @@ module.exports = function (D) {
     catch (e) { return null; }
   }
   function stretchPt() { return 0.3 * MM_PT; }   // Breite des Randstreifens, dessen Farben in Beschnitt/freie Flächen gezogen werden
+  // Randfarben aus dem Browser prüfen: {l,r,t,b} je 1–400 Farben "#rrggbb" → pdf-lib-Farben, sonst null
+  function edgeColors(c) {
+    if (!c || typeof c !== "object") return null; const { rgb } = require("pdf-lib"), o = {};
+    for (const k of ["l", "r", "t", "b"]) { const a = c[k]; if (!Array.isArray(a) || !a.length || a.length > 400) return null;
+      o[k] = []; for (const h of a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(h)); if (!m) return null; const n = parseInt(m[1], 16); o[k].push(rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255)); } }
+    return o;
+  }
   async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
@@ -1982,8 +1989,19 @@ module.exports = function (D) {
         const sx = W / pw, sy = H / ph, e = 1.5, ins = (Array.isArray(insets) ? insets[pi] : insets) || {}, lim = v => Math.max(0, Math.min(6 * MM_PT, (+v || 0) * MM_PT));
         const L = Math.min(lim(ins.l), W * 0.1), R = Math.min(lim(ins.r), W * 0.1), T = Math.min(lim(ins.t), H * 0.1), Bo = Math.min(lim(ins.b), H * 0.1), any = L + R + T + Bo > 0;
         const xa = [b + L, b + W - R], ya = [b + Bo, b + H - T];   // Spiegelachsen = Motivkanten
-        const ncp = nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(ncp)) : emb;   // Kopien ohne Schneidelinien
-        for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        // Vom Browser gemessene Randfarben (je Kante die vorherrschende Farbe pro mm, Text/feine Linien herausgefiltert, Simon 19.11.2026): Beschnitt als Farbflächen –
+        // sonst (ältere Aufrufe) wird ein 0,3 mm Randstreifen nach außen gezogen
+        const ec = edgeColors(ins.c);
+        if (ec) {
+          const OW = W + 2 * b, OH = H + 2 * b, ov = 0.3, put = (x, y, w, h, c) => pg.drawRectangle({ x, y, width: w, height: h, color: c, borderWidth: 0 });
+          const vert = (arr, x, w) => { const n = arr.length, h = (ya[1] - ya[0]) / n; arr.forEach((c, i) => put(x, ya[1] - (i + 1) * h - ov, w, h + 2 * ov, c)); };   // l/r: oben → unten
+          const horz = (arr, y, h) => { const n = arr.length, w = (xa[1] - xa[0]) / n; arr.forEach((c, i) => put(xa[0] + i * w - ov, y, w + 2 * ov, h, c)); };   // t/b: links → rechts
+          vert(ec.l, 0, xa[0] + e); vert(ec.r, xa[1] - e, OW - xa[1] + e); horz(ec.t, ya[1] - e, OH - ya[1] + e); horz(ec.b, 0, ya[0] + e);
+          put(0, ya[1] - e, xa[0] + e, OH - ya[1] + e, ec.t[0]); put(xa[1] - e, ya[1] - e, OW - xa[1] + e, OH - ya[1] + e, ec.t[ec.t.length - 1]);
+          put(0, 0, xa[0] + e, ya[0] + e, ec.b[0]); put(xa[1] - e, 0, OW - xa[1] + e, ya[0] + e, ec.b[ec.b.length - 1]);
+        }
+        const ncp = !ec && nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(ncp)) : emb;   // Kopien ohne Schneidelinien
+        if (!ec) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
           const cx = dx < 0 ? 0 : dx === 0 ? xa[0] : xa[1], cw = dx < 0 ? xa[0] : dx === 0 ? xa[1] - xa[0] : W + 2 * b - xa[1], cy = dy < 0 ? 0 : dy === 0 ? ya[0] : ya[1], ch = dy < 0 ? ya[0] : dy === 0 ? ya[1] - ya[0] : H + 2 * b - ya[1];
           pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
           // Farben erweitern statt spiegeln (Simon 19.11.2026): nur ein 0,3 mm schmaler Streifen an der Motivkante wird nach außen gezogen – keine gespiegelten Texte im Beschnitt
@@ -5792,13 +5810,14 @@ module.exports = function (D) {
       }
       if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
         if (limited("upload", ip, 200, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
-        const b = await readJson(req, 2000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
+        const b = await readJson(req, 400000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
+      const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, c: x && x.c })) : null;   // Randfarben aus dem Browser (Farben erweitern)
         if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(id), info = await pdfInfoX(data); if (info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
-        const out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)), multi = (+fm.sides || 1) > 2;
-        const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt: Motiv minimal vergrößert (" + fm.bleed + " mm je Seite) – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt automatisch ergänzt: Randbereiche gespiegelt (" + fm.bleed + " mm je Seite) – dein Motiv bleibt unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, multi));
+        const out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)), multi = (+fm.sides || 1) > 2;
+        const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt: Motiv minimal vergrößert (" + fm.bleed + " mm je Seite) – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt: Randfarben nach außen erweitert (" + fm.bleed + " mm je Seite) – dein Motiv bleibt unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, multi));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat(keepChecks(fm.checks).filter(c => !/Seite\(n\) –|Seiten –/.test(c.text || ""))), { original: "pdf", bleedFix: mode, from: fm.id, src: fm.src || null });   // src: „Anpassen“ bleibt danach möglich
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
@@ -6384,12 +6403,12 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/bleed" && req.method === "POST") {   // Beschnitt im Cockpit ergänzen: Rand spiegeln oder Motiv leicht vergrößern (nur wenn die Datei keinen Beschnitt hat)
-        const b = await readJson(req, 2000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const b = await readJson(req, 400000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         if (!prCan(o)) return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt" });
         const mot = Array.isArray(o.motifs) && o.motifs.length > 1, motif = mot ? Math.max(0, Math.min(o.motifs.length - 1, parseInt(b.motif, 10) || 0)) : -1, mode = b.mode === "zoom" ? "zoom" : "mirror";
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId); if (!fm || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(curId), info = data && await pdfInfoX(data); if (!info || info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
-        const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0 })) : null;
+        const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, c: x && x.c })) : null;
         let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randfarben nach außen erweitert – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });

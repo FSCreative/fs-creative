@@ -2729,11 +2729,11 @@
   }
   // Kein Beschnitt in der PDF → automatisch ergänzen lassen (Ränder spiegeln oder Motiv minimal vergrößern), jederzeit rückgängig
   function bleedFixHtml(f) {
-    if (S.fileOrig && S.fileOrig.next === f.fileId) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedMode === "zoom" ? "Motiv minimal vergrößert." : "Randbereiche gespiegelt – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="bleedundo">Rückgängig</button></div>';
+    if (S.fileOrig && S.fileOrig.next === f.fileId) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedMode === "zoom" ? "Motiv minimal vergrößert." : "Randfarben nach außen erweitert – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="bleedundo">Rückgängig</button></div>';
     // beim Hochladen automatisch gespiegelt → jederzeit wieder ausschaltbar (Simon 18.11.2026)
-    if (f.kind === "upload" && f.bleedFix) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedFix === "zoom" ? "Motiv minimal vergrößert." : "Rand " + (f.bleed ? String(f.bleed).replace(".", ",") + " mm " : "") + "nach außen gespiegelt – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="nobleed">' + (f.bleedFix === "zoom" ? "Ausschalten" : "Rand spiegeln ausschalten") + '</button></div>';
+    if (f.kind === "upload" && f.bleedFix) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedFix === "zoom" ? "Motiv minimal vergrößert." : "Rand " + (f.bleed ? String(f.bleed).replace(".", ",") + " mm " : "") + "nach außen erweitert – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="nobleed">' + (f.bleedFix === "zoom" ? "Ausschalten" : "Erweiterung ausschalten") + '</button></div>';
     if (f.kind !== "upload" || !(f.checks || []).some(function (c) { return c.level !== "ok" && /keinen Beschnitt/.test(c.text || ""); })) return "";   // „hatte keinen Beschnitt – automatisch ergänzt“ (ok) zählt nicht
-    return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so bleibt nach dem Schneiden kein weißer Rand stehen. Du siehst danach sofort die Vorschau und kannst es rückgängig machen.</span><ul class="ps-bfix-i"><li><b>Ränder spiegeln:</b> die äußersten Millimeter werden nach außen gespiegelt – dein Motiv bleibt gleich groß und unverändert.</li><li><b>Motiv leicht vergrößern:</b> das Motiv wird minimal größer gezogen, bis es den Beschnitt füllt – Inhalte ganz am Rand werden etwas angeschnitten.</li></ul><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
+    return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so bleibt nach dem Schneiden kein weißer Rand stehen. Du siehst danach sofort die Vorschau und kannst es rückgängig machen.</span><ul class="ps-bfix-i"><li><b>Farben erweitern:</b> die Farben am Rand werden nach außen verlängert – dein Motiv bleibt gleich groß und unverändert.</li><li><b>Motiv leicht vergrößern:</b> das Motiv wird minimal größer gezogen, bis es den Beschnitt füllt – Inhalte ganz am Rand werden etwas angeschnitten.</li></ul><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Farben erweitern (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
   }
   // ── Anpassen: Upload ganz einpassen / Format füllen, drehen, Größe – der Server setzt die Datei vom Original aus neu (exakte Größe inkl. Beschnitt) ──
   /* Umbau Simon 17.11.2026 („Anpassen muss logischer werden“): zwei klare Arten (Randlos füllen / Ganz zeigen), der angezeigte Zustand entspricht der Datei
@@ -2775,6 +2775,24 @@
   function pmkHtml() { var sd = pmkSides() ? '<div class="ps-pmk-sd" role="group" aria-label="Seite">' + sideNames().map(function (n, i) { return '<button type="button" data-pmkside="' + i + '" aria-pressed="' + ((S.pmkSide || 0) === i) + '">' + n + "</button>"; }).join("") + "</div>" : "";
     return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div>' + sd + '<div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }
   function fileUrl(f) { return "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1"; }
+  /* „Farben erweitern“ (Simon 19.11.2026): Randfarben je Kante im Browser messen – pro mm die vorherrschende Farbe in ±3 mm entlang der Kante,
+     so fallen Text und feine Linien am Rand heraus und Farbflächen bleiben. Der Server füllt damit den Beschnitt. Fehler/Timeout → null (Server zieht dann den Rand nach außen). */
+  function edgeCols(d, W, H, pxmm) {
+    var hx = function (n) { n = Math.max(0, Math.min(255, Math.round(n))); return (n < 16 ? "0" : "") + n.toString(16); };
+    var pick = function (n, at) { var seg = Math.max(pxmm, n / 400), win = 3 * pxmm, res = []; for (var s = 0; s < n - 0.5 && res.length < 400; s += seg) { var c = s + seg / 2, a = Math.max(0, Math.round(c - win)), z = Math.min(n, Math.round(c + win)), h = {}, best = null;
+        for (var k = a; k < z; k++) { var o = at(k), key = (d[o] >> 4) + "," + (d[o + 1] >> 4) + "," + (d[o + 2] >> 4), e = h[key] || (h[key] = { n: 0, r: 0, g: 0, b: 0 }); e.n++; e.r += d[o]; e.g += d[o + 1]; e.b += d[o + 2]; if (!best || e.n > best.n) best = e; }
+        if (best) res.push("#" + hx(best.r / best.n) + hx(best.g / best.n) + hx(best.b / best.n)); } return res; };
+    var px = function (x, y) { return (y * W + x) * 4; };
+    return { l: pick(H, function (k) { return px(1, k); }), r: pick(H, function (k) { return px(W - 2, k); }), t: pick(W, function (k) { return px(k, 1); }), b: pick(W, function (k) { return px(k, H - 2); }) };
+  }
+  function edgeInsets(f) {
+    var work = pdfjs().then(function (L) { return L.getDocument({ url: fileUrl(f), withCredentials: true }).promise; }).then(function (doc) { var out = [], n = Math.min(doc.numPages, 8);
+      var one = function (i) { if (i > n) return out; return doc.getPage(i).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(5, 1200 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        var x = cv.getContext("2d", { willReadFrequently: true }); x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height);
+        return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { out.push({ l: 0, r: 0, t: 0, b: 0, c: edgeCols(x.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, cv.width / (v0.width / 72 * 25.4)) }); return one(i + 1); }); }); };
+      return one(1); });
+    return Promise.race([work, new Promise(function (r) { setTimeout(function () { r(null); }, 15000); })]).catch(function () { return null; });
+  }
   /* Schnelle Vorschau (Simon 10.11.2026): bei Bild-Uploads schickt der Browser eine verkleinerte Kopie (max. 2000 px, ohne EXIF-Drehung – wie der Server),
      der Server baut daraus mit derselben Platzierung eine kleine Vorschau-PDF (&pv=1). Ohne Kopie liefert der Server die volle Datei. */
   var PX = {};
@@ -3109,7 +3127,7 @@
     if (k === "cwarn") { warnPop(v); return; }
     if (k === "brief") { briefPop(); return; }
     if (k === "bleedfix" && S.file) { var f0 = S.file; t.disabled = true; t.textContent = "Wird ergänzt …";
-      api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
+      (v === "mirror" ? edgeInsets(f0) : Promise.resolve(null)).then(function (ins) { return api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v, insets: ins || undefined }); }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
     if (k === "adjpg") { S.adjPg = +v || 0; render(); return; }
     if (k === "adj" && S.file) { var pl0 = pagePl(S.file.place, adjPg(S.file));
@@ -3117,7 +3135,7 @@
       adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : { rotate: (pl0.rotate || 0) + 90 }); return; }
     if (k === "nobleed" && S.file) { var f1 = S.file; t.disabled = true; t.textContent = "Wird ausgeschaltet …";
       api("/print/api/file/nobleed", { fileId: f1.fileId, token: f1.token }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
-        S.file = j; S.fileOrig = null; S.previews = null; render(); pollPreflight(); toast("Rand spiegeln ausgeschaltet – Datei wie hochgeladen"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
+        S.file = j; S.fileOrig = null; S.previews = null; render(); pollPreflight(); toast("Erweiterung ausgeschaltet – Datei wie hochgeladen"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
     if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }

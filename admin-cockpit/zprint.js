@@ -510,6 +510,16 @@ F.action("sdpg",function(v){ SD.pg=+v; sdPgMark(); sdToolsSync(sdPl()); });
 function sdPosShow(){ sdToolsSync(sdPl()); }
 /* Weiße Streifen am Rand der Datei messen (Simon 11.11.2026: „Rand spiegeln“ spiegelte einen weißen Rand mit): je Seite und Kante, in mm ab dem Endformat.
    Nur echte Streifen (0,2 mm bis 6 mm) – ist der Rand breiter weiß, ist das Motiv wohl bewusst weiß hinterlegt → nichts ändern. */
+/* Randfarben je Kante (Simon 19.11.2026 „Farben erweitern“): pro mm die vorherrschende Farbe in ±3 mm entlang der Motivkante – Text und feine Linien am Rand
+   fallen so heraus, Farbflächen (z. B. roter Balken) bleiben. l/r von oben nach unten, t/b von links nach rechts; max. 400 Werte je Kante. */
+function prEdgeCols(d,W,x0,y0,x1,y1,pxmm){ try{
+  var hx=function(v){ v=Math.max(0,Math.min(255,Math.round(v))); return (v<16?"0":"")+v.toString(16); };
+  var pick=function(n,at){ var seg=Math.max(pxmm,n/400), win=3*pxmm, res=[]; for(var s=0;s<n-0.5;s+=seg){ var c=s+seg/2, a=Math.max(0,Math.round(c-win)), z=Math.min(n,Math.round(c+win)), h={}, best=null;
+      for(var k=a;k<z;k++){ var o=at(k), key=(d[o]>>4)+","+(d[o+1]>>4)+","+(d[o+2]>>4), e=h[key]||(h[key]={n:0,r:0,g:0,b:0}); e.n++; e.r+=d[o]; e.g+=d[o+1]; e.b+=d[o+2]; if(!best||e.n>best.n) best=e; }
+      if(best) res.push("#"+hx(best.r/best.n)+hx(best.g/best.n)+hx(best.b/best.n)); if(res.length>=400) break; } return res; };
+  var px=function(x,y){ return (y*W+x)*4; }, h=y1-y0, w=x1-x0;
+  var c={l:pick(h,function(k){ return px(x0+1,y0+k); }),r:pick(h,function(k){ return px(x1-2,y0+k); }),t:pick(w,function(k){ return px(x0+k,y0+1); }),b:pick(w,function(k){ return px(x0+k,y1-2); })};
+  return c.l.length&&c.r.length&&c.t.length&&c.b.length?c:undefined; }catch(e){ return undefined; } }
 function prInsets(oid,fid,size,bleed){ return prdPdf().then(function(L){ return L.getDocument({url:fileUrlOf(oid,fid,false),withCredentials:true,disableAutoFetch:true,disableStream:true,rangeChunkSize:524288}).promise; }).then(function(doc){ var out=[], n=Math.min(doc.numPages,8);
   var one=function(i){ if(i>n) return Promise.resolve(out); return doc.getPage(i).then(function(pg){ var v0=pg.getViewport({scale:1}), sc=Math.min(6,1400/v0.width), vp=pg.getViewport({scale:sc}), cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height); var x=cv.getContext("2d",{willReadFrequently:true}); x.fillStyle="#fff"; x.fillRect(0,0,cv.width,cv.height);
     return pg.render({canvasContext:x,viewport:vp}).promise.then(function(){ var W=cv.width, H=cv.height, wmm=v0.width/72*25.4, hmm=v0.height/72*25.4, pxmm=W/wmm, d=x.getImageData(0,0,W,H).data;
@@ -518,7 +528,8 @@ function prInsets(oid,fid,size,bleed){ return prdPdf().then(function(L){ return 
       var white=function(a,b2,horiz,fixed){ var nW=0, tot=0; for(var k=a;k<b2;k+=2){ var px=horiz?k:fixed, py=horiz?fixed:k, o=(py*W+px)*4; tot++; if(d[o]>=244&&d[o+1]>=244&&d[o+2]>=244) nW++; } return tot&&nW/tot>=0.985; };
       var run=function(start,step,lim,horiz){ var c=0; for(var k=0;k<lim;k++){ var pos=start+step*k; if(!(horiz?white(x0,x1,true,pos):white(y0,y1,false,pos))) break; c++; } return c>=lim?0:c; };
       var mm=function(c){ var v=c/pxmm; return v>=0.2?Math.round((v+0.15)*10)/10:0; };
-      out.push({l:mm(run(x0+1,1,max,false)),r:mm(run(x1-2,-1,max,false)),t:mm(run(y0+1,1,maxY,true)),b:mm(run(y1-2,-1,maxY,true))}); return one(i+1); }); }); };
+      var il=run(x0+1,1,max,false), ir=run(x1-2,-1,max,false), it=run(y0+1,1,maxY,true), ib=run(y1-2,-1,maxY,true);
+      out.push({l:mm(il),r:mm(ir),t:mm(it),b:mm(ib),c:prEdgeCols(d,W,x0+il,y0+it,x1-ir,y1-ib,pxmm)}); return one(i+1); }); }); };
   return one(1); }).catch(function(){ return null; }); }
 F.action("prbleed",function(v){ var p=String(v).split("|"), mi=p[1]===""?undefined:+p[1];
   var send=function(ins){ F.api("/admin/api/print/bleed",{body:{id:p[0],motif:mi,mode:p[2],insets:ins||undefined}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } var w=(ins||[]).some(function(x){ return x.l||x.r||x.t||x.b; });
