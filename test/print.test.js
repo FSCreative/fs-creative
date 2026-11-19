@@ -1368,7 +1368,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/href="\/print"/.test(await (await fetch(B + "/druck")).text()), "Link „Jetzt online bestellen“");
     assert.ok(/\/print<\/loc>/.test(await (await fetch(B + "/sitemap.xml")).text()));
     const home = await (await fetch(B + "/")).text(); assert.ok(/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));
-    assert.ok(/>Pixel</.test(home) && !/Ideen aus dem Tal/.test(home) && !/PRINT_OFF/.test(home), "Hero: Druck-Fassung, PRINT_OFF-Ersatz entfernt");
+    assert.ok(/class="p">Drucksachen</.test(home) && !/Ideen aus dem Tal/.test(home) && !/PRINT_OFF/.test(home), "Hero (neue Startseite): Druck-Fassung, PRINT_OFF-Ersatz entfernt");
     assert.strictEqual((home.match(/<title>/g) || []).length, 1); assert.ok(/<title>Webdesign Montafon &amp; Vorarlberg · Druckshop \| FS Creative<\/title>/.test(home), "Titel mit Druckshop");
     assert.ok(/<meta name="description" content="[^"]*Drucksachen direkt online bestellen/.test(home) && /<meta property="og:title" content="[^"]*Druckshop/.test(home) && /<meta property="og:description" content="[^"]*Drucksachen/.test(home));
     const kontakt = await (await fetch(B + "/kontakt")).text(); assert.ok(/<title>Kontakt &amp; Gratis-Entwurf/.test(kontakt) && />Pixel</.test(kontakt) && !/PRINT_OFF|Ideen aus dem Tal/.test(kontakt), "SPA-Route: eigener Titel, Blöcke wie Startseite");
