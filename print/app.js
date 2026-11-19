@@ -2272,7 +2272,7 @@
   // Sicherheitsabstand: Produktwert, bei Tunnelsaum Tunnelbreite + 1 cm (wie Server safeFor)
   function sleeveCm() { var m = 0; Object.keys(S.sel || {}).forEach(function (k) { var x = /^sleeve_(\d+)_?cm$/.exec(String(S.sel[k])); if (x) m = Math.max(m, +x[1]); }); return m; }
   function safeOf() { if (S.prod.imprint) return 0; var sl = sleeveCm(); return Math.max(+S.prod.safe || 3, sl ? sl * 10 + 10 : 0); }
-  function reqList(l, cls) { return l.length ? '<ul class="ps-req-l' + cls + '">' + l.map(function (x) { return '<li' + (x[3] ? ' class="' + x[3] + '"' : "") + '><span class="ri" aria-hidden="true">' + x[0] + "</span><div><b>" + x[1] + "</b><span>" + x[2] + "</span></div></li>"; }).join("") + "</ul>" : ""; }
+  function reqList(l, cls) { return l.length ? '<ul class="ps-req-l' + cls + '">' + l.map(function (x) { return '<li' + (x[3] ? ' class="' + x[3] + '"' : "") + '><span class="ri" aria-hidden="true">' + x[0] + "</span>" + (x[4] ? '<details class="ps-req-fold"><summary><b>' + x[1] + '</b><em>Mehr anzeigen</em></summary><span>' + x[2] + "</span></details>" : "<div><b>" + x[1] + "</b><span>" + x[2] + "</span></div>") + "</li>"; }).join("") + "</ul>" : ""; }
   function reqHtml(open) {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = safeOf(), dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
     if (!sz) return "";
@@ -2323,7 +2323,7 @@
     (p.specs || []).forEach(function (x) { if (x[3]) fh.push([x[0], x[1], x[3]]); });
     if (fh.length) items.push(["📋", "Zu deiner Ausführung", fh.map(function (x) { return "<b>" + esc(x[0]) + ": " + esc(x[1]) + "</b> – " + esc(x[2]); }).join("<br>"), "wide"]);
     // Druckspezifikationen des Herstellers zu diesem Produkt (z. B. Abreißkalender: Umschlag als Doppelseite, Rücken unbedruckt) – automatisch für alle Produkte (Simon 16.11.2026)
-    ((p.qa && p.qa.items) || []).forEach(function (x) { items.push(["📘", esc(x.q), esc(x.a).replace(/\n/g, "<br>"), "wide"]); });
+    ((p.qa && p.qa.items) || []).forEach(function (x) { items.push(["📘", esc(x.q), esc(x.a).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br>"), "wide", true]); });   /* eingeklappt – zu viel Text (Simon 19.11.2026) */
     var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);

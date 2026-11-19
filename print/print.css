@@ -2500,3 +2500,7 @@ body.pd-open .ps-chatnudge{display:none}
 .ps-hibox-b{display:flex;flex-direction:column;gap:5px;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--ps-line2);background:var(--surface);cursor:pointer;font:inherit;color:inherit}
 .ps-hibox-b:hover{border-color:var(--accent)}
 .ps-hibox-b b{font-size:16px}.ps-hibox-b span{color:var(--text-dim);font-size:14px}.ps-hibox-b .ic{font-size:24px}
+/* Herstellerhinweise (📘) eingeklappt (Simon 19.11.2026) */
+.ps-req-fold{min-width:0;flex:1}.ps-req-fold summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:2px}.ps-req-fold summary::-webkit-details-marker{display:none}
+.ps-req-fold summary b{font-size:14px}.ps-req-fold summary em{font-style:normal;font-size:13px;color:var(--accent)}.ps-req-fold[open] summary em{display:none}
+.ps-req-fold>span{display:block;margin-top:6px;font-size:13.5px;color:var(--text-dim);line-height:1.45;overflow-wrap:anywhere;hyphens:auto}
