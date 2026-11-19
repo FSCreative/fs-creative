@@ -3656,7 +3656,7 @@
     toast("Designer wird geladen …");
     loadDesigner().then(function (D) {
       var tt = document.getElementById("psToast"); if (tt && /Designer wird geladen/.test(tt.textContent)) tt.className = "ps-toast";
-      return D.open({ product: S.prod, sel: S.sel, labels: S.prod.props.map(function (pr) { return [pr.slug, labelOf(pr.slug)]; }), copies: S.copies, urgency: S.urgency, custom: isCustom() ? S.custom : undefined, size: sz, folds: S.price && S.price.folds, closed: S.price && S.price.closed, bleed: (S.price && S.price.bleed) || S.prod.bleed, safe: S.prod.safe || 3, sides: sides(), fonts: S.cat.fonts, design: draft || S.design,
+      return D.open({ product: S.prod, sel: S.sel, labels: S.prod.props.map(function (pr) { return [pr.slug, labelOf(pr.slug)]; }), copies: S.copies, urgency: S.urgency, custom: isCustom() ? S.custom : undefined, size: sz, folds: S.price && S.price.folds, closed: S.price && S.price.closed, bleed: (S.price && S.price.bleed) || S.prod.bleed, safe: S.prod.safe || 3, sides: sides(), fonts: S.cat.fonts, design: draft || S.design, cassette: cassetteMm(sz),
         motif: S.mot.n > 1 && motOk() ? S.mot.i + 1 : 0, motifs: S.mot.n > 1 && motOk() ? S.mot.n : 0, motifCopies: S.mot.n > 1 && motOk() ? +S.mot.split[S.mot.i] || 0 : 0,
         onDone: function (file, previews, design) { S.file = file; S.previews = previews; S.design = design; S.mode = "design"; render(); toast(file.blocked ? "Bitte die markierten Punkte prüfen." : "Druck-PDF erstellt ✓"); },
         onClose: function (design) { if (design) S.design = design; render(); } });

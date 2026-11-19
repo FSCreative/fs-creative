@@ -245,7 +245,7 @@
       var panels = opts.folds ? opts.folds.x.length + 1 : opts.product.key === "folder" ? (/wickel|zickzack|leporello|zig|letter|wrap|z-|3|drei/i.test(foldName) ? 3 : 2) : 1;
       var shape = ((opts.labels || []).filter(function (l) { return l[0] === "shape"; })[0] || [])[1] || "";
       D = { o: opts, W: (sz.w + 2 * b) * U, H: (sz.h + 2 * b) * U, mm: sz, b: b, safe: opts.safe || 3, sides: opts.sides, panels: panels, fold: opts.folds || null, round: /rund|round|kreis|circle/i.test(shape + " " + (opts.sel.shape || "")),
-        pages: [], cur: 0, hist: [], fut: [], panel: tex ? "text" : "tpl", tex: tex, guides: [], showGuides: true, showBleed: true, snap: true, grid: false, crop: null, imgs: {}, clip: null, dirty: false, keyH: null, loading: false };
+        pages: [], cur: 0, hist: [], fut: [], panel: tex ? "text" : "tpl", tex: tex, guides: [], showGuides: true, showBleed: true, snap: true, grid: false, crop: null, imgs: {}, clip: null, dirty: false, keyH: null, loading: false, cas: +opts.cassette || 0 };   /* Roll-up: unterer Streifen in der Kassette (mm) */
       D.ink = inkOf(opts);
       D.trim = { x: b * U, y: b * U, w: sz.w * U, h: sz.h * U };
       D.saferect = { x: (b + D.safe) * U, y: (b + D.safe) * U, w: (sz.w - 2 * D.safe) * U, h: (sz.h - 2 * D.safe) * U };
@@ -484,6 +484,10 @@
         foldXs().forEach(function (fx) { [fx - fs, fx + fs].forEach(function (x) { ctx.beginPath(); ctx.moveTo(x, SR.y); ctx.lineTo(x, SR.y + SR.h); ctx.stroke(); }); });
         foldYs().forEach(function (fy) { [fy - fs, fy + fs].forEach(function (y) { ctx.beginPath(); ctx.moveTo(SR.x, y); ctx.lineTo(SR.x + SR.w, y); ctx.stroke(); }); }); }
       ctx.setLineDash([]);
+      if (D.cas > 0) { var cz = D.cas * U, cy0 = T.y + T.h - cz; ctx.save(); ctx.beginPath(); ctx.rect(T.x, cy0, T.w, cz); ctx.clip(); ctx.fillStyle = "rgba(60,60,67,.28)"; ctx.fillRect(T.x, cy0, T.w, cz);
+        ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 2 / z; for (var hx = T.x - cz; hx < T.x + T.w; hx += 14 / z) { ctx.beginPath(); ctx.moveTo(hx, cy0 + cz); ctx.lineTo(hx + cz, cy0); ctx.stroke(); }
+        ctx.fillStyle = "#fff"; ctx.font = "600 " + Math.min(cz * 0.32, 18 / z) + "px -apple-system,Segoe UI,sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("Kassette – nicht sichtbar (ca. " + D.cas + " mm)", T.x + T.w / 2, cy0 + cz / 2); ctx.restore();
+        ctx.strokeStyle = "#8e8e93"; ctx.setLineDash([6 / z, 4 / z]); ctx.beginPath(); ctx.moveTo(T.x, cy0); ctx.lineTo(T.x + T.w, cy0); ctx.stroke(); ctx.setLineDash([]); }
     }
     if (D.crop) { var cr = D.crop.r, cw = cr.width * cr.scaleX, chh = cr.height * cr.scaleY; ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.beginPath(); ctx.rect(-D.W, -D.H, D.W * 3, D.H * 3); ctx.rect(cr.left, cr.top, cw, chh); ctx.fill("evenodd"); ctx.strokeStyle = "#ff2d92"; ctx.lineWidth = 2 / z; ctx.setLineDash([]); ctx.strokeRect(cr.left, cr.top, cw, chh); }
     if (D.guides.length) { ctx.strokeStyle = "#ff2d92"; ctx.lineWidth = 1 / z; D.guides.forEach(function (g) { ctx.beginPath(); if (g.x != null) { ctx.moveTo(g.x, -D.H); ctx.lineTo(g.x, D.H * 2); } else { ctx.moveTo(-D.W, g.y); ctx.lineTo(D.W * 2, g.y); } ctx.stroke(); }); }
@@ -952,6 +956,7 @@
       var outT = { left: b.left < T.x - tol, top: b.top < T.y - tol, right: r > T.x + T.w + tol, bottom: bo > T.y + T.h + tol };
       var toEdge = { left: b.left <= tol, top: b.top <= tol, right: r >= D.W - tol, bottom: bo >= D.H - tol };
       var sides = function (m) { return Object.keys(m).filter(function (k) { return m[k]; }); };
+      if (D.cas > 0 && bo > T.y + T.h - D.cas * U + tol && (isText || o.role === "qr" || ((o.type === "image" || o.type === "group" || o.type === "path") && b.width * b.height < trimArea * 0.35))) add("warn", nm + " liegt im unteren Bereich, der beim Roll-up in der Kassette verschwindet (ca. " + D.cas + " mm) – bitte nach oben schieben.", o);
       if (isText) {
         var os = sides(outS), ot = sides(outT);
         if (os.length) add(ot.length ? "error" : "warn", "„" + String(o.text || (o.curve || {}).text || nm).split("\n")[0].slice(0, 30) + "“ " + (ot.length ? "ragt über die Schnittkante (" + ot.map(function (k) { return SIDE[k]; }).join(", ") + ") und wird abgeschnitten." : "liegt im Sicherheitsabstand (" + os.map(function (k) { return SIDE[k]; }).join(", ") + ") – kann beim Schneiden angeschnitten werden."), o, "safe");
