@@ -1982,7 +1982,9 @@ module.exports = function (D) {
       // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
       const sz = sp.getSize(), hasB = Math.abs(sz.width - (W + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (H + 2 * b)) < 2 * MM_PT;
       if (!hasB && Math.abs((sz.width / sz.height) / (W / H) - 1) > 0.012) throw bad("Seitengröße passt nicht zum Endformat – bitte unter „Anpassen“ einpassen");   // nie verzerren
-      const emb = hasB ? await out.embedPage(sp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
+      // Endformat mittig aus der Seite nehmen – Dateien mit etwas weniger Beschnitt (z. B. 107 × 76 statt 108 × 77 mm) sonst schief beschnitten (Simon 19.11.2026)
+      const ox = hasB ? (sz.width - W) / 2 : 0, oy = hasB ? (sz.height - H) / 2 : 0, box = { left: ox, bottom: oy, right: ox + W, top: oy + H };
+      const emb = hasB ? await out.embedPage(sp, box) : await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
       if (mode === "zoom") { const f = Math.max((W + 2 * b) / pw, (H + 2 * b) / ph); pg.drawPage(emb, { x: (W + 2 * b - pw * f) / 2, y: (H + 2 * b - ph * f) / 2, xScale: f, yScale: f }); }
       else {   // 8 gespiegelte Kopien rundum, leicht überlappend (keine Nahtlinien), Mitte zuletzt obenauf
         // Weiße Streifen am Rand der Datei (vom Cockpit gemessen, Simon 11.11.2026): ab der echten Motivkante spiegeln, sonst wird Weiß in den Beschnitt gespiegelt
@@ -2000,7 +2002,7 @@ module.exports = function (D) {
           put(0, ya[1] - e, xa[0] + e, OH - ya[1] + e, ec.t[0]); put(xa[1] - e, ya[1] - e, OW - xa[1] + e, OH - ya[1] + e, ec.t[ec.t.length - 1]);
           put(0, 0, xa[0] + e, ya[0] + e, ec.b[0]); put(xa[1] - e, 0, OW - xa[1] + e, ya[0] + e, ec.b[ec.b.length - 1]);
         }
-        const ncp = !ec && nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, { left: b, bottom: b, right: b + W, top: b + H }) : await out.embedPage(ncp)) : emb;   // Kopien ohne Schneidelinien
+        const ncp = !ec && nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, box) : await out.embedPage(ncp)) : emb;   // Kopien ohne Schneidelinien
         if (!ec) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
           const cx = dx < 0 ? 0 : dx === 0 ? xa[0] : xa[1], cw = dx < 0 ? xa[0] : dx === 0 ? xa[1] - xa[0] : W + 2 * b - xa[1], cy = dy < 0 ? 0 : dy === 0 ? ya[0] : ya[1], ch = dy < 0 ? ya[0] : dy === 0 ? ya[1] - ya[0] : H + 2 * b - ya[1];
           pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
