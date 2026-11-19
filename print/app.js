@@ -2580,6 +2580,13 @@
     if (h.cur && h.cur !== id && !h.skip) { h.u.push(h.curF); if (h.u.length > 10) h.u.shift(); h.r = []; }
     h.skip = false; h.cur = id; h.curF = S.file;
   }
+  /* Profi-Datencheck gewählt (Simon 19.11.2026): nach dem Hochladen kein Studio – direkt weiter wie „In den Warenkorb“ (gleiche Prüfungen: Preis, Umschlag, weitere Motive) */
+  function proToCart(n) {
+    if (S.upWho !== "pro" || !S.file || S.step !== 3 || isLogo()) return;
+    if ((!S.price || S.priceBusy || S.file.rebinding) && (n || 0) < 20) { setTimeout(function () { proToCart((n || 0) + 1); }, 500); return; }
+    var bt = document.createElement("button"); bt.type = "button"; bt.hidden = true; bt.setAttribute("data-act", "next3"); root.appendChild(bt); bt.click(); if (bt.parentNode) bt.parentNode.removeChild(bt);
+    if (S.step === 4) toast("Im Warenkorb ✓ – wir prüfen deine Datei persönlich vor dem Druck");
+  }
   function fileStep(back) {
     var h = S.fh; if (!h || !S.file) return; var from = back ? h.u : h.r, to = back ? h.r : h.u; if (!from.length) return;
     to.push(S.file); if (to.length > 10) to.shift(); S.file = from.pop(); h.skip = true; S.previews = null; S.fileOrig = null; render(); pollPreflight();
@@ -3426,7 +3433,7 @@
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
     x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos();
-        if (kind() === "textile" && !j.blocked && S.upWho !== "pro") logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+        if (kind() === "textile" && !j.blocked && S.upWho !== "pro") logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (S.upWho === "pro" && !j.needBack) proToCart(0); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
     x.send(f);
   }
