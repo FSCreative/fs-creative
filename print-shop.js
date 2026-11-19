@@ -1942,7 +1942,10 @@ module.exports = function (D) {
           if (it.page) tp.drawPage(tel, { x: tx, y: ty, xScale: f, yScale: f, rotate: opt.rotate }); else tp.drawImage(tel, { x: tx, y: ty, width: a, height: c, rotate: opt.rotate });
           const mem = await out.embedPage((await PDFDocument.load(await tmp.save())).getPage(0)), e = 0.4;
           for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]])
-            pg.drawPage(mem, { x: sx === 0 ? mx0 : sx < 0 ? mx0 + e : mx0 + 2 * mw - e, y: sy === 0 ? my0 : sy < 0 ? my0 + e : my0 + 2 * mh - e, xScale: sx === 0 ? 1 : -1, yScale: sy === 0 ? 1 : -1 });
+            {   // Farben der Motivkante nach außen ziehen statt spiegeln (Simon 19.11.2026)
+              const kx = sx === 0 ? 1 : Math.max(1, ((sx < 0 ? mx0 : W - mx0 - mw) + 2 * e) / stretchPt()), ky = sy === 0 ? 1 : Math.max(1, ((sy < 0 ? my0 : H - my0 - mh) + 2 * e) / stretchPt());
+              pg.drawPage(mem, { x: sx === 0 ? mx0 : sx < 0 ? mx0 + e : mx0 + mw + kx * mw - e, y: sy === 0 ? my0 : sy < 0 ? my0 + e : my0 + mh + ky * mh - e, xScale: sx === 0 ? 1 : -kx, yScale: sy === 0 ? 1 : -ky });
+            }
           it.mirrored = true;
         } catch (e) { log("Ränder spiegeln:", e.message); }
       }
@@ -1960,6 +1963,7 @@ module.exports = function (D) {
     try { const sc = await FILEINFO.spotScan(buf), hit = sc.spots.filter(isCutSpot); if (!hit.length) return null; FILEINFO.stripSpotPaint(sc.doc, isCutSpot); hit.forEach(s => sc.rename(s, "None")); return sc.doc; }
     catch (e) { return null; }
   }
+  function stretchPt() { return 0.3 * MM_PT; }   // Breite des Randstreifens, dessen Farben in Beschnitt/freie Flächen gezogen werden
   async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
@@ -1982,7 +1986,9 @@ module.exports = function (D) {
         for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
           const cx = dx < 0 ? 0 : dx === 0 ? xa[0] : xa[1], cw = dx < 0 ? xa[0] : dx === 0 ? xa[1] - xa[0] : W + 2 * b - xa[1], cy = dy < 0 ? 0 : dy === 0 ? ya[0] : ya[1], ch = dy < 0 ? ya[0] : dy === 0 ? ya[1] - ya[0] : H + 2 * b - ya[1];
           pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
-          pg.drawPage(embM, { x: dx === 0 ? b : dx < 0 ? 2 * xa[0] - b + e : 2 * xa[1] - b - e, y: dy === 0 ? b : dy < 0 ? 2 * ya[0] - b + e : 2 * ya[1] - b - e, xScale: dx === 0 ? sx : -sx, yScale: dy === 0 ? sy : -sy });
+          // Farben erweitern statt spiegeln (Simon 19.11.2026): nur ein 0,3 mm schmaler Streifen an der Motivkante wird nach außen gezogen – keine gespiegelten Texte im Beschnitt
+          const kx = dx === 0 ? 1 : Math.max(1, (cw + 2 * e) / stretchPt()), ky = dy === 0 ? 1 : Math.max(1, (ch + 2 * e) / stretchPt()), ax = dx < 0 ? xa[0] : xa[1], ay = dy < 0 ? ya[0] : ya[1];
+          pg.drawPage(embM, { x: dx === 0 ? b : ax + kx * (ax - b) + (dx < 0 ? e : -e), y: dy === 0 ? b : ay + ky * (ay - b) + (dy < 0 ? e : -e), xScale: dx === 0 ? sx : -sx * kx, yScale: dy === 0 ? sy : -sy * ky });
           pg.pushOperators(popGraphicsState());
         }
         if (any) pg.pushOperators(pushGraphicsState(), rectangle(xa[0], ya[0], xa[1] - xa[0], ya[1] - ya[0]), clip(), endPath());
@@ -6373,8 +6379,8 @@ module.exports = function (D) {
         const curId = motif > -1 ? o.motifs[motif].fileId : o.fileId, fm = await store.fileMeta(curId);
         if (!fm || !(fm.bleedFix || fm.place) || !fm.size || !(fm.src || fm.from)) return J(res, 400, { ok: false, error: "Diese Datei wurde weder gespiegelt noch angepasst" });
         const r = await noBleedFile(fm, { orderId: o.id }, fm.src || fm.from); if (r.error) return J(res, 400, { ok: false, error: r.error });
-        await prSwap(o, motif, curId, r.meta, "Cockpit (Rand spiegeln aus)");
-        hist(o, "Druckdaten im Cockpit: Rand spiegeln ausgeschaltet – Datei ohne Beschnitt" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
+        await prSwap(o, motif, curId, r.meta, "Cockpit (Erweiterung aus)");
+        hist(o, "Druckdaten im Cockpit: Farben-Erweiterung ausgeschaltet – Datei ohne Beschnitt" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/bleed" && req.method === "POST") {   // Beschnitt im Cockpit ergänzen: Rand spiegeln oder Motiv leicht vergrößern (nur wenn die Datei keinen Beschnitt hat)
@@ -6385,10 +6391,10 @@ module.exports = function (D) {
         const data = await store.fileData(curId), info = data && await pdfInfoX(data); if (!info || info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0 })) : null;
         let out; try { out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Beschnitt konnte nicht ergänzt werden" }); }
-        const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randbereiche gespiegelt – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
+        const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt (Cockpit): Motiv minimal vergrößert – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt ergänzt (Cockpit): Randfarben nach außen erweitert – Motiv unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, (+fm.sides || 1) > 2).filter(c => !BLEED_RX.test(c.text || "")), (fm.checks || []).filter(c => /Seite\(n\)|werden \d+ benötigt|Rückseite/.test(c.text || "") && !BLEED_RX.test(c.text || "") && !/Beschnitt/.test(c.text || "")));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks.concat((fm.checks || []).filter(c => c.spot)), { original: "pdf", bleedFix: mode, from: fm.id, orderId: o.id });
-        await prSwap(o, motif, curId, meta, "Cockpit (Beschnitt " + (mode === "zoom" ? "vergrößert" : "gespiegelt") + ")");
-        hist(o, "Druckdaten im Cockpit: Beschnitt ergänzt (" + (mode === "zoom" ? "Motiv leicht vergrößert" : "Rand gespiegelt") + ")" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
+        await prSwap(o, motif, curId, meta, "Cockpit (Beschnitt " + (mode === "zoom" ? "vergrößert" : "Farben erweitert") + ")");
+        hist(o, "Druckdaten im Cockpit: Beschnitt ergänzt (" + (mode === "zoom" ? "Motiv leicht vergrößert" : "Randfarben erweitert") + ")" + (motif > -1 ? " · Motiv " + (motif + 1) : "")); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
       if (p === "/admin/api/print/pagefrom" && req.method === "POST") {   // Seite aus einer anderen Version/Datei dieses Auftrags übernehmen (Dateien-Ablage im Studio, Drag & Drop)

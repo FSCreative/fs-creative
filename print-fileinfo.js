@@ -203,7 +203,7 @@ function recommend(info, ctx) {
   if (info && info.spots && info.spots.length) { const cut = info.spots.filter(s => /cut|stanz|kontur|crease|perfo|white|weiß|weiss/i.test(s)), other = info.spots.filter(s => cut.indexOf(s) < 0); if (other.length) add("warn", "Sonderfarben", other.join(", ") + " – werden in CMYK umgerechnet, außer das Produkt sieht Sonderfarben vor. Prüfen, ob das gewollt ist."); if (cut.length) add("ok", "Technische Farben", cut.join(", ") + " – Stanz-/Weiß-Ebenen erkannt, Position und 100 % Überdrucken kontrollieren."); }
   if (info && info.transparency) add("warn", "Transparenzen", "Datei enthält Transparenzen/Effekte – Schatten und Verläufe in der Vorschau auf Streifen oder weiße Kanten kontrollieren.");
   if (info && info.type === "PNG" && info.alpha) add("warn", "Transparenter Hintergrund", "PNG mit Transparenz – freie Flächen werden weiß gedruckt.");
-  if (c.noBleed) add("bad", "Beschnitt fehlt", "Hintergrund um " + bleed + " mm je Seite verlängern (im Studio „Rand spiegeln“ oder „Leicht vergrößern“), sonst können weiße Blitzer entstehen.");
+  if (c.noBleed) add("bad", "Beschnitt fehlt", "Hintergrund um " + bleed + " mm je Seite verlängern (im Studio „Farben erweitern“ oder „Leicht vergrößern“), sonst können weiße Blitzer entstehen.");
   add("check", "Sicherheitsabstand", "Texte, Logos und Ränder mindestens " + String(safe).replace(".", ",") + " mm innerhalb des Endformats" + (size ? " (" + size.w + " × " + size.h + " mm)" : "") + " – in der Vorschau grün gestrichelt.");
   if (c.hem) add("check", "Saum & Ösen", c.hem);
   add("check", "Inhalt", "Rechtschreibung, Telefonnummer, E-Mail, Web-Adresse und QR-Code (mit dem Handy scannen) kontrollieren.");
