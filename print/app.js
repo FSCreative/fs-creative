@@ -1297,6 +1297,7 @@
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
+    fileTrack();
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
     var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) { setTimeout(pfvRender, 0); setTimeout(studioPaint, 0); } if (S.step === 5) setTimeout(pwMeter, 0); document.documentElement.classList.toggle("ps-stu-open", !!(S.step === 3 && S.file && !isLogo() && root.querySelector(".ps-stu"))); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
@@ -2351,6 +2352,20 @@
   }
   function vDesign() { if (S.noFile && S.file && S.file.noFile && !isLogo()) return vNoFile(); var h0 = vDesign0(); if (!offerOn()) return h0; var f = S.offer.fee || {}, co = S.ctype === "company";
     return '<div class="ps-offer"><span class="ic" aria-hidden="true">🎨</span><div><b>Von FS Creative für dich gestaltet</b><span>Die fertige Druckdatei ist schon eingesetzt – bitte kurz prüfen und in den Warenkorb legen.' + (f.net > 0 ? " Die Grafikbearbeitung (" + eur(co ? f.net : f.gross) + " " + (co ? "netto" : "inkl. USt") + ") wird automatisch hinzugefügt." : "") + (S.offer.note ? "<br>" + esc(S.offer.note) : "") + "</span></div></div>" + h0; }
+  /* Drei Felder nebeneinander: Online gestalten / Datei hochladen / Wir gestalten für dich. Textil: Shirt-Designer farblich hervorgehoben (Simon 19.11.2026) */
+  function modesHtml(active) {
+    var p = S.prod, sz = sizeOf(), tx = kind() === "textile", up = active === "upload";
+    var c1 = tx ? '<button type="button" class="ps-mode ps-mode-hi" data-act="texdesign"><span class="ic" aria-hidden="true">👕</span><b>Im Shirt-Designer gestalten</b><em class="ps-mode-badge">Empfohlen · gratis</em><span>Text, Logo, Bilder, Formen und QR-Code direkt auf dem ' + esc(texKindName()) + ' in deiner Farbe platzieren – mit Live-Vorschau.</span></button>'
+      : '<button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>';
+    var c2 = '<button type="button" class="ps-mode' + (up ? " on" : "") + '" data-act="mode:' + (up ? "" : "upload") + '" aria-pressed="' + up + '"><span class="ic" aria-hidden="true">⬆️</span><b>' + (tx ? "Logo hochladen" : "Druckdatei hochladen") + '</b><span>' + (tx ? "Du hast schon ein Logo oder eine fertige Datei (PNG, PDF)? Du platzierst es im Shirt-Designer – oder wir machen das mit dem Profi-Datencheck für dich." : "Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.") + '</span></button>';
+    var c3 = '<button type="button" class="ps-mode ps-mode-agency" data-act="brief"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet ' + (tx ? "dein Motiv für " : "deine ") + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></button>';
+    return '<div class="ps-modes ps-modes3' + (up ? " sel" : "") + '">' + c1 + c2 + c3 + "</div>";
+  }
+  function upWhoBox(tx) {
+    return '<div class="ps-hibox" id="psHibox" role="group" aria-label="Wer richtet die Datei ein?"><b class="ps-hibox-t">' + (tx ? "Wie geht es mit deinem Logo weiter?" : "Wer richtet deine Druckdatei ein?") + '</b><div class="ps-hibox-o">' +
+      '<button type="button" class="ps-hibox-b" data-act="upwho:self"><span class="ic" aria-hidden="true">' + (tx ? "👕" : "🛠️") + '</span><b>' + (tx ? "Selbst im Shirt-Designer platzieren" : "Ich richte die Datei selbst ein") + '</b><span>' + (tx ? "Dein Logo öffnet sich nach dem Hochladen im Shirt-Designer – Größe und Position bestimmst du." : "Du lädst deine Druckdatei hoch, siehst sofort die automatische Prüfung und passt Format, Beschnitt &amp; Co. selbst an.") + '</span></button>' +
+      '<button type="button" class="ps-hibox-b pro" data-act="upwho:pro"><span class="ic" aria-hidden="true">✅</span><b>Profi-Datencheck · +' + eur(PRO_CHECK) + '</b><span>' + (tx ? "Lade dein Logo einfach hoch – wir prüfen es persönlich und platzieren es druckfertig auf den gewählten Positionen." : "Du lädst deine Datei einfach hoch – wir prüfen sie persönlich und richten sie druckfertig ein (Format, Beschnitt, Farben). Bei Fragen melden wir uns.") + '</span></button></div></div>';
+  }
   function vDesign0() {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     var cl = S.price && S.price.folds && S.price.closed;
@@ -2363,10 +2378,8 @@
       var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + ""] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
       return studioHtml(f, mtabs, sum, spec, top, shown, rest);
-    } else if (S.mode === "upload" && !S.upWho) {   // vor dem Hochladen: selbst einrichten oder vom Profi einrichten lassen (Simon 18.11.2026)
-      h += '<div class="ps-modes ps-upwho"><button type="button" class="ps-mode" data-act="upwho:self"><span class="ic" aria-hidden="true">🛠️</span><b>Ich richte die Datei selbst ein</b><span>Du lädst deine Druckdatei hoch, siehst sofort die automatische Prüfung und passt Format, Beschnitt &amp; Co. selbst an.</span></button>' +
-        '<button type="button" class="ps-mode ps-mode-agency" data-act="upwho:pro"><span class="ic" aria-hidden="true">✅</span><b>Profi-Datencheck · +' + eur(PRO_CHECK) + '</b><span>Du lädst deine Datei einfach hoch – wir prüfen sie persönlich und richten sie druckfertig ein (Format, Beschnitt, Farben). Bei Fragen melden wir uns.</span></button></div>' +
-        '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>';
+    } else if (S.mode === "upload" && !S.upWho) {   /* vor dem Hochladen: selbst einrichten oder Profi – als hervorgehobene Box unter der Auswahl, keine neue Ansicht (Simon 19.11.2026) */
+      h += modesHtml("upload") + upWhoBox(false);
     } else if (S.mode === "upload") {
       h += '<p class="ps-help ps-info">' + (S.upWho === "pro" ? "✅ <b>Profi-Datencheck (+" + eur(PRO_CHECK) + ")</b> – lade deine Datei hoch, wir richten sie für dich ein." : "🛠️ <b>Du richtest die Datei selbst ein.</b>") + ' <button type="button" class="ps-link" data-act="upwho:">ändern</button></p>';
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
@@ -2374,9 +2387,7 @@
       h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() || multiMot() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 500 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : multiMot() ? " · mehrere Dateien auf einmal = je Datei ein Motiv (ab Motiv " + (S.mot.i + 1) + ")" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
         reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
-      h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
-        '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button>' +
-        '<button type="button" class="ps-mode ps-mode-agency" data-act="brief"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></button></div>' + (reqHtml(false) || tplBtn("soft"));
+      h += modesHtml("") + (reqHtml(false) || tplBtn("soft"));
     }
     return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button>' + (S.file && !blk(S.file) ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (S.file ? "Bitte die rot markierten Punkte korrigieren." : "Wähle oben, wie du deine Druckdaten erstellst.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
@@ -2392,7 +2403,12 @@
     var tx = kind() === "textile", tdz = tx ? texDesignHtml(pos) : "";
     if (tx && S.mode === "design" && S.file) return '<div class="ps-panel"><h2>Dein Shirt-Design</h2><p class="sub">' + esc(S.prod.title) + " · " + pos.map(function (x) { return esc(x.title); }).join(", ") + "</p>" + tdz + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
-    return '<div class="ps-panel"><h2>' + (tx ? "Gestalten oder Logo hochladen" : "Logo hochladen") + '</h2><p class="sub">' + esc(S.prod.title) + " · " + (tx ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + tdz + '<div class="ps-logos">' + slots + "</div>" + (Object.keys(S.logos || {}).length && !tx ? pmkHtml() : "") + (S.file ? "" : logoReqHtml(pos)) + merged +
+    /* Textil: zuerst drei Felder (Shirt-Designer hervorgehoben / Logo hochladen / Wir gestalten), beim Hochladen die Frage Designer oder Profi als Box darunter (Simon 19.11.2026) */
+    var txFresh = tx && !S.file && !S.texDesign && !Object.keys(S.logos || {}).length, txHead = '<div class="ps-panel"><h2>Gestalten oder Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + pos.map(function (x) { return esc(x.title); }).join(", ") + "</p>", txNav = '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><span class="ps-nav-hint">Wähle oben, wie du dein Motiv erstellst.</span></div></div>';
+    if (txFresh && S.mode !== "upload") return txHead + modesHtml("") + txNav;
+    if (txFresh && !S.upWho) return txHead + modesHtml("upload") + upWhoBox(true) + txNav;
+    var txWho = tx && S.mode === "upload" && S.upWho ? '<p class="ps-help ps-info">' + (S.upWho === "pro" ? "✅ <b>Profi-Datencheck (+" + eur(PRO_CHECK) + ")</b> – lade dein Logo hoch, wir prüfen es und platzieren es für dich." : "👕 <b>Du platzierst dein Logo selbst im Shirt-Designer.</b>") + ' <button type="button" class="ps-link" data-act="upwho:">ändern</button></p>' : "";
+    return '<div class="ps-panel"><h2>' + (tx ? "Gestalten oder Logo hochladen" : "Logo hochladen") + '</h2><p class="sub">' + esc(S.prod.title) + " · " + (tx ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + txWho + (tx && S.upWho === "pro" && !S.texDesign ? "" : tdz) + '<div class="ps-logos">' + slots + "</div>" + (Object.keys(S.logos || {}).length && !tx ? pmkHtml() : "") + (S.file ? "" : logoReqHtml(pos)) + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   // Shirt-Designer (2D): Kleidungsstück in der gewählten Farbe, je Druckposition gestalten (Text, Bilder, Formen, QR …) → Logo-PDF wie beim Upload; Druckart-Vorschlag
@@ -2556,6 +2572,23 @@
   // Warenkorb-Position im Studio geöffnet: hat sich Datei, Ausführung oder Menge geändert? (sonst „Fertig“ statt „Änderung übernehmen“)
   function cartChanged(f) { var ce = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit; })[0]; if (!ce) return true;
     var sel0 = ce.sel || {}; return (f && f.fileId) !== ce.fileId || +ce.copies !== +S.copies || Object.keys(sel0).some(function (k) { return String(sel0[k]) !== String((S.sel || {})[k]); }) || (ce.custom && ce.custom.w && isCustom() && (+ce.custom.w !== +S.custom.w || +ce.custom.h !== +S.custom.h)); }
+  /* Schritt zurück / vor im Studio (Simon 19.11.2026): jede neue Dateiversion (Anpassen, Farben erweitern, Seite ersetzen …) legt die vorige auf einen Stapel, max. 10.
+     Die alten Versionen bleiben auf dem Server gültig (eigene fileId + token), zurück/vor tauscht nur S.file. Andere Datei / keine Datei = Stapel leer. */
+  function fileTrack() {
+    var h = S.fh || (S.fh = { u: [], r: [], cur: null, curF: null, skip: false }), id = S.file && S.file.fileId;
+    if (!id) { h.u = []; h.r = []; h.cur = null; h.curF = null; h.skip = false; return; }
+    if (h.cur && h.cur !== id && !h.skip) { h.u.push(h.curF); if (h.u.length > 10) h.u.shift(); h.r = []; }
+    h.skip = false; h.cur = id; h.curF = S.file;
+  }
+  function fileStep(back) {
+    var h = S.fh; if (!h || !S.file) return; var from = back ? h.u : h.r, to = back ? h.r : h.u; if (!from.length) return;
+    to.push(S.file); if (to.length > 10) to.shift(); S.file = from.pop(); h.skip = true; S.previews = null; S.fileOrig = null; render(); pollPreflight();
+    toast(back ? "Schritt zurück" : "Schritt vor");
+  }
+  function undoHtml() {
+    var h = S.fh || { u: [], r: [] };
+    return '<div class="ps-undo" role="group" aria-label="Schritte"><button type="button" class="ps-btn small" data-act="fundo"' + (h.u.length ? "" : " disabled") + ' title="Schritt zurück" aria-label="Schritt zurück">↶</button><button type="button" class="ps-btn small" data-act="fredo"' + (h.r.length ? "" : " disabled") + ' title="Schritt vor" aria-label="Schritt vor">↷</button></div>';
+  }
   function studioHtml(f, mtabs, sum, spec, top, shown, rest) {
     var co = S.ctype === "company", pr = S.price, mot = S.mot.n > 1 && motOk(), key = f.fileId + (S.pfvOff ? ":0" : ":1");
     var price = pr && (pr.gross || pr.net) ? '<span class="ps-stu-pr"><b>' + eur(co ? pr.net : pr.gross) + "</b><small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></span>" : "";
@@ -2563,7 +2596,7 @@
     var go = cvMiss && !blk(f) ? '<span class="ps-stu-blk">Bitte rechts noch den Umschlag hochladen</span>' : !blk(f) ? '<button type="button" class="ps-btn primary" data-act="next3">' + (mot ? "Weiter" : S.cartEdit ? (cartChanged(f) ? "Änderung übernehmen" : "Fertig") : f.edgeErr ? "Trotzdem in den Warenkorb" : "In den Warenkorb") + " →</button>" : '<button type="button" class="ps-btn primary" data-act="fixbyus:1" title="Profi-Datencheck: wir richten die Datei vor dem Druck">Für mich richten lassen (+' + eur(PRO_CHECK) + ")</button>";
     return '<div class="ps-stu" role="dialog" aria-modal="true" aria-label="Studio">' +
       '<header class="ps-stu-top"><div class="ps-stu-brand"><b>STUDIO</b><span>' + esc(sum) + (spec ? " · " + esc(spec) : "") + '</span></div>' +
-      '<div class="ps-stu-act"><label class="ps-cb sm"><input type="checkbox" id="psStuEdges"' + (S.pfvOff ? "" : " checked") + '><span>Druckränder</span></label>' +
+      '<div class="ps-stu-act">' + undoHtml() + '<label class="ps-cb sm"><input type="checkbox" id="psStuEdges"' + (S.pfvOff ? "" : " checked") + '><span>Druckränder</span></label>' +
       '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div>' +
       price + (S.cartEdit ? '<button type="button" class="ps-btn" data-act="stucancel">Abbrechen</button>' : "") + '<button type="button" class="ps-btn" data-go="2">← Ausführung</button>'  + go + "</div></header>" +
       '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (blk(f) ? "<b>Bitte rechts die rot markierten Punkte korrigieren – oder „Für mich richten lassen“ tippen.</b> " : f.blocked ? "<b>Wir richten deine Datei vor dem Druck.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb der grünen Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe sollen bis an den äußeren Rand reichen, damit nach dem Schneiden kein weißer Rand bleibt.</p>' +
@@ -3140,6 +3173,7 @@
     if (k === "nobleed" && S.file) { var f1 = S.file; t.disabled = true; t.textContent = "Wird ausgeschaltet …";
       api("/print/api/file/nobleed", { fileId: f1.fileId, token: f1.token }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         S.file = j; S.fileOrig = null; S.previews = null; render(); pollPreflight(); toast("Erweiterung ausgeschaltet – Datei wie hochgeladen"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
+    if (k === "fundo" || k === "fredo") { fileStep(k === "fundo"); return; }
     if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
@@ -3149,7 +3183,7 @@
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
     if (k === "texdesign") return openTexDesigner();
     if (k === "texscreen" || k === "textransfer") { var mm = S.prod.methods.filter(function (x) { return x.key === (k === "texscreen" ? "screen1" : "transfer"); })[0]; if (!mm) return; S.textile.method = mm.key; S.textile.positions = S.textile.positions.filter(function (x) { return mm.positions.indexOf(x) > -1; }); if (!S.textile.positions.length) S.textile.positions = [mm.positions[0]]; render(); loadPrice(); toast("Druckart: " + mm.label.replace(/ \(.*$/, "") + " – Preis wird neu berechnet"); return; }
-    if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; if (v) stepPush(3, v); render(); return; }
+    if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; if (v) stepPush(3, v); render(); var hb = document.getElementById("psHibox"); if (hb && hb.scrollIntoView) hb.scrollIntoView({ block: "nearest", behavior: "smooth" }); return; }
     if (k === "clearfile") { S.file = null; S.fileFront = null; S.backEdit = false; S.previews = null; S.mode = ""; render(); return; }
     if (k === "backedit") { S.backEdit = true; render(); return; }
     if (k === "backcancel") { S.backEdit = false; render(); return; }
@@ -3387,7 +3421,7 @@
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
     x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos();
-        if (kind() === "textile" && !j.blocked) logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+        if (kind() === "textile" && !j.blocked && S.upWho !== "pro") logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
     x.send(f);
   }

@@ -2482,3 +2482,21 @@ html.ps-stu-open,html.ps-stu-open body{overflow:hidden}
 .ps-v2q input{align-self:stretch;height:100%}
 /* Designer offen: Chat-Hinweis nie über der Arbeitsfläche (16.11.2026) */
 body.pd-open .ps-chatnudge{display:none}
+
+/* Studio: Schritt zurück/vor (Simon 19.11.2026) */
+.ps-undo{display:inline-flex;gap:4px;align-items:center}.ps-undo .ps-btn{min-width:38px;padding:6px 10px;font-size:16px;line-height:1}.ps-undo .ps-btn[disabled]{opacity:.35;cursor:default}
+/* Drei Felder, aktives Feld, Shirt-Designer hervorgehoben, Frage als Box statt neuer Ansicht (Simon 19.11.2026) */
+@media(min-width:900px){.ps-modes3{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+.ps-mode.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+.ps-modes3.sel .ps-mode:not(.on){opacity:.7}
+.ps-mode-hi{position:relative;border:2px solid var(--accent)!important;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface) 70%)}
+.ps-mode-hi b{color:var(--text)}
+.ps-mode .ps-mode-badge{align-self:flex-start;font-style:normal;font-size:12px;font-weight:700;color:#fff;background:var(--accent);border-radius:999px;padding:3px 10px}
+.ps-hibox{margin-top:16px;padding:18px;border-radius:20px;border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));animation:psHi .35s ease}
+@keyframes psHi{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.ps-hibox-t{display:block;font-size:17px;margin-bottom:12px}
+.ps-hibox-o{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.ps-hibox-o{grid-template-columns:1fr}}
+.ps-hibox-b{display:flex;flex-direction:column;gap:5px;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--ps-line2);background:var(--surface);cursor:pointer;font:inherit;color:inherit}
+.ps-hibox-b:hover{border-color:var(--accent)}
+.ps-hibox-b b{font-size:16px}.ps-hibox-b span{color:var(--text-dim);font-size:14px}.ps-hibox-b .ic{font-size:24px}
