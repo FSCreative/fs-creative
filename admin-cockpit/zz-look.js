@@ -38,8 +38,8 @@ F.css(
   '.tk-inq b{color:var(--ink)}.tk-inq>span:nth-child(2){flex:1;min-width:0}'+
   '.tk-inq-i{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,#f43f5e 22%,transparent);color:#f43f5e}.tk-inq-i svg{width:18px;height:18px}'+
   '@media (max-width:640px){.tk-inq{flex-wrap:wrap}.tk-inq .btn{width:100%}}'+
-  /* Postfach: breite Anhang-Zeilen scrollen in sich statt über den Rand */
-  '.rin>.attbox{min-width:0;overflow-x:auto}'+
+  /* Postfach: breite Anhang-Zeilen brechen um statt über den Rand zu laufen (kein overflow – sonst drückt das Raster die Box auf eine Zeile zusammen) */
+  '.rin>.attbox{min-width:0}.rin>.attbox .attl{flex-wrap:wrap}.rin>.attbox .att{max-width:100%;min-width:0;flex-wrap:wrap}'+
   /* KI-Leiste im Postfach darf am Handy umbrechen */
   '@media (max-width:900px){.kibar{flex-wrap:wrap;row-gap:8px}}'
 );
