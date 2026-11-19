@@ -2504,3 +2504,4 @@ body.pd-open .ps-chatnudge{display:none}
 .ps-req-fold{min-width:0;flex:1}.ps-req-fold summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:2px}.ps-req-fold summary::-webkit-details-marker{display:none}
 .ps-req-fold summary b{font-size:14px}.ps-req-fold summary em{font-style:normal;font-size:13px;color:var(--accent)}.ps-req-fold[open] summary em{display:none}
 .ps-req-fold>span{display:block;margin-top:6px;font-size:13.5px;color:var(--text-dim);line-height:1.45;overflow-wrap:anywhere;hyphens:auto}
+.ps-undo .ps-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:36px;padding:0}
