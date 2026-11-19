@@ -629,7 +629,9 @@
     var dt = u ? (cur ? S.price && S.price.deliveryDate : d && d.date) : "", dh = dt ? '<span class="ps-dl d">' + esc(dShort(dt)) + "</span>" : "";
     if (cur || !d) return dh;
     var v = S.ctype === "company" ? d.net : d.gross, ph = Math.abs(v) < 0.05 ? (u ? "" : '<span class="ps-dl z">± 0 €</span>') : '<span class="ps-dl' + (v < 0 ? " m" : "") + '">' + (v > 0 ? "+ " : "− ") + eur(Math.abs(v)) + "</span>";
-    return dh + (dh && ph ? " " : "") + ph;
+    /* warum es teurer wird: Versand per Spedition (Palette) bzw. andere Druckart */
+    var why = !u && v > 0.05 ? (d.fr ? '<span class="ps-dl i" title="Bei dieser Ausführung wird per Spedition auf Palette geliefert statt mit dem Paketdienst">inkl. Spedition</span>' : d.pmx ? '<span class="ps-dl i" title="Diese Ausführung gibt es nur in einer anderen Druckart – daher der Preisunterschied">andere Druckart</span>' : "") : "";
+    return dh + (dh && ph ? " " : "") + ph + (why ? " " + why : "");
   }
   function dlSpan(key, x) { if (x.off) return ""; var sl = key === "urgency" ? "@u" : key.indexOf("prop:") === 0 ? key.slice(5) : ""; if (!sl) return ""; return '<span class="ps-dlw" data-dl="' + esc(sl + "|" + x.val) + '">' + dlTxt(sl, x.val) + "</span>"; }
   function dlPaint() { [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { var v = el.getAttribute("data-dl"), i = v.indexOf("|"), h = dlTxt(v.slice(0, i), v.slice(i + 1)); if (el.innerHTML !== h) el.innerHTML = h; }); }
@@ -849,7 +851,7 @@
       var t = w <= 90 ? "dünn wie Prospektpapier" : w <= 120 ? "etwas fester als Druckerpapier" : w <= 170 ? "typische Flyer-Stärke" : w <= 250 ? "fest, wie dünner Karton" : w <= 350 ? "steif wie eine Postkarte" : "sehr steif, wie eine dicke Visitenkarte";
       var f = /gl(ä|a)nz|gloss/i.test(n) ? "glänzend, Farben leuchten" : /matt|silk|satin/i.test(n) ? "matt, edel und beschreibbar" : /ungestrichen|offset|natur|recycl/i.test(n) ? "natürlich, gut beschreibbar" : "";
       return t + (f ? " · " + f : ""); }
-    if (pr.slug === "finish") { if (NONE_RX.test(String(o.name).trim()) || /^(geen|keine?|ohne|none)\b/i.test(n)) return "ohne Schutzfolie – günstigste Variante";
+    if (pr.slug === "finish") { if (NONE_RX.test(String(o.name).trim()) || /^(geen|keine?|ohne|none)\b/i.test(n)) return "kein Lack, keine Folie – günstigste Variante";
       if (/soft.?touch/i.test(n)) return "samtig-weiche Folie, fühlt sich edel an"; if (/cellophan|lamination|kaschier/i.test(n)) return "dünne Schutzfolie – robuster und edler";
       if (/uv.?lack|spot/i.test(n)) return "glänzender Lack-Effekt"; }
     return "";
@@ -938,7 +940,7 @@
       var st = p.start && p.start.sel && p.kind !== "textile" && (p.tiers || []).indexOf(+p.start.copies) > -1 ? p.start : null;
       p.props.forEach(function (pr) { var d = st && st.sel[pr.slug] != null ? st.sel[pr.slug] : (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); var nice = [100, 50, 250, 25, 500, 10].filter(function (n) { return p.tiers.indexOf(n) > -1; })[0];   // ohne Bestseller-Auflage: runde, übliche Menge statt z. B. 42
-      S.copies = st ? +st.copies : bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.dday = "";
+      S.copies = st ? +st.copies : bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.dday = ""; S.urTouched = false; S.urAuto = "";
       if (!st) ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;   // ohne Startausführung (alter Katalog): Bestseller wie bisher
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); }); S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; var s0 = START_MM[p.key] || (cm ? [2000, 1000] : [148, 210]); S.custom = { w: cl(s0[0], C.minW, C.maxW) / f, h: cl(s0[1], C.minH, C.maxH) / f }; }
@@ -1298,7 +1300,7 @@
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     fileTrack();
-    if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
+    if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? '<div class="ps-layout">' + vLogos() + '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>' : vDesign();   /* Textil/Werbeartikel: Preis rechts wie bei allen Produkten (Review 19.11.2026) */ else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
     var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) { setTimeout(pfvRender, 0); setTimeout(studioPaint, 0); } if (S.step === 5) setTimeout(pwMeter, 0); document.documentElement.classList.toggle("ps-stu-open", !!(S.step === 3 && S.file && !isLogo() && root.querySelector(".ps-stu"))); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
@@ -1864,7 +1866,7 @@
     var iso = function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); };
     var WD = ["So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."], MO = ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."];
     var chips = '<div class="ps-urc">' + opts.map(function (o) { var on = o.slug === S.urgency && !(S.price && S.price.wish);
-      return '<button type="button" class="' + (on ? "on" : "") + '" data-ddpick="urgency|' + esc(o.slug) + '" aria-pressed="' + on + '"><i class="d ' + o.c + '"></i><b>' + esc(o.name) + "</b>" + (o.price != null ? '<span class="pr">' + eur(o.price) + "</span>" : '<span class="ps-spin"></span>') + (o.slug === S.urgency ? "" : dlSpan("urgency", { val: o.slug })) + "</button>"; }).join("") + "</div>";   // dlSpan: lädt Termine + Preise der anderen Produktionszeiten
+      return '<button type="button" class="' + (on ? "on" : "") + '" data-ddpick="urgency|' + esc(o.slug) + '" aria-pressed="' + on + '"><i class="d ' + o.c + '"></i><b>' + esc(o.name) + "</b>" + (o.price != null ? '<span class="pr">' + (o.slug === S.urgency ? "" : "ab ") + eur(o.price) + "</span>" : '<span class="ps-spin"></span>') + (o.slug === S.urgency ? "" : dlSpan("urgency", { val: o.slug })) + "</button>"; }).join("") + "</div>";   // dlSpan: lädt Termine + Preise der anderen Produktionszeiten
     // Kalenderansicht Mo–So (Wunsch Simon 04.11.2026, Variante B): ganze Wochen ohne Scrollen, Preis im Tag, Farbpunkt = Produktionszeit, Wochenende schmal
     var mon = new Date(start.getFullYear(), start.getMonth(), start.getDate() - ((start.getDay() + 6) % 7)), lastD = days[days.length - 1], cells = [];
     for (var d1 = new Date(mon); d1 <= lastD || cells.length % 7; d1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate() + 1)) { cells.push(d1); if (cells.length > 42) break; }
@@ -1873,7 +1875,7 @@
       [0, 1, 2, 3, 4, 5].filter(function (w) { return w * 7 < cells.length; }).map(function (w) { return '<div class="wk">' + cells.slice(w * 7, w * 7 + 7).map(function (d, j) { var k = iso(d), we = j > 4, o = by[k], on = k === selDay, past = d < start;
         return '<div class="c' + (we ? " we" : "") + (past ? " past" : o ? " has" : " none") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-ddpick="urgency|' + esc(o.slug) + "|" + k + '" aria-label="' + WD[d.getDay()] + " " + d.getDate() + ". " + MO[d.getMonth()] + " – " + eur(on && cur != null ? cur : o.price) + '"' : "") + '><span class="n">' + d.getDate() + (j === 0 || d.getDate() === 1 ? "<small>" + MO[d.getMonth()] + "</small>" : "") + "</span>" +
           (o ? '<span class="pp"><i class="d ' + o.c + '"></i>' + eur(on && cur != null ? cur : o.price) + "</span>" : "") + "</div>"; }).join("") + "</div>"; }).join("") + "</div>" +
-      '<div class="ps-urk-l">' + [["g", "Standard"], ["p", "Schnell"], ["y", "Express"]].filter(function (x) { return used[x[0]]; }).map(function (x) { return '<span><i class="d ' + x[0] + '"></i>' + x[1] + "</span>"; }).join("") + "</div>";
+      '<div class="ps-urk-l"><span class="pd-muted">Punkt = Produktionszeit:</span>' + [["g", "Standard"], ["p", "Schnell"], ["y", "Express"]].filter(function (x) { return used[x[0]]; }).map(function (x) { return '<span><i class="d ' + x[0] + '"></i>' + x[1] + "</span>"; }).join("") + "</div>";
     return '<div class="ps-tile wide ps-urtile" data-urtile><span class="ps-tl">Lieferung</span>' + chips + strip + '<span class="ps-td">Lieferung frei Haus innerhalb Österreichs · Zustellung durch den Paketdienst, in Einzelfällen auch erst am darauffolgenden Werktag.</span></div>';
   }
 
@@ -1883,6 +1885,10 @@
     if (S.step !== 2 || !S.prod) return; var st = urState();
     if (st.all && st.hid.indexOf(S.urgency) > -1) { var cur = st.D[S.urgency], to = UR_ORD.filter(function (c) { return st.D[c] && st.D[c] <= cur; })[0];
       if (to && to !== S.urgency) { var from = S.urgency; S.urgency = to; S.dday = ""; toast("„" + ((S.prod.urgency.filter(function (u) { return u.slug === from; })[0] || {}).name || from) + "“ bringt hier keinen früheren Liefertermin – wir haben die günstigere Produktion gewählt."); render(); loadPrice(); return; } }
+    /* Vorauswahl = frühester Tag zum günstigsten Preis (Review 19.11.2026: 27.11. kostete gleich viel wie der vorausgewählte 30.11.) – nur solange der Kunde selbst nichts gewählt hat */
+    if (st.all && !S.urTouched && !S.dday && S.price && S.price.deliveryDate) { var co2 = S.ctype === "company", b2 = dlBase(), best = null, lg = function (x) { return co2 ? x.net : x.gross; };
+      S.prod.urgency.forEach(function (u) { var list = u.slug === S.urgency ? S.price.days : (b2 && (DLT[b2 + "|@u|" + u.slug] || {}).days); (list || []).forEach(function (x) { var pr = lg(x); if (pr == null || !x.d) return; if (!best || pr < best.p - 0.004 || (Math.abs(pr - best.p) < 0.005 && x.d < best.d)) best = { p: pr, d: x.d, u: u.slug }; }); });
+      var curP = lg(S.price); if (best && best.d < S.price.deliveryDate && best.p <= curP + 0.005 && S.urAuto !== b2 + best.d) { S.urAuto = b2 + best.d; S.urgency = best.u; S.dday = best.d; render(); loadPrice(); return; } }
     var el = root.querySelector("[data-urtile]"); if (!el || S.dd === "urgency") return; var h = urTile(S.prod); if (el.outerHTML === h) return;
     var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); urScroll(); }
   }
@@ -1896,10 +1902,12 @@
     var t = S.textile, m = p.methods.filter(function (x) { return x.key === t.method; })[0] || p.methods[0];
     var meth = '<fieldset class="ps-opt"><legend>Druckart</legend>' + chips("tmethod", p.methods.map(function (x) { return { slug: x.key, name: x.label }; }), t.method) + "</fieldset>";
     var pos = '<fieldset class="ps-opt"><legend>Druckpositionen</legend><div class="ps-chips">' + p.positions.map(function (x) { var ok = m.positions.indexOf(x.slug) > -1;
-      return '<label class="ps-chip"><input type="checkbox" name="tpos" value="' + esc(x.slug) + '"' + (t.positions.indexOf(x.slug) > -1 ? " checked" : "") + (ok ? "" : " disabled") + "><span>" + esc(x.title) + "</span></label>"; }).join("") + '</div><p class="ps-help">Mindestens eine Position. Pro Position lädst du im nächsten Schritt dein Logo hoch (max. Druckfläche je Position wird angezeigt).</p></fieldset>';
+      return '<label class="ps-chip"><input type="checkbox" name="tpos" value="' + esc(x.slug) + '"' + (t.positions.indexOf(x.slug) > -1 ? " checked" : "") + (ok ? "" : " disabled") + "><span>" + esc(x.title) + (x.area && x.area[0] ? ' <small class="pd-muted">max. ' + x.area[0] + " × " + x.area[1] + " mm</small>" : "") + "</span></label>"; }).join("") + '</div><p class="ps-help">Mindestens eine Position. Jede weitere Position kostet extra – der Preis rechts aktualisiert sich sofort. Pro Position lädst du im nächsten Schritt dein Logo hoch.</p></fieldset>';
     var grpS = [], gOf = function (n) { var m = String(n).match(/^(Herren|Damen|Unisexe?|Kinder|Kids|Baby)\s+(.*)$/i); return m ? [m[1].replace(/^unisexe$/i, "Unisex"), m[2]] : ["", n]; };
     p.sizes.forEach(function (x) { var g = gOf(x.name), G = grpS.filter(function (y) { return y.n === g[0]; })[0]; if (!G) { G = { n: g[0], l: [] }; grpS.push(G); } G.l.push({ slug: x.slug, short: g[1] }); });
-    var sz = '<fieldset class="ps-opt"><legend>Größen &amp; Stückzahl</legend>' + grpS.map(function (G) { return (G.n ? '<p class="ps-szg">' + esc(G.n) + "</p>" : "") + '<div class="ps-sizes">' + G.l.map(function (x) { var v = t.sizes[x.slug] || 0;
+    /* Größentabelle (Review 19.11.2026): Maße je Größe liefert der Hersteller – Link zur Tabelle des Modells */
+    var szTab = '<p class="ps-help"><a class="ps-link" target="_blank" rel="noopener" href="https://www.google.com/search?q=' + encodeURIComponent(p.title + " Größentabelle") + '">📏 Größentabelle des Herstellers ansehen</a> – unsicher bei der Größe? Schreib uns, wir helfen gern.</p>';
+    var sz = '<fieldset class="ps-opt"><legend>Größen &amp; Stückzahl</legend>' + szTab + grpS.map(function (G) { return (G.n ? '<p class="ps-szg">' + esc(G.n) + "</p>" : "") + '<div class="ps-sizes">' + G.l.map(function (x) { var v = t.sizes[x.slug] || 0;
       return '<div class="ps-size' + (v ? " on" : "") + '"><span class="sz">' + esc(x.short) + '</span><div class="ps-step"><button type="button" data-tstep="' + esc(x.slug) + '|-1" aria-label="' + esc(G.n + " " + x.short) + ' weniger">−</button><input type="number" inputmode="numeric" min="0" max="5000" data-tsize="' + esc(x.slug) + '" value="' + (v || "") + '" placeholder="0" aria-label="' + esc(G.n + " " + x.short) + ' Stück"><button type="button" data-tstep="' + esc(x.slug) + '|1" aria-label="' + esc(G.n + " " + x.short) + ' mehr">+</button></div></div>'; }).join("") + "</div>"; }).join("") +
       '<p class="ps-help">Gesamt: <b id="psTexTotal">' + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b>" + (m.min > 1 ? " · " + esc(m.label.replace(/ \(.*$/, "")) + " ab " + m.min + " Stück" : "") + " · Der Preis hängt nicht von der Größe ab.</p></fieldset>";
     return meth + pos + sz;
@@ -2323,7 +2331,15 @@
     (p.specs || []).forEach(function (x) { if (x[3]) fh.push([x[0], x[1], x[3]]); });
     if (fh.length) items.push(["📋", "Zu deiner Ausführung", fh.map(function (x) { return "<b>" + esc(x[0]) + ": " + esc(x[1]) + "</b> – " + esc(x[2]); }).join("<br>"), "wide"]);
     // Druckspezifikationen des Herstellers zu diesem Produkt (z. B. Abreißkalender: Umschlag als Doppelseite, Rücken unbedruckt) – automatisch für alle Produkte (Simon 16.11.2026)
-    ((p.qa && p.qa.items) || []).forEach(function (x) { items.push(["📘", esc(x.q), esc(x.a).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br>"), "wide", true]); });   /* eingeklappt – zu viel Text (Simon 19.11.2026) */
+    /* nur Hinweise zu gewählten Optionen zeigen (Simon 19.11.2026: Folie/UV-Lack, Stanzen, Nummerieren … auch wenn gar nicht gewählt) – Rest gesammelt unter „Weitere Herstellerhinweise“ */
+    var selNames = (p.props || []).map(function (pr) { var o = pr.options.filter(function (x) { return String(x.slug) === String((S.sel || {})[pr.slug]); })[0]; return o ? String(o.name || "") : ""; })
+      .filter(function (t) { return t && !/^(ohne|nein|keine?|none|no)\b/i.test(t.trim()); }).join(" ").toLowerCase() + " " + String(p.title || "").toLowerCase();
+    var qaTopics = [[/folie|foil|uv|lack|veredel|scodix|spot/i, /folie|foil|lack|uv|veredel|spot|scodix|glanz/], [/eigene form|stanz|kontur|rill|loch|perfor|bohr/i, /stanz|form|kontur|rill|loch|perfor|bohr|cut/], [/nummer|personali/i, /nummer|personali/], [/wei(ß|ss)druck|white/i, /wei(ß|ss)|white|5\/|transparent|klar/], [/überdruck|overprint/i, /^\b$/]];
+    var qaRel = function (x) { var q = String(x.q || ""); for (var t = 0; t < qaTopics.length; t++) if (qaTopics[t][0].test(q)) return qaTopics[t][1].test(selNames); return true; };
+    var qaAll = (p.qa && p.qa.items) || [], qaMore = qaAll.filter(function (x) { return !qaRel(x); });
+    var qaFmt = function (a) { return esc(a).replace(/\n{2,}/g, "\n").replace(/\n/g, "<br>").replace(/(^|<br>)\s*[-–]\s+/g, "$1• ").replace(/\s*\(siehe unten\)/gi, ""); };
+    qaAll.filter(qaRel).forEach(function (x) { items.push(["📘", esc(x.q), qaFmt(x.a), "wide", true]); });   /* eingeklappt – zu viel Text */
+    if (qaMore.length) items.push(["📚", "Weitere Herstellerhinweise (" + qaMore.length + ")", "Nur für Sonderausführungen, die du gerade nicht gewählt hast: " + qaMore.map(function (x) { return esc(x.q); }).join(" · ") + "<br><br>" + qaMore.map(function (x) { return "<b>" + esc(x.q) + "</b><br>" + qaFmt(x.a); }).join("<br><br>"), "wide", true]);
     var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
@@ -2874,11 +2890,21 @@
       t: detect(w, function (k, q) { return px(mx0 + k, my0 + q); }, h2, false),
       b: detect(w, function (k, q) { return px(mx0 + k, my1 - 1 - q); }, h2, false) } };
   }
+  /* Beschnitt wurde beim Hochladen automatisch ergänzt (ohne Randanalyse): im Hintergrund messen und – falls Text/weiße Ränder an der Kante – sauber neu aufbauen lassen */
+  function refineBleed(j) {
+    edgeInsets(j).then(function (ins) { if (!ins || !ins.some(function (x) { return x && (x.l || x.r || x.t || x.b || (x.g && ["l", "r", "t", "b"].some(function (k) { return x.g[k] && x.g[k].length; }))); })) return;
+      return api("/print/api/file/bleed", { fileId: j.fileId, token: j.token, mode: "mirror", refine: true, insets: ins }).then(function (r) { if (r && r.ok && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; S.fh = null; render(); pollPreflight(); } }); }).catch(function () {});
+  }
   function edgeInsets(f) {
     var work = pdfjs().then(function (L) { return L.getDocument({ url: fileUrl(f), withCredentials: true }).promise; }).then(function (doc) { var out = [], n = Math.min(doc.numPages, 8);
       var one = function (i) { if (i > n) return out; return doc.getPage(i).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(5, 1200 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
         var x = cv.getContext("2d", { willReadFrequently: true }); x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height);
-        return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { out.push(bleedScan(x.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, { x0: 0, y0: 0, x1: cv.width, y1: cv.height }, cv.width / (v0.width / 72 * 25.4))); return one(i + 1); }); }); };
+        return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () {
+          /* Seite hat schon Beschnitt (z. B. beim Hochladen automatisch ergänzt): Endformat mittig messen – genau wie der Server */
+          var W = cv.width, H = cv.height, wmm = v0.width / 72 * 25.4, hmm = v0.height / 72 * 25.4, pxmm = W / wmm, sz = f.size, bl = +f.bleed || 0, R = { x0: 0, y0: 0, x1: W, y1: H };
+          if (sz && bl) { var tw = Math.abs(wmm - (sz.w + 2 * bl)) < 2 && Math.abs(hmm - (sz.h + 2 * bl)) < 2 ? [sz.w, sz.h] : Math.abs(wmm - (sz.h + 2 * bl)) < 2 && Math.abs(hmm - (sz.w + 2 * bl)) < 2 ? [sz.h, sz.w] : null;
+            if (tw) { R.x0 = Math.max(0, Math.round((wmm - tw[0]) / 2 * pxmm)); R.y0 = Math.max(0, Math.round((hmm - tw[1]) / 2 * pxmm)); R.x1 = Math.min(W, R.x0 + Math.round(tw[0] * pxmm)); R.y1 = Math.min(H, R.y0 + Math.round(tw[1] * pxmm)); } }
+          out.push(bleedScan(x.getImageData(0, 0, W, H).data, W, H, R, pxmm)); return one(i + 1); }); }); };
       return one(1); });
     return Promise.race([work, new Promise(function (r) { setTimeout(function () { r(null); }, 15000); })]).catch(function () { return null; });
   }
@@ -3186,7 +3212,7 @@
       var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = key === "prop:size" && val === "custom" ? "fmtc" : ""; S.ddInfo = "";   // eigenes Format gewählt → Eingabe gleich offen
       if (key.indexOf("prop:") === 0) { var slug = key.slice(5), before = Object.assign({}, S.sel); setProp(slug, val); var ch = {}; Object.keys(S.sel).forEach(function (k) { if (k !== slug && S.sel[k] !== before[k]) ch[k] = S.sel[k]; }); if (Object.keys(ch).length) toast("Angepasst, damit es zusammenpasst: " + changesText(ch)); return; }
       if (key === "copies") { S.copies = +val; motBalance(); var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
-      if (key === "urgency") { var uv = val.split("|"); S.urgency = uv[0]; S.dday = uv[1] || ""; render(); loadPrice(); return; }   // Chip: Standardtag der Stufe, Tag in der Leiste: genau dieser Liefertag
+      if (key === "urgency") { var uv = val.split("|"); S.urgency = uv[0]; S.dday = uv[1] || ""; S.urTouched = true; render(); loadPrice(); return; }   // Chip: Standardtag der Stufe, Tag in der Leiste: genau dieser Liefertag
       if (key === "pm") { S.pm = val; render(); loadPrice(); return; }
       return;
     }
@@ -3473,7 +3499,7 @@
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
     x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(S.upWho === "pro" ? "Logo hochgeladen – wir prüfen und platzieren es für dich ✓" : j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos();
-        if (kind() === "textile" && !j.blocked && S.upWho !== "pro") logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (S.upWho === "pro" && !j.needBack) proToCart(0); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+        if (kind() === "textile" && !j.blocked && S.upWho !== "pro") logoImg(j).then(function (u) { var im = {}; im[logo] = u; openTexDesigner(im); }).catch(function () {}); /* Textil: hochgeladenes Logo immer im Designer zeigen */ } else if (j.ok) { pxMake(f, j); S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (j.bleedFix === "mirror") refineBleed(j); if (S.upWho === "pro" && !j.needBack) proToCart(0); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
     x.send(f);
   }

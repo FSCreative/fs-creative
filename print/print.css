@@ -2512,3 +2512,4 @@ html.ps-stu-open .ps-toast{z-index:9500}html.ps-stu-open .ps-pop,html.ps-stu-ope
 .ps-mode[disabled]::after{display:none}
 .ps-req-fold summary::after{content:"";}.ps-req-fold[open] summary em{display:block}.ps-req-fold[open] summary em::before{content:"Weniger anzeigen";}.ps-req-fold[open] summary em{font-size:0}.ps-req-fold[open] summary em::before{font-size:13px}
 .ps-req-l.ps-req-w{align-items:start}
+.ps-dl.i{font-size:11px;color:var(--text-dim);font-weight:500;white-space:nowrap}

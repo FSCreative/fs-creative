@@ -1888,7 +1888,9 @@ module.exports = function (D) {
       const j = await pcApi("GET", "/pdf/preflight/" + encodeURIComponent(meta.preflight.id), undefined, { base: cfg().pcPlatform });
       if (j && j.status && j.status !== "PROCESSING") {
         meta.preflight = { id: meta.preflight.id, status: j.status, errors: (j.errors || []).map(x => clip(x.message, 300)).slice(0, 20), warnings: (j.warnings || []).map(x => clip(x.message, 300)).slice(0, 20), fixes: (j.fixes || []).map(x => clip(x.message, 300)).slice(0, 20), reason: clip(j.failure_reason, 300) };
-        meta.preflight.errors.forEach(t => meta.checks.push({ level: "error", text: "Erweiterte Prüfung: " + scrubText(t) }));
+        // englische Print.com-Meldungen für Kunden auf Deutsch (Review 19.11.2026); Maß-/Beschnitt-Meldungen bleiben roh – das Cockpit fasst sie zusammen (prdGroup)
+        const pfTr = t => String(t).replace(/Page is empty/gi, "Seite ist leer").replace(/expected (\d+) page\(s\) received (\d+)/gi, "$1 Seite(n) erwartet, $2 in der Datei").replace(/PDF\/X-4\s*:\s*RGB is used while Output Intent is CMYK/gi, "RGB-Farben in der Datei – gedruckt wird in CMYK (Farben wirken etwas ruhiger)").replace(/Font(s)? not embedded/gi, "Schrift nicht eingebettet");
+        meta.preflight.errors.forEach(t => meta.checks.push({ level: "error", text: "Erweiterte Prüfung: " + pfTr(scrubText(t)) }));
         // Warnungen (z. B. „feine schwarze Linie nicht auf Überdrucken“) nur in der Cockpit-Kontrolle – beim Kunden wären sie irreführend; Fehler sieht auch der Kunde
         meta.preflight.warnings.forEach(t => meta.checks.push({ level: "warn", admin: true, text: "Erweiterte Prüfung (Print.com): " + scrubText(t) }));
         await store.putFile(meta);
@@ -2022,6 +2024,16 @@ module.exports = function (D) {
       }
     }
   }
+  /* gestaltete „Nicht gefunden“-Seite (Review 19.11.2026: vorher nackter Text in Times, am Handy seitlich scrollbar) */
+  const PAGE404 = '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Seite nicht gefunden | FS Creative Druckshop</title>' +
+    '<style>:root{color-scheme:light dark;--bg:#f6f7f9;--card:#fff;--tx:#111827;--dim:#5b6472;--ac:#2563eb;--ln:#e5e7eb}@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--tx:#eef1f6;--dim:#9aa3b2;--ac:#6ea0ff;--ln:#2a2f3a}}' +
+    '*{box-sizing:border-box}body{margin:0;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex;flex-direction:column}' +
+    'header{padding:18px 20px;border-bottom:1px solid var(--ln);background:var(--card)}header a{color:var(--tx);text-decoration:none;font-weight:800;letter-spacing:.02em}header span{color:var(--dim);font-weight:500;margin-left:8px}' +
+    'main{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 16px}.c{background:var(--card);border:1px solid var(--ln);border-radius:20px;padding:32px 28px;max-width:560px;width:100%;text-align:center}' +
+    '.n{font-size:56px;font-weight:800;color:var(--ac);line-height:1}h1{font-size:24px;margin:12px 0 8px}p{color:var(--dim);margin:0 0 22px}.b{display:inline-block;background:var(--ac);color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:12px}' +
+    '.l{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:22px}.l a{border:1px solid var(--ln);border-radius:999px;padding:7px 14px;color:var(--tx);text-decoration:none;font-size:14px}.l a:hover,.b:hover{filter:brightness(1.08)}</style></head>' +
+    '<body><header><a href="/print">FS Creative</a><span>Druckshop</span></header><main><div class="c"><div class="n">404</div><h1>Diese Seite gibt es nicht (mehr)</h1><p>Vielleicht wurde das Produkt umbenannt oder der Link ist veraltet. Im Druckshop findest du alle aktuellen Produkte.</p>' +
+    '<a class="b" href="/print?produkte">Alle Produkte ansehen</a><div class="l"><a href="/print/flyer">Flyer</a><a href="/print/visitenkarten">Visitenkarten</a><a href="/print">Druckshop-Startseite</a><a href="/kontakt">Kontakt</a></div></div></main></body></html>';
   async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
@@ -5333,7 +5345,7 @@ module.exports = function (D) {
       const pm0 = p.match(/^\/print\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/);
       if (pm0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), key = M && M.bySlug[pm0[1]];
         if (key) { if (p.slice(-1) === "/") return D.send(res, 301, "", "text/plain", { Location: p.slice(0, -1) + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u, key); }
-        return D.send(res, 404, '<!doctype html><meta charset="utf-8"><title>Nicht gefunden | FS Creative Druckshop</title><p>Dieses Produkt gibt es nicht (mehr). <a href="/print?produkte">Alle Produkte im Druckshop</a></p>', "text/html; charset=utf-8", { "X-Robots-Tag": "noindex" }); }
+        return D.send(res, 404, PAGE404, "text/html; charset=utf-8", { "X-Robots-Tag": "noindex" }); }
       if (p.indexOf("/print/api/") !== 0) return D.send(res, 404, "Not found");
       const ip = ipOf(req);
       // „Wir gestalten für dich“: Briefing mit Konfiguration, Text und Dateien → Anfrage im Cockpit (Lead + Mail an Simon)
@@ -5725,7 +5737,9 @@ module.exports = function (D) {
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
         await Promise.all([0, 1, 2, 3].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
           const cp = +a.copies > 0 && +a.copies <= 1e6 ? Math.round(+a.copies) : 0;   // andere Auflage (Mengenhinweis „ab N Stk. nur … pro Stück“)
-          try { const q = await run(a.sel, a.urgency, cp); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency || cp ? { an: q.net, ag: q.gross, days: q.days || [] } : {}, cp ? { copies: cp } : {}); } catch (e) { d[k] = e.busy || e.shipping ? { busy: true } : { off: e.status === 400 }; } } }));   // Versand-Ablehnung: später nochmal statt „nicht lieferbar“
+          // fr: Aufpreis kommt (auch) vom Wechsel auf Spedition/Palette; pmx: andere Druckart (z. B. Offset statt Digital) – damit „+ € 221“ erklärbar ist (Simon 19.11.2026)
+          const frt = x => !!(x && x.purchase && /EPI|FREIGHT|PALLET|PALET|SPED|LTL|CARGO/i.test(x.purchase.method || ""));
+          try { const q = await run(a.sel, a.urgency, cp); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, frt(q) && !frt(base) ? { fr: 1 } : {}, q.pm && base.pm && q.pm !== base.pm ? { pmx: 1 } : {}, a.urgency || cp ? { an: q.net, ag: q.gross, days: q.days || [] } : {}, cp ? { copies: cp } : {}); } catch (e) { d[k] = e.busy || e.shipping ? { busy: true } : { off: e.status === 400 }; } } }));   // Versand-Ablehnung: später nochmal statt „nicht lieferbar“
         return J(res, 200, { ok: true, d, busy });
       }
       if (p === "/print/api/ai/search" && req.method === "POST") {   // KI-Produktsuche (Claude): Kunde sucht etwas, das bei uns anders heißt
@@ -5850,6 +5864,15 @@ module.exports = function (D) {
       const insets = Array.isArray(b.insets) ? b.insets.slice(0, 64).map(x => ({ l: +(x && x.l) || 0, r: +(x && x.r) || 0, t: +(x && x.t) || 0, b: +(x && x.b) || 0, g: x && x.g })) : null;   // Randanalyse aus dem Browser (Farben erweitern)
         if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        /* refine (Simon 19.11.2026): Beschnitt wurde beim Hochladen automatisch ergänzt – mit der Randanalyse aus dem Browser aus dem Original neu aufbauen (Text an der Kante sauber) */
+        if (b.refine && mode === "mirror" && fm.bleedFix === "mirror" && fm.src && !fm.refined && insets) {
+          const sd = await store.fileData(fm.src); if (!sd || !(sd[0] === 0x25 && sd[1] === 0x50)) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden" });
+          const si = await pdfInfoX(sd); if (!si || si.encrypted || !si.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+          const m0 = si.media, nr = (a, c) => Math.abs(a - c) <= 1, sz2 = nr(m0.w, fm.size.h) && nr(m0.h, fm.size.w) && !nr(m0.w, fm.size.w) ? { w: fm.size.h, h: fm.size.w } : fm.size;   // quer angelegt: wie beim Hochladen
+          let o2; try { o2 = await withPdf(() => addBleed(sd, sz2, +fm.bleed, "mirror", insets)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Nicht möglich" }); }
+          const m2 = await newFile("upload", String(fm.name || "druck.pdf"), o2, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, fm.checks || [], { original: "pdf", src: fm.src, bleedFix: "mirror", refined: true, from: fm.id });
+          return J(res, 200, Object.assign({ ok: true }, fileView(m2)));
+        }
         const data = await store.fileData(id), info = await pdfInfoX(data); if (info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
         const out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode, insets)), multi = (+fm.sides || 1) > 2;
