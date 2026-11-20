@@ -32,7 +32,7 @@
     (p.items || []).forEach(function (it, i) {
       if (it.t === "img") { s += '<image x="' + r1(it.x + b) + '" y="' + r1(it.y + b) + '" width="' + r1(it.w) + '" height="' + r1(it.h) + '" preserveAspectRatio="xMidYMid meet" xlink:href="' + it.src + '"' + (opt.edit ? ' data-i="' + i + '" class="bc-it' + (opt.sel === i ? " sel" : "") + '"' : "") + "/>"; return; }
       var txt = vals && vals[it.key] != null ? vals[it.key] : it.text; if (!txt && !opt.edit) return; if (!txt) txt = "[" + it.label + "]";
-      var anc = it.align === "center" ? "middle" : it.align === "right" ? "end" : "start", ax = it.x + b + (it.align === "center" ? it.w / 2 : it.align === "right" ? it.w : 0), fs = it.size * PT_MM;
+      var anc = it.align === "center" ? "middle" : it.align === "right" ? "end" : "start", ax = it.x + b + (it.align === "center" ? it.w / 2 : it.align === "right" ? it.w : 0), fs = (vals ? fitOf(t, it, txt).size : it.size) * PT_MM;
       var lines = String(txt).split(/\n/).slice(0, 4);
       s += '<text x="' + r1(ax) + '" y="' + r1(it.y + b - (up[i] || 0)) + '" font-family="' + esc(it.font) + '" font-size="' + r1(fs * 100) / 100 + '" font-weight="' + (it.bold ? "bold" : "normal") + '" font-style="' + (it.italic ? "italic" : "normal") + '" fill="' + esc(it.color || "#000000") + '" text-anchor="' + anc + '"' + (opt.edit ? ' data-i="' + i + '" class="bc-it' + (opt.sel === i ? " sel" : "") + '"' : "") + ">" +
         lines.map(function (l, k) { return k ? '<tspan x="' + r1(ax) + '" dy="' + r1(fs * 1.2 * 100) / 100 + '">' + esc(l) + "</tspan>" : esc(l); }).join("") + "</text>";
@@ -42,6 +42,26 @@
       s += '<rect x="' + b + '" y="' + b + '" width="' + t.w + '" height="' + t.h + '" fill="none" stroke="#ff375f" stroke-width="0.25" pointer-events="none"/><rect x="' + (b + 3) + '" y="' + (b + 3) + '" width="' + (t.w - 6) + '" height="' + (t.h - 6) + '" fill="none" stroke="#0a84ff" stroke-width="0.2" stroke-dasharray="1 0.8" pointer-events="none"/>'; }
     return s + "</svg>";
   }
+  /* Lange Texte (Simon 20.11.2026: „bau die drei Sachen“): passt ein Name o. Ä. nicht in die Feldbreite, wird die Schrift automatisch verkleinert –
+     höchstens bis MIN_PT bzw. 65 % der eingestellten Größe. Reicht auch das nicht, meldet fitOf „over“ → Warnung beim Feld und vor dem Bestellen.
+     Verfügbar ist die Feldbreite, aber nie über den Sicherheitsabstand (3 mm) hinaus. Gemessen wird mit der echten Schrift (Canvas), deshalb
+     müssen die Schriften geladen sein (fontsReady). Vorschau und Druck verwenden dasselbe SVG, also dieselbe Größe. */
+  var MIN_PT = 5.5, mcx = null;
+  function textW(it, line, pt) { if (!mcx) mcx = document.createElement("canvas").getContext("2d"); mcx.font = (it.italic ? "italic " : "") + (it.bold ? "700 " : "400 ") + '100px "' + it.font + '"'; return mcx.measureText(line).width / 100 * pt * PT_MM; }
+  function availW(t, it) { var L = 3, R = t.w - 3, a;
+    if (it.align === "right") { a = it.x + it.w; return Math.max(1, a - Math.max(it.x, L)); }
+    if (it.align === "center") { a = it.x + it.w / 2; return Math.max(1, 2 * Math.min(it.w / 2, a - L, R - a)); }
+    return Math.max(1, Math.min(it.x + it.w, R) - it.x); }
+  function fitOf(t, it, txt) { var wmax = 0; String(txt == null ? "" : txt).split(/\n/).slice(0, 4).forEach(function (l) { wmax = Math.max(wmax, textW(it, l, it.size)); });
+    var av = availW(t, it); if (!(wmax > av + 0.05)) return { size: it.size, shrunk: false, over: false };
+    var min = Math.min(it.size, Math.max(MIN_PT, it.size * 0.65)), sz = Math.max(min, Math.floor(it.size * av / wmax * 10) / 10);
+    return { size: sz, shrunk: sz < it.size, over: wmax * sz / it.size > av + 0.05 }; }
+  /* Hinweis je Feld der Bestellmaske: schlechtester Fall über alle Seiten, auf denen das Feld vorkommt */
+  function fitNote(t, key, vals) { var worst = null; t.pages.forEach(function (p) { (p.items || []).forEach(function (it) { if (it.t === "img" || it.key !== key) return; var v = vals[key]; if (!String(v == null ? "" : v).trim()) return; var f = fitOf(t, it, v); f.from = it.size; if (!worst || (f.over && !worst.over) || (f.shrunk && !worst.shrunk && !worst.over)) worst = f; }); });
+    if (!worst || (!worst.over && !worst.shrunk)) return { cls: "", txt: "" }; var n = function (x) { return String(x).replace(".", ","); };
+    return worst.over ? { cls: "bad", txt: "Zu lang für dieses Feld – bitte kürzen oder abkürzen, sonst ragt der Text über den Rand." } : { cls: "ok", txt: "Schrift automatisch verkleinert (" + n(worst.from) + " → " + n(worst.size) + " pt), damit der Text ins Feld passt." }; }
+  function fontsReady(t) { if (!document.fonts || !document.fonts.load) return Promise.resolve(); var sp = {}; t.pages.forEach(function (p) { (p.items || []).forEach(function (it) { if (it.t !== "img") sp[(it.italic ? "italic " : "") + (it.bold ? "700 " : "400 ") + '16px "' + it.font + '"'] = 1; }); });
+    return Promise.all(Object.keys(sp).map(function (x) { return document.fonts.load(x).catch(function () { return null; }); })).then(function () {}, function () {}); }
   /* Bleibt ein Feld bei einer Person leer (z. B. keine Mobilnummer), rücken die Zeilen darunter nach – sonst bliebe eine Lücke im Textblock (Prüfung 20.11.2026).
      Gilt nur innerhalb eines Blocks: gleiche linke Kante und Ausrichtung, normaler Zeilenabstand (bis 2,3 × Schriftgröße). Einzeln stehende Felder bleiben, wo sie sind. */
   function closeGaps(items, vals) { var cols = {}, out = {};
@@ -66,7 +86,14 @@
     if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) return file.arrayBuffer().then(function (ab) { return pdfLib().then(function (L) { return L.getDocument({ data: ab }).promise; }); }).then(function (doc) { if (page > doc.numPages) return null;
       return doc.getPage(page).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(600 / 72, 4000 / Math.max(v0.width, v0.height)), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
         var x = cv.getContext("2d"); if (!png) { x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height); } return pg.render({ canvasContext: x, viewport: vp, background: png ? "rgba(0,0,0,0)" : undefined }).promise.then(function () { return { src: out(cv), w: cv.width, h: cv.height, pages: doc.numPages }; }); }); });
-    if (!/^image\/(png|jpeg)$/.test(file.type)) return Promise.reject(new Error("Bitte PDF, PNG oder JPG verwenden"));
+    if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name || "")) return file.text().then(function (txt) { var tag = /<svg\b[^>]*>/i.exec(txt); if (!tag) throw new Error("SVG konnte nicht gelesen werden");
+      var vb = /\bviewBox\s*=\s*["']\s*[-\d.eE]+[\s,]+[-\d.eE]+[\s,]+([\d.eE]+)[\s,]+([\d.eE]+)/.exec(tag[0]), num = function (k) { var m = new RegExp("\\s" + k + "\\s*=\\s*[\"']\\s*([\\d.]+)(px)?\\s*[\"']").exec(tag[0]); return m ? +m[1] : 0; }, w = num("width") || (vb ? +vb[1] : 0), h = num("height") || (vb ? +vb[2] : 0);
+      if (w > 0 && h > 0 && !(num("width") && num("height"))) txt = txt.replace(tag[0], tag[0].replace(/\s(width|height)\s*=\s*["'][^"']*["']/gi, "").replace(/<svg\b/i, '<svg width="' + w + '" height="' + h + '"'));
+      return new Promise(function (res, rej) { var u = URL.createObjectURL(new Blob([txt], { type: "image/svg+xml" })), im = new Image();
+        im.onload = function () { var iw = w || im.naturalWidth, ih = h || im.naturalHeight; if (!(iw > 0 && ih > 0)) { URL.revokeObjectURL(u); return rej(new Error("SVG ohne Größenangabe")); } var k = 4000 / Math.max(iw, ih), cv = document.createElement("canvas"); cv.width = Math.max(1, Math.round(iw * k)); cv.height = Math.max(1, Math.round(ih * k));
+          var x = cv.getContext("2d"); if (!png) { x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height); } try { x.drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(u); res({ src: out(cv), w: cv.width, h: cv.height, pages: 1 }); } catch (e) { URL.revokeObjectURL(u); rej(new Error("SVG kann nicht übernommen werden – bitte als PDF oder PNG speichern")); } };
+        im.onerror = function () { URL.revokeObjectURL(u); rej(new Error("SVG konnte nicht gelesen werden")); }; im.src = u; }); });
+    if (!/^image\/(png|jpeg)$/.test(file.type)) return Promise.reject(new Error("Bitte PDF, SVG, PNG oder JPG verwenden"));
     return new Promise(function (res, rej) { var im = new Image(), u = URL.createObjectURL(file); im.onload = function () { var k = Math.min(1, 4000 / Math.max(im.width, im.height)), cv = document.createElement("canvas"); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
       var x = cv.getContext("2d"); if (!png) { x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height); } x.drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(u); res({ src: out(cv), w: cv.width, h: cv.height, pages: 1 }); }; im.onerror = function () { rej(new Error("Bild konnte nicht gelesen werden")); }; im.src = u; });
   }
@@ -85,7 +112,8 @@
         '<div class="ac"><button type="button" class="ps-btn primary" data-bc="order:' + esc(t.id) + '">Karte bestellen</button><button type="button" class="ps-btn small" data-bc="edit:' + esc(t.id) + '">Vorlage bearbeiten</button><button type="button" class="ps-link" data-bc="del:' + esc(t.id) + '">Löschen</button></div></div>'; }).join("") +
       '<div class="bc-card new"><b>Neue Vorlage</b><p class="pd-muted small">Leeres Design der Visitenkarte (ohne Namen) als PDF, PNG oder JPG – 85 × 55 mm, am besten mit 1,5 mm Beschnitt.</p>' +
       '<label class="bc-up">Vorderseite *<input type="file" id="bcF" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"></label><label class="bc-up">Rückseite (optional)<input type="file" id="bcB" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"></label>' +
-      '<button type="button" class="ps-btn primary" data-bc="new"' + (ST.busy ? " disabled" : "") + ">" + (ST.busy ? '<span class="ps-spin"></span> ' + esc(ST.busy) : "Vorlage einrichten →") + "</button></div></div>" +
+      '<button type="button" class="ps-btn primary" data-bc="new"' + (ST.busy ? " disabled" : "") + ">" + (ST.busy ? '<span class="ps-spin"></span> ' + esc(ST.busy) : "Vorlage einrichten →") + "</button>" +
+      '<button type="button" class="ps-link bc-blank" data-bc="blank"' + (ST.busy ? " disabled" : "") + ">Noch kein fertiges Design? Mit weißer Karte starten</button></div></div>" +
       '<h3 class="bc-h3">Eigene Schriften</h3><p class="pd-muted small">TTF, OTF, WOFF oder WOFF2 – stehen im Editor ganz oben in der Schriftauswahl. Bitte nur Schriften hochladen, die ihr verwenden dürft.</p><ul class="bc-fonts">' +
       (ST.fonts.length ? ST.fonts.map(function (f) { return '<li><span class="smp" style="font-family:\'cf-' + esc(f.id) + '\'">Max Mustermann 0123</span><span>' + esc(f.name) + '</span><button type="button" class="ps-link" data-bc="fdel:' + esc(f.id) + '">Entfernen</button></li>'; }).join("") : '<li class="pd-muted">Noch keine eigenen Schriften – 36 Schriften stehen immer zur Auswahl.</li>') +
       '</ul><label class="ps-btn small">+ Schrift hochladen<input type="file" id="bcFont" multiple accept=".ttf,.otf,.woff,.woff2" hidden></label>';
@@ -104,12 +132,17 @@
         '<div class="bc-row"><button type="button" class="bc-tg" data-bc="bold" aria-pressed="' + !!it.bold + '"' + (fo.bold ? "" : " disabled title=\"Diese Schrift hat keinen fetten Schnitt\"") + '><b>F</b> Fett</button><button type="button" class="bc-tg" data-bc="italic" aria-pressed="' + !!it.italic + '"' + (fo.italic ? "" : " disabled") + '><i>K</i> Kursiv</button></div>' +
         '<div class="bc-row bc-al">' + [["left", "Links"], ["center", "Mitte"], ["right", "Rechts"]].map(function (a) { return '<button type="button" class="bc-tg" data-bc="align:' + a[0] + '" aria-pressed="' + (it.align === a[0]) + '">' + a[1] + "</button>"; }).join("") + "</div>" +
         '<div class="bc-row"><label>X (mm)<input data-p="x" type="number" step="0.5" value="' + r1(it.x) + '"></label><label>Grundlinie Y (mm)<input data-p="y" type="number" step="0.5" value="' + r1(it.y) + '"></label><label>Breite (mm)<input data-p="w" type="number" step="1" min="5" value="' + r1(it.w) + '"></label></div>' +
+        '<p class="pd-muted small">Die Breite ist der Platz für den Text: Längere Angaben (z. B. lange Namen) werden beim Bestellen automatisch verkleinert – höchstens bis ' + String(r1(Math.min(it.size, Math.max(MIN_PT, it.size * 0.65)))).replace(".", ",") + ' pt, darunter gibt es eine Warnung.</p>' +
         '<button type="button" class="ps-link bad" data-bc="rm">Feld entfernen</button></div>';
     } else if (it) panel = '<div class="bc-props"><h4>Logo</h4><div class="bc-row"><label>X (mm)<input data-p="x" type="number" step="0.5" value="' + r1(it.x) + '"></label><label>Y (mm)<input data-p="y" type="number" step="0.5" value="' + r1(it.y) + '"></label><label>Breite (mm)<input data-p="iw" type="number" step="0.5" min="3" value="' + r1(it.w) + '"></label></div><p class="pd-muted small">Größe: am blauen Griff rechts unten ziehen oder die Breite eintippen.</p><button type="button" class="ps-link bad" data-bc="rm">Logo entfernen</button></div>';
     else panel = '<div class="bc-props"><p class="pd-muted">Feld oder Logo in der Karte anklicken, um es zu bearbeiten. Verschieben: mit der Maus ziehen oder mit den Pfeiltasten (Umschalt = größere Schritte), Entf entfernt das Feld.</p></div>';
     return '<div class="bc-ed"><div class="bc-top"><button type="button" class="ps-link" data-bc="back">← Zurück</button><input class="bc-name" data-p="tname" value="' + esc(t.name) + '" maxlength="80" aria-label="Name der Vorlage"><span class="sp"></span><button type="button" class="ps-btn small" data-bc="undo"' + (e.hist && e.hist.length ? "" : " disabled") + ' title="Letzte Änderung zurücknehmen (Strg+Z)">↶ Rückgängig</button><button type="button" class="ps-btn primary" data-bc="save">Vorlage speichern</button></div>' +
       '<div class="bc-cols"><div class="bc-stage">' + side + '<div class="bc-cv" id="bcCv">' + cardSvg(t, e.side, null, { edit: true, sel: e.sel, cls: "bc-svg" }) + '</div><p class="pd-muted small">Rot = Schnittkante, blau gestrichelt = 3 mm Sicherheitsabstand. Texte und Logos innerhalb der blauen Linie halten.</p></div>' +
-      '<aside class="bc-side"><h4>Feld hinzufügen</h4><div class="bc-add">' + PRESETS.map(function (p) { return '<button type="button" class="ps-btn small" data-bc="add:' + p[0] + '">+ ' + p[1] + "</button>"; }).join("") + '</div><label class="ps-btn small bc-logo">+ Logo (PNG, JPG, PDF)<input type="file" id="bcLogo" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden></label>' + panel + "</aside></div></div>";
+      '<aside class="bc-side"><h4>Feld hinzufügen</h4><div class="bc-add">' + PRESETS.map(function (p) { return '<button type="button" class="ps-btn small" data-bc="add:' + p[0] + '">+ ' + p[1] + "</button>"; }).join("") + '</div><label class="ps-btn small bc-logo">+ Logo (SVG, PDF, PNG, JPG)<input type="file" id="bcLogo" accept="application/pdf,image/png,image/jpeg,image/svg+xml,.pdf,.png,.jpg,.jpeg,.svg" hidden></label>' + panel +
+      '<div class="bc-props"><h4>Karte</h4><p class="pd-muted small">' + (t.pages[e.side].bg ? "Hintergrund-Design ist hinterlegt." : "Weiße Karte ohne Hintergrund-Design.") + " " + (t.pages.length > 1 ? "Vorder- und Rückseite." : "Einseitig.") + '</p><div class="bc-row">' +
+      '<label class="ps-btn small">' + (t.pages[e.side].bg ? "Hintergrund ersetzen" : "+ Hintergrund-Design") + '<input type="file" id="bcBg" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" hidden></label>' +
+      (t.pages[e.side].bg ? '<button type="button" class="ps-btn small" data-bc="rmbg">Hintergrund entfernen</button>' : "") +
+      (t.pages.length < 2 ? '<button type="button" class="ps-btn small" data-bc="addback">+ Rückseite</button>' : e.side === 1 ? '<button type="button" class="ps-btn small" data-bc="rmback">Rückseite entfernen</button>' : "") + "</div></div></aside></div></div>";
   }
   /* Rückgängig (Prüfung 20.11.2026: ein versehentlich gelöschtes oder verschobenes Feld war nicht zurückzuholen): vor jeder Änderung den Stand der Felder merken */
   function snap(tag) { var e = E(); if (!e) return; var now = Date.now(); if (tag && e.snapTag === tag && now - (e.snapAt || 0) < 1500) { e.snapAt = now; return; }   /* Tippen/Schieben im selben Feld = ein Schritt */
@@ -138,7 +171,7 @@
     var o = ST.ord, t = o.t, fs = fieldsOf(t), me = C.me || {}, co = true, pr = o.price;
     return '<div class="bc-ed"><div class="bc-top"><button type="button" class="ps-link" data-bc="back">← Alle Vorlagen</button><b class="bc-tn">' + esc(t.name) + '</b><span class="sp"></span></div>' +
       '<div class="bc-cols"><div class="bc-stage">' + '<div class="bc-pair' + (t.pages.length > 1 ? " two" : "") + '">' + t.pages.map(function (_, i) { return '<figure class="bc-cv sm">' + cardSvg(t, i, o.vals, { cls: "bc-svg", trim: true }) + "<figcaption>" + (i ? "Rückseite" : "Vorderseite") + "</figcaption></figure>"; }).join("") + '</div><p class="pd-muted small">Vorschau im Endformat 85 × 55 mm – so wird die Karte gedruckt.</p></div>' +
-      '<aside class="bc-side"><h4>Daten der Person</h4>' + fs.map(function (f) { return '<label class="bc-fld">' + esc(f.label) + (/addr/.test(f.key) ? '<textarea data-v="' + esc(f.key) + '" rows="2">' : '<input data-v="' + esc(f.key) + '" value="') + esc(o.vals[f.key] != null ? o.vals[f.key] : "") + (/addr/.test(f.key) ? "</textarea>" : '" placeholder="' + esc(f.text) + '">') + "</label>"; }).join("") +
+      '<aside class="bc-side"><h4>Daten der Person</h4>' + fs.map(function (f) { return '<label class="bc-fld">' + esc(f.label) + (/addr/.test(f.key) ? '<textarea data-v="' + esc(f.key) + '" rows="2">' : '<input data-v="' + esc(f.key) + '" value="') + esc(o.vals[f.key] != null ? o.vals[f.key] : "") + (/addr/.test(f.key) ? "</textarea>" : '" placeholder="' + esc(f.text) + '">') + (function (nt) { return '<small class="bc-fit ' + nt.cls + '" data-fit="' + esc(f.key) + '">' + esc(nt.txt) + "</small>"; })(fitNote(t, f.key, o.vals)) + "</label>"; }).join("") +
       '<label class="bc-fld">Menge<select data-q>' + [100, 250, 500, 1000].map(function (n) { return '<option value="' + n + '"' + (o.copies === n ? " selected" : "") + ">" + n + " Stück</option>"; }).join("") + "</select></label>" +
       '<div class="bc-price">' + (o.busy ? '<span class="ps-spin"></span> Preis wird berechnet …' : pr ? '<b>' + C.eur(pr.net) + '</b> netto <small class="pd-muted">(' + C.eur(pr.gross) + " inkl. USt) · inkl. Versand · Lieferung voraussichtlich " + esc(dShort(pr.deliveryDate)) + "</small>" : '<span class="pd-muted">Preis nicht verfügbar</span>') + "</div>" +
       '<button type="button" class="ps-btn primary bc-go" data-bc="buy"' + (pr && !o.busy ? "" : " disabled") + ">Bestellen →</button>" +
@@ -153,6 +186,8 @@
     /* Steht im Konto kein Ansprechpartner, den Empfänger aus dem Namensfeld der Karte vorschlagen (statt leerer Felder) – bleibt änderbar */
     var nm = String((o.vals && o.vals.name) || "").replace(/\s+/g, " ").trim(); if (nm && !o.ship && !s.firstName && !s.lastName) { var nmP = nm.split(" "); s.lastName = nmP.length > 1 ? nmP.pop() : ""; s.firstName = nmP.join(" "); }
     if (!(me.type === "company" && me.uidValid)) { toast("Kauf auf Rechnung braucht eine gültige UID – bitte im Profil hinterlegen", true); return; }
+    var tooLong = fieldsOf(o.t).filter(function (f) { return fitNote(o.t, f.key, o.vals).cls === "bad"; }).map(function (f) { return f.label; });
+    if (tooLong.length && !confirm("Der Text ist zu lang für " + (tooLong.length > 1 ? "die Felder " : "das Feld ") + "„" + tooLong.join("“, „") + "“ und ragt über den Rand.\n\nBitte kürzen – oder trotzdem so bestellen?")) return;
     var ov = document.createElement("div"); ov.className = "ps-pop bc-pop"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", "Bestellung bestätigen");
     var f = function (k, l, w) { return '<label class="bc-fld' + (w ? " " + w : "") + '">' + l + '<input data-s="' + k + '" value="' + esc(s[k] || "") + '"></label>'; };
     var inv = [me.company, [me.firstName, me.lastName].join(" "), me.street, [me.zip, me.city].join(" ")].filter(function (x) { return String(x || "").trim(); });
@@ -172,8 +207,8 @@
   }
   function order(sh) {
     var o = ST.ord, t = o.t, me = C.me || {};
-    var pages = t.pages.map(function (_, i) { return cardSvg(t, i, o.vals, {}); });
-    return jfetch("/print/api/design", { product: PROD, sel: t.sel, copies: o.copies, urgency: "standard", pages: pages }).then(function (f) {
+    return fontsReady(t).then(function () { var pages = t.pages.map(function (_, i) { return cardSvg(t, i, o.vals, {}); });
+      return jfetch("/print/api/design", { product: PROD, sel: t.sel, copies: o.copies, urgency: "standard", pages: pages }); }).then(function (f) {
       if (!f.ok) throw new Error(f.error || "Druckdatei konnte nicht erstellt werden");
       if (f.blocked) throw new Error("Die Druckdatei hat Fehler – bitte die Vorlage prüfen");
       var cust = { type: "company", company: me.company, uid: me.uid, firstName: me.firstName || sh.firstName, lastName: me.lastName || sh.lastName, street: me.street, zip: me.zip, city: me.city, country: "AT", email: me.email, phone: me.phone || sh.phone };
@@ -234,8 +269,12 @@
     var b = ev.target.closest("[data-bc]"); if (!b || !C.el.contains(b)) return; var a = b.getAttribute("data-bc"), i = a.indexOf(":"), k = i < 0 ? a : a.slice(0, i), v = i < 0 ? "" : a.slice(i + 1);
     if (k === "back") { ST.view = "list"; ST.ed = null; ST.ord = null; ST.done = null; paint(); return; }
     if (k === "new") return newTpl();
+    if (k === "blank") return blankTpl();
+    if (k === "addback") { var eb = E(); if (eb.t.pages.length < 2) { eb.t.pages.push({ bg: "", items: [] }); eb.t.sel = Object.assign({}, eb.t.sel, { printtype: "44" }); eb.side = 1; eb.sel = null; eb.hist = []; paint(); toast("Rückseite angelegt – Hintergrund, Logo oder Felder hinzufügen"); } return; }
+    if (k === "rmback") { var er = E(); if (er.t.pages.length > 1 && confirm("Rückseite samt Feldern entfernen? Die Karte wird dann einseitig gedruckt.")) { er.t.pages.length = 1; er.t.sel = Object.assign({}, er.t.sel, { printtype: "40" }); er.side = 0; er.sel = null; er.hist = []; paint(); } return; }
+    if (k === "rmbg") { var eg = E(); eg.t.pages[eg.side].bg = ""; paint(); return; }
     if (k === "edit" || k === "order") { toast(k === "edit" ? "Vorlage wird geöffnet …" : "Karte wird vorbereitet …"); getTpl(v).then(function (t) { if (k === "edit") { ST.ed = { t: t, side: 0, sel: null }; ST.view = "edit"; paint(); }
-        else { var vals = {}; fieldsOf(t).forEach(function (f) { vals[f.key] = ""; }); ST.ord = { t: t, vals: vals, copies: 100, price: null }; ST.done = null; ST.view = "order"; paint(); quote(); } }).catch(function (e2) { toast(e2.message, true); }); return; }
+        else { var vals = {}; fieldsOf(t).forEach(function (f) { vals[f.key] = ""; }); fontsReady(t).then(function () { ST.ord = { t: t, vals: vals, copies: 100, price: null }; ST.done = null; ST.view = "order"; paint(); quote(); }); } }).catch(function (e2) { toast(e2.message, true); }); return; }
     if (k === "del") { var t0 = ST.tpls.filter(function (x) { return x.id === v; })[0]; if (t0 && confirm("Vorlage „" + t0.name + "“ löschen?")) jfetch("/print/api/account/bc/tpl-del", { id: v }).then(function (j) { setFrom(j); paint(); }); return; }
     if (k === "fdel") { if (confirm("Schrift entfernen? Vorlagen mit dieser Schrift zeigen dann eine Ersatzschrift.")) jfetch("/print/api/account/bc/font-del", { id: v }).then(function (j) { setFrom(j); paint(); }); return; }
     if (k === "side") { E().side = +v; E().sel = null; paint(); return; }
@@ -250,7 +289,8 @@
   }
   function onInput(ev) {
     var x = ev.target; if (!C.el.contains(x)) return;
-    if (x.hasAttribute("data-v")) { ST.ord.vals[x.getAttribute("data-v")] = x.value; [].forEach.call(C.el.querySelectorAll(".bc-stage .bc-cv"), function (cv, i) { var sv = cv.querySelector("svg"); if (sv) sv.outerHTML = cardSvg(ST.ord.t, i, ST.ord.vals, { cls: "bc-svg", trim: true }); }); return; }
+    if (x.hasAttribute("data-v")) { ST.ord.vals[x.getAttribute("data-v")] = x.value; [].forEach.call(C.el.querySelectorAll(".bc-stage .bc-cv"), function (cv, i) { var sv = cv.querySelector("svg"); if (sv) sv.outerHTML = cardSvg(ST.ord.t, i, ST.ord.vals, { cls: "bc-svg", trim: true }); });
+      var fk = x.getAttribute("data-v"), fn = C.el.querySelector('[data-fit="' + fk + '"]'); if (fn) { var nt = fitNote(ST.ord.t, fk, ST.ord.vals); fn.className = "bc-fit " + nt.cls; fn.textContent = nt.txt; } return; }
     if (x.hasAttribute("data-q") && ev.type === "change") { ST.ord.copies = +x.value; quote(); return; }
     var p = x.getAttribute("data-p"); if (!p || !ST.ed) return; var e = E();
     if (p === "tname") { e.t.name = x.value; return; }
@@ -264,6 +304,9 @@
   function onChange(ev) {
     var x = ev.target; if (!C.el.contains(x)) return;
     if (x.id === "bcFont") { upFonts(x.files); return; }
+    if (x.id === "bcBg" && x.files && x.files[0]) { var eb2 = E(), sd = eb2.side; toast("Design wird gelesen …");
+      /* PDF mit zwei Seiten: auf der Rückseite Seite 2 nehmen, sonst Seite 1 */
+      toImg(x.files[0], sd + 1, false).then(function (im) { return im || toImg(x.files[0], 1, false); }).then(function (im) { if (!im) throw new Error("Design konnte nicht gelesen werden"); eb2.t.pages[sd].bg = im.src; paint(); toast("Hintergrund übernommen"); }).catch(function (er2) { toast(er2.message || "Design konnte nicht gelesen werden", true); }); return; }
     if (x.id === "bcLogo" && x.files && x.files[0]) { var e = E(); toImg(x.files[0], 1, true).then(function (im) { var w = 25, h = r1(w * im.h / im.w); snap(); e.t.pages[e.side].items.push({ t: "img", src: im.src, x: e.t.w - w - 6, y: 6, w: w, h: h }); e.sel = e.t.pages[e.side].items.length - 1; paint(); }).catch(function (er) { toast(er.message, true); }); return; }
     onInput(ev);
   }
@@ -272,6 +315,10 @@
       fetch("/print/api/account/bc/font", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(f.name), "X-Font-Name": encodeURIComponent(f.name.replace(/\.(ttf|otf|woff2?)$/i, "").replace(/[-_]+/g, " ")) }, body: f })
         .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) toast(j.error || "Upload fehlgeschlagen", true); else { setFrom(j); toast("Schrift „" + f.name + "“ hinzugefügt ✓"); } nx(); }).catch(function () { toast("Keine Verbindung", true); nx(); }); };
     nx(); }
+  /* Start ohne hochgeladenes Design (Simon 20.11.2026): weiße Karte, Logo und Felder direkt im Editor; Hintergrund und Rückseite lassen sich dort nachreichen */
+  function blankTpl() { ST.busy = "Wird vorbereitet …"; paint();
+    prodInfo(1).then(function (pi) { ST.busy = ""; ST.ed = { t: { id: "", name: "Visitenkarte " + (ST.tpls.length + 1), sel: pi.sel, w: pi.w, h: pi.h, bleed: pi.bleed, pages: [{ bg: "", items: [] }] }, side: 0, sel: null }; ST.view = "edit"; addField("name"); addField("role"); ST.ed.hist = []; paint();
+      toast("Weiße Karte: Logo hinzufügen und Felder platzieren – ein Hintergrund-Design geht jederzeit rechts unter „Karte“"); }).catch(function (e) { ST.busy = ""; paint(); toast(e.message || "Konnte nicht gestartet werden", true); }); }
   function newTpl() {
     var fF = C.el.querySelector("#bcF"), fB = C.el.querySelector("#bcB"), front = fF && fF.files[0], back = fB && fB.files[0];
     if (!front) { toast("Bitte die Vorderseite (leeres Design) auswählen", true); return; }

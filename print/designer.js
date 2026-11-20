@@ -52,10 +52,42 @@
     (function walk(list) { (list || []).forEach(function (o) { if (!o) return; if (o.objects) walk(o.objects); if (/text/i.test(o.type || "") || o.t === "text") { var fam = o.fontFamily || o.font, b = o.fontWeight === "bold" || o.bold, it = o.fontStyle === "italic" || o.italic, k = fam + b + it; if (fam && !seen[k]) { seen[k] = 1; ps.push(loadFont(fam, b, it)); } } }); })(objs);
     return Promise.all(ps);
   }
+  /* ── Vektor-Logos (Simon 20.11.2026: „bau die drei Sachen“ – SVG und PDF fehlten, Profis haben ihr Logo meist so) ──
+     SVG und PDF (Seite 1) werden im Browser in hoher Auflösung mit transparentem Hintergrund übernommen: längste Seite VEC_SIDE px
+     (ein 10 cm breites Logo hat damit über 1000 dpi). Bewusst kein Import als Pfade – Filter, Masken und Schriften in fremden
+     SVGs sähen im Druck sonst anders aus als in der Vorschau. */
+  var IMG_ACC = "image/png,image/jpeg,image/svg+xml,application/pdf,.png,.jpg,.jpeg,.svg,.pdf", VEC_SIDE = 4096;
+  var isSvg = function (f) { return f.type === "image/svg+xml" || /\.svg$/i.test(f.name || ""); }, isPdf = function (f) { return f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""); };
+  function vecSize(w, h) { var k = Math.min(VEC_SIDE / Math.max(w, h), Math.sqrt(MAXPX / (w * h))); return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) }; }
+  function readSvg(file) {
+    return file.text().then(function (txt) {
+      var tag = /<svg\b[^>]*>/i.exec(txt); if (!tag) throw new Error("SVG konnte nicht gelesen werden");
+      var vb = /\bviewBox\s*=\s*["']\s*[-\d.eE]+[\s,]+[-\d.eE]+[\s,]+([\d.eE]+)[\s,]+([\d.eE]+)/.exec(tag[0]), num = function (k) { var m = new RegExp("\\s" + k + "\\s*=\\s*[\"']\\s*([\\d.]+)(px)?\\s*[\"']").exec(tag[0]);   /* \s davor: nicht „stroke-width“ erwischen */ return m ? +m[1] : 0; };
+      var w = num("width") || (vb ? +vb[1] : 0), h = num("height") || (vb ? +vb[2] : 0);
+      /* ohne feste Breite/Höhe zeichnen manche Browser nichts – Maße aus der viewBox ergänzen */
+      if (w > 0 && h > 0 && !(num("width") && num("height"))) txt = txt.replace(tag[0], tag[0].replace(/\s(width|height)\s*=\s*["'][^"']*["']/gi, "").replace(/<svg\b/i, '<svg width="' + w + '" height="' + h + '"'));
+      return new Promise(function (res, rej) { var url = URL.createObjectURL(new Blob([txt], { type: "image/svg+xml" })), img = new Image();
+        img.onload = function () { var iw = w || img.naturalWidth, ih = h || img.naturalHeight; if (!(iw > 0 && ih > 0)) { URL.revokeObjectURL(url); return rej(new Error("SVG ohne Größenangabe – bitte mit Breite/Höhe oder viewBox speichern")); }
+          var z = vecSize(iw, ih), cv = document.createElement("canvas"); cv.width = z.w; cv.height = z.h; var cx = cv.getContext("2d"); cx.imageSmoothingQuality = "high";
+          try { cx.drawImage(img, 0, 0, z.w, z.h); URL.revokeObjectURL(url); res({ src: cv.toDataURL("image/png"), w: z.w, h: z.h, scaled: false, vec: "SVG" }); } catch (e) { URL.revokeObjectURL(url); rej(new Error("SVG enthält Inhalte, die nicht übernommen werden können – bitte als PDF oder PNG speichern")); } };
+        img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("SVG konnte nicht gelesen werden")); }; img.src = url; });
+    });
+  }
+  var pdfP = null;
+  function pdfLib() { if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib); if (!pdfP) pdfP = new Promise(function (res, rej) { var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = function () { pdfP = null; rej(new Error("PDF-Leser konnte nicht geladen werden")); }; document.head.appendChild(sc); }); return pdfP; }
+  function readPdf(file) {
+    return file.arrayBuffer().then(function (ab) { return pdfLib().then(function (L) { return L.getDocument({ data: ab }).promise; }); }).then(function (doc) {
+      return doc.getPage(1).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), z = vecSize(v0.width, v0.height), vp = pg.getViewport({ scale: z.w / v0.width }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () { var n = doc.numPages; try { doc.destroy(); } catch (e) {} return { src: cv.toDataURL("image/png"), w: cv.width, h: cv.height, scaled: false, vec: "PDF", pages: n }; }); });
+    }, function (e) { throw new Error(/password/i.test(String(e && e.message)) ? "PDF ist passwortgeschützt" : (e && /PDF-Leser/.test(e.message) ? e.message : "PDF konnte nicht gelesen werden")); });
+  }
   // ── Bilder: große Bilder verkleinern (max. 16 MP), JPEG neu kodieren (Ausrichtung/EXIF) ──
   function readImage(file) {
+    if (file.size > 40 * 1024 * 1024) return Promise.reject(new Error("Datei ist größer als 40 MB"));
+    if (isSvg(file)) return readSvg(file); if (isPdf(file)) return readPdf(file);
     return new Promise(function (res, rej) {
-      if (!/^image\/(png|jpeg)$/.test(file.type)) return rej(new Error("Bitte JPG oder PNG verwenden"));
+      if (!/^image\/(png|jpeg)$/.test(file.type)) return rej(new Error("Bitte JPG, PNG, SVG oder PDF verwenden"));
       if (file.size > 40 * 1024 * 1024) return rej(new Error("Bild ist größer als 40 MB"));
       var fr = new FileReader(); fr.onerror = function () { rej(new Error("Bild konnte nicht gelesen werden")); };
       fr.onload = function () { var img = new Image(); img.onload = function () {
@@ -68,7 +100,7 @@
       fr.readAsDataURL(file);
     });
   }
-  function pickFile(accept) { return new Promise(function (res) { var i = document.createElement("input"); i.type = "file"; i.accept = accept || "image/png,image/jpeg"; i.onchange = function () { res(i.files && i.files[0]); }; i.click(); }); }
+  function pickFile(accept) { return new Promise(function (res) { var i = document.createElement("input"); i.type = "file"; i.accept = accept || IMG_ACC; i.onchange = function () { res(i.files && i.files[0]); }; i.click(); }); }
   // ── Farben ──
   function hexOf(c) { if (!c || typeof c !== "string") return "#000000"; if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase(); if (/^#[0-9a-f]{3}$/i.test(c)) return "#" + c.slice(1).split("").map(function (x) { return x + x; }).join("").toLowerCase(); var m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/); return m ? "#" + [1, 2, 3].map(function (i) { return ("0" + (+m[i]).toString(16)).slice(-2); }).join("") : "#000000"; }
   function vivid(c) { // sehr gesättigte Bildschirmfarbe → im CMYK-Druck matter
@@ -729,6 +761,7 @@
       else { var s3 = Math.min(T.w * (opt.fit ? 1 : 0.6) / im.w, T.h * (opt.fit ? 1 : 0.6) / im.h); img.set({ scaleX: s3, scaleY: s3 }); center(img); D.c.add(img); }
       img.setCoords(); D.c.setActiveObject(img); D.c.requestRenderAll(); changed();
       if (im.scaled) toast("Sehr großes Bild – auf " + im.w + " × " + im.h + " px verkleinert (reicht für scharfen Druck).");
+      if (im.vec) toast(im.vec + (im.pages > 1 ? " (Seite 1 von " + im.pages + ")" : "") + " in hoher Auflösung übernommen – transparenter Hintergrund bleibt erhalten.");
       var dpi = dpiOf(img); if (dpi < 250) toast("Achtung: Bild hat bei dieser Größe nur " + dpi + " dpi – kleiner platzieren oder größeres Bild verwenden.", true);
       res(img); }); }); }).catch(function (e) { toast(e.message, true); });
   }
@@ -768,7 +801,7 @@
       D.P.innerHTML = h; thumbs(); return;
     }
     if (p === "text") h = '<div class="pd-sec"><h4>Text hinzufügen</h4><button type="button" class="ps-btn" data-a="t:h" style="font-family:Montserrat;font-weight:700;font-size:20px;justify-content:flex-start">Überschrift</button><button type="button" class="ps-btn" data-a="t:s" style="justify-content:flex-start">Untertitel</button><button type="button" class="ps-btn small" data-a="t:b" style="justify-content:flex-start">Fließtext</button><button type="button" class="ps-btn small" data-a="t:c" style="justify-content:flex-start">Bogentext</button><p class="pd-muted">Tipp: Doppelklick bzw. doppelt antippen, um direkt im Text zu schreiben.</p></div>';
-    else if (p === "img") { var ph = act() && act().role === "ph"; h = '<div class="pd-sec"><h4>Bild oder Logo</h4><button type="button" class="ps-btn primary" data-a="img:add">' + (ph ? "Bild in Platzhalter einsetzen" : "Bild hochladen") + '</button><button type="button" class="ps-btn small" data-a="img:bg">Als Hintergrundbild (randlos)</button><p class="pd-muted">JPG oder PNG (Logos gern als PNG mit transparentem Hintergrund). Für scharfen Druck mindestens 250–300 dpi in Druckgröße – wir zeigen dir die Auflösung an.</p>' + (brand().logo ? '<button type="button" class="ps-btn small" data-a="brand:logoins">Gespeichertes Logo einfügen</button>' : "") + "</div>"; }
+    else if (p === "img") { var ph = act() && act().role === "ph"; h = '<div class="pd-sec"><h4>Bild oder Logo</h4><button type="button" class="ps-btn primary" data-a="img:add">' + (ph ? "Bild in Platzhalter einsetzen" : "Bild hochladen") + '</button><button type="button" class="ps-btn small" data-a="img:bg">Als Hintergrundbild (randlos)</button><p class="pd-muted">JPG, PNG, SVG oder PDF (Logos am besten als SVG oder PDF, sonst als PNG mit transparentem Hintergrund). Für scharfen Druck mindestens 250–300 dpi in Druckgröße – wir zeigen dir die Auflösung an.</p>' + (brand().logo ? '<button type="button" class="ps-btn small" data-a="brand:logoins">Gespeichertes Logo einfügen</button>' : "") + "</div>"; }
     else if (p === "shape") h = '<div class="pd-sec"><h4>Formen &amp; Linien</h4><div class="pd-btns pd-icons">' + SHAPES.map(function (s) { return '<button type="button" class="pd-ib" data-a="sh:' + s[0] + '" title="' + s[1] + '" aria-label="' + s[1] + '">' + svgP(s[2]) + "</button>"; }).join("") + "</div></div>" +
       '<div class="pd-sec"><h4>Icons</h4><div class="pd-btns pd-icons">' + ICONS.map(function (d, i) { return '<button type="button" class="pd-ib" data-a="ico:' + i + '" title="' + d[1] + '" aria-label="Icon ' + d[1] + '">' + svgP('<path d="' + d[2] + '"/>', d[3]).replace('viewBox="0 0 24 24"', d[0] === "rate" ? 'viewBox="-1 -26 64 64"' : 'viewBox="0 0 24 24"') + "</button>"; }).join("") + '</div><p class="pd-muted">Icons sind Vektoren – Farbe und Größe frei änderbar, gestochen scharf im Druck.</p></div>';
     else if (p === "spot") h = spotPanel();
