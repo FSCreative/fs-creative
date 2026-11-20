@@ -206,6 +206,7 @@ const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420
 // Beschnitt-Hinweis entschärfen, wenn die Vorschau rundum einen weißen Rand gefunden hat (kein Motiv bis zum Rand, Simon 09.11.2026)
 const BLEED_RX = /keinen Beschnitt|ohne Beschnitt/;
 const FILEINFO = require("./print-fileinfo.js");
+const FONTFIX = require("./print-fontfix.js");   // nicht eingebettete Standardschriften maßgleich einbetten (Helvetica/Arial/Times/Courier/Calibri/Cambria)
 const fmtMm = v => String(Math.round(+v * 10) / 10).replace(".", ",");   // Millimeter für Kundentexte (1,5 statt 1.5)
 function bleedOkChecks(l) { l = Array.isArray(l) ? l : []; return l.some(c => BLEED_RX.test(c.text || "")) ? l.filter(c => !BLEED_RX.test(c.text || "")).concat([{ level: "ok", text: "Kein Beschnitt nötig – laut Vorschau rundum weißer Rand." }]) : l; }
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
@@ -3068,7 +3069,14 @@ module.exports = function (D) {
       let txt; try { txt = Buffer.from(decodePDFRawStream(obj).decode()).toString("latin1"); } catch (e) { continue; }
       for (const [n, base] of names) { const t2 = txt.replace(new RegExp("BT\\s+" + esc2(n) + "\\s+[\\d.]+\\s+Tf\\s+(?:[\\d.]+\\s+TL\\s+)?ET", "g"), ""); if (new RegExp(esc2(n) + "\\s+[\\d.]+\\s+Tf").test(t2)) used.add(base); } }
     const all = [...new Set(bad.values())], un = all.filter(x => !used.has(x));
-    if (used.size) return { level: "warn", admin: true, text: "Schrift nicht eingebettet und im Text verwendet: " + [...used].join(", ") + " – Print.com lehnt solche Dateien oft ab („Verarbeitung hat nicht geklappt“). Kunden um eine PDF mit eingebetteten Schriften bzw. Text in Pfaden bitten." };
+    if (used.size) {
+      // Simon 20.11.2026 (D-261119-CTMM): maßgleiche freie Schriften werden vor der Übergabe automatisch eingebettet (print-fontfix.js) – nur wenn jedes gedruckte Zeichen exakt gleich breit ist
+      const plan = await FONTFIX.planStdFonts(buf).catch(() => ({ replaced: [], skipped: [] }));
+      const ok = plan.replaced.filter(r => used.has(r.name)), rest = [...used].filter(n => !ok.some(r => r.name === n));
+      if (!rest.length) return { level: "ok", admin: true, text: "Schrift nicht eingebettet (" + ok.map(r => r.name).join(", ") + ") – wird vor der Übergabe an Print.com automatisch durch die maßgleiche Schrift " + [...new Set(ok.map(r => r.with))].join(", ") + " ersetzt und eingebettet (gleiche Zeichenbreiten, Druckbild bleibt gleich)." };
+      const why = plan.skipped.filter(s => rest.indexOf(s.name) >= 0).map(s => s.name + ": " + s.reason).join("; ");
+      return { level: "warn", admin: true, text: "Schrift nicht eingebettet und im Text verwendet: " + rest.join(", ") + (why ? " (kein exakt gleicher Ersatz – " + why + ")" : "") + (ok.length ? "; " + ok.map(r => r.name).join(", ") + " wird automatisch eingebettet" : "") + " – Print.com lehnt solche Dateien oft ab („Verarbeitung hat nicht geklappt“). Kunden um eine PDF mit eingebetteten Schriften bzw. Text in Pfaden bitten." };
+    }
     return { level: "warn", admin: true, text: "Nicht eingebettete Schrift(en) in der Datei angelegt, aber nicht verwendet: " + un.join(", ") + " – werden vor der Übergabe an Print.com automatisch entfernt (Druckbild bleibt gleich)." };
   }
   async function dropUnusedFonts(buf) {
@@ -5273,6 +5281,7 @@ module.exports = function (D) {
         if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
+        buf = await FONTFIX.embedStdFonts(buf).then(r => { if (r.replaced.length) log("Schriften eingebettet", o.nr, r.replaced.map(x => x.name + " → " + x.with).join(", ")); return r.buf; }).catch(e => { log("Schriften einbetten", o.nr, e.message); return buf; });
         buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
         if (buf.length < 150e6) buf = await findProduct(o.product.key).then(pr => spotFixForPrint(buf, pr, o.sel)).catch(e => { log("Sonderfarben umbenennen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
