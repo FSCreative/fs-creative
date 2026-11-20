@@ -213,7 +213,9 @@ const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahl
   ordered: "Bei Print.com bestellt", in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", rejected: "Abgelehnt", problem: "Problem bei Print.com" };
 const REVIEW = { paid: 1, invoice_requested: 1 };
 // „Zur Prüfung“ (Liste, Zähler, Vorschlag): nicht solange Druckdaten abgelehnt sind und die neue Datei des Kunden fehlt (Simon 10.11.2026)
-const needsReview = o => !!(o && REVIEW[o.status] && !(o.redo && o.redo.status === "open"));
+// Daten angefordert und noch offen – erledigt, sobald die Druckdatei danach ersetzt wurde (Kunde ODER Simon im Cockpit, Simon 20.11.2026 D-261119-RPNM)
+const redoOpen = o => !!(o && o.redo && o.redo.status === "open" && !(o.fileHistory || []).some(h => h.at >= (o.redo.sentAt || "")));
+const needsReview = o => !!(o && REVIEW[o.status] && !redoOpen(o));
 // Für Kund:innen: nie den Produktionspartner nennen
 const STATUS_PUB = Object.assign({}, STATUS_DE, { ordered: "In Produktion gegeben", problem: "In Klärung – wir melden uns" });
 // Texte aus dem Print.com-CMS für den Shop: fremde E-Mail-Adressen → simon@fs-creative.at, Links/Nennungen von Print.com entfernen
@@ -3184,7 +3186,7 @@ module.exports = function (D) {
   // Positionen einer Bestellung für Print.com (Datei-Links, Motive, Varianten, Lieferadresse)
   async function pcItemsOf(o) {
     if (!(o.status === "paid" || o.status === "invoice_requested" || (o.status === "problem" && !o.printcom.orderNumber))) throw new Error(o.nr + ": Status „" + (STATUS_DE[o.status] || o.status) + "“ – kann nicht bestellt werden");
-    if (o.redo && o.redo.status === "open") throw new Error(o.nr + ": wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
+    if (redoOpen(o)) throw new Error(o.nr + ": wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
     const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error(o.nr + ": Druckdatei fehlt");
     const c = o.customer, base = cfg().publicUrl;
     let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
@@ -5960,7 +5962,7 @@ module.exports = function (D) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       // Intern (ohne Bezahlung): kein Umsatz, keine Marge in Kennzahlen/Listen (Simon 17.11.2026) – Einkauf bleibt sichtbar
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: isIntern(o) ? internRev(o).gross : o.price.gross, net: isIntern(o) ? internRev(o).net : o.price.net, margin: isIntern(o) ? internRev(o).margin : o.price.margin, intern: isIntern(o), internRevenue: isIntern(o) && o.internRevenue ? o.internRevenue : undefined, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", redoTries: o.redo && o.redo.status === "open" ? (o.redo.tries || []).filter(x => x.at >= (o.redo.sentAt || "")).length : 0, warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? (o.redo.status === "open" && !redoOpen(o) ? "replaced" : o.redo.status) : "", redoTries: redoOpen(o) ? (o.redo.tries || []).filter(x => x.at >= (o.redo.sentAt || "")).length : 0, warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
