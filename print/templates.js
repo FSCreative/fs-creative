@@ -73,12 +73,13 @@
   function T(x, y, w, text, pt, o) { o = o || {}; return { t: "text", x: x, y: y, w: w, text: text, size: pt, font: o.font, bold: !!o.bold, italic: !!o.italic, color: o.color, align: o.align || "left", ls: o.ls || 0, lh: o.lh || 1.16, role: o.role || "" }; }
 
   function build(id, ctx) {
-    var st = STYLES[id] || STYLES.klar, k = ctx.product, tx = TXT[k] || TXT.flyer, sz = SIZE[k] || SIZE.flyer;
+    var st = STYLES[id] || STYLES.klar, k = ctx.product, folded = !!(ctx.cells && ctx.cells[0] && ctx.cells[0].length > 1), fk = folded && !TXT[k] && !ALIAS[k] ? "folder" : k, tx = TXT[fk] || TXT.flyer, sz = SIZE[fk] || SIZE.flyer;
     if (ctx.noImg && tx.img) tx = Object.assign({}, tx, { img: false });   // KI-Vorschlag ohne eigenes Foto: kein leerer Bildrahmen
     if (ctx.texts) { tx = Object.assign({}, tx); Object.keys(ctx.texts).forEach(function (x) { if (typeof ctx.texts[x] === "string" && "HSOBFAW".indexOf(x) > -1 && x.length === 1) tx[x] = ctx.texts[x]; }); }
     if (ctx.pal) { st = Object.assign({}, st); ["bg", "fg", "mute", "ac", "ac2"].forEach(function (x) { if (/^#[0-9a-f]{6}$/i.test(ctx.pal[x] || "")) st[x] = ctx.pal[x]; }); if (ctx.pal.fh) st.fh = ctx.pal.fh; if (ctx.pal.fb) st.fb = ctx.pal.fb; }
     var pages = [];
-    for (var side = 0; side < ctx.sides; side++) pages.push(k === "folder" ? folderPage(st, tx, sz, ctx, side) : page(st, tx, sz, ctx, side));
+    /* gefalzt (egal welches Produkt: Folder, Klappkarten, Menükarten, Pläne, gefalzte Visitenkarten): Inhalte je Feld nach seiner Rolle – sonst läuft die Vorlage über die Falz */
+    for (var side = 0; side < ctx.sides; side++) pages.push(folded ? foldPage(st, tx, sz, ctx, side) : k === "folder" ? folderPage(st, tx, sz, ctx, side) : page(st, tx, sz, ctx, side));
     return pages;
   }
   function deco(st, w, h, b, els, strong) {
@@ -236,6 +237,46 @@
     var q = Math.max(15, mn * 0.2);
     els.push({ t: "qr", x: w - m - q, y: h - m - q, s: q, data: "https://" + tx.W.replace(/^https?:\/\//, ""), color: dk(st.bg) ? "#ffffff" : "#000000" });
     els.push(T(m, h - m - textH(tx.F, pF, cw - q - m, 1.4, fb), cw - q - m, tx.F, pF, { font: fb, color: st.mute, lh: 1.4 }));
+    return els;
+  }
+  /* Gefalzte Drucksachen nach Feldern (Simon 20.11.2026: alle Falzarten richtig – auch Kreuzfalz, Falz oben, Zickzack, Pläne):
+     ctx.cells[seite] = Felder des offenen Bogens mit Rolle (t: Titel/Rückseite/Innen …) und Drehung (r = 180 → auf dem Kopf). Titel-Feld: Bild, Überschrift, Logo;
+     Rückseiten-Feld: Adresse, Text, QR (liegt je nach Falzart außen ODER innen); Innenfelder: Textspalten; Plakat-/Planseite: ein großes Bild über den Bogen.
+     Gedrehte Felder: Elemente werden im Feld gespiegelt gesetzt und um 180° gedreht (x/y = Ankerpunkt nach der Drehung). */
+  function foldPage(st, tx, sz, ctx, side) {
+    var cells = (ctx.cells && ctx.cells[side]) || [], W = ctx.w, H = ctx.h, b = ctx.bleed, els = [{ t: "bg", fill: st.bg }], fb = st.fb, fh = st.fh, Hd = upper(st, tx.H);
+    var mw = Math.min.apply(null, cells.map(function (c) { return c.x1 - c.x0; })), mh = Math.min.apply(null, cells.map(function (c) { return c.y1 - c.y0; })), f = Math.min(mw, mh) / sz[0];
+    var m = Math.max(ctx.safe + 2, Math.min(mw, mh) * 0.09), pH = sz[1] * f, pS = sz[2] * f, pB = sz[3] * f, pF = sz[4] * f, parts = String(tx.B || "").split("\n\n"), pi = 0, firstOut = true, light = st.lay === "band";
+    var poster = cells.length && cells.every(function (c) { return /^(Plan|Plakat)/.test(c.t) || /^Rückseite/.test(c.t); }) && cells.some(function (c) { return /^(Plan|Plakat)/.test(c.t); });
+    if (poster) { els.push({ t: "img", x: m, y: m, w: W - 2 * m, h: H - 2 * m, label: /^Plan/.test(cells[0].t) ? "Plan / Karte" : "Bild" }); }
+    cells.forEach(function (c) {
+      var cw0 = c.x1 - c.x0, ch = c.y1 - c.y0, cw = cw0 - 2 * m, L = [], role = /^Titel/.test(c.t) ? "title" : /^Rückseite/.test(c.t) ? "back" : /^(Plan|Plakat)/.test(c.t) ? "poster" : side ? "in" : "out";
+      if (role === "title") {
+        if (st.lay === "band" || st.lay === "bold" || st.glow || st.circles) els.push({ t: "rect", x: c.x0 - (c.x0 <= 0.01 ? b : 0), y: c.y0 - (c.y0 <= 0.01 ? b : 0), w: cw0 + (c.x0 <= 0.01 ? b : 0) + (c.x1 >= W - 0.01 ? b : 0), h: ch + (c.y0 <= 0.01 ? b : 0) + (c.y1 >= H - 0.01 ? b : 0), fill: st.lay === "bold" ? st.bg : st.ac, opacity: st.glow || st.circles ? 0.18 : 1 });
+        var pic = tx.img !== false, ty = pic ? ch * 0.42 + m * 1.6 : ch * 0.3;
+        if (pic) L.push({ t: "img", x: m, y: m, w: cw, h: ch * 0.42, label: "Bild" }); else L.push({ t: "rect", x: m, y: ty - m * 1.1, w: cw * 0.28, h: Math.max(1.2, m * 0.14), fill: light ? "#ffffff" : st.ac });
+        L.push(T(m, ty, cw, Hd, pH, { font: fh, bold: st.hb, color: light ? "#ffffff" : st.fg, lh: 1.05 }));
+        if (tx.S) L.push(T(m, ty + textH(Hd, pH, cw, 1.05, fh) + m * 0.3, cw, tx.S, pS, { font: fb, italic: st.lay === "frame", color: light ? "#e6f0ff" : st.ac, lh: 1.2 }));
+        L.push({ t: "img", x: m, y: ch - m - ch * 0.08, w: cw * 0.45, h: ch * 0.08, label: "Logo", dark: light });
+      } else if (role === "back") {
+        var qs = Math.min(Math.max(18, cw * 0.32), ch * 0.3);
+        if (poster) L.push({ t: "rect", x: 0, y: 0, w: cw0, h: ch, fill: st.bg, opacity: 0.92 });
+        if (tx.A) L.push(T(m, m, cw, tx.A, pS, { font: fh, bold: true, color: st.ac }));
+        if (tx.F) L.push(T(m, ch - m - textH(tx.F, pF, cw, 1.45, fb) - qs - m * 0.5, cw, tx.F, pF, { font: fb, color: st.mute, lh: 1.45 }));
+        if (tx.W) L.push({ t: "qr", x: m, y: ch - m - qs, s: qs, data: "https://" + String(tx.W).replace(/^https?:\/\//, ""), color: dk(st.bg) ? "#ffffff" : "#000000" });
+      } else if (role === "in") {
+        var part = parts[pi++] || "", lines = part.split("\n"), y = m;
+        if (pi === 1) { L.push(T(m, y, cw, Hd, pS * 1.5, { font: fh, bold: st.hb, color: st.ac })); y += pS * 0.3528 * 2.6; }
+        if (lines[0]) { L.push(T(m, y, cw, lines[0], pS, { font: fh, bold: true, color: st.fg })); y += pS * 0.3528 * 1.7; L.push({ t: "rect", x: m, y: y, w: cw * 0.25, h: 0.5, fill: st.ac }); y += 3;
+          if (lines.length > 1) L.push(T(m, y, cw, lines.slice(1).join("\n"), pB, { font: fb, color: st.fg, lh: 1.6 })); }
+        else if (tx.img !== false) L.push({ t: "img", x: m, y: m, w: cw, h: ch * 0.4, label: "Bild" });
+      } else if (role === "out") {
+        if (firstOut && tx.S) { L.push(T(m, m, cw, tx.S, pS * 1.2, { font: fh, bold: st.hb, color: st.fg })); if (tx.img !== false) L.push({ t: "img", x: m, y: ch * 0.5, w: cw, h: ch * 0.4 - m, label: "Bild" }); }
+        else if (tx.img !== false) L.push({ t: "img", x: m, y: m, w: cw, h: ch * 0.4, label: "Bild" });
+        firstOut = false;
+      }
+      L.forEach(function (e) { if (c.r) { e.x = c.x0 + cw0 - e.x; e.y = c.y0 + ch - e.y; e.rot = 180; } else { e.x += c.x0; e.y += c.y0; } els.push(e); });
+    });
     return els;
   }
   // Folder: Seite 1 = außen (rechts Titel, Mitte Rückseite, links Info), Seite 2 = innen (Spalten)

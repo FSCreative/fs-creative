@@ -962,7 +962,7 @@
   function setFormat(v) { var pr = S.prod && (S.prod.props || []).filter(function (x) { return x.slug === "size"; })[0]; if (!v || !pr || S.sel.size === v || !pr.options.some(function (o) { return o.slug === v; })) return; S.sel.size = String(v); fixSel("size"); loadPrice(); }
   // Auflage aus einem Link (?menge=…, Weihnachtsseite data-copies): nur angebotene Mengen
   function setCopies(v) { if (/^sample_/.test(String((S.sel || {}).sample || ""))) { toast("Ein Probedruck ist immer 1 Stück – für eine größere Auflage „Kein Probedruck“ wählen."); render(); return; } var n = parseInt(v, 10); if (!S.prod || !(n > 0) || kind() === "textile" || (S.prod.tiers || []).indexOf(n) < 0 || n === S.copies) return; S.copies = n; motBalance(); loadPrice(); }
-  var FOLD_RX = /^(single|singlehorizontal|wikkel|zigzag|luik|cross)_\d+$/;
+  var FOLD_RX = /^(single|singlehorizontal|wikkel|zigzag|luik|cross|halffold|zigzagcross)_\d+$/;   /* wie FOLD_RX am Server (print-shop.js) – auch Pläne (halffold/zigzagcross) */
   function sizeOf() {
     if (S.sel.fold && FOLD_RX.test(S.sel.fold)) return S.price && S.price.folds && S.price.size ? S.price.size : null;   // Folder: Größe = gefalzt, Datei = offenes Format (vom Server)
     if (isCustom()) { var f = S.prod.custom.unit === "cm" ? 10 : 1, w = Math.round(parseFloat(S.custom.w) * f), h = Math.round(parseFloat(S.custom.h) * f); return w > 0 && h > 0 ? { w: w, h: h } : null; }
@@ -2637,6 +2637,7 @@
       '<div class="ps-pfv-bg" role="group" aria-label="Hintergrund"><button type="button" data-act="pfvbg:0" aria-pressed="' + !S.pfvBg + '">Weiß</button><button type="button" data-act="pfvbg:1" aria-pressed="' + !!S.pfvBg + '">Transparent</button></div>' +
       price + (S.cartEdit ? '<button type="button" class="ps-btn" data-act="stucancel">Abbrechen</button>' : "") + '<button type="button" class="ps-btn" data-go="2">← Ausführung</button>'  + go + "</div></header>" +
       '<div class="ps-stu-body"><div class="ps-stu-mid"><p class="ps-stu-help">' + (blk(f) ? "<b>Bitte die rot markierten Punkte korrigieren – oder den Profi-Datencheck buchen.</b> " : f.blocked ? "<b>Wir richten deine Datei vor dem Druck.</b> " : "<b>So sieht dein Druck aus.</b> ") + 'Alles Wichtige (Texte, Logos) gehört <span class="g">innerhalb der grünen Linie</span>. Die <span class="r">rote Fläche</span> wird beim Schneiden abgeschnitten – Hintergründe sollen bis an den äußeren Rand reichen, damit nach dem Schneiden kein weißer Rand bleibt.</p>' +
+      (can3d() ? '<div class="ps-stu-view"><div class="ps-pfv-bg" role="group" aria-label="Ansicht"><button type="button" data-act="stuview:0" aria-pressed="' + !S.stuView + '">Druckansicht</button><button type="button" data-act="stuview:1" aria-pressed="' + !!S.stuView + '">3D-Vorschau' + (S.price && S.price.folds ? " – auf- und zuklappen" : " – drehen") + "</button></div></div>" : "") +
       '<main class="ps-stu-pages' + (S.pfvBg ? " tr" : "") + '" id="psStuPages" data-key="' + esc(key) + '"><div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div></main></div>' +
       '<aside class="ps-stu-side">' + mtabs +
         '<div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages ? f.pages + " Seite" + (f.pages === 1 ? "" : "n") : "") + (f.bytes ? (f.pages ? " · " : "") + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
@@ -2660,14 +2661,16 @@
   function stuLabel(i, n) { return pgLabel(i, n); }
   function studioPaint() {
     var box = document.getElementById("psStuPages"); if (!box || !S.file) return; var f = S.file, key = box.getAttribute("data-key");
+    if (S.stuView && can3d()) { studio3d(box, f); return; }
     if (STU[key] && STU[key].html) { box.innerHTML = STU[key].html; return; }
     if (STU[key]) { if (STU[key].figs.length) box.innerHTML = STU[key].figs.join(""); return; }   // läuft schon – fertige Seiten zeigen, der Rest folgt
     var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = safeOf(), off = !!S.pfvOff, job = STU[key] = { figs: [] };
     if (!trim) { box.innerHTML = ""; return; }
     var rnd = shapeNow(), fo = S.price && S.price.folds;
-    var show = function () { var b = document.getElementById("psStuPages"); if (b && b.getAttribute("data-key") === key) b.innerHTML = job.figs.join("") + (job.html ? "" : '<div class="ps-stu-load"><span class="ps-spin"></span> weitere Seiten werden geladen …</div>'); };
-    pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
-      var n = Math.min(doc.numPages, 60), i = 0;
+    var show = function () { var b = document.getElementById("psStuPages"); if (b && S.stuView && b.querySelector(".ps-stu-3d")) return; /* 3D-Vorschau offen: nicht überschreiben */ if (b && b.getAttribute("data-key") === key) b.innerHTML = job.figs.join("") + (job.html ? "" : '<div class="ps-stu-load"><span class="ps-spin"></span> weitere Seiten werden geladen …</div>'); };
+    var q3 = can3d() ? { fid: f.fileId, pv: [], b: [], mmW: [], asp: 0, doc: null } : null;   /* saubere Seitenbilder (ohne Linien) für die 3D-Vorschau – ohne zweites Laden der Datei */
+    job.p = pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
+      var n = Math.min(doc.numPages, 60), i = 0; if (q3) q3.doc = doc;
       var step = function () { if (i >= n) return Promise.resolve(); var idx = i++; return doc.getPage(idx + 1).then(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, hmm = v0.height / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
         // Seite größer/kleiner, aber gleiches Seitenverhältnis wie Endformat + Beschnitt → der Server skaliert sie passend: Linien im Druckmaß einzeichnen
@@ -2676,19 +2679,22 @@
         var sc = Math.min(3, 900 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
         return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () {
           var x = cv.getContext("2d"), W = cv.width, H = cv.height, pxmm = W / mmW, bp = b * pxmm, sp = (b + safe) * pxmm;
+          if (q3 && idx < 2) { try { var c3 = Math.round(bp), cc = document.createElement("canvas"); cc.width = Math.max(1, W - 2 * c3); cc.height = Math.max(1, H - 2 * c3); var x3 = cc.getContext("2d"); x3.fillStyle = "#fff"; x3.fillRect(0, 0, cc.width, cc.height); x3.drawImage(cv, -c3, -c3);
+            q3.pv[idx] = cc.toDataURL("image/jpeg", 0.86); q3.b[idx] = b; q3.mmW[idx] = mmW; if (!idx) q3.asp = cc.width / cc.height; if (q3.pv[0]) S3Q = q3; } catch (e3) {} }
           if (!off && rnd) shapeEdges(x, W, H, bp, sp, rnd, 2, [8, 5]);
           else if (!off) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
             x.lineWidth = 2; x.strokeStyle = "#ff3b30"; if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
             x.strokeStyle = "#30d158"; x.setLineDash([8, 5]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp);
             if (fo && trim.w === (S.price.size || {}).w) { x.strokeStyle = "#bf5af2"; x.lineWidth = 2; x.setLineDash([10, 6]);
               fo.x.forEach(function (fx) { var X = bp + (idx % 2 ? trim.w - fx : fx) * pxmm; x.beginPath(); x.moveTo(X, 0); x.lineTo(X, H); x.stroke(); });
-              fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); }); }
+              fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); });
+              foldTags(x, fo, trim, idx % 2, pxmm, bp, Math.max(12, Math.round(W / 62))); }
             x.restore(); }
           job.figs.push('<figure class="ps-stu-pg" id="psStuPg' + (idx + 1) + '"><img src="' + cv.toDataURL("image/png") + '" alt="' + esc(stuLabel(idx, n)) + '"><figcaption><b>' + esc(stuLabel(idx, n)) + "</b></figcaption></figure>");
           show(); }); }).then(step); };
       return step();
-    }).then(function () { job.html = job.figs.join(""); show(); })
-      .catch(function () { delete STU[key]; var b3 = document.getElementById("psStuPages"); if (b3) b3.innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – <a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF ansehen</a>.</p>'; });
+    }).then(function () { job.html = job.figs.join(""); show(); if (q3) setTimeout(need3d, 900); })
+      .catch(function () { delete STU[key]; var b3 = document.getElementById("psStuPages"); if (b3 && !(S.stuView && b3.querySelector(".ps-stu-3d"))) b3.innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – <a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF ansehen</a>.</p>'; });
   }
   var rbSeq = 0;
   function fileRebind() { var f = S.file, my = ++rbSeq; if (!f) return; S.file = Object.assign({}, f, { rebinding: true });
@@ -2789,7 +2795,8 @@
           var cas2 = cassetteMm(trim); if (cas2 && idx === 0 && H > W) { var cz = cas2 * pxmm; x.fillStyle = "rgba(60,60,67,.35)"; x.fillRect(bp, H - bp - cz, W - 2 * bp, cz); x.fillStyle = "#fff"; x.font = "600 " + Math.max(10, Math.round(cz * 0.35)) + "px -apple-system,Segoe UI,sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText("Kassette – nicht sichtbar", W / 2, H - bp - cz / 2); }
           var fo = S.price && S.price.folds; if (fo && trim.w === (S.price.size || {}).w) { x.strokeStyle = "#bf5af2"; x.lineWidth = 2; x.setLineDash([8, 5]);
             fo.x.forEach(function (fx) { var X = bp + (idx % 2 ? trim.w - fx : fx) * pxmm; x.beginPath(); x.moveTo(X, 0); x.lineTo(X, H); x.stroke(); });
-            fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); }); }
+            fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); });
+            foldTags(x, fo, trim, idx % 2, pxmm, bp, Math.max(11, Math.round(W / 70))); }
           x.restore(); }
         var sn = S.price && S.price.folds ? (idx ? "Innenseite" : "Außenseite") : (idx ? "Rückseite" : "Vorderseite");
         return '<figure><img src="' + cv.toDataURL("image/png") + '" alt="Vorschau ' + sn + '"><figcaption>' + (res.length > 1 ? sn : "Seite 1") + (r.b ? "" : " · ohne Beschnitt") + "</figcaption></figure>"; });
@@ -2981,7 +2988,7 @@
   function logoImg(l) { var url = fileUrl(l); return new Promise(function (res, rej) { var im = new Image(); im.onload = function () { res(url); }; im.onerror = rej; im.src = url; }).catch(function () { return pdfImgs(url, { transparent: true, px: 600 }).then(function (a) { return a[0]; }); }); }
   function pmkSrc(f, logo) {
     var k = f.fileId + (logo ? ":l" : ""); if (PMK[k]) return PMK[k];
-    PMK[k] = (logo ? logoImg(f).then(function (u) { return [u]; }) : pvWait(f).then(function () { return pdfImgs(pvUrl(f), { trim: f.size || sizeOf(), bleed: f.bleed != null ? f.bleed : S.prod.bleed, pages: 2, px: 800 }); })).catch(function () { delete PMK[k]; return null; });
+    PMK[k] = (logo ? logoImg(f).then(function (u) { return [u]; }) : pvWait(f).then(function () { return pdfImgs(pvUrl(f), { trim: f.size || sizeOf(), bleed: f.bleed != null ? f.bleed : S.prod.bleed, pages: 2, px: S.price && S.price.folds ? 1800 : 1100 }); })).catch(function () { delete PMK[k]; return null; });
     return PMK[k];
   }
   function pmkPaint() {
@@ -2992,7 +2999,7 @@
     Promise.all(jobs).then(function (L) { L = L.filter(Boolean); var b2 = document.getElementById("psPmk"); if (!b2 || (S.file ? S.file.fileId : "") !== fid) return;
       if (!L.length) { b2.hidden = true; return; }
       if (!isLogo() && S.file && S.file.kind === "upload" && !S.previews && L[0].pages) S.previews = (L[0].all || L[0].pages).map(function (u) { return thumbOf(u); }).filter(Boolean);   // Warenkorb-Vorschau für hochgeladene Dateien
-      b2.querySelector(".ps-pmk-c").innerHTML = onPhoto() ? photoMock(L) : sheetMock(L[0].pages || [L[0].src]); if (onPhoto()) pmkLayout(); });
+      b2.querySelector(".ps-pmk-c").innerHTML = onPhoto() ? photoMock(L) : sheetMock(L[0].pages || [L[0].src]); if (onPhoto()) pmkLayout(); else mount3d(b2.querySelector(".ps-pmk-c"), L[0].all || L[0].pages || [L[0].src]); });
   }
   function thumbOf(u) { try { var im = new Image(); im.src = u; if (!im.complete || !im.naturalWidth) return u.length < 90000 ? u : ""; var f = Math.min(1, 320 / im.naturalWidth), cv = document.createElement("canvas"); cv.width = Math.round(im.naturalWidth * f); cv.height = Math.round(im.naturalHeight * f); cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); return cv.toDataURL("image/jpeg", 0.8); } catch (e) { return ""; } }
   // Gefalzte Vorschau: offenes Blatt in Felder geteilt, im Zickzack angewinkelt – so sieht der Folder halb geöffnet aus
@@ -3001,13 +3008,76 @@
     return '<div class="ps-fold" role="img" aria-label="Vorschau gefalzt">' + e.slice(0, -1).map(function (x0, i) { var w = (e[i + 1] - x0) * k;
       return '<i style="width:' + w.toFixed(1) + "px;height:" + H + "px;background-image:url(" + src + ");background-size:" + W.toFixed(1) + "px " + H + "px;background-position:" + (-x0 * k).toFixed(1) + "px 0;transform:rotateY(" + (i % 2 ? -20 : 20) + "deg)" + (i ? ";margin-left:" + (-w * 0.06).toFixed(1) + "px" : "") + '"></i>'; }).join("") + "</div>" + (back ? '<div class="ps-fold-in"><img src="' + back + '" alt=""><span>Innenseite</span></div>' : "");
   }
+  /* Felder des gefalzten Bogens (Titel, Rückseite, Innen, Seitenzahl, Drehung) – gleiche Angaben wie im Designer und in der Druckvorlage (folds.cells vom Server) */
+  function foldCellsOf(fo, sz, inner) {
+    var xs = [0].concat((fo.x || []).map(function (v) { return inner ? sz.w - v : v; }).sort(function (a, b) { return a - b; })).concat([sz.w]), ys = [0].concat((fo.y || []).slice().sort(function (a, b) { return a - b; })).concat([sz.h]);
+    var info = fo.cells ? (inner ? fo.cells["in"] : fo.cells.out) : null, txt = inner ? fo["in"] : fo.out, out = [], i = 0, r, c;
+    for (r = 0; r < ys.length - 1; r++) for (c = 0; c < xs.length - 1; c++, i++) { var ci = (info && info[i]) || {}; out.push({ x0: xs[c], x1: xs[c + 1], y0: ys[r], y1: ys[r + 1], t: ci.t || String((txt && txt[i]) || "").replace(/\s*·.*$/, ""), p: ci.p || 0, r: ci.r || 0 }); }
+    return out;
+  }
+  /* kleine Marke je Feld (oben; bei auf dem Kopf stehenden Feldern unten und gedreht) */
+  function foldTags(x, fo, sz, inner, pxmm, bp, fz) {
+    x.save(); x.setLineDash([]); x.font = "600 " + fz + "px -apple-system,Segoe UI,Inter,sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
+    foldCellsOf(fo, sz, inner).forEach(function (cl) { if (!cl.t && !cl.p) return; var cw = (cl.x1 - cl.x0) * pxmm - 10, full = cl.t + (cl.p ? " · S. " + cl.p : "") + (cl.r ? " · auf dem Kopf (180°)" : ""), mid = (cl.p ? "S. " + cl.p + " " : "") + cl.t + (cl.r ? " ↻" : ""), sh = cl.p ? "S. " + cl.p + (cl.r ? " ↻" : "") : cl.t.slice(0, 6);
+      var kt = cl.t.replace(/^Einklappseite/, "Klappe").replace(/^Titel – linke Tür$/, "Tür links").replace(/^Titel – rechte Tür$/, "Tür rechts").replace(/^Plakatseite$/, "Plakat"), kurz = kt + (cl.p ? " · S. " + cl.p : "") + (cl.r ? " ↻" : "");   /* schmale Felder: kürzere Bezeichnung statt nur der Seitenzahl */
+      var lab = x.measureText(full).width <= cw - 14 ? full : x.measureText(mid).width <= cw - 14 ? mid : x.measureText(kurz).width <= cw - 14 ? kurz : sh, tw = x.measureText(lab).width + fz * 1.3, hh = fz * 1.7, rr = hh / 2;
+      var cx = bp + (cl.x0 + cl.x1) / 2 * pxmm, cy = cl.r ? bp + cl.y1 * pxmm - fz * 0.7 - hh / 2 : bp + cl.y0 * pxmm + fz * 0.7 + hh / 2;
+      x.save(); x.translate(cx, cy); if (cl.r) x.rotate(Math.PI); x.fillStyle = /^Titel/.test(cl.t) ? "rgba(10,132,255,.92)" : /^Rückseite/.test(cl.t) ? "rgba(88,86,214,.9)" : "rgba(28,28,30,.72)";
+      x.beginPath(); x.moveTo(-tw / 2 + rr, -hh / 2); x.arcTo(tw / 2, -hh / 2, tw / 2, hh / 2, rr); x.arcTo(tw / 2, hh / 2, -tw / 2, hh / 2, rr); x.arcTo(-tw / 2, hh / 2, -tw / 2, -hh / 2, rr); x.arcTo(-tw / 2, -hh / 2, tw / 2, -hh / 2, rr); x.closePath(); x.fill();
+      x.fillStyle = "#fff"; x.fillText(lab, 0, 1); x.restore(); });
+    x.restore();
+  }
+  /* 3D-Vorschau (print/view3d.js, erst bei Bedarf geladen – Simon 20.11.2026): Folder je Falzart auf- und zuklappen, flache Drucksachen drehen, Lichtreflexe je
+     Veredelung, Schatten. Ohne WebGL bzw. bei Roll-ups, Plakaten und Großformat bleibt die flache Vorschau stehen. */
+  var p3dLoad = null;
+  function need3d() { if (window.PS3D) return Promise.resolve(window.PS3D); if (!p3dLoad) p3dLoad = new Promise(function (res) { var s = document.createElement("script"); s.src = "/print/view3d.js?v=" + (window.PRINT_V || "1"); s.onload = function () { res(window.PS3D || null); }; s.onerror = function () { p3dLoad = null; res(null); }; document.head.appendChild(s); }); return p3dLoad; }
+  function look3d() { var s = S.sel || {}, fin = String(s.finish || ""), mat = String(s.material || ""), g = /(\d{2,3})gr/.exec(mat), rc = /^(\d+(?:[.,]\d+)?)_?mm/.exec(String(s.rounded_corners || ""));
+    return { finish: /soft_?touch/.test(fin) ? "soft" : /gloss/.test(fin) ? "gloss" : /matt|scratch/.test(fin) ? "matt" : /gesatineerd|gloss/.test(mat) ? "coated" : /silk/.test(mat) ? "matt" : "none", gsm: g ? +g[1] : 0, radius: rc ? parseFloat(rc[1].replace(",", ".")) : 0 }; }
+  function mount3d(box, pv) {
+    var host = box && box.querySelector(".ps-3dhost"); if (!host || !pv || !pv[0]) return;
+    var fo = S.price && S.price.folds, sz = (fo && S.price.size) || sizeOf(), fid = S.file ? S.file.fileId : ""; if (!sz) return;
+    need3d().then(function (P3) { if (!P3 || !host.isConnected || (S.file ? S.file.fileId : "") !== fid) return; var lk = look3d(), shp = shapeNow();
+      P3.mount(host, { pages: pv, mm: sz, folds: fo || null, shape: shp === "round" || S.prod.key === "buttons" ? "round" : shp === "hex" ? "hex" : "", radius: lk.radius, finish: lk.finish, gsm: lk.gsm, caption: "Vorschau – Farben am Bildschirm können vom Druck abweichen" }); });
+  }
+  /* Studio: „3D-Vorschau“ neben der Druckansicht – nur wo es stimmt (gefalzte Drucksachen und flache bis 2 Seiten; nicht Großformat, Textil, Werbeartikel, Broschüren) */
+  function can3d() {
+    if (!S.prod || !S.file || S.file.noFile || isLogo() || onPhoto()) return false; var fo = S.price && S.price.folds, sz = S.file.size || sizeOf(), k = S.prod.key; if (!sz) return false;
+    if (fo && ((fo.x && fo.x.length) || (fo.y && fo.y.length))) return true;
+    return k !== "plakate" && k !== "rollups" && Math.max(sz.w, sz.h) < 590 && kind() === "flat" && !(pagesNeeded() > 2);
+  }
+  /* Schnell laden (Simon 20.11.2026): die 3D-Vorschau startet mit den Seitenbildern, die das Studio ohnehin schon gerendert hat (S3Q, kein zweiter Download),
+     und bekommt danach aus demselben geöffneten Dokument eine schärfere Fassung nachgereicht. Nur ohne diese Bilder wird die (Vorschau-)Datei einmal gelesen. */
+  var S3Q = null;
+  function sharp3d(q, px) {
+    if (q.hi) return Promise.resolve(q.hi); if (q.hiP) return q.hiP; if (!q.doc) return Promise.resolve(null);
+    q.hiP = Promise.all(q.pv.map(function (u, i) { return q.doc.getPage(i + 1).then(function (pg) {
+      var v0 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: Math.min(4, px / v0.width) }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "#ffffff" }).promise.then(function () {
+        var cut = Math.round((q.b[i] || 0) * cv.width / (q.mmW[i] || 1)), out = cv; if (cut > 0) { out = document.createElement("canvas"); out.width = Math.max(1, cv.width - 2 * cut); out.height = Math.max(1, cv.height - 2 * cut); out.getContext("2d").drawImage(cv, -cut, -cut); }
+        return out; }); }); })).then(function (a) { q.hi = a; return a; }).catch(function () { q.hiP = null; return null; });
+    return q.hiP;
+  }
+  function studio3d(box, f) {
+    var fid = f.fileId; if (box.getAttribute("data-3d") === fid && box.querySelector(".ps3d")) return;
+    box.setAttribute("data-3d", fid); box.innerHTML = '<div class="ps-3dhost ps-stu-3d"><div class="ps-stu-load"><span class="ps-spin"></span> 3D-Vorschau wird erstellt …</div></div>';
+    var fo = S.price && S.price.folds, sz = (fo && S.price.size) || f.size || sizeOf(), q = null, jb = STU[box.getAttribute("data-key")], run = jb && !jb.html && jb.p;   /* Seiten werden gerade gerendert → kurz darauf warten statt die Datei ein zweites Mal zu laden */
+    var alive = function () { var b = document.getElementById("psStuPages"), h = b && b.querySelector(".ps-stu-3d"); return h && S.file && S.file.fileId === fid && S.stuView ? h : null; };
+    var got = function () { return S3Q && S3Q.fid === fid && S3Q.pv[0] ? S3Q : null; }, firstPg = new Promise(function (res) { var n = 0, tick = function () { if (!run || got() || jb.html || n++ > 50) return res(); setTimeout(tick, 100); }; tick(); });   /* startet, sobald Seite 1 da ist (höchstens 5 s warten) */
+    firstPg.then(function () { q = got(); return Promise.all([q ? Promise.resolve(q.pv.slice()) : pmkSrc(f, false), need3d()]); }).then(function (r) { var host = alive(); if (!host) return;
+      var pv = r[0], P3 = r[1], lk = look3d(), shp = shapeNow(), mm = sz;
+      if (q && !fo && sz && Math.abs(q.asp - 1) > 0.05 && (q.asp > 1) !== (sz.w / sz.h > 1)) mm = { w: sz.h, h: sz.w };   /* Datei liegt quer zum gewählten Format */
+      var inst = pv && pv[0] && P3 && sz ? P3.mount(host, { pages: pv, mm: mm, folds: fo || null, shape: shp === "round" || S.prod.key === "buttons" ? "round" : shp === "hex" ? "hex" : "", radius: lk.radius, finish: lk.finish, gsm: lk.gsm, height: Math.max(340, Math.min(640, Math.round((window.innerHeight || 800) * 0.62))), caption: "Vorschau – Farben am Bildschirm können vom Druck abweichen" }) : null;
+      if (!inst) { var b0 = document.getElementById("psStuPages"); S.stuView = 0; if (b0) b0.removeAttribute("data-3d"); [].forEach.call(document.querySelectorAll(".ps-stu [data-act^=stuview]"), function (bt) { bt.setAttribute("aria-pressed", String(bt.getAttribute("data-act") === "stuview:0")); }); studioPaint(); toast("3D-Vorschau ist auf diesem Gerät nicht möglich – hier die Druckansicht."); return; }
+      if (q && inst.setPages) Promise.resolve(run).catch(function () {}).then(function () { return sharp3d(q, fo ? 1800 : 1200); }).then(function (hi) { if (hi && hi[0] && alive() && document.documentElement.contains(inst.el)) inst.setPages(hi); }); });
+  }
   function sheetMock(pv) {
     var fo = S.price && S.price.folds, fsz = S.price && S.price.size;
-    if (fo && fo.x && fo.x.length && fsz) return '<div class="ps-mock ps-mock-fold">' + foldMock(pv[0], fo.x, fsz.w, fsz.h, pv[1]) + '<span class="cap">Vorschau gefalzt – Farben am Bildschirm können vom Druck abweichen</span></div>';
+    if (fo && fsz && ((fo.x && fo.x.length) || (fo.y && fo.y.length))) return '<div class="ps-3dhost"><div class="ps-mock ps-mock-fold">' + (fo.x && fo.x.length ? foldMock(pv[0], fo.x, fsz.w, fsz.h, pv[1]) : '<div class="sheet" style="width:40%"><img src="' + pv[0] + '" alt=""></div>') + '<span class="cap">Vorschau gefalzt – Farben am Bildschirm können vom Druck abweichen</span></div></div>';
     var k = S.prod.key, sz = sizeOf() || { w: 1, h: 1 }, wall = k === "plakate" || k === "rollups" || Math.max(sz.w, sz.h) >= 590, shp = shapeNow(), round = shp === "round" || k === "buttons", hexm = shp === "hex";
     var wpct = k === "visitenkarten" ? 46 : k === "aufkleber" ? 38 : k === "rollups" ? 22 : 40;
     var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : hexm ? " hex" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
-    return '<div class="ps-mock' + (wall ? " wall" : "") + '" role="img" aria-label="Vorschau deiner Drucksache">' + (pv[1] && !wall ? sheet(pv[1], "back") : "") + sheet(pv[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Farben am Bildschirm können vom Druck abweichen</span></div>';
+    var flat = '<div class="ps-mock' + (wall ? " wall" : "") + '" role="img" aria-label="Vorschau deiner Drucksache">' + (pv[1] && !wall ? sheet(pv[1], "back") : "") + sheet(pv[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Farben am Bildschirm können vom Druck abweichen</span></div>';
+    return !wall && kind() === "flat" && !(pagesNeeded() > 2) ? '<div class="ps-3dhost">' + flat + "</div>" : flat;   /* flache Drucksachen (Visitenkarten, Flyer, Karten, Aufkleber …) in 3D drehbar */
   }
   function photoMock(L) {
     var p = S.prod, ims = galImgs(p), i = Math.min(S.pmkImg || 0, ims.length - 1), hasFront = L.some(function (x) { return x.slug === "positions_front"; }), back = null;
@@ -3302,6 +3372,7 @@
     if (k === "savdel") { savDel(v); return; }
     if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0" + (sx.unit || "Stk.") + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
+    if (k === "stuview") { S.stuView = v === "1" ? 1 : 0; document.querySelectorAll(".ps-stu [data-act^=stuview]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "stuview:" + v)); }); var sp9 = document.getElementById("psStuPages"); if (sp9) { sp9.removeAttribute("data-3d"); if (!S.stuView) sp9.innerHTML = '<div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div>'; } studioPaint(); return; }
     if (k === "pfvbg") { S.pfvBg = v === "1"; var sp0 = document.getElementById("psStuPages"); if (sp0) sp0.classList.toggle("tr", S.pfvBg); document.querySelectorAll(".ps-stu [data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
     if (k === "cartstudio") { var cs0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cs0 && cs0.fileId) cartStudio(cs0); return; }
     if (k === "cartcfg") { var cc0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cc0 && (cc0.fileId || cc0.noFile)) cartStudio(cc0, 2); return; }

@@ -18,7 +18,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-"));
-  ["server.js", "connections.js", "client-ip.js", "passkey.js", "print-bild.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-music.js", "mkt-web.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "seo.js", "sevdesk-ops.js", "mail-card.js", "uploads.js", "fin.js", "fin-local.js", "fin-archive.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "fin-credit.js", "print-shop.js", "print-fileinfo.js", "print-fontfix.js", "print-xmas.js", "indexnow.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "start.html", "druck.html", "sitemap.xml"]
+  ["server.js", "connections.js", "client-ip.js", "passkey.js", "print-bild.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-music.js", "mkt-web.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "seo.js", "sevdesk-ops.js", "mail-card.js", "uploads.js", "fin.js", "fin-local.js", "fin-archive.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "fin-credit.js", "print-shop.js", "print-fileinfo.js", "print-fontfix.js", "print-fold.js", "print-xmas.js", "indexnow.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "start.html", "druck.html", "sitemap.xml"]
     .forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   const cpDir = (d) => { fs.mkdirSync(path.join(dir, d), { recursive: true }); fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => { if (e.isDirectory()) cpDir(path.join(d, e.name)); else fs.copyFileSync(path.join(ROOT, d, e.name), path.join(dir, d, e.name)); }); };
   ["admin-cockpit", "print"].forEach(cpDir);
@@ -1308,16 +1308,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Folder: Größe = gefalztes Format → Datei im offenen Format mit Falzlinien; Druckvorlage als PDF je Ausführung", async () => {
     const FO = { product: "folder", sel: { size: "1/3_a4", fold: "wikkel_6", printtype: "44" }, copies: 100, urgency: "standard" };
     const pr = await post("/print/api/price", FO); assert.strictEqual(pr.status, 200, JSON.stringify(pr.j));
-    assert.deepStrictEqual(pr.j.size, { w: 297, h: 210 }); assert.deepStrictEqual(pr.j.closed, { w: 99, h: 210 });
-    assert.deepStrictEqual(pr.j.folds.x, [97.7, 197.3], "Außenseite laut Infoblatt: Einklappseite X − 2 mm, dann X/X (Bogen 297 mm)"); assert.deepStrictEqual(pr.j.folds.widths, [97.7, 99.7, 99.7]);
+    /* Bogenmaße wie die Preisabfrage des Produktionspartners (planoWidth, abgefragt 20.11.2026): Wickelfalz 6-seitig = 3 × Endformat − 2 mm, A5 Einbruchfalz = 297 mm (A4-Kante) */
+    assert.deepStrictEqual(pr.j.size, { w: 295, h: 210 }); assert.deepStrictEqual(pr.j.closed, { w: 99, h: 210 });
+    assert.deepStrictEqual(pr.j.folds.x, [97, 196], "Außenseite laut Infoblatt: Einklappseite X − 2 mm, dann X/X mit X = 99 mm (Bogen 295 mm)"); assert.deepStrictEqual(pr.j.folds.widths, [97, 99, 99]);
     const half = await post("/print/api/price", Object.assign({}, FO, { sel: Object.assign({}, FO.sel, { size: "a5", fold: "single_4" }) }));
-    assert.deepStrictEqual(half.j.size, { w: 296, h: 210 }); assert.deepStrictEqual(half.j.folds.x, [148]);
+    assert.deepStrictEqual(half.j.size, { w: 297, h: 210 }); assert.deepStrictEqual(half.j.folds.x, [148.5]);
     const b = pr.j.bleed, r = await fetch(B + "/print/api/template?dl=1&product=folder&c=" + encodeURIComponent(JSON.stringify(FO)));
     assert.strictEqual(r.status, 200); assert.ok(/application\/pdf/.test(r.headers.get("content-type"))); assert.ok(/attachment; filename="Druckvorlage_Folder_\d+x\d+mm\.pdf"/.test(r.headers.get("content-disposition")), r.headers.get("content-disposition"));
     const { PDFDocument } = require(path.join(ROOT, "node_modules", "pdf-lib")); const doc = await PDFDocument.load(Buffer.from(await r.arrayBuffer()));
     assert.strictEqual(doc.getPageCount(), 2, "Außen- und Innenseite"); const sz = doc.getPage(0).getSize();
-    assert.ok(Math.abs(sz.width - (297 + 2 * b) * 72 / 25.4) < 0.5 && Math.abs(sz.height - (210 + 2 * b) * 72 / 25.4) < 0.5, JSON.stringify(sz));
-    const tb = doc.getPage(0).getTrimBox(); assert.ok(Math.abs(tb.width - 297 * 72 / 25.4) < 0.5, "TrimBox = Endformat");
+    assert.ok(Math.abs(sz.width - (295 + 2 * b) * 72 / 25.4) < 0.5 && Math.abs(sz.height - (210 + 2 * b) * 72 / 25.4) < 0.5, JSON.stringify(sz));
+    const tb = doc.getPage(0).getTrimBox(); assert.ok(Math.abs(tb.width - 295 * 72 / 25.4) < 0.5, "TrimBox = Endformat");
     if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, "folder.pdf"), Buffer.from(await doc.save()));
     const vk = await fetch(B + "/print/api/template?product=visitenkarten&c=" + encodeURIComponent(JSON.stringify(BC))); assert.strictEqual(vk.status, 200);
     const vd = await PDFDocument.load(Buffer.from(await vk.arrayBuffer())); assert.strictEqual(vd.getPageCount(), 2, "4/4 → Vorder- und Rückseite");

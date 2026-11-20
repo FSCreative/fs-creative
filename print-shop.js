@@ -1034,29 +1034,8 @@ module.exports = function (D) {
   // Maße laut offiziellen Infoblättern des Produktionspartners (geprüft 04.11.2026): Wickelfalz 6/8/10-seitig X, X, X−2, X−3, X−4 mm (einklappende Felder),
   // Fensterfalz 6-seitig ½X, X, ½X, geschlossener Fensterfalz 8-seitig X−1, X, X, X−1 mm, Zickzack/Einbruch/Kreuzfalz gleich breit. Bogen = Felder × Endformat.
   // x/y = Falzpositionen in mm ab linker/oberer Schnittkante, gemessen auf der Außenseite (Seite 1); Innenseite gespiegelt.
-  const FOLD_NAMES = { single: "Einbruchfalz", singlehorizontal: "Einbruchfalz oben", wikkel: "Wickelfalz", zigzag: "Zickzackfalz", luik: "Fensterfalz", cross: "Kreuzfalz" };
-  function foldSpec(slug, w, h) {
-    const m = String(slug || "").match(/^(single|singlehorizontal|wikkel|zigzag|luik|cross)_(\d+)$/); if (!m || !(w > 0 && h > 0)) return null;
-    const t = m[1], pages = +m[2], rd = v => Math.round(v * 10) / 10, name = pages + "-seitiger " + FOLD_NAMES[t];
-    const acc = ws => { let c = 0; return ws.slice(0, -1).map(x => rd(c += x)); };
-    if (t === "cross") return { slug, name, pages, closed: { w, h }, open: { w: 2 * w, h: 2 * h }, x: [w], y: [h], out: ["Rückseite", "Titel", "Innen", "Innen"], in: ["Innen", "Innen", "Innen", "Innen"], note: "Kreuzfalz: erst quer, dann längs gefalzt – Bogen 2 × 2 Felder." };
-    if (t === "singlehorizontal") return { slug, name, pages, closed: { w, h }, open: { w, h: 2 * h }, x: [], y: [h], out: ["Rückseite (180° gedreht anlegen)", "Titel"], in: ["Innen oben", "Innen unten"], note: "Falz oben: Rückseite steht im offenen Bogen auf dem Kopf." };
-    let ws, out, inn, note = "";
-    const n = t === "single" ? 2 : t === "luik" ? (pages === 6 ? 3 : 4) : pages / 2;
-    if (t === "single" || t === "zigzag") { ws = Array(n).fill(w); out = Array(n).fill("").map((x, i) => i === n - 1 ? "Titel" : i === n - 2 && t === "single" ? "Rückseite" : "Außen " + (i + 1)); inn = Array(n).fill("").map((x, i) => "Innen " + (i + 1)); if (t === "zigzag") note = "Zickzackfalz: alle Felder gleich breit."; }
-    else if (t === "wikkel") {
-      // Innenseite von links: zwei volle Felder X, dann die einklappenden Felder X−2, X−3, X−4 mm; Bogen n × Endformat → X = (n·w + Σ Abzüge) / n
-      const d = [2, 3, 4].slice(0, n - 2), X = (n * w + d.reduce((a, x) => a + x, 0)) / n;
-      const inside = [X, X].concat(d.map(x => X - x)); ws = inside.slice().reverse();   // ungerundet, erst Falzpositionen runden (Bogen bleibt exakt)   // Außenseite = gespiegelte Innenseite
-      out = ws.map((x, i) => i === n - 1 ? "Titel" : i === n - 2 ? "Rückseite" : "Klappe (außen)"); inn = inside.map((x, i) => i < 2 ? "Innen " + (i + 1) : "Einklappseite " + (i - 1));
-      note = "Wickelfalz: einklappende Seite" + (n > 3 ? "n sind" : " ist") + " schmaler (" + d.map(x => "−" + x + " mm").join(", ") + ") – Texte dort entsprechend einrücken.";
-    } else {   // Fensterfalz: 6-seitig ½X, X, ½X; geschlossen 8-seitig X−1, X, X, X−1 mm (Bogen 4 × Endformat)
-      if (n === 3) ws = [w / 2, w, w / 2]; else { const X = (4 * w + 2) / 4; ws = [X - 1, X, X, X - 1]; }
-      out = n === 3 ? ["Titel – rechte Hälfte", "Rückseite", "Titel – linke Hälfte"] : ["Klappe (außen)", "Rückseite", "Titel", "Klappe (außen)"]; inn = n === 3 ? ["Klappe innen", "Innen Mitte", "Klappe innen"] : ["Klappe innen", "Innen", "Innen", "Klappe innen"];
-      note = n === 3 ? "Fensterfalz: beide Klappen sind halb so breit wie die Mitte und falzen zur Mitte." : "Geschlossener Fensterfalz: die beiden Außenklappen sind je 1 mm schmaler.";
-    }
-    return { slug, name, pages, closed: { w, h }, open: { w: rd(ws.reduce((a, x) => a + x, 0)), h }, x: acc(ws), y: [], widths: ws.map(rd), out, in: inn, note };
-  }
+  // Rechnung in print-fold.js (eigene Datei, einzeln getestet): foldSpec(slug, breite, höhe) → { open, x, y, widths, cells, out, in, note } bzw. null
+  const { foldSpec, foldFromOpen, FOLD_RX } = require("./print-fold.js");
   function areaOf(prod, all) {
     const a = prod.areas || {}, k = prod.areaProp && all[prod.areaProp], ks = Object.keys(a);
     const v = (k && a[k]) || (ks.length === 1 ? a[ks[0]] : null) || prod.printArea || [100, 100];
@@ -2158,7 +2137,8 @@ module.exports = function (D) {
   // Einzelne Seiten: Rückseite (gefalzt: Innenseite) zu einer hochgeladenen Vorderseite hinzufügen und jede Seite einer mehrseitigen Datei einzeln ersetzen
   // (Simon 02.11.2026, für alle Produkte). Neue Seite = PDF (Seite 1) oder JPG/PNG, aufs Format gesetzt wie beim normalen Upload (Beschnitt, Drehung, dpi).
   // Prüfungen je Seite (pageChecks, mit Seitenname davor) + allgemeine (generalChecks) + Seitenzahl/Größe neu gerechnet; pageNames = Herkunft je Seite.
-  const isFolded = m => !!(m && m.sel && m.sel.fold && !/^(no_fold|none|geen)$/.test(String(m.sel.fold)));
+  /* gefalzt = eine Falzart mit bekannter Geometrie (vorher: alles außer no_fold/none/geen – „not_fold“ bei Saatpapier-Karten galt dadurch als gefalzt, 20.11.2026) */
+  const isFolded = m => !!(m && m.sel && m.sel.fold && FOLD_RX.test(String(m.sel.fold)));
   const pageLabel = (m, i) => (+m.sides || 1) === 2 && !m.multi ? (isFolded(m) ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[i] : "Seite " + (i + 1);
   async function pageFromFile(buf, name, m, label) {
     const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, JPG oder PNG möglich"), { status: 415 });
@@ -5177,7 +5157,7 @@ module.exports = function (D) {
   // Version aus dem Inhalt der Shop-Dateien: beim Umschalten eines Deploys kann eine Anfrage noch beim alten Server landen – der liefert dann seine
   // (alte) Datei nur unter seiner eigenen Version aus, für fremde Versionen ohne Zwischenspeichern (siehe unten), sonst bliebe alter Code stundenlang im Cache
   const ASSET_BUF = {};   // Shop-Dateien einmal je Start lesen (ändern sich nur mit Deploy)
-  const ASSET_V = (() => { try { const h = crypto.createHash("sha1"); ["print/app.js", "print/print.css", "print/designer.js", "print/templates.js", "print/flagshapes.js", "print/bcard.js", "print.html"].forEach(f => { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (e) {} }); return h.digest("hex").slice(0, 12); }
+  const ASSET_V = (() => { try { const h = crypto.createHash("sha1"); ["print/app.js", "print/print.css", "print/designer.js", "print/templates.js", "print/flagshapes.js", "print/bcard.js", "print/view3d.js", "print.html"].forEach(f => { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (e) {} }); return h.digest("hex").slice(0, 12); }
     catch (e) { return String(process.env.RAILWAY_GIT_COMMIT_SHA || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12); } })();
   // Aktionsbanner in der Kopfzeile: aktiver Gutschein mit banner:true bzw. WILLKOMMEN10 (endet automatisch mit Ablauf/Deaktivierung im Cockpit)
   function promoOf() { const t = today(), ok = x => x && x.active !== false && (!x.until || t <= x.until) && !(x.maxUses && (x.used || 0) >= x.maxUses) && +x.pct > 0, L = Object.values(VOUCHERS || {});
@@ -5291,7 +5271,7 @@ module.exports = function (D) {
         if (buf.length < 150e6) buf = await findProduct(o.product.key).then(pr => spotFixForPrint(buf, pr, o.sel)).catch(e => { log("Sonderfarben umbenennen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
-      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flagshapes.js" || p === "/print/bcard.js" || p === "/print/print.css") {
+      if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flagshapes.js" || p === "/print/bcard.js" || p === "/print/view3d.js" || p === "/print/print.css") {
         let js = ""; try { js = ASSET_BUF[p] || (ASSET_BUF[p] = fs.readFileSync(path.join(__dirname, "print", p.slice(7)))); } catch (e) { return D.send(res, 404, "Not found"); }
         const vq = u && u.searchParams ? u.searchParams.get("v") : "";
         /* Speed 13.11.2026: mit aktueller Versionsnummer (= Prüfsumme der Dateien) darf Cloudflare/der Browser die Datei 1 Jahr behalten – jeder Deploy hat einen neuen Link */
@@ -6380,7 +6360,9 @@ module.exports = function (D) {
           const hemMm = sleeveMm(o.sel); let rec = FILEINFO.recommend(srcInfo, { dpi: (prodX && prodX.dpi) || 300, size: m.size || o.size, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), safe: safeMm, sides: m.sides || 1, effDpi,
             noBleed: ck.some(c => BLEED_RX.test(c.text || "")), hem: hemMm ? "Tunnelsaum " + hemMm / 10 + " cm: in diesem Bereich steckt die Stange – keine Texte/Logos hinein." : /eyelet|oese|öse/i.test(JSON.stringify(o.sel || {})) ? "Ösen sitzen im Rand – Texte und Logos nicht in die Ecken bzw. an den Rand legen." : "" });
           if (spot) rec = rec.filter(r => r.title !== "Technische Farben");
-          return { label, motif: mot ? motif : null, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          // Falzlinien + Felder (Titel, Rückseite, Innen …) fürs Cockpit: aus Falzart und offenem Format der Druckdatei (gleiche Rechnung wie im Shop)
+          let folds = null; try { const fsl = String((o.sel || {}).fold || ""), sz0 = m.size || o.size; if (FOLD_RX.test(fsl) && sz0 && sz0.w > 0 && sz0.h > 0) folds = foldFromOpen(fsl, +sz0.w, +sz0.h); } catch (e) { folds = null; }
+          return { label, motif: mot ? motif : null, folds, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];

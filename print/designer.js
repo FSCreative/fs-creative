@@ -158,6 +158,15 @@
     var a = []; if (D.panels > 1) for (var i = 1; i < D.panels; i++) a.push(T.x + T.w * i / D.panels); return a;
   }
   function foldYs() { return D.fold ? D.fold.y.map(function (y) { return D.trim.y + y * U; }) : []; }
+  /* Felder des offenen Bogens je Seite (zeilenweise von links oben, Innenseite gespiegelt wie die Falzlinien), in mm ab Endformat: Bezeichnung (Titel, Rückseite,
+     Innen …), Seitenzahl wie im Infoblatt und Drehung (r = 180 → auf dem Kopf anlegen) kommen vom Server (folds.cells). Simon 20.11.2026: „zu erkennen geben, was Vorderseite ist, was innen“ */
+  function foldCells(page) {
+    if (!D.fold) return [];
+    var inner = (page == null ? D.cur : page) % 2, W = D.mm.w, H = D.mm.h, xs = [0].concat((D.fold.x || []).map(function (x) { return inner ? W - x : x; }).sort(function (a, b) { return a - b; })).concat([W]), ys = [0].concat((D.fold.y || []).slice().sort(function (a, b) { return a - b; })).concat([H]);
+    var info = D.fold.cells ? (inner ? D.fold.cells["in"] : D.fold.cells.out) : null, txt = inner ? D.fold["in"] : D.fold.out, out = [], i = 0, r, c;
+    for (r = 0; r < ys.length - 1; r++) for (c = 0; c < xs.length - 1; c++, i++) { var ci = (info && info[i]) || {}; out.push({ x0: xs[c], x1: xs[c + 1], y0: ys[r], y1: ys[r + 1], t: ci.t || String((txt && txt[i]) || "").replace(/\s*·.*$/, ""), p: ci.p || 0, r: ci.r || 0 }); }
+    return out;
+  }
   // ── Öffnen ──
   // Ausführung: Weißdruck (Slug oder Name, z. B. „50_200“ = 5/0 mit Weiß), transparentes Material, nötige Sonderfarben-Linien
   function inkOf(o) {
@@ -297,19 +306,19 @@
 
   // ── Aufbau ──
   function build() {
-    var o = D.o, sideNames = D.tex ? D.tex.pages.map(function (x) { return x.title; }) : D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"];
+    var o = D.o, sideNames = D.tex ? D.tex.pages.map(function (x) { return x.title; }) : (D.fold || D.o.product.key === "folder") ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"];
     var root = document.createElement("div"); root.className = "pd"; root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", "Designer " + o.product.title);
     var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg" && t[0] !== "spot")) && (t[0] !== "tpl" || hasTpl()) && (t[0] !== "prod" || !!(D.tex && D.o.texSide)); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
     root.innerHTML = '<div class="pd-top"><button type="button" class="pd-ib" data-a="close" aria-label="Designer schließen" title="Schließen">' + svgI("close") + '</button>' +
       '<div class="ttl">' + esc(o.product.title) + "<small>" + (D.tex ? "Textil-Designer · " + esc(D.tex.colorName || "") + " · " + esc(D.tex.methodName || "") : D.mm.w + " × " + D.mm.h + " mm · Beschnitt " + D.b + " mm") + "</small></div>" +
       (o.motif ? '<span class="pd-mot" title="Du gestaltest Motiv ' + o.motif + (o.motifs ? " von " + o.motifs : "") + (o.motifCopies ? " (" + o.motifCopies + " Stk.)" : "") + '">Motiv ' + o.motif + (o.motifs ? "<small>/" + o.motifs + "</small>" : "") + (o.motifCopies ? "<i>" + o.motifCopies + " Stk.</i>" : "") + "</span>" : "") +
-      (D.sides > 1 && !D.tex ? '<div class="pd-pages" role="tablist">' + sideNames.slice(0, D.sides).map(function (n, i) { return '<button type="button" role="tab" data-page="' + i + '" aria-current="' + (i === 0) + '"><span class="lf">' + esc(n) + '</span><span class="ls">' + (D.tex ? esc(n.split(" ")[0]) : (D.o.product.key === "folder" ? ["Außen", "Innen"] : ["Vorne", "Hinten"])[i]) + "</span></button>"; }).join("") + "</div>" : "") +
+      (D.sides > 1 && !D.tex ? '<div class="pd-pages" role="tablist">' + sideNames.slice(0, D.sides).map(function (n, i) { return '<button type="button" role="tab" data-page="' + i + '" aria-current="' + (i === 0) + '"><span class="lf">' + esc(n) + '</span><span class="ls">' + (D.tex ? esc(n.split(" ")[0]) : ((D.fold || D.o.product.key === "folder") ? ["Außen", "Innen"] : ["Vorne", "Hinten"])[i]) + "</span></button>"; }).join("") + "</div>" : "") +
       '<span class="sp"></span><button type="button" class="pd-ib" data-a="undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">' + svgI("undo") + '</button><button type="button" class="pd-ib" data-a="redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">' + svgI("redo") + "</button>" +
       '<button type="button" class="pd-ib hm" data-a="preview" title="Vorschau">' + svgI("eye") + '<span class="lbl">Vorschau</span></button><button type="button" class="pd-ib hm" data-a="savelink" title="Entwurf per Link speichern">' + svgI("link") + '<span class="lbl">Link</span></button>' +
       '<button type="button" class="pd-ib primary" data-a="finish">Fertig</button></div>' +
       '<div class="pd-rail" role="toolbar" aria-label="Werkzeuge">' + tools("") + "</div>" +
       '<div class="pd-stage">' + (D.tex ? '<div class="pd-texnav" role="toolbar" aria-label="Druckpositionen"></div>' : "") + '<div class="pd-corner"></div><canvas class="pd-rh" aria-hidden="true"></canvas><canvas class="pd-rv" aria-hidden="true"></canvas><div class="pd-cv"><canvas></canvas></div>' +
-      (D.tex ? '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f;border-top-style:dashed"></i>Druckfläche (max.) – nur was darin liegt, wird gedruckt</span></div>' : '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f"></i>Endformat (Schnitt)</span><span><i style="border-color:#ff9f9f;border-top-width:6px;opacity:.6"></i>Beschnitt ' + D.b + ' mm</span><span><i style="border-color:#0a84ff;border-top-style:dashed"></i>Sicherheitsabstand</span>' + (D.panels > 1 ? '<span><i style="border-color:#30d158;border-top-style:dashed"></i>Falz</span>' : "") + "</div>") +
+      (D.tex ? '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f;border-top-style:dashed"></i>Druckfläche (max.) – nur was darin liegt, wird gedruckt</span></div>' : '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f"></i>Endformat (Schnitt)</span><span><i style="border-color:#ff9f9f;border-top-width:6px;opacity:.6"></i>Beschnitt ' + D.b + ' mm</span><span><i style="border-color:#0a84ff;border-top-style:dashed"></i>Sicherheitsabstand</span>' + ((D.panels > 1 || (D.fold && D.fold.y && D.fold.y.length)) ? '<span><i style="border-color:#30d158;border-top-style:dashed"></i>Falz</span>' : "") + "</div>") +
       '<div class="grp"><button type="button" class="pd-ib" data-a="guides" aria-pressed="true" title="Hilfslinien ein/aus">' + svgI("eye") + '</button><button type="button" class="pd-ib" data-a="cut" aria-pressed="false" title="Schnittvorschau (ohne Beschnitt)">✂︎</button><button type="button" class="pd-ib" data-a="zoomout" aria-label="Verkleinern">' + svgI("minus") + '</button><span id="pdZ">100 %</span><button type="button" class="pd-ib" data-a="zoomin" aria-label="Vergrößern">' + svgI("plus") + '</button><button type="button" class="pd-ib" data-a="fit" title="Einpassen (0)" aria-label="Einpassen">' + svgI("fit") + '</button><button type="button" class="pd-ib" data-a="zsel" title="Auf Auswahl zoomen (Umschalt+2)" aria-label="Auf Auswahl zoomen">' + svgI("zsel") + '</button>' +
       '<button type="button" class="pd-ib" data-a="snap" aria-pressed="true" title="Ausrichtungshilfen (Einrasten an Seite, Sicherheitsabstand und Objekten)" aria-label="Ausrichtungshilfen">' + svgI("magnet") + '</button><button type="button" class="pd-ib" data-a="grid" aria-pressed="false" title="Raster 5 mm mit Einrasten" aria-label="Raster 5 mm">' + svgI("grid") + "</button></div></div></div>" +
       '<div class="pd-props" aria-live="polite"><div class="pd-sheet-h"><b id="pdPT"></b><button type="button" class="pd-ib" data-a="sheetclose" aria-label="Schließen">' + svgI("close") + '</button></div><div id="pdP"></div></div>' +
@@ -482,7 +491,13 @@
         // Sicherheitsabstand an der Falz (3 mm je Seite): Texte nicht in den Bruch
         ctx.strokeStyle = "rgba(10,132,255,.45)"; ctx.setLineDash([4 / z, 4 / z]); var SR = D.saferect, fs = 3 * U;
         foldXs().forEach(function (fx) { [fx - fs, fx + fs].forEach(function (x) { ctx.beginPath(); ctx.moveTo(x, SR.y); ctx.lineTo(x, SR.y + SR.h); ctx.stroke(); }); });
-        foldYs().forEach(function (fy) { [fy - fs, fy + fs].forEach(function (y) { ctx.beginPath(); ctx.moveTo(SR.x, y); ctx.lineTo(SR.x + SR.w, y); ctx.stroke(); }); }); }
+        foldYs().forEach(function (fy) { [fy - fs, fy + fs].forEach(function (y) { ctx.beginPath(); ctx.moveTo(SR.x, y); ctx.lineTo(SR.x + SR.w, y); ctx.stroke(); }); });
+        /* Felder beschriften: kleine Marke am oberen Rand jedes Felds (bei auf dem Kopf stehenden Feldern unten und gedreht – so wie der Inhalt angelegt werden muss) */
+        ctx.setLineDash([]); var fz = 11 / z; ctx.font = "600 " + fz + "px -apple-system,Segoe UI,Inter,sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        foldCells().forEach(function (cl) { if (!cl.t && !cl.p) return; var cw = (cl.x1 - cl.x0) * U - 10 / z, full = cl.t + (cl.p ? " · S. " + cl.p : "") + (cl.r ? " · auf dem Kopf (180°)" : ""), mid = (cl.p ? "S. " + cl.p + " " : "") + cl.t + (cl.r ? " ↻" : ""), sh = cl.p ? "S. " + cl.p + (cl.r ? " ↻" : "") : cl.t.slice(0, 6);
+          var lab = ctx.measureText(full).width <= cw - 14 / z ? full : ctx.measureText(mid).width <= cw - 14 / z ? mid : sh, tw = ctx.measureText(lab).width + 14 / z, hh = 18 / z, key = /^Titel/.test(cl.t), bk = /^Rückseite/.test(cl.t);
+          var cx = T.x + (cl.x0 + cl.x1) / 2 * U, cy = cl.r ? T.y + cl.y1 * U - 8 / z - hh / 2 : T.y + cl.y0 * U + 8 / z + hh / 2;
+          ctx.save(); ctx.translate(cx, cy); if (cl.r) ctx.rotate(Math.PI); ctx.fillStyle = key ? "rgba(10,132,255,.92)" : bk ? "rgba(88,86,214,.9)" : "rgba(28,28,30,.72)"; ctx.beginPath(); rrect(ctx, -tw / 2, -hh / 2, tw, hh, hh / 2); ctx.fill(); ctx.fillStyle = "#fff"; ctx.fillText(lab, 0, 0.5 / z); ctx.restore(); }); }
       ctx.setLineDash([]);
       if (D.cas > 0) { var cz = D.cas * U, cy0 = T.y + T.h - cz; ctx.save(); ctx.beginPath(); ctx.rect(T.x, cy0, T.w, cz); ctx.clip(); ctx.fillStyle = "rgba(60,60,67,.28)"; ctx.fillRect(T.x, cy0, T.w, cz);
         ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 2 / z; for (var hx = T.x - cz; hx < T.x + T.w; hx += 14 / z) { ctx.beginPath(); ctx.moveTo(hx, cy0 + cz); ctx.lineTo(hx + cz, cy0); ctx.stroke(); }
@@ -577,10 +592,11 @@
     else if (e.t === "text") o = textObj({ text: e.text, left: X(e.x), top: X(e.y), width: e.w * U, font: e.font, fontSize: ptToU(e.size), bold: e.bold && (fontInfo(e.font) || {}).bold !== false, italic: e.italic, color: e.color, align: e.align, lh: e.lh, ls: e.ls });
     else if (e.t === "img") o = placeholder(X(e.x), X(e.y), e.w * U, e.h * U, e.label, e.dark);
     else if (e.t === "qr") { o = qrObj(e.data, e.s * U, e.color); o.set({ left: X(e.x), top: X(e.y) }); o.qr = { mode: "url", url: e.data, color: e.color || "#000000" }; }
+    if (o && e.rot) { o.set({ angle: e.rot }); o.setCoords(); }   /* auf dem Kopf stehende Felder (Kreuzfalz, Falz oben): x/y = Ankerpunkt nach der Drehung */
     return o;
   }
   function applyTemplate(id, initial, over) {
-    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: D.sides, panels: D.panels, foldX: D.fold ? D.fold.x : null, round: D.round };
+    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: D.sides, panels: D.panels, foldX: D.fold ? D.fold.x : null, cells: D.fold ? [foldCells(0), foldCells(1)] : null, round: D.round };
     if (over) { ctx.texts = over.texts; ctx.pal = over.pal; ctx.noImg = !!over.noImg; }
     var pages = PrintTemplates.build(id, ctx), all = []; pages.forEach(function (p) { all = all.concat(p); });
     return loadFontsOf(all).then(function () {
@@ -773,7 +789,7 @@
     D.P.innerHTML = h;
     if (p === "prod" && D.o.texSide) D.o.texSide(D.P.querySelector("#pdTexSide"), texApi());
   }
-  function sideName(i) { return (D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[i]; }
+  function sideName(i) { return ((D.fold || D.o.product.key === "folder") ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[i]; }
   function pagesHtml() { if (D.sides < 2) return ""; var t = D.cur ? 0 : 1; return '<div class="pd-sec"><h4>Seiten</h4><div class="pd-row"><button type="button" class="ps-btn small" data-a="pg:dup">Seite duplizieren → ' + sideName(t) + '</button><button type="button" class="ps-btn small" data-a="pg:swap">Seiten tauschen</button></div></div>'; }
   function gradUI(pre, g) {
     var t = g ? g.t : "solid";
@@ -846,7 +862,7 @@
   function syncTextArea() { var ta = D && D.root.querySelector("#pdTA"), o = D && act(); if (ta && o && o.type === "textbox" && document.activeElement !== ta) ta.value = o.text; }
   var thumbCache = {};
   function thumbs() {
-    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: 1, panels: D.panels, foldX: D.fold ? D.fold.x : null, round: D.round };
+    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: 1, panels: D.panels, foldX: D.fold ? D.fold.x : null, cells: D.fold ? [foldCells(0), foldCells(1)] : null, round: D.round };
     PrintTemplates.list(D.o.product.key).forEach(function (t) {
       var cv = D.P.querySelector('[data-thumb="' + t.id + '"]'); if (!cv) return; var key = t.id + JSON.stringify(ctx);
       if (thumbCache[key]) { var im = new Image(); im.src = thumbCache[key]; im.alt = ""; cv.replaceWith(im); return; }
@@ -936,7 +952,7 @@
   // ── Prüfung ──
   function issues(pageIdx) {
     var out = [], viv = {}, c = D.c, T = D.trim, S = D.saferect, tol = 0.5 * U, all = c.getObjects(), objs = all.filter(function (o) { return !o.__bg && o.visible; });
-    var pg = D.sides > 1 ? (D.tex ? D.tex.pages[pageIdx].title : (D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[pageIdx]) + ": " : "";
+    var pg = D.sides > 1 ? (D.tex ? D.tex.pages[pageIdx].title : ((D.fold || D.o.product.key === "folder") ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[pageIdx]) + ": " : "";
     var add = function (level, text, o, fix) {
       if (D.tex) { if (/Beschnitt|Blitzer|Sicherheitsabstand|Falz|weiß gedruckt/.test(text)) return; text = text.replace(/Schnittkante/g, "Druckfläche").replace(/Endformat/g, "Druckfläche"); fix = fix === "safe" ? "safe" : ""; }   // Textil: kein Beschnitt
       out.push({ level: level, text: pg + text, idx: o ? all.indexOf(o) : -1, fix: fix || "" }); };
@@ -961,6 +977,7 @@
         var os = sides(outS), ot = sides(outT);
         if (os.length) add(ot.length ? "error" : "warn", "„" + String(o.text || (o.curve || {}).text || nm).split("\n")[0].slice(0, 30) + "“ " + (ot.length ? "ragt über die Schnittkante (" + ot.map(function (k) { return SIDE[k]; }).join(", ") + ") und wird abgeschnitten." : "liegt im Sicherheitsabstand (" + os.map(function (k) { return SIDE[k]; }).join(", ") + ") – kann beim Schneiden angeschnitten werden."), o, "safe");
         if (o.type === "textbox" && o.fontSize * (o.scaleY || 1) / U / PT < 5.5) add("warn", "Sehr kleine Schrift bei „" + String(o.text).slice(0, 24) + "“ (unter 6 pt) – im Druck schwer lesbar.", o);
+        foldYs().forEach(function (fy) { if (b.top < fy + 3 * U && bo > fy - 3 * U) add("warn", "„" + String(o.text || nm).split("\n")[0].slice(0, 30) + "“ liegt über bzw. direkt an der Falz – Text bitte ins Feld darüber oder darunter schieben.", o); });
         folds.forEach(function (fx) { if (b.left < fx + 3 * U && r > fx - 3 * U) add("warn", "„" + String(o.text || nm).split("\n")[0].slice(0, 30) + "“ liegt über bzw. direkt an der Falz – Text bitte ins Feld daneben schieben.", o); });
         if (o.type === "textbox" && vivid(o.fill)) viv[hexOf(o.fill)] = 1;
       } else {
@@ -1093,10 +1110,20 @@
     var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (D.round ? " round" : "") + '" style="width:' + (land ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
     return '<div class="ps-mock' + (wall ? " wall" : "") + '">' + (previews[1] && !wall ? sheet(previews[1], "back") : "") + sheet(previews[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Bildschirmfarben können vom Druck abweichen</span></div>';
   }
+  /* 3D-Vorschau (print/view3d.js, erst bei Bedarf geladen – Simon 20.11.2026): Folder je Falzart auf- und zuklappen, flache Drucksachen drehen, Lichtreflexe je
+     Veredelung, Schatten. Nicht für Textil, Roll-ups, Plakate an der Wand und sehr große Formate – dort bleibt die bisherige Vorschau; ebenso ohne WebGL. */
+  var p3d = null;
+  function need3d() { if (window.PS3D) return Promise.resolve(window.PS3D); if (!p3d) p3d = loadScript({ src: "/print/view3d.js?v=" + (window.PRINT_V || "1") }).then(function () { return window.PS3D || null; }, function () { p3d = null; return null; }); return p3d; }
+  function look3d() { var s = D.o.sel || {}, fin = String(s.finish || ""), mat = String(s.material || ""), g = /(\d{2,3})gr/.exec(mat), rc = /^(\d+(?:[.,]\d+)?)_?mm/.exec(String(s.rounded_corners || ""));
+    return { finish: /soft_?touch/.test(fin) ? "soft" : /gloss/.test(fin) ? "gloss" : /matt|scratch/.test(fin) ? "matt" : /gesatineerd|gloss/.test(mat) ? "coated" : /silk/.test(mat) ? "matt" : "none", gsm: g ? +g[1] : 0, radius: rc ? parseFloat(rc[1].replace(",", ".")) : 0 }; }
+  function can3d() { var k = D.o.product.key; return !D.tex && !D.cas && k !== "rollups" && k !== "plakate" && (!!D.fold || Math.max(D.mm.w, D.mm.h) <= 700); }
   function preview() {
     busy("Vorschau wird erstellt …");
-    eachPage(function () { return renderPreview(1100); }).then(function (pv) { busy(false);
-      modal('<h3>Vorschau</h3>' + (D.tex ? '<p class="pd-muted">Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.</p>' : "") + mock(pv) + '<div class="ps-thumbs" style="margin-top:14px">' + pv.map(function (s, i) { return '<figure><img src="' + s + '" alt=""><figcaption>' + (D.tex ? esc((D.tex.pages[i] || {}).title || "") : (pv.length > 1 ? (i ? "Rückseite/Innen" : "Vorderseite/Außen") : "Endformat") + " – so wird geschnitten") + "</figcaption></figure>"; }).join("") + '</div><div class="foot"><button class="ps-btn primary" data-a="m:ok">Schließen</button></div>', null, "wide");
+    var use3d = can3d();
+    eachPage(function () { return renderPreview(use3d && D.fold ? 2000 : use3d ? 1500 : 1100); }).then(function (pv) { busy(false);
+      modal('<h3>Vorschau</h3>' + (D.tex ? '<p class="pd-muted">Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.</p>' : "") + (use3d ? '<div class="pd-3d" id="pd3d">' + mock(pv) + "</div>" : mock(pv)) + '<div class="ps-thumbs" style="margin-top:14px">' + pv.map(function (s, i) { return '<figure><img src="' + s + '" alt=""><figcaption>' + (D.tex ? esc((D.tex.pages[i] || {}).title || "") : (pv.length > 1 ? sideName(i) : "Endformat") + " – so wird geschnitten") + "</figcaption></figure>"; }).join("") + '</div><div class="foot"><button class="ps-btn primary" data-a="m:ok">Schließen</button></div>', null, "wide");
+      if (use3d) need3d().then(function (P3) { var host = document.getElementById("pd3d"); if (!host || !P3 || !D) return; var lk = look3d();
+        P3.mount(host, { pages: pv, mm: D.mm, folds: D.fold, shape: D.round ? "round" : "", radius: lk.radius, finish: lk.finish, gsm: lk.gsm, caption: "Vorschau – Farben am Bildschirm können vom Druck abweichen" }); });
     }).catch(function (e) { busy(false); toast(e.message, true); });
   }
   function finish() {
