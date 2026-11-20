@@ -133,7 +133,7 @@ module.exports = function (C) {
     valuero: "Es gibt Berg- und Urlaubsfotos: hook, photo, cta und stat liegen auf einem Foto – oft verwenden. list = Kacheln mit Bildern (kurze Begriffe).",
     skikaiser: "Es gibt Spielszenen und Trailer-Clips: fast alles liegt auf Spielbildern im TV-Weltcup-Look. list = Startliste (kurze Begriffe), stat = Zeittafel (nur echte Zahlen: 10 Weltcup-Orte, 5 Disziplinen).",
     huettengaudi: "Es gibt Spielbilder (Hütte, Après-Ski-Bar, Pension, Skigebiet): hook/photo zeigen ein Spielbild im Rahmen – oft verwenden. stat z. B. 150 Ausbaustufen, 4 Welten.",
-    druckshop: "Dunkler Apple-Look mit Verlaufsschrift; markierte Wörter erscheinen als Farbverlauf. Keine Produktfotos – Nutzen und Einfachheit zeigen.",
+    druckshop: "Dunkler Apple-Look mit Verlaufsschrift; markierte Wörter erscheinen als Farbverlauf. Es gibt echte Produktfotos aus dem Shop und von Print.com (<bilder>): hook und photo zeigen automatisch ein Produktfoto – oft verwenden und bei jeder hook-/photo-Folie in photo die Kennung des Bildes setzen, das genau das Produkt/Thema der Folie zeigt (Flyer → Flyer-Foto, Weihnachtskarten → Karten-Foto). Nutzen und Einfachheit zeigen.",
     "fs-creative": "Dunkler Apple-Look mit Verlaufsschrift; persönlich (Simon), regional.",
   };
   function profileFor(b) { return JSON.stringify({ name: b.name, website: b.url || "", appStore: b.appStoreUrl || "", playStore: b.playStoreUrl || "", oneLiner: b.oneLiner, whatItIs: b.whatItIs, audience: b.audience, usps: b.usps, tone: b.tone, pillars: b.pillars, hashtags: b.hashtags, ctas: b.ctas, seasonality: b.seasonality, guardrails: b.guardrails || "", handles: b.handles || [] }); }
@@ -479,7 +479,8 @@ module.exports = function (C) {
         const cf = await R.toJpeg(pf, pf.replace(/\.png$/, ".jpg")), cover = p.id + "-" + tag + "-cover" + path.extname(cf); fs.copyFileSync(cf, path.join(MEDIA, cover));
         media.status = "vorschau"; media.preview = true; media.cover = cover;
       } else if (p.format === "reel") {
-        const ok = VIDEO_OK[b.key] || [], want = slides.map(s => ok.indexOf(s.template) > -1);
+        // Druckshop: Szene mit Produktfoto bleibt beim Foto (Simon 20.11.2026) – Stockvideo nur, wo kein Produktfoto liegt
+        const ok = VIDEO_OK[b.key] || [], want = slides.map(s => ok.indexOf(s.template) > -1 && !(b.key === "druckshop" && s.image));
         let vids = clips.map(c0 => c0.file); if (!vids.length) vids = await stockVideos(p.bgQuery, want.filter(Boolean).length);
         let vi = 0; const bgVideos = want.map(w => w && vids.length ? vids[vi++ % vids.length] : "");
         const mu = await MU.pick(p, { plan: mm => MO.plan(slides, rb, mm) });   // KI-Titel (Stability) bzw. Bibliothek nach Score + Abwechslung; Startpunkt am Höhepunkt

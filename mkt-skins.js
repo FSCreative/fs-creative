@@ -469,6 +469,14 @@ module.exports = function (U) {
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, h("div", Object.assign({ fontSize: 160, fontWeight: 800, lineHeight: 0.8, backgroundImage: grad, backgroundClip: "text", color: "transparent", height: 110 }, TX), "“"),
         h("div", TX, head(s.headline, fit(plain(s.headline), W2, 6, story ? 92 : 62, 36, 0.58), "#fff")), s.author ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 34 : 28, fontWeight: 600, color: "rgba(255,255,255,0.6)" }, TX), "— " + plain(s.author)) : null), foot]);
     }
+    if (ph && (tpl === "hook" || tpl === "photo")) {   // Produktfoto (Simon 20.11.2026: „keiner meiner Druckshop-Posts hat echte Produktbilder genommen“) – Foto als leuchtende Glaskarte, Text darunter
+      const phH = Math.round((F.h - F.top - F.bottom) * (story ? 0.5 : 0.46));
+      return R([top, h("div", Object.assign({ position: "relative", width: W2, height: phH, marginTop: story ? "auto" : 28, borderRadius: 34, overflow: "hidden", border: "1px solid rgba(255,255,255,0.16)", boxShadow: "0 0 70px rgba(10,132,255,0.30)", flexShrink: 0 }, DE), photo(ph, { width: W2, height: phH }),
+          h("div", { position: "absolute", left: 0, top: 0, width: W2, height: phH, background: "linear-gradient(180deg, rgba(10,10,15,0) 55%, rgba(10,10,15,0.55) 100%)" })),
+        h("div", { flexDirection: "column", width: W2, marginTop: story ? 44 : 30, marginBottom: story ? 44 : "auto" }, kick,
+          h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 120 : 84, 46, 0.6), "#fff")),
+          s.sub ? h("div", Object.assign({ marginTop: 18, fontSize: story ? 38 : 30, lineHeight: 1.35, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot]);
+    }
     return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick,
       h("div", TX, head(s.headline, fit(plain(s.headline), W2, 4, story ? 156 : 112, 54, 0.6), "#fff")),
       s.sub ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 44 : 34, lineHeight: 1.4, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot]);
@@ -583,7 +591,7 @@ module.exports = function (U) {
 
   const SKINS = { kochdu, kantineur, blitzdings, valuero, skikaiser, huettengaudi, druckshop: c => fs(c, true), "fs-creative": c => fs(c, false) };
   // Welche Vorlagen ein Foto brauchen (aus der Bildersammlung der Marke)
-  const PHOTO_TPL = { kochdu: ["photo", "hook"], valuero: ["photo", "hook", "cta", "stat", "list"], skikaiser: ["photo", "hook", "stat", "list", "compare", "cta", "quote"], huettengaudi: ["photo", "hook"], blitzdings: ["photo", "hook"] };
+  const PHOTO_TPL = { kochdu: ["photo", "hook"], valuero: ["photo", "hook", "cta", "stat", "list"], skikaiser: ["photo", "hook", "stat", "list", "compare", "cta", "quote"], huettengaudi: ["photo", "hook"], blitzdings: ["photo", "hook"], druckshop: ["photo", "hook"] };
   return {
     has: key => !!SKINS[key],
     // o.cover: Titelbild (Folie/Szene 1) – nur für Folien ohne Listen/Vergleich, sonst bleibt der normale Look

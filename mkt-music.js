@@ -111,6 +111,17 @@ function mcEncode(M) { return Buffer.from(M.map(v => v <= -80 ? 0 : Math.min(255
 function mcDecode(s) { if (Array.isArray(s)) return s; const b = Buffer.from(String(s || ""), "base64"); const out = new Array(b.length); for (let i = 0; i < b.length; i++) out[i] = b[i] === 0 ? -120 : b[i] / 2 - 80; return out; }
 /* Lautheit eines Fensters [off, off+T] aus der M-Kurve: energetisches Mittel der Blöcke im Fenster mit absolutem (−70) und relativem (−10 LU)
    Gate wie BS.1770 – Näherung ±1 LU gegen einen echten ebur128-Lauf. Fenster über das Ende hinaus (Loop) läuft am Anfang weiter. */
+/* Einbruch im Fenster (Simon 20.11.2026, Druckshop-Weihnachtsreel: „falscher Sprung – Sound“): Musik fällt mitten im Reel kurz fast auf Stille
+   (Break/Stopp im Titel) und setzt hart wieder ein – klingt wie ein Schnittfehler. Gesucht: ≥ 0,3 s mindestens 9 dB unter dem Median des Fensters,
+   ohne die ersten 0,3 s und die letzten 1,5 s (dort blendet das Reel ohnehin aus). → längster Einbruch in Sekunden (0 = keiner) */
+function winGap(mc, off, T) {
+  const M = mcDecode(mc), n = M.length; if (!n || T < 3) return 0;
+  const step = 0.1, first = Math.round((off + 0.4 + 0.3) / step) - 1, last = Math.round((off + T - 1.5) / step) - 1; if (last - first < 5) return 0;
+  const vals = []; for (let i = first; i <= last; i++) vals.push(M[((i % n) + n) % n]);
+  const med = vals.slice().sort((a, b) => a - b)[Math.floor(vals.length / 2)]; if (!(med > -60)) return 0;
+  let run = 0, best = 0; vals.forEach(v => { if (v < med - 9) { run++; best = Math.max(best, run); } else run = 0; });
+  return best >= 3 ? r2(best * step) : 0;
+}
 function winLufs(mc, off, T) {
   const M = mcDecode(mc), n = M.length; if (!n) return null;
   const vals = [], step = 0.1, first = Math.round((off + 0.4) / step) - 1, last = Math.round((off + Math.max(T, 0.4)) / step) - 1;
@@ -446,6 +457,9 @@ module.exports = function (C) {
     // Saison: passt zum Termin (oder zum Saisonwunsch) +1,5; Saison-Titel außerhalb ihrer Zeit −3, Weihnachten/Halloween außerhalb −8
     const ts = t.tags.season || [], now = ctx.seasons || [], want = seasonKeys(w.season);
     if (ts.length) { const hit = ts.some(x => now.indexOf(x) > -1 || want.indexOf(x) > -1); parts.season = hit ? 1.5 : ts.some(x => x === "weihnachten" || x === "halloween") && !ts.some(x => now.indexOf(x) > -1) ? -8 : -3; } else parts.season = 0;
+    // Anlass ausdrücklich gewünscht (Simon 20.11.2026, Weihnachtspost-Reel: „die Musik hat nichts mit Weihnachten zu tun“): Titel dieses Anlasses klar vorn, alle anderen deutlich dahinter
+    const occ = want.filter(x => x === "weihnachten" || x === "halloween");
+    if (occ.length) parts.season = ts.some(x => occ.indexOf(x) > -1) ? 6 : parts.season - 4;
     let s = 0; Object.keys(parts).forEach(k => { s += parts[k]; }); return { s: r2(s), parts };
   }
   const LADDER = [
@@ -470,7 +484,9 @@ module.exports = function (C) {
         if (hist.some(h => h.id === t.id && ((L.days && Math.abs(h.t - t0) < L.days * 864e5) || (L.sameDay && viennaDay(h.t) === day0)))) return true;
         const u = t.use || {}; if (u.last && u.lastPost && u.lastPost !== post.id && !posts.has(u.lastPost)) { const lt = Date.parse(u.last); if ((L.days && Math.abs(lt - t0) < L.days * 864e5) || (L.sameDay && viennaDay(lt) === day0)) return true; }   // gelöschte Posts
         return false; };
-      const pool = scored.filter(x => (o.only ? o.only(x.t) : true) && !(o.exclude && o.exclude.has(x.t.id)) && moodFit(x.t, w.mood) >= L.mood && !blocked(x.t));
+      // Titel des ausdrücklich gewünschten Anlasses (Weihnachten/Halloween) dürfen auch bei anderer Stimmung rein – sonst fliegen z. B. alle Weihnachtstitel bei „elektronisch“ raus
+      const occ = seasonKeys(w.season).filter(x => x === "weihnachten" || x === "halloween"), occOk = t => occ.length && (t.tags.season || []).some(x => occ.indexOf(x) > -1);
+      const pool = scored.filter(x => (o.only ? o.only(x.t) : true) && !(o.exclude && o.exclude.has(x.t.id)) && (moodFit(x.t, w.mood) >= L.mood || occOk(x.t)) && !blocked(x.t));
       if (pool.length) { const top = pool[0].t, lu = lastUseText(top, hist, t0); return { list: pool, level: lv, want: w, note: lv ? "Bibliothek knapp – " + L.note + (lu ? " (Titel " + lu + ")" : "") : "" }; }
     }
     return { list: [], level: LADDER.length, want: w, note: "Keine lizenz-taugliche Musik in der Bibliothek" };
@@ -500,10 +516,11 @@ module.exports = function (C) {
     cands.forEach(c => { const wl = winLufs(a.mc, c.s, Tt); c.lufs = wl == null ? a.lufs : wl; let sc = (c.lufs - (a.lufs || c.lufs)) / 2;
       const rise = (winLufs(a.mc, c.s, 1) || -70) - (winLufs(a.mc, Math.max(0, c.s - 1), 1) || -70);
       c.drop = cta != null ? (a.drops || []).find(d => Math.abs(d - c.s - cta) <= (beat || 0.5) + 1e-6) : undefined; if (c.drop != null) sc += 2;
-      c.used = used.some(u => Math.abs(u - c.s) < 0.05); if (rise >= 3) sc += 1; if (c.used) sc -= 1; if (c.loop) sc -= 0.5; c.sc = sc; });
+      c.used = used.some(u => Math.abs(u - c.s) < 0.05); if (rise >= 3) sc += 1; if (c.used) sc -= 1; if (c.loop) sc -= 0.5;
+      c.gap = winGap(a.mc, c.s, Tt); if (c.gap) sc -= 4 + c.gap; c.sc = sc; });   // Einbruch mitten im Reel → klingt wie ein Sprung, fast nie wählen
     cands.sort((x, y) => y.sc - x.sc || x.s - y.s);
     // „Der Aufruf landet nach Möglichkeit auf dem Drop“: ein passender Startpunkt mit Drop auf dem Aufruf-Schnitt gewinnt, solange das Fenster nicht zu leise ist
-    const dropC = cands.filter(c => c.drop != null && !c.used && !c.loop && c.lufs >= (a.lufs || c.lufs) - 4);
+    const dropC = cands.filter(c => c.drop != null && !c.used && !c.loop && !c.gap && c.lufs >= (a.lufs || c.lufs) - 4);
     const top = dropC.length ? dropC.slice(0, 1) : cands.filter(c => c.sc >= cands[0].sc - 1.5).slice(0, 3), pick = top[hashNum((post ? post.id + "|" + ((post.media || {}).rerender || "") : "") + "|" + t.id + "|off") % top.length];
     const lufs = pick.lufs != null ? pick.lufs : a.lufs, gainDb = lufs == null ? null : r1(clamp(TARGET - lufs - 0.5, -20, 12));
     return { offset: pick.s, gainDb, fadeIn: pick.s > 0.01 ? 0.04 : 0.25, fadeOut: r3(clamp(bar, 0.8, 1.6)), loop: loop || pick.loop, drop: pick.drop != null ? r3((pick.drop - pick.s) / tempo) : null, lufs, why: pick.why };
@@ -528,7 +545,8 @@ module.exports = function (C) {
     const e = clamp(w.energy || 3, 1, 5), lo = p.bpm[0], hi = p.bpm[1], sp = hi - lo, band = w.tempo === "langsam" ? [lo, lo + 0.4 * sp] : w.tempo === "schnell" ? [hi - 0.4 * sp, hi] : [lo, hi];
     const pe = clamp((e - p.energy[0]) / Math.max(1, p.energy[1] - p.energy[0]), 0, 1), bpm = Math.round(clamp(band[0] + (band[1] - band[0]) * pe + (crypto.randomInt(9) - 4), lo, hi));
     const extras = [e >= 4 ? "with a big drop" : "", e <= 2 ? "sparse arrangement" : "", ["lustig", "froehlich"].indexOf(w.mood) > -1 ? "with a playful breakdown" : "", ["froehlich", "lustig", "alpin"].indexOf(w.mood) > -1 ? "major key" : w.mood === "episch" ? "minor key" : ""].filter(Boolean);
-    const season = past.length && past[past.length - 1].season ? "" : seasonHint(key, w.mood, w);   // höchstens jedes 2. Reel mit Saison-Zusatz
+    const xmas = seasonKeys(w.season).indexOf("weihnachten") > -1;   // ausdrücklich Weihnachten gewünscht → immer festlich (Simon 20.11.2026)
+    const season = xmas ? "festive christmas, sleigh bells" : past.length && past[past.length - 1].season ? "" : seasonHint(key, w.mood, w);   // sonst höchstens jedes 2. Reel mit Saison-Zusatz
     const seed = o.seed || (1 + crypto.randomInt(4294967293));
     const job = { brand: key, mood: w.mood, energy: e, genres: [best.g].concat(g2 ? [g2] : []), instruments, bpm, vibe: w.vibe || "", extra: extras.length ? extras[past.length % extras.length] : "", season, seed, duration: STAB.duration };
     job.prompt = buildPrompt(job, brandNames()); job.promptNoVibe = buildPrompt(Object.assign({}, job, { vibe: "" }), brandNames());
@@ -924,4 +942,4 @@ module.exports = function (C) {
     _test: { loadCat, saveCat, rec, history, jobFor, stabGenerate, stabOnce, ingest, canSpend, spend, composeBlock, stabilityKey, CATF, PROOF, MDIR, PREV, cutLen, ecOf, quality } };
 };
 // reine Funktionen für Tests und Werkzeuge (Grundstock-Analyse)
-Object.assign(module.exports, { MOODS, SEASONS, seasonsAt, seasonKeys, GENRES, INSTRUMENTS, LICENSES, PROFILES, STAB, winLufs, parseEbur, signal, features, quality, licenseProblem, creditText, withCredit, buildPrompt, cleanVibe, jaccard, mcEncode, mcDecode, hashNum, AV });
+Object.assign(module.exports, { MOODS, SEASONS, seasonsAt, seasonKeys, GENRES, INSTRUMENTS, LICENSES, PROFILES, STAB, winLufs, winGap, parseEbur, signal, features, quality, licenseProblem, creditText, withCredit, buildPrompt, cleanVibe, jaccard, mcEncode, mcDecode, hashNum, AV });
