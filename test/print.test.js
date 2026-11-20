@@ -1313,6 +1313,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const fo = await upload(png(1500, 1060, [9, 9, 9]), "aussen.png", FO); assert.strictEqual(fo.j.needBack, true, JSON.stringify(fo.j));
     const fi = await back(fo.j, png(1500, 1060, [99, 9, 9]), "innen.png"); assert.strictEqual(fi.status, 200, JSON.stringify(fi.j)); assert.ok(fi.j.checks.some(c => /Seite 2 = Innenseite/.test(c.text)), JSON.stringify(fi.j.checks));
   });
+  await t("Gleichzeitige Uploads blockieren sich nicht (PDF-Warteschlange – Vorfall 20.11.2026: zwei Uploads hingen 180 s, alle weiteren stauten sich)", async () => {
+    /* jeder Upload belegt einen Upload-Platz und braucht darin PDF-Arbeit (Bild → PDF, Beschnitt ergänzen); mit einer gemeinsamen Schlange à 2 Plätze blieben zwei gleichzeitige stehen */
+    const t0 = Date.now(), ohne = await pdfOf(85, 55, 2);
+    const rs = await Promise.all([0, 1, 2, 3, 4, 5].map(i => i % 3 === 2 ? upload(ohne, "ohne-beschnitt" + i + ".pdf", BC) : upload(png(1060, 700, [i * 40, 90, 160]), "gleichzeitig" + i + ".png", BC)));
+    const sek = Math.round((Date.now() - t0) / 1000);
+    rs.forEach((r, i) => assert.strictEqual(r.status, 200, "Upload " + i + " nach " + sek + " s: " + JSON.stringify(r.j).slice(0, 200)));
+    assert.ok(sek < 30, "sechs gleichzeitige Uploads brauchten " + sek + " s");
+  });
   await t("Folder: Größe = gefalztes Format → Datei im offenen Format mit Falzlinien; Druckvorlage als PDF je Ausführung", async () => {
     const FO = { product: "folder", sel: { size: "1/3_a4", fold: "wikkel_6", printtype: "44" }, copies: 100, urgency: "standard" };
     const pr = await post("/print/api/price", FO); assert.strictEqual(pr.status, 200, JSON.stringify(pr.j));

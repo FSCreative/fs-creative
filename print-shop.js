@@ -5175,7 +5175,9 @@ module.exports = function (D) {
     return new Promise((res, rej) => { const w = { res, t: setTimeout(() => { S.wait.splice(S.wait.indexOf(w), 1); rej(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 })); }, 180000) }; S.wait.push(w); });
   }
   function pdfSlot() { return slotOf(PDF_SLOTS); }
-  const withPdf = async fn => { const rel = await slotOf(PDF_WORK); try { return await fn(); } finally { rel(); } };
+  /* withPdf innerhalb von withPdf (z. B. spotCheck → spotScan/pdfSave) nimmt keinen zweiten Platz: läuft im Platz des Aufrufers (AsyncLocalStorage merkt sich das je Ablauf) */
+  const PDF_IN = new (require("async_hooks").AsyncLocalStorage)();
+  const withPdf = async fn => { if (PDF_IN.getStore()) return fn(); const rel = await slotOf(PDF_WORK); try { return await PDF_IN.run(true, fn); } finally { rel(); } };
   // Entwürfe: je IP höchstens 150 MB pro Tag (Speicher schützen)
   const DRAFT_BYTES = new Map();
   function draftBudget(ip, bytes) { const day = new Date().toISOString().slice(0, 10), o = DRAFT_BYTES.get(ip); const used = o && o.day === day ? o.n : 0;
