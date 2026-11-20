@@ -190,9 +190,11 @@ function encodingOf(PL, font, ctx) {
   return code => diffs[code] || map[code] || null;
 }
 
-function analyse(PL, d) {
+const NEAR_MIN = 0.95;   // ab 95 % Übereinstimmung: Vergleich im Cockpit, Einbetten erst nach Freigabe durch Simon
+const label = (fam, style) => fam.files[style].replace(/-/, " ").replace(/Regular$/, "").trim();
+function analyse(PL, d, allowNear) {
   const { PDFName, PDFDict, PDFArray, PDFNumber, PDFRef } = PL, ctx = d.context, t = tables();
-  const use = collectUse(PL, d), plans = [], skipped = [];
+  const use = collectUse(PL, d), plans = [], skipped = [], nearList = [];
   for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
     if (!(obj instanceof PDFDict)) continue;
     const ty = obj.get(PDFName.of("Type")); if (!ty || ty.toString() !== "/Font") continue;
@@ -209,35 +211,46 @@ function analyse(PL, d) {
     const first = fc instanceof PDFNumber ? fc.asNumber() : null, widths = wa instanceof PDFArray ? wa.asArray().map(x => { const y = x instanceof PDFRef ? ctx.lookup(x) : x; return y instanceof PDFNumber ? y.asNumber() : null; }) : null;
     const afm = !widths && AFMOF[m.fam] ? afmFont(AFM[AFMOF[m.fam]][m.style]) : null;
     if (!widths && !afm) { skipped.push({ name: baseName, reason: "Breiten unbekannt" }); continue; }
-    let pick = null, why = [];
+    // Jeder Kandidat: exakt (alle gedruckten Zeichen ±1/1000 em) oder Übereinstimmung in % (1 − Σ|Abweichung| / Σ Breite)
+    let pick = null, near = null, why = [];
     for (const key of CANDS[m.fam]) {
       const fam = SETS[key], file = fam.files[m.style];
       if (!fs.existsSync(path.join(DIR, file + ".ttf"))) { why.push(fam.label + " fehlt"); continue; }
-      const sf = loadFont(file); let bad = null;
+      const sf = loadFont(file); let hard = null, sumRef = 0, sumDev = 0; const diffs = [];
       for (const code of codes) {
         const g = enc(code), u = g && t.name2u[g];
-        if (!g || u == null) { bad = "Zeichen " + code + " ohne Zuordnung"; break; }
+        if (!g || u == null) { hard = "Zeichen " + code + " ohne Zuordnung"; break; }
         const ref0 = widths ? (first != null && code >= first && code - first < widths.length ? widths[code - first] : null) : afm.getWidthOfGlyph(g);
-        if (ref0 == null) { bad = "Breite für „" + String.fromCodePoint(u) + "“ fehlt"; break; }
+        if (ref0 == null) { hard = "Breite für „" + String.fromCodePoint(u) + "“ fehlt"; break; }
         const w = subWidth(sf, u);
-        if (w == null) { bad = "„" + String.fromCodePoint(u) + "“ fehlt"; break; }
-        if (Math.abs(w - ref0) > 1) { bad = "„" + String.fromCodePoint(u) + "“ anders breit (" + Math.round(ref0) + " statt " + Math.round(w) + ")"; break; }
+        if (w == null) { hard = "„" + String.fromCodePoint(u) + "“ fehlt in " + fam.label; break; }
+        sumRef += Math.max(ref0, 1); const dv = Math.abs(w - ref0);
+        if (dv > 1) { sumDev += dv; diffs.push({ ch: String.fromCodePoint(u), ref: Math.round(ref0), sub: Math.round(w) }); }
       }
-      if (!bad) { pick = { fam, file }; break; }
-      why.push(fam.label + ": " + bad);
+      if (hard) { why.push(fam.label + ": " + hard); continue; }
+      if (!diffs.length) { pick = { fam, file }; break; }
+      const score = Math.max(0, 1 - sumDev / (sumRef || 1));
+      why.push(fam.label + ": " + diffs.slice(0, 4).map(x => "„" + x.ch + "“ " + x.ref + " statt " + x.sub).join(", ") + " anders breit (" + Math.floor(score * 100) + " %)");
+      if (!near || score > near.score) near = { fam, file, score, diffs };
     }
-    if (!pick) { skipped.push({ name: baseName, reason: why.join("; ") || "keine Ersatzschrift" }); continue; }
-    plans.push({ ref, obj, fd, baseName, fam: pick.fam, style: m.style, file: pick.file, enc, widths, first, afm, codes });
+    if (pick) { plans.push({ ref, obj, fd, baseName, fam: pick.fam, style: m.style, file: pick.file, enc, widths, first, afm, codes }); continue; }
+    if (near && near.score >= NEAR_MIN) {
+      const n = { name: baseName, with: label(near.fam, m.style), score: near.score, diffs: near.diffs };
+      if (allowNear && (allowNear === true || allowNear.indexOf(baseName) >= 0)) { plans.push({ ref, obj, fd, baseName, fam: near.fam, style: m.style, file: near.file, enc, widths, first, afm, codes, near: n }); continue; }
+      nearList.push(n);
+    }
+    skipped.push({ name: baseName, reason: why.join("; ") || "keine Ersatzschrift" });
   }
-  return { plans, skipped };
+  return { plans, skipped, near: nearList };
 }
 
-async function embedStdFonts(buf) {
-  if (!buf || buf.length > 60e6) return { buf, replaced: [], skipped: [] };
+// opts.allowNear: true oder Liste von Schriftnamen, die Simon nach dem Vergleich freigegeben hat (≥ 95 %, nicht exakt)
+async function embedStdFonts(buf, opts) {
+  if (!buf || buf.length > 60e6) return { buf, replaced: [], skipped: [], near: [] };
   const PL = require("pdf-lib"), { PDFDocument, PDFName, PDFNumber, PDFString } = PL;
   const d = await PDFDocument.load(buf, { updateMetadata: false }), ctx = d.context, t = tables();
-  const { plans, skipped } = analyse(PL, d);
-  if (!plans.length) return { buf, replaced: [], skipped };
+  const { plans, skipped, near } = analyse(PL, d, opts && opts.allowNear);
+  if (!plans.length) return { buf, replaced: [], skipped, near };
   const files = {};   // je Ersatzschrift ein gemeinsamer FontFile2-Stream + Deskriptor
   for (const p of plans) {
     const sf = loadFont(p.file), f = sf.f, s = 1000 / sf.upm, fam = p.fam;
@@ -267,16 +280,16 @@ async function embedStdFonts(buf) {
     o.delete(PDFName.of("ToUnicode"));
   }
   const out = Buffer.from(await d.save({ useObjectStreams: false }));
-  const replaced = [...new Map(plans.map(p => [p.baseName + "→" + p.fam.files[p.style], { name: p.baseName, with: p.fam.files[p.style].replace(/-/, " ").replace(/Regular$/, "").trim() }])).values()];
-  return { buf: out, replaced, skipped };
+  const replaced = [...new Map(plans.map(p => [p.baseName + "→" + p.fam.files[p.style], Object.assign({ name: p.baseName, with: label(p.fam, p.style) }, p.near ? { score: p.near.score, approved: true } : {})])).values()];
+  return { buf: out, replaced, skipped, near };
 }
 
 // Nur prüfen (für die Kontrolle im Cockpit): was würde eingebettet, was nicht?
 async function planStdFonts(buf) {
-  if (!buf || buf.length > 60e6) return { replaced: [], skipped: [] };
+  if (!buf || buf.length > 60e6) return { replaced: [], skipped: [], near: [] };
   const PL = require("pdf-lib"); const d = await PL.PDFDocument.load(buf, { updateMetadata: false });
-  const { plans, skipped } = analyse(PL, d);
-  return { replaced: [...new Map(plans.map(p => [p.baseName, { name: p.baseName, with: p.fam.files[p.style].replace(/-/, " ").replace(/Regular$/, "").trim() }])).values()], skipped };
+  const { plans, skipped, near } = analyse(PL, d);
+  return { replaced: [...new Map(plans.map(p => [p.baseName, { name: p.baseName, with: label(p.fam, p.style) }])).values()], skipped, near };
 }
 
-module.exports = { embedStdFonts, planStdFonts, matchName, _lexOps: lexOps };
+module.exports = { embedStdFonts, planStdFonts, matchName, NEAR_MIN, _lexOps: lexOps };

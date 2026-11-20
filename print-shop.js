@@ -2081,7 +2081,7 @@ module.exports = function (D) {
   }
   async function newFile(kind, name, pdf, target, checks, extra) {
     const meta = Object.assign({ id: "f" + crypto.randomBytes(12).toString("hex"), kind, name: clip(name, 120) || "druck.pdf", bytes: pdf.length, createdAt: nowIso(), product: target.product, sel: target.sel, size: target.size, bleed: target.bleed, sides: target.sides, pages: target.pages || null, checks, orderId: null, sha256: crypto.createHash("sha256").update(pdf).digest("hex") }, extra || {});
-    if (kind === "upload" && Array.isArray(meta.checks)) { try { const fc = await fontCheck(pdf); meta.checks = meta.checks.filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) meta.checks.push(fc); meta.fontChecked = true; } catch (e) { log("Schriften-Prüfung:", e.message); } }
+    if (kind === "upload" && Array.isArray(meta.checks)) { try { const fc = await fontCheck(pdf); meta.checks = meta.checks.filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) meta.checks.push(fc); meta.fontChecked = 2; } catch (e) { log("Schriften-Prüfung:", e.message); } }
     await store.putFile(meta, pdf);
     // Print.com-Prüfung erst nach dem Speichern starten – Print.com holt die Datei über den Link
     try { const pf = await preflightStart(meta, pdf); if (pf) { meta.preflight = pf; await store.putFile(meta); } } catch (e) { log("Preflight-Start:", e.message); }
@@ -3075,6 +3075,9 @@ module.exports = function (D) {
       const ok = plan.replaced.filter(r => used.has(r.name)), rest = [...used].filter(n => !ok.some(r => r.name === n));
       if (!rest.length) return { level: "ok", admin: true, text: "Schrift nicht eingebettet (" + ok.map(r => r.name).join(", ") + ") – wird vor der Übergabe an Print.com automatisch durch die maßgleiche Schrift " + [...new Set(ok.map(r => r.with))].join(", ") + " ersetzt und eingebettet (gleiche Zeichenbreiten, Druckbild bleibt gleich)." };
       const why = plan.skipped.filter(s => rest.indexOf(s.name) >= 0).map(s => s.name + ": " + s.reason).join("; ");
+      // Simon 20.11.2026: „wenns nicht ausreichend passt und übereinstimmt zu 95 % zeig mir immer noch einen vergleich“ → fontNear: Vergleich + Freigabe im Cockpit
+      const near = (plan.near || []).filter(n => rest.indexOf(n.name) >= 0).map(n => ({ name: n.name, with: n.with, score: Math.floor(n.score * 1000) / 1000, diffs: n.diffs.slice(0, 12) }));
+      if (near.length) return { level: "warn", admin: true, fontNear: near, text: "Schrift nicht eingebettet: " + near.map(n => n.name + " – Ersatz " + n.with + " stimmt zu " + Math.floor(n.score * 100) + " % überein (anders breit: " + n.diffs.slice(0, 5).map(x => "„" + x.ch + "“").join(" ") + ")").join("; ") + (rest.length > near.length ? "; ohne Ersatz: " + rest.filter(r => !near.some(n => n.name === r)).join(", ") : "") + (ok.length ? "; " + ok.map(r => r.name).join(", ") + " wird automatisch eingebettet" : "") + ". Vergleich ansehen und Ersatz freigeben – sonst geht die Datei mit nicht eingebetteter Schrift an Print.com." };
       return { level: "warn", admin: true, text: "Schrift nicht eingebettet und im Text verwendet: " + rest.join(", ") + (why ? " (kein exakt gleicher Ersatz – " + why + ")" : "") + (ok.length ? "; " + ok.map(r => r.name).join(", ") + " wird automatisch eingebettet" : "") + " – Print.com lehnt solche Dateien oft ab („Verarbeitung hat nicht geklappt“). Kunden um eine PDF mit eingebetteten Schriften bzw. Text in Pfaden bitten." };
     }
     return { level: "warn", admin: true, text: "Nicht eingebettete Schrift(en) in der Datei angelegt, aber nicht verwendet: " + un.join(", ") + " – werden vor der Übergabe an Print.com automatisch entfernt (Druckbild bleibt gleich)." };
@@ -5281,7 +5284,7 @@ module.exports = function (D) {
         if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
         buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
-        buf = await FONTFIX.embedStdFonts(buf).then(r => { if (r.replaced.length) log("Schriften eingebettet", o.nr, r.replaced.map(x => x.name + " → " + x.with).join(", ")); return r.buf; }).catch(e => { log("Schriften einbetten", o.nr, e.message); return buf; });
+        buf = await FONTFIX.embedStdFonts(buf, { allowNear: (o.fontOk || {})[fm.id] || null }).then(r => { if (r.replaced.length) log("Schriften eingebettet", o.nr, r.replaced.map(x => x.name + " → " + x.with).join(", ")); return r.buf; }).catch(e => { log("Schriften einbetten", o.nr, e.message); return buf; });
         buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
         if (buf.length < 150e6) buf = await findProduct(o.product.key).then(pr => spotFixForPrint(buf, pr, o.sel)).catch(e => { log("Sonderfarben umbenennen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
@@ -6321,6 +6324,24 @@ module.exports = function (D) {
         }
         return J(res, 200, { ok: true, vouchers: Object.values(all).map(v => Object.assign({}, v, { usedBy: undefined, customers: (v.usedBy || []).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
       }
+      // Schrift-Vergleich (Simon 20.11.2026): Druckdatei mit eingebetteter, nur fast gleicher Ersatzschrift (≥ 95 %) – zum Nebeneinanderlegen mit dem Original
+      if (p === "/admin/api/print/fontcmp" && req.method === "GET") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
+        if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        const data = await store.fileData(fid); if (!data) return J(res, 404, { ok: false, error: "Datei nicht mehr vorhanden" });
+        let out; try { out = (await FONTFIX.embedStdFonts(Buffer.from(data), { allowNear: true })).buf; } catch (e) { return J(res, 400, { ok: false, error: "Vergleich nicht möglich: " + String(e.message || e).slice(0, 80) }); }
+        return D.send(res, 200, out, "application/pdf", { "Content-Length": String(out.length), "Content-Disposition": 'inline; filename="' + o.nr + '-ersatzschrift.pdf"', "Cache-Control": "private, no-store" });
+      }
+      if (p === "/admin/api/print/fontok" && req.method === "POST") {   // Ersatzschrift nach Vergleich freigeben (gilt nur für genau diese Datei) bzw. zurücknehmen
+        const b = await readJson(req, 4000), o = await store.getOrder(String(b.id || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const fid = String(b.fid || ""); if (!(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid))) return J(res, 400, { ok: false, error: "Datei gehört nicht zur Bestellung" });
+        const names = (Array.isArray(b.names) ? b.names : []).map(x => String(x).slice(0, 80)).filter(Boolean).slice(0, 12);
+        o.fontOk = o.fontOk || {};
+        if (b.ok === false || !names.length) { delete o.fontOk[fid]; hist(o, "Freigabe Ersatzschrift zurückgenommen"); }
+        else { o.fontOk[fid] = names; hist(o, "Ersatzschrift freigegeben (" + names.join(", ") + ") – wird beim Senden an Print.com eingebettet"); }
+        stamp(o); await store.putOrder(o);
+        return J(res, 200, { ok: true, order: o });
+      }
       if (p === "/admin/api/print/whiteview" && req.method === "GET") {   // „Weiß ansehen“: Druckdatei mit der Weiß-Ebene in Hellblau (zeigt, wo Weiß druckt)
         const o = await store.getOrder(String(u.searchParams.get("id") || "")), fid = String(u.searchParams.get("fid") || "");
         if (!o || !fid || !(fid === o.fileId || (o.motifs || []).some(m => m.fileId === fid) || (o.fileHistory || []).some(h => h.old === fid || h.new === fid))) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
@@ -6343,7 +6364,7 @@ module.exports = function (D) {
           const hs = (o.fileHistory || []).filter(h => (mot ? h.motif === motif : (h.motif == null || h.motif === -1)) && h.new === fid).pop();
           const om = hs && hs.old ? await store.fileMeta(hs.old).catch(() => null) : null;
           // Schriften-Prüfung für ältere Dateien einmal nachholen (nur Kontrolle im Cockpit)
-          if (m && m.kind === "upload" && !m.fontChecked && (m.bytes || 0) < 40e6) { try { const data = await store.fileData(fid); const fc = data && await fontCheck(Buffer.from(data)); m.fontChecked = true; m.checks = (m.checks || []).filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) m.checks.push(fc); await store.putFile(m); } catch (e) { log("Schriften-Prüfung", fid, e.message); } }
+          if (m && m.kind === "upload" && m.fontChecked !== 2 && (m.bytes || 0) < 40e6) { try { const data = await store.fileData(fid); const fc = data && await fontCheck(Buffer.from(data)); m.fontChecked = 2; m.checks = (m.checks || []).filter(c => !(c.admin && /Schrift/.test(c.text || ""))); if (fc) m.checks.push(fc); await store.putFile(m); } catch (e) { log("Schriften-Prüfung", fid, e.message); } }
           // Weiß & Sonderfarben immer gegen die bestellte Ausführung prüfen (Ergebnis je Datei + Ausführung gemerkt)
           let spot = null; const spK = "2|" + JSON.stringify(o.sel || {});
           if (m && m.spotRev && m.spotRev.k === spK) spot = m.spotRev.r;

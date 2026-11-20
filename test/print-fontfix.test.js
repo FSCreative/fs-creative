@@ -72,6 +72,15 @@ async function fontsOf(buf) {
     const badIn = await make(40), bad = await F.embedStdFonts(badIn);
     assert.strictEqual(bad.replaced.length, 0); assert.strictEqual(bad.buf, badIn);
     assert.ok(/anders breit/.test(bad.skipped[0].reason), bad.skipped[0].reason);
+    // ≥ 95 % → als „fast gleich“ gemeldet (Vergleich im Cockpit), eingebettet erst mit Freigabe
+    assert.strictEqual(bad.near.length, 1); assert.strictEqual(bad.near[0].name, "ArialMT"); assert.ok(bad.near[0].score >= 0.95 && bad.near[0].score < 1, String(bad.near[0].score));
+    assert.deepStrictEqual(bad.near[0].diffs.map(x => x.ch), ["a"]);
+    const ok2 = await F.embedStdFonts(badIn, { allowNear: ["ArialMT"] });
+    assert.strictEqual(ok2.replaced.length, 1); assert.strictEqual(ok2.replaced[0].approved, true);
+    assert.ok((await fontsOf(ok2.buf)).every(f => f.emb));
+    const other = await F.embedStdFonts(badIn, { allowNear: ["Helvetica"] }); assert.strictEqual(other.replaced.length, 0);   // Freigabe gilt nur für die genannte Schrift
+    // deutlich anders (< 95 %) → kein Vergleich, bleibt Warnung
+    const far = await F.embedStdFonts(await make(900)); assert.strictEqual(far.near.length, 0); assert.strictEqual(far.replaced.length, 0);
   });
 
   await t("Nicht benutzte Schrift wird nicht angefasst (übernimmt dropUnusedFonts)", async () => {
