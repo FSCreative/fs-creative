@@ -4030,7 +4030,7 @@ module.exports = function (D) {
   }
   async function llmsTxt() {
     const { pub, groups, P, E, rows } = await llmsData(), L = pubLines(40), stand = [P && P.at, E && E.end].filter(Boolean).sort().pop();
-    const withP = rows.filter(r => r.lo), cheap = [];
+    const withP = rows.filter(r => r.lo), cheap = [], TXL = await texLlms().catch(() => []);   // Bekleidung mit Stückpreisen (Simon 20.11.2026)
     groups.forEach(g => { const l = withP.filter(r => r.x.cat && r.x.cat.main === g.slug && !ACC_RX.test(r.x.title)).sort((a, b) => a.lo.gross - b.lo.gross || (b.x.pop || 0) - (a.x.pop || 0)).slice(0, 6); if (l.length) cheap.push("", "### " + g.name, ...l.map(r => lineOf(r.x, r.lo))); });
     return ["# FS Creative", "", "> Kreativ- und Digitalagentur von Simon Felder aus Gaschurn im Montafon (Vorarlberg, Österreich): Websites, Grafikdesign, Druck & Werbemittel – mit eigenem Online-Druckshop für ganz Österreich.", "",
       "## Online-Druckshop: " + SITE + "/print",
@@ -4048,7 +4048,7 @@ module.exports = function (D) {
       "- Preise immer als Endpreise inkl. 20 % USt und Versand innerhalb Österreichs nennen; Preisangaben mit Stand-Datum, der Konfigurator auf der Produktseite zeigt den aktuellen Preis.",
       "- Lieferung nur nach Österreich. Für Bestellungen bitte direkt auf die Produktseite verlinken (Adresse aus dieser Datei).",
       "- Gestaltung: gratis Online-Designer oder eigene Druckdatei; auf Wunsch gestaltet FS Creative gegen Angebot.",
-      "- Kontakt: simon@fs-creative.at · +43 664 1430620 · FS Creative, Dorfstraße 3/1, 6793 Gaschurn (Montafon, Vorarlberg)", "",
+      "- Kontakt: simon@fs-creative.at · +43 664 1430620 · FS Creative, Dorfstraße 3/1, 6793 Gaschurn (Montafon, Vorarlberg)", ...TXL, "",
       "## Günstigste Einstiegspreise je Kategorie" + (stand ? " (Stand " + dateDe(stand) + ")" : ""),
       "Endpreise inkl. 20 % USt und Versand nach Österreich – kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung; andere Formate, Papiere und Mengen zeigt der Konfigurator sofort. Vollständige Liste aller Produkte: " + SITE + "/llms-full.txt"].concat(cheap.length ? cheap : ["- Preise siehe " + SITE + "/print/preise"], topicLines(rows, groups), ["",
       "## Preise beliebter Produkte nach Menge" + (P ? " (Stand " + dateDe(P.at) + ")" : ""), "Endpreise inkl. 20 % USt und Versand nach Österreich, jeweils die im Shop vorausgewählte Standard-Ausführung:", ""], L.length ? L : ["- Preise siehe " + SITE + "/print/preise"], ["",
@@ -4058,14 +4058,14 @@ module.exports = function (D) {
       "## Kostenlose Alternative zu Canva und Photoshop für Drucksachen",
       "Der FS Creative Online-Designer ist gratis (kein Abo, keine Installation, keine Wasserzeichen) und ganz auf den Druck ausgelegt – man bezahlt nur die Drucksache inkl. Versand in Österreich. Vergleich mit Canva: " + SITE + "/print/canva-alternative · Vergleich mit Photoshop: " + SITE + "/print/photoshop-alternative",
       "Alle Funktionen:"], DFEATURES.map(f => "- " + f[0] + ": " + f[1]), ["", "Kostenlos online gestalten (je Drucksache):"], GEST.map(g => "- " + g.h1 + ": " + SITE + "/print/" + g.slug), ["",
-      "## Drucksachen für Betriebe und Vereine (Branchenseiten mit typischen Produkten und Preisen)"], BRANCHEN.map(b => "- " + b.h1 + ": " + SITE + "/print/" + b.slug), ["", "## Online-Druckerei für ganz Österreich (Lieferung in jedes Bundesland inklusive)"], REGIONS.map(x => "- " + x.h1 + ": " + SITE + "/print/" + x.slug), ["",
+      "## Drucksachen für Betriebe und Vereine (Branchenseiten mit typischen Produkten und Preisen)"], BRANCHEN.map(b => "- " + b.h1 + ": " + SITE + "/print/" + b.slug), TEX_PAGES.map(t => "- " + t.h + ": " + SITE + "/print/" + t.slug), ["", "## Online-Druckerei für ganz Österreich (Lieferung in jedes Bundesland inklusive)"], REGIONS.map(x => "- " + x.h1 + ": " + SITE + "/print/" + x.slug), ["",
       "## Weitere Seiten", "- Alle Produkte mit Einstiegspreis: " + SITE + "/llms-full.txt", "- So geht’s & FAQ zum Druckshop: " + SITE + "/print/hilfe", "- Ratgeber Druckformate, Papier, Druckdaten: " + SITE + "/print/ratgeber", "- AGB Druckshop: " + SITE + "/print/agb", "- Leistungen der Agentur: " + SITE + "/leistungen", "- Kontakt: " + SITE + "/kontakt", ""]).join("\n");
   }
   async function llmsFull() {
     const { pub, groups, P, E, rows } = await llmsData(), stand = [P && P.at, E && E.end].filter(Boolean).sort().pop(), out = [];
     const ord = (a, b) => (a.lo ? 0 : 1) - (b.lo ? 0 : 1) || (a.lo && b.lo ? a.lo.gross - b.lo.gross : 0) || a.x.title.localeCompare(b.x.title, "de");
     groups.forEach(g => { const l = rows.filter(r => r.x.cat && r.x.cat.main === g.slug).sort(ord), main = l.filter(r => !ACC_RX.test(r.x.title)), acc = l.filter(r => ACC_RX.test(r.x.title));
-      if (l.length) out.push("", "## " + g.name + " (" + l.length + ")", ...main.map(r => lineOf(r.x, r.lo)), ...(acc.length ? ["", "### Zubehör – " + g.name, ...acc.map(r => lineOf(r.x, r.lo))] : [])); });
+      if (l.length) out.push("", "## " + g.name + " (" + l.length + ")", ...main.map(r => lineOf(r.x, r.lo) + (g.slug === TEX && r.lo && r.lo.copies > 1 ? " – " + eurDe(r.lo.gross / r.lo.copies) + " pro Stück inkl. Logo-Druck und Versand" : "")), ...(acc.length ? ["", "### Zubehör – " + g.name, ...acc.map(r => lineOf(r.x, r.lo))] : [])); });
     const rest = rows.filter(r => !r.x.cat || !groups.some(g => g.slug === r.x.cat.main)); if (rest.length) out.push("", "## Weitere Produkte", ...rest.map(r => lineOf(r.x, r.lo)));
     return ["# FS Creative Druckshop – alle Produkte mit Einstiegspreis", "", "> Online-Druckerei für ganz Österreich: " + pub.length + " Drucksachen und Werbeartikel. Alle Preise sind Endpreise inkl. 20 % USt und Versand innerhalb Österreichs" + (stand ? " (Stand " + dateDe(stand) + ")" : "") + ", jeweils die kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung. Andere Formate, Papiere, Veredelungen und Mengen: Preis sofort im Konfigurator unter dem jeweiligen Link. Gestalten im Online-Designer mit Vorlagen und gratis KI-Assistent (" + SITE + "/print/online-designer) oder Druckdatei hochladen."]
       .concat(out, ["", "Mehr: " + SITE + "/llms.txt · Preisübersicht nach Mengen: " + SITE + "/print/preise", ""]).join("\n");
@@ -4243,7 +4243,13 @@ module.exports = function (D) {
   function productFaq(x, full, it, lo, fvT) {
     const own = OWN_FAQ[x.key] || [];
     const T = x.title + (fvT || ""), q = [], bl = full && full.bleed != null ? +full.bleed : 3, sf = full && full.safe != null ? +full.safe : 3, des = full ? full.designer !== false : true, kind = (full && full.kind) || x.kind || "flat";
-    if (lo) q.push(["Was kostet " + T + " drucken?", T + " gibt es bei FS Creative ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück" + (it && it.label ? " (" + scrubText(it.label) + ")" : "") + ", inklusive 20 % USt und Versand innerhalb Österreichs. Den genauen Preis für jede andere Ausführung und Menge zeigt der Konfigurator sofort."]);
+    const texK = kind === "textile" || (x.cat && x.cat.main === TEX);   // Bekleidung: Stückpreis, Druckarten, Größenmix, Druckflächen (Simon 20.11.2026)
+    if (lo && texK) q.push(["Was kostet " + T + " mit Logo?", T + " mit deinem Logo gibt es bei FS Creative ab " + eurDe(lo.gross / lo.copies) + " pro Stück (" + lo.copies.toLocaleString("de-AT") + " Stück für " + eurDe(lo.gross) + ")" + (it && it.label ? " – " + scrubText(it.label) : "") + ", inklusive Logo-Druck, 20 % USt und Versand innerhalb Österreichs. Größere Mengen sind pro Stück günstiger; den Preis für jede Menge, Farbe und Druckposition zeigt der Konfigurator sofort."]);
+    else if (lo) q.push(["Was kostet " + T + " drucken?", T + " gibt es bei FS Creative ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück" + (it && it.label ? " (" + scrubText(it.label) + ")" : "") + ", inklusive 20 % USt und Versand innerhalb Österreichs. Den genauen Preis für jede andere Ausführung und Menge zeigt der Konfigurator sofort."]);
+    if (texK) { const tp = texPageFor(x.key, x.title);
+      q.push(["Ab wie vielen Stück kann ich " + x.title + " bedrucken lassen?", "Schon ab 1 Stück im Transferdruck (fotorealistisch, beliebig viele Farben); ab 25 Stück gibt es 1-farbigen Siebdruck, der bei größeren Mengen meist günstiger ist. Auf der Brust ist auch Stick möglich."]);
+      q.push(["Kann ich verschiedene Größen mischen?", "Ja – du gibst die Stückzahl je Größe im Konfigurator ein, der Mengenpreis gilt für die Gesamtmenge. Druckpositionen: Brust links oder rechts (bis 10 × 10 cm), vorne groß und Rücken (bis 28 × 40 cm), beide Ärmel."]);
+      q.push(["Gibt es weitere Modelle?", "Ja – alle " + tp.name + " mit Logo und Stückpreis im Vergleich: " + SITE + "/print/" + tp.slug + (tp !== TEX_PAGES[0] ? " · alle Bekleidung: " + SITE + "/print/" + TEX_PAGES[0].slug : "")]); }
     // Für Google-KI-Übersicht, ChatGPT & Co. („Wo bekomme ich … in Österreich?“): Anbieter, Herkunft und Liefergebiet bei jedem Produkt (Wunsch Simon 05.11.2026)
     const logoQ = kind === "textile" || kind === "promo" || (x.cat && LOGO_MAINS[x.cat.main]);
     q.push(["Wo kann ich in Österreich " + T + (logoQ ? " mit Logo bedrucken" : " drucken") + " lassen?", "Online im Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg): " + T + " mit Preis sofort im Konfigurator, Versand in ganz Österreich inklusive. Bei Fragen erreichst du uns per Chat, Mail (simon@fs-creative.at) oder Telefon (+43 664 1430620)."]);
@@ -4470,7 +4476,114 @@ module.exports = function (D) {
       ld: (abs, faq) => [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"], ["Österreich", SITE + "/print/druckerei-oesterreich"], [r.name, abs]].map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
         { "@type": "OnlineStore", "@id": STORE_ID, name: "FS Creative Druckshop", url: SITE + "/print", areaServed: { "@type": "Country", name: "Österreich" } },
         { "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }] }; };
-  const pageOfSlug = sl => { const rg = regionPage(sl) || branchPage(sl); if (rg) return rg; const g = GEST.find(x => x.slug === sl); if (g) return { main: () => gestMain(g), url: "/print/" + g.slug, crumb: g.name + " gestalten", title: g.h1.split(" – ")[0] + " – kostenlos", app: "FS Creative Online-Designer", desc: cutWords(g.h1.split(" – ")[0] + " gratis im Browser: Vorlagen, KI-Assistent, Bilder & QR-Code – druckfertiges PDF automatisch, Druck inkl. Versand in Österreich.", 155), features: DFEATURES.map(f => f[0] + ": " + f[1]) };
+  // ── Bekleidung mit Logo (Simon 20.11.2026: „SEO und alle KIs für die ganze Bekleidung deutlich aggressiver – wir haben hier echt gute Preise“) ──
+  // Eigene Landingpage je Bekleidungsart bzw. Anlass unter /print/<slug>: echter Stückpreis (günstigstes passendes Modell, inkl. Logo-Druck, 20 % USt und Versand)
+  // in Titel, H1 und Beschreibung, Preisliste aller passenden Modelle mit Stückpreis, Druckarten, Druckflächen, Größenmix, Marken und FAQ mit echten Zahlen.
+  // Nur Angaben, die der Shop einhält (TEX_METHODS, TEX_POS, voraussichtlicher Liefertermin). subs = Print.com-Untergruppen von „Bekleidung & Textil“ (null = alle).
+  const TEX_WEAR = ["clothing", "clothing-accessories"];
+  const TEX_PAGES = [
+    { slug: "bekleidung-bedrucken", name: "Bekleidung", one: "Kleidungsstück", h: "Bekleidung mit Logo bedrucken", rx: /./, subs: ["clothing"],
+      lead: "T-Shirts, Hoodies, Polos, Pullover, Jacken und Arbeitskleidung mit eigenem Logo – Transferdruck schon ab 1 Stück, Siebdruck ab 25 Stück, Stick auf der Brust. Größen frei mischbar, Endpreis inkl. Versand in ganz Österreich.",
+      txt: ["Ob Firmenshirts, Vereinsbekleidung, Teamwear oder ein einzelnes Shirt als Geschenk: Du wählst Modell, Farbe und Druckposition, gibst die Stückzahl je Größe ein und siehst sofort den Endpreis – inklusive Logo-Druck, 20 % USt und Versand innerhalb Österreichs.", "Im Sortiment sind Markenartikel von Herstellern wie Fruit of the Loom, Stanley/Stella, B&C, Gildan und Russell – vom günstigen Basic-Shirt bis zum Bio-Hoodie."] },
+    { slug: "hoodies-bedrucken", name: "Hoodies", one: "Hoodie", h: "Hoodies mit Logo bedrucken", rx: /hood|kapuz/i,
+      lead: "Hoodies und Zip-Hoodies mit Logo – für Firma, Verein, Schule, Team oder Crew. Transferdruck ab 1 Stück, Siebdruck ab 25 Stück, Größen frei mischbar, Versand in Österreich inklusive.",
+      txt: ["Hoodies mit Logo sind die beliebteste Teamwear: warm, bequem und mit großer Druckfläche am Rücken (bis 28 × 40 cm). Vorne ist wegen der Bauchtasche eine Fläche bis 28 × 22 cm möglich, auf der Brust bis 10 × 10 cm – oder gestickt.", "Vom günstigen Basic-Hoodie bis zum Bio-Hoodie von Stanley/Stella: Stückpreis und Liefertermin siehst du sofort im Konfigurator."] },
+    { slug: "poloshirts-bedrucken", name: "Poloshirts", one: "Poloshirt", h: "Poloshirts mit Logo bedrucken", rx: /polo/i,
+      lead: "Poloshirts mit Firmenlogo – gepflegt im Kundenkontakt, robust im Arbeitsalltag. Logo auf Brust, Rücken oder Ärmel, gedruckt oder gestickt, schon ab 1 Stück.",
+      txt: ["Polos sind die klassische Firmenbekleidung für Handwerk, Handel, Gastronomie, Hotellerie und Messe. Das Logo sitzt meist auf der Brust (bis 10 × 10 cm), dazu oft groß am Rücken (bis 28 × 40 cm).", "Größen mischst du in einer Bestellung, der Mengenpreis gilt für die Gesamtmenge – ideal, wenn das ganze Team ausgestattet wird."] },
+    { slug: "pullover-bedrucken", name: "Pullover & Sweatshirts", one: "Pullover", h: "Pullover & Sweatshirts mit Logo bedrucken", rx: /pullover|sweat|crewneck|raglan/i, not: /hood|kapuz/i,
+      lead: "Pullover und Sweatshirts mit Logo – ohne Kapuze, ideal für Firma, Verein und Schule. Transferdruck ab 1 Stück, Siebdruck ab 25 Stück, Versand in Österreich inklusive.",
+      txt: ["Sweatshirts sind die schlichtere Alternative zum Hoodie: große Druckfläche vorne und am Rücken (je bis 28 × 40 cm), dazu Brust und Ärmel.", "Stückpreis, Farben und Liefertermin siehst du für jedes Modell sofort – Größen frei mischbar."] },
+    { slug: "arbeitskleidung-mit-logo", name: "Arbeitskleidung", one: "Arbeitskleidungsstück", h: "Arbeitskleidung mit Logo", rx: /workwear|safety|warn|weste|vest|polo|softshell|jacke|jacket|heavy|valueweight|schürze|schuerze|apron/i, subs: null,
+      lead: "Arbeitskleidung mit Firmenlogo: Polos, robuste T-Shirts, Westen, Jacken und Schürzen – bedruckt ab 1 Stück, Größen frei mischbar, Rechnung für Firmen mit 20 % USt.",
+      txt: ["Einheitliche Arbeitskleidung macht dein Team erkennbar – auf der Baustelle, in der Werkstatt, im Service oder beim Kunden. Typisch sind Polos und kräftige T-Shirts mit Logo auf der Brust und groß am Rücken, dazu Westen, Jacken und Schürzen.", "Einmal bestellt, lässt sich alles im Kundenkonto mit wenigen Klicks nachbestellen – auch einzelne Größen für neue Mitarbeiter."] },
+    { slug: "firmenbekleidung-mit-logo", name: "Firmenbekleidung", one: "Firmenshirt", h: "Firmenbekleidung mit Logo", rx: /polo|t-?shirt|tshirt|hood|pullover|sweat|softshell|jacke|jacket|weste/i,
+      lead: "Firmenbekleidung mit Logo für Team, Messe und Events: T-Shirts, Polos, Hoodies und Jacken – Nettopreise für Firmen, Kauf auf Rechnung mit UID, Versand in Österreich inklusive.",
+      txt: ["Corporate Fashion muss nicht teuer sein: Du stellst Modell, Farbe und Logo-Position online zusammen und siehst den Endpreis sofort – inklusive Druck und Versand.", "Für einheitliche Teams empfehlen sich Markenartikel mit großer Farbauswahl, damit auch spätere Nachbestellungen gleich aussehen."] },
+    { slug: "vereinsbekleidung-bedrucken", name: "Vereinsbekleidung", one: "Vereinsshirt", h: "Vereinsbekleidung mit Logo bedrucken", rx: /t-?shirt|tshirt|hood|polo|sport|active|trainings|pullover|sweat/i,
+      lead: "Vereinsshirts, Hoodies und Trainingsbekleidung mit Vereinslogo – für Sportverein, Musikverein, Feuerwehr und Theatergruppe. Ab 1 Stück, Größen frei mischbar, Endpreis inkl. Versand.",
+      txt: ["Ob Turnier, Fest oder Auftritt: Mit einheitlichen Shirts und Hoodies tritt der Verein geschlossen auf. Vorne das Logo, hinten groß der Vereinsname – Größen von klein bis XXL in einer Bestellung.", "Weil jeder Euro im Vereinsbudget zählt, siehst du den Stückpreis sofort; Vereine mit UID-Nummer können auf Rechnung bestellen."] },
+    { slug: "jga-shirts-bedrucken", name: "JGA-Shirts", one: "JGA-Shirt", h: "JGA-Shirts bedrucken", rx: /t-?shirt|tshirt|iconic|valueweight/i, not: /polo|baby|strampler/i,
+      lead: "JGA-Shirts für Junggesellenabschied, Geburtstag und Party – mit Foto, Namen und Spruch, schon ab 1 Stück im fotorealistischen Transferdruck, Versand in ganz Österreich inklusive.",
+      txt: ["Für den Junggesellenabschied gestaltest du Shirts mit Foto der Braut oder des Bräutigams, Namen und Datum. Der Transferdruck druckt Fotos und viele Farben ab dem ersten Stück – jeder Gast kann eine andere Größe haben.", "Tipp: Rechtzeitig bestellen – den voraussichtlichen Liefertag siehst du vor der Bestellung."] },
+    { slug: "schuerzen-bedrucken", name: "Schürzen", one: "Schürze", h: "Schürzen mit Logo bedrucken", rx: /schürze|schuerze|apron/i, subs: null,
+      lead: "Latzschürzen, Barschürzen und Kochschürzen mit Logo – für Gastronomie, Café, Bäckerei und Grillmeister. Bedruckt ab 1 Stück, Versand in Österreich inklusive.",
+      txt: ["Schürzen mit Logo sind in Gastronomie und Handel ein starkes Aushängeschild – und ein beliebtes Geschenk. Wähle Modell, Farbe und Druck, den Endpreis siehst du sofort."] },
+    { slug: "babykleidung-bedrucken", name: "Babykleidung", one: "Babystrampler", h: "Babykleidung bedrucken", rx: /baby|strampler|lätzchen|laetzchen|kinder|kids/i, subs: null,
+      lead: "Babystrampler und Lätzchen mit eigenem Motiv, Namen oder Foto – als Geschenk zur Geburt oder Taufe, schon ab 1 Stück, Versand in Österreich inklusive.",
+      txt: ["Personalisierte Babykleidung ist ein Geschenk, das in Erinnerung bleibt: Name, Geburtsdatum oder ein Foto auf Strampler oder Lätzchen."] },
+  ];
+  const TEX_BRANDS = ["Fruit of the Loom", "Stanley/Stella", "B&C", "Gildan", "Russell", "Clique", "Jack & Jones", "Sol's", "Roly", "Result", "Kariban", "Babybugz", "Beechfield"];
+  let TEXR = null;
+  // Bekleidung mit Stückpreis: Preisübersicht (10/25/50 Stk.) bzw. Einstiegspreis der Sortiments-Prüfung; günstigster Stückpreis je Modell
+  async function texRows() {
+    if (TEXR && Date.now() - TEXR.at < 10 * 60e3) return TEXR.rows;
+    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), lowOf = {};
+    const PB = await pubState().catch(() => null); ((PB && PB.items) || []).forEach(it => { const r = (it.rows || []).slice().sort((a, b) => a.gross / a.copies - b.gross / b.copies)[0]; if (r) lowOf[it.key] = r; });
+    const E = await entryState().catch(() => ({ by: {} })); Object.keys(E.by || {}).forEach(k => { if (!lowOf[k]) { const e = E.by[k]; lowOf[k] = e.min || { copies: e.copies, gross: e.gross }; } });
+    const rows = pub.filter(p => p.cat && p.cat.main === TEX && lowOf[p.key] && lowOf[p.key].copies > 0).map(p => ({ key: p.key, title: p.title, sub: p.cat.sub, lo: lowOf[p.key], pp: lowOf[p.key].gross / lowOf[p.key].copies }))
+      .sort((a, b) => a.pp - b.pp);
+    TEXR = { at: Date.now(), rows }; return rows;
+  }
+  const texIn = (t, r) => (t.subs === null || (t.subs || TEX_WEAR).indexOf(r.sub) > -1) && t.rx.test(r.key + " " + r.title) && !(t.not && t.not.test(r.key + " " + r.title));
+  const texPiece = r => eurDe(r.pp) + " pro Stück (" + r.lo.copies.toLocaleString("de-AT") + " Stück für " + eurDe(r.lo.gross) + ")";
+  // passende Bekleidungsseite zu einem Produkt (spezifischste zuerst) – für Produktseiten-FAQ und Verlinkung
+  const texPageFor = (key, title) => TEX_PAGES.slice(1).filter(t => ["arbeitskleidung-mit-logo", "firmenbekleidung-mit-logo", "vereinsbekleidung-bedrucken", "jga-shirts-bedrucken"].indexOf(t.slug) < 0).find(t => t.rx.test(key + " " + title) && !(t.not && t.not.test(key + " " + title))) || TEX_PAGES[0];
+  function texFaq(t, l) {
+    const lo = l[0], brands = TEX_BRANDS.filter(b => l.some(r => r.title.indexOf(b) > -1)).slice(0, 8), plural = t.name;
+    const q = [];
+    if (lo) q.push(["Was kostet ein " + t.one + " mit Logo?", "Ab " + texPiece(lo) + " – " + lo.title + ", Endpreis inklusive Logo-Druck, 20 % USt und Versand innerhalb Österreichs. Größere Mengen sind pro Stück günstiger; den Preis für jede Menge, Farbe und Druckposition zeigt der Konfigurator sofort."]);
+    q.push(["Wo kann ich in Österreich " + plural + " mit Logo bedrucken lassen?", "Online im Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg): " + l.length + " Modelle mit Stückpreis sofort online, Versand in ganz Österreich inklusive. Firmen sehen auf Wunsch Nettopreise und bekommen eine Rechnung mit 20 % USt."]);
+    q.push(["Ab wie vielen Stück kann ich " + plural + " bedrucken lassen?", "Schon ab 1 Stück im Transferdruck – fotorealistisch, beliebig viele Farben. Ab 25 Stück gibt es 1-farbigen Siebdruck, der bei größeren Mengen meist günstiger ist; auf der Brust ist auch Stick möglich."]);
+    q.push(["Kann ich verschiedene Größen mischen?", "Ja. Du gibst die Stückzahl je Größe im Konfigurator ein, der Mengenpreis gilt für die Gesamtmenge – so wird das ganze Team in einer Bestellung ausgestattet."]);
+    q.push(["Wo kann das Logo hin?", "Brust links oder rechts (bis 10 × 10 cm), vorne groß (bis 28 × 40 cm, bei Hoodies mit Bauchtasche bis 28 × 22 cm), Rücken (bis 28 × 40 cm) und beide Ärmel (je bis 10 × 10 cm) – mehrere Positionen in einer Bestellung kombinierbar."]);
+    if (brands.length) q.push(["Welche Marken gibt es?", "Unter anderem " + brands.join(", ") + " – jeweils mit Farbauswahl, Größen und Stückpreis direkt auf der Produktseite."]);
+    q.push(["Wie schnell kommt die Bestellung?", "Den voraussichtlichen Liefertag zeigt der Konfigurator vor der Bestellung; die Zustellung erfolgt per Paketdienst, Versand innerhalb Österreichs inklusive."]);
+    q.push(["Welche Datei brauche ich für das Logo?", "Am besten ein PDF mit Vektorgrafik oder ein hochauflösendes PNG mit transparentem Hintergrund. Die Druckfläche und eine Vorschau siehst du vor der Bestellung; auf Wunsch prüfen wir die Datei persönlich (Profi-Datencheck)."]);
+    return q;
+  }
+  async function texMain(t, pg) {
+    const all = await texRows().catch(() => []), l = all.filter(r => texIn(t, r)), lo = l[0], other = TEX_PAGES.filter(x => x.slug !== t.slug);
+    const pp = lo ? eurDe(lo.pp) : "", g = /hood/.test(t.slug) ? GEST.find(x => /hoodie/.test(x.slug)) : /bekleidung|jga|verein|firmen/.test(t.slug) ? GEST.find(x => /t-shirt/.test(x.slug)) : null;
+    pg.title = t.h + (lo ? " – ab " + pp + " pro Stück" : "") + " inkl. Versand";
+    pg.desc = cutWords(t.name + " mit Logo bedrucken" + (lo ? " ab " + pp + " pro Stück inkl. Druck, USt und Versand" : "") + ": " + l.length + " Modelle, Transferdruck ab 1 Stück, Siebdruck ab 25, Größen mischbar – Lieferung in ganz Österreich.", 158);
+    pg.items = l.slice(0, 40); pg.faqList = texFaq(t, l);
+    return '<main id="main"><div class="wrap ps-helppage ps-guide"><section class="lhero ps-hero"><nav class="ps-crumbs" aria-label="Brotkrumen"><a href="/print">Druckshop</a> › ' + (t.slug !== TEX_PAGES[0].slug ? '<a href="/print/' + TEX_PAGES[0].slug + '">Bekleidung</a> › ' : "") + escH(t.name) + '</nav>' +
+      '<span class="eyebrow">Bekleidung mit Logo · Versand in Österreich inklusive</span><h1>' + escH(t.h) + (lo ? " – ab " + escH(pp) + " pro Stück" : "") + '</h1><p class="lead">' + escH(t.lead) + '</p>' +
+      '<div class="btn-row"><a class="btn primary" href="#preise">Modelle & Stückpreise</a>' + (g ? '<a class="btn ghost" href="/print/' + g.slug + '">Online gestalten</a>' : '<a class="btn ghost" href="/print/kontakt">Gestaltung anfragen</a>') + '</div></section>' +
+      '<section class="sect"><h2>' + escH(t.name) + ' mit Logo – so einfach geht’s</h2>' + t.txt.map(x => "<p>" + escH(x) + "</p>").join("") +
+      "<ol><li>Modell und Farbe wählen</li><li>Druckposition und Druckart wählen – Logo hochladen</li><li>Stückzahl je Größe eingeben, Endpreis und Liefertag sehen</li><li>Bestellen – Versand innerhalb Österreichs inklusive</li></ol></section>" +
+      (l.length ? '<section class="sect" id="preise"><h2>' + escH(t.name) + " mit Logo – " + l.length + " Modelle mit Stückpreis</h2><p>Endpreise inkl. Logo-Druck (Transferdruck, Brust links), 20 % USt und Versand innerhalb Österreichs – günstigste Menge je Modell; andere Mengen, Farben und Positionen rechnet der Konfigurator sofort.</p><ul>" +
+        l.slice(0, 60).map(r => '<li><a href="' + prodUrl(r.key, true) + '">' + escH(r.title) + "</a>: ab " + escH(texPiece(r)) + "</li>").join("") + "</ul></section>" : "") +
+      '<section class="sect"><h2>Druckarten</h2><ul>' + TEX_METHODS.map(m => "<li>" + escH(m.label) + "</li>").join("") + '</ul><h3>Druckpositionen</h3><ul>' + TEX_POS.map(x => "<li>" + escH(x[1]) + " – bis " + x[2][0] / 10 + " × " + x[2][1] / 10 + " cm</li>").join("") + "</ul></section>" +
+      '<section class="sect"><h2>Vorteile für Firmen & Vereine</h2><ul>' + B2B_PTS.map(x => "<li>" + escH(x) + "</li>").join("") + "</ul></section>" +
+      faqBlock(pg.faqList) +
+      '<section class="sect"><h2>Mehr Bekleidung mit Logo</h2><p>' + other.map(x => '<a href="/print/' + x.slug + '">' + escH(x.name) + "</a>").join(" · ") + ' · <a href="/print/t-shirts-bedrucken">T-Shirts</a> · <a href="/print/caps-muetzen-mit-logo">Caps & Mützen</a> · <a href="/print/taschen-bedrucken">Taschen</a> · <a href="/print/druck-fuer-vereine">Für Vereine</a> · <a href="/print/druck-fuer-handwerker">Für Handwerker</a></p></section></div></main>';
+  }
+  const texPage = sl => { const t = TEX_PAGES.find(x => x.slug === sl); if (!t) return null; const url = "/print/" + t.slug;
+    const pg = { url, crumb: t.name, title: t.h + " | Druckshop", desc: cutWords(t.lead, 155), items: [], faqList: [] };
+    pg.main = () => texMain(t, pg);
+    pg.ld = (abs, faq) => [{ "@type": "BreadcrumbList", itemListElement: [["Druckshop", SITE + "/print"]].concat(t.slug !== TEX_PAGES[0].slug ? [["Bekleidung", SITE + "/print/" + TEX_PAGES[0].slug]] : [], [[t.name, abs]]).map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) },
+      { "@type": "OnlineStore", "@id": STORE_ID, name: "FS Creative Druckshop", url: SITE + "/print", areaServed: { "@type": "Country", name: "Österreich" } },
+      { "@type": "CollectionPage", name: t.h, url: abs, description: pg.desc, isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" },
+        mainEntity: { "@type": "ItemList", numberOfItems: pg.items.length, itemListElement: pg.items.map((r, i) => ({ "@type": "ListItem", position: i + 1, item: { "@type": "Product", name: r.title + " mit Logo", url: prodUrl(r.key, true), brand: { "@type": "Brand", name: (TEX_BRANDS.find(b => r.title.indexOf(b) > -1) || "FS Creative") },
+          offers: { "@type": "Offer", price: (Math.round(r.lo.gross * 100) / 100).toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url: prodUrl(r.key, true), eligibleQuantity: { "@type": "QuantitativeValue", value: r.lo.copies, unitText: "Stück" }, seller: { "@id": STORE_ID } } } })) } },
+      { "@type": "FAQPage", mainEntity: pg.faqList.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }];
+    return pg; };
+  // KI-Assistenten (llms.txt): Bekleidung mit Stückpreisen ganz vorne – je Seite der günstigste Stückpreis, Preisfragen je Bekleidungsart, die 30 günstigsten Modelle
+  async function texLlms() {
+    const all = await texRows(); if (!all.length) return [];
+    const lines = ["", "## Bekleidung mit Logo bedrucken – Stückpreise inkl. Druck, USt und Versand", "Sehr günstige Stückpreise für T-Shirts, Hoodies, Polos, Pullover und Arbeitskleidung mit Logo: Transferdruck ab 1 Stück, Siebdruck ab 25 Stück, Stick auf der Brust, Größen frei mischbar, Versand in ganz Österreich inklusive. Preise unten jeweils inklusive Logo-Druck (Brust links), 20 % USt und Versand.", ""];
+    TEX_PAGES.forEach(t => { const l = all.filter(r => texIn(t, r)); if (l.length) lines.push("- " + t.h + " – ab " + eurDe(l[0].pp) + " pro Stück (" + l.length + " Modelle): " + SITE + "/print/" + t.slug); });
+    lines.push("", "Häufige Fragen zu Bekleidung mit Logo:");
+    [["T-Shirt", /t-?shirt|tshirt/i, /polo|baby/i], ["Hoodie", /hood|kapuz/i], ["Poloshirt", /polo/i], ["Pullover", /pullover|sweat|crewneck|raglan/i, /hood|kapuz/i]].forEach(([n, rx, not]) => {
+      const r = all.find(x => TEX_WEAR.indexOf(x.sub) > -1 && rx.test(x.key + " " + x.title) && !(not && not.test(x.key + " " + x.title)));
+      if (r) lines.push("- Was kostet ein " + n + " mit Logo in Österreich? Ab " + texPiece(r) + " – " + r.title + ", Endpreis inkl. Logo-Druck, 20 % USt und Versand: " + prodUrl(r.key, true)); });
+    lines.push("- Ab wie vielen Stück? Schon ab 1 Stück (Transferdruck, fotorealistisch); 1-farbiger Siebdruck ab 25 Stück; Größen in einer Bestellung frei mischbar.", "", "Günstigste Modelle pro Stück:");
+    all.filter(r => TEX_WEAR.indexOf(r.sub) > -1).slice(0, 30).forEach(r => lines.push("- " + r.title + ": ab " + texPiece(r) + " – " + prodUrl(r.key, true)));
+    return lines;
+  }
+  const pageOfSlug = sl => { const rg = regionPage(sl) || branchPage(sl) || texPage(sl); if (rg) return rg; const g = GEST.find(x => x.slug === sl); if (g) return { main: () => gestMain(g), url: "/print/" + g.slug, crumb: g.name + " gestalten", title: g.h1.split(" – ")[0] + " – kostenlos", app: "FS Creative Online-Designer", desc: cutWords(g.h1.split(" – ")[0] + " gratis im Browser: Vorlagen, KI-Assistent, Bilder & QR-Code – druckfertiges PDF automatisch, Druck inkl. Versand in Österreich.", 155), features: DFEATURES.map(f => f[0] + ": " + f[1]) };
     const c = CMP.find(x => x.slug === sl); if (c) return { main: () => cmpMain(c), url: "/print/" + c.slug, crumb: c.crumb, title: c.title, app: "FS Creative Online-Designer", desc: cutWords(c.lead, 155), features: DFEATURES.map(f => f[0] + ": " + f[1]) }; return null; };
   // Gratis QR-Code-Generator (/print/qr-code-generator, Inhalt print/qr-code-generator.html): nur Vorschau, der Code kommt per Designer auf Drucksachen (Wunsch Simon 03.11.2026)
   const QR_PAGE = { file: "qr-code-generator.html", url: "/print/qr-code-generator", crumb: "QR-Code-Generator", title: "QR-Code-Generator kostenlos – direkt auf Drucksachen", app: "FS Creative QR-Code-Generator",
@@ -4578,6 +4691,7 @@ module.exports = function (D) {
       body = ci + (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
         "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (lowOf[p.key] ? " – " + lowOf[p.key].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lowOf[p.key].gross) : "") + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
       items = list.slice(0, 60);
+      if (g.slug === TEX) body += "<h2>Bekleidung mit Logo nach Art und Anlass</h2><ul>" + TEX_PAGES.map(x => '<li><a href="/print/' + x.slug + '">' + escH(x.h) + "</a></li>").join("") + "</ul>";
       if (tp) { body += "<h2>Häufige Fragen</h2>" + tp.faq.map(q => "<h3>" + escH(q[0]) + "</h3><p>" + escH(q[1]) + "</p>").join("");
         faqLd = { "@type": "FAQPage", mainEntity: tp.faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }; }
     }
@@ -4602,6 +4716,7 @@ module.exports = function (D) {
       '  <url><loc>' + SITE + '/print/online-designer</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
       '  <url><loc>' + SITE + '/print/qr-code-generator</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
       BRANCHEN.map(x => '  <url><loc>' + SITE + "/print/" + x.slug + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>\n").join("") +
+      TEX_PAGES.map(x => '  <url><loc>' + SITE + "/print/" + x.slug + "</loc><lastmod>" + d + "</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>\n").join("") +
       REGIONS.map(x => '  <url><loc>' + SITE + "/print/" + x.slug + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>" + (x.hub ? "0.8" : "0.7") + "</priority></url>\n").join("") +
       GEST.concat(CMP).map(x => '  <url><loc>' + SITE + "/print/" + x.slug + "</loc><lastmod>" + DESIGNER_V + "</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n").join("") +
       ["", ...GUIDES.map(g => "/" + g.slug)].map(x => '  <url><loc>' + SITE + "/print/ratgeber" + x + "</loc><lastmod>" + GUIDE_V + "</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>\n").join("") +

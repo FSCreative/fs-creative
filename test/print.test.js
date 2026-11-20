@@ -421,6 +421,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/druck-fuer-vereine/.test(await (await fetch(B + "/print/druckerei-tirol")).text()), "Regionsseite verlinkt Branchen");
     assert.ok(/print\/druck-fuer-handwerker/.test(await (await fetch(B + "/sitemap.xml")).text()), "Sitemap");
     assert.ok(/druck-fuer-gastronomie/.test(await (await fetch(B + "/llms.txt")).text()), "llms.txt");
+    // Bekleidung mit Logo (Simon 20.11.2026): eigene Seiten mit Stückpreis, Modellliste, Druckarten, FAQ, Sitemap (0.9), llms.txt-Abschnitt
+    for (const sl of ["bekleidung-bedrucken", "hoodies-bedrucken", "poloshirts-bedrucken", "arbeitskleidung-mit-logo", "vereinsbekleidung-bedrucken", "jga-shirts-bedrucken"]) {
+      const r = await fetch(B + "/print/" + sl); assert.strictEqual(r.status, 200, sl); const h = await r.text();
+      assert.ok(/<h1>[^<]+<\/h1>/.test(h) && /"FAQPage"/.test(h) && /"CollectionPage"/.test(h) && /Druckarten/.test(h) && /Mehr Bekleidung mit Logo/.test(h), sl);
+      assert.ok(h.indexOf('<link rel="canonical" href="https://www.fs-creative.at/print/' + sl + '"') > -1, "canonical " + sl);
+    }
+    const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/print\/hoodies-bedrucken<\/loc>[\s\S]{0,140}<priority>0\.9/.test(sm), "Sitemap Bekleidung");
+    const lt = await (await fetch(B + "/llms.txt")).text(); assert.ok(/print\/poloshirts-bedrucken/.test(lt), "llms.txt Bekleidungsseiten");
   });
   await t("Designer-PDF: Maße = Endformat + 2 × Beschnitt, TrimBox, Schriften eingebettet, CMYK, ausreichende Bild-dpi ok", async () => {
     const img = "data:image/png;base64," + png(400, 400, [255, 200, 0]).toString("base64");
