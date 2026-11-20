@@ -315,6 +315,7 @@
       (D.sides > 1 && !D.tex ? '<div class="pd-pages" role="tablist">' + sideNames.slice(0, D.sides).map(function (n, i) { return '<button type="button" role="tab" data-page="' + i + '" aria-current="' + (i === 0) + '"><span class="lf">' + esc(n) + '</span><span class="ls">' + (D.tex ? esc(n.split(" ")[0]) : ((D.fold || D.o.product.key === "folder") ? ["Außen", "Innen"] : ["Vorne", "Hinten"])[i]) + "</span></button>"; }).join("") + "</div>" : "") +
       '<span class="sp"></span><button type="button" class="pd-ib" data-a="undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">' + svgI("undo") + '</button><button type="button" class="pd-ib" data-a="redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">' + svgI("redo") + "</button>" +
       '<button type="button" class="pd-ib hm" data-a="preview" title="Vorschau">' + svgI("eye") + '<span class="lbl">Vorschau</span></button><button type="button" class="pd-ib hm" data-a="savelink" title="Entwurf per Link speichern">' + svgI("link") + '<span class="lbl">Link</span></button>' +
+      '<button type="button" class="pd-ib hm" data-a="help" title="Hilfe und Tastenkürzel (F1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 1 1 4.2 2.4c-.9.6-1.5 1.1-1.5 2.2M12 17.2v.1"/></svg><span class="lbl">Hilfe</span></button>' +
       '<button type="button" class="pd-ib primary" data-a="finish">Fertig</button></div>' +
       '<div class="pd-rail" role="toolbar" aria-label="Werkzeuge">' + tools("") + "</div>" +
       '<div class="pd-stage">' + (D.tex ? '<div class="pd-texnav" role="toolbar" aria-label="Druckpositionen"></div>' : "") + '<div class="pd-corner"></div><canvas class="pd-rh" aria-hidden="true"></canvas><canvas class="pd-rv" aria-hidden="true"></canvas><div class="pd-cv"><canvas></canvas></div>' +
@@ -608,7 +609,11 @@
     });
   }
   function center(o) { o.set({ left: D.trim.x + (D.trim.w - o.getScaledWidth()) / 2, top: D.trim.y + (D.trim.h - o.getScaledHeight()) / 2 }); o.setCoords(); }
-  function addObj(o, keepPos) { if (!keepPos) center(o); D.c.add(o); D.c.setActiveObject(o); D.c.requestRenderAll(); if (isTouch) setPanel("obj"); }
+  /* Shirt-Designer: kleine Druckflächen (Brust 10 × 10 cm, Ärmel) sind im Ganz-Shirt-Bild nur briefmarkengroß – ein neues Element war dort nicht greifbar
+     (Prüfung 20.11.2026). Beim Einfügen deshalb einmal auf die Druckfläche vergrößern; „Einpassen“ zeigt wieder das ganze Kleidungsstück. */
+  function fitArea() { var c = D.c, cw = c.getWidth(), ch = c.getHeight(), z = Math.max(0.05, Math.min(60, Math.min(cw / (D.W * 1.9), ch / (D.H * 1.9)))); c.setViewportTransform([z, 0, 0, z, cw / 2 - D.W / 2 * z, ch / 2 - D.H / 2 * z]); D.userZoom = true; afterView(); }
+  function areaTiny() { return !!D.tex && !D.userZoom && Math.min(D.W, D.H) * D.c.getZoom() < 230; }
+  function addObj(o, keepPos) { if (!keepPos) center(o); D.c.add(o); D.c.setActiveObject(o); if (areaTiny()) { fitArea(); toast("Auf die Druckfläche vergrößert – „Einpassen“ unten zeigt wieder das ganze Kleidungsstück"); } D.c.requestRenderAll(); if (isTouch) setPanel("obj"); }
   var baseScale = function () { return Math.min(D.mm.w, D.mm.h) / 55; };
   function addText(kind) {
     var s = baseScale(), col = inkFor();
@@ -783,7 +788,7 @@
       h = '<div class="pd-sec"><h4>Markenfarben</h4><div class="pd-col">' + bk.colors.map(function (c, i) { return '<button type="button" class="pd-sw" style="background:' + c + '" data-bdel="' + i + '" title="Entfernen" aria-label="Markenfarbe ' + c + ' entfernen"></button>'; }).join("") + '<input type="color" id="pdBrandC" value="#0a84ff" aria-label="Farbe wählen"><button type="button" class="ps-btn small" data-a="brand:add">Farbe speichern</button></div>' +
         '<h4 style="margin-top:8px">Logo</h4>' + (bk.logo ? '<img src="' + bk.logo + '" alt="Gespeichertes Logo" style="max-width:160px;max-height:80px;background:#fff;border-radius:8px;padding:6px"><div class="pd-row"><button type="button" class="ps-btn small" data-a="brand:logoins">Einfügen</button><button type="button" class="ps-btn small" data-a="brand:logodel">Entfernen</button></div>' : "") +
         '<button type="button" class="ps-btn small" data-a="brand:logo">' + (bk.logo ? "Anderes Logo speichern" : "Logo hochladen & merken") + '</button><p class="pd-muted">Markenfarben und Logo werden nur in diesem Browser gespeichert (nicht auf unserem Server).</p></div>'; }
-    else if (p === "check") h = checkHtml(issues(D.cur)) + '<div class="pd-sec"><div class="pd-row"><button type="button" class="ps-btn small" data-a="preview">Vorschau</button><button type="button" class="ps-btn small" data-a="savelink">Entwurf per Link speichern</button></div></div>';
+    else if (p === "check") h = checkHtml(issues(D.cur)) + '<div class="pd-sec"><div class="pd-row"><button type="button" class="ps-btn small" data-a="preview">Vorschau</button><button type="button" class="ps-btn small" data-a="savelink">Entwurf per Link speichern</button><button type="button" class="ps-btn small" data-a="help">Hilfe</button></div></div>';
     else if (p === "obj") h = objPanel();
     else if (p === "prod") h = '<div class="pd-texside" id="pdTexSide"></div>';
     D.P.innerHTML = h;
@@ -1177,6 +1182,16 @@
     if (D.dirty) modal('<h3>KI-Vorschlag übernehmen?</h3><p class="pd-muted">Der Vorschlag ersetzt deine aktuelle Gestaltung.</p><div class="foot"><button class="ps-btn" data-a="m:no">Abbrechen</button><button class="ps-btn primary" data-a="m:yes">Übernehmen</button></div>', function (r) { if (r === "yes") run(); });
     else run();
   }
+  /* Hilfe (Prüfung 20.11.2026): die wichtigsten Handgriffe für Einsteiger und die Tastenkürzel für Geübte – bisher nirgends nachzulesen */
+  function help() {
+    var mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""), M = mac ? "⌘" : "Strg";
+    var steps = D.tex ? [["Druckposition wählen", "Oben zwischen Brust, Rücken, Ärmel wechseln – unter „Produkt“ weitere Positionen, Farbe und Größen."], ["Motiv einfügen", "Links Text, Bilder (Logo), Formen oder QR-Code – alles landet in der markierten Druckfläche."], ["Platzieren", "Ziehen zum Verschieben, an den Ecken die Größe ändern. Nur was in der Druckfläche liegt, wird gedruckt."], ["Fertig", "„Prüfen“ zeigt Hinweise, „Vorschau“ das Ergebnis – mit „Fertig“ geht es zurück in den Shop."]]
+      : [["Vorlage wählen oder leer starten", "Links unter „Vorlagen“ – Texte, Farben und Bilder bleiben frei änderbar."], ["Text ändern", (isTouch ? "Doppelt antippen" : "Doppelklick") + " auf einen Text und losschreiben – Schrift, Größe und Farbe stehen " + (isTouch ? "unter „Bearbeiten“." : "rechts.")], ["Bilder & Logo", "Auf einen Platzhalter „+ Bild“ " + (isTouch ? "tippen" : "klicken") + " oder links „Bilder“ – wir zeigen dir, ob die Auflösung reicht."], ["Ränder beachten", "Hintergründe bis an den äußeren Rand ziehen, Texte und Logos innerhalb der gestrichelten Linie halten."], ["Fertig", "„Prüfen“ zeigt Hinweise, „Vorschau“ das Ergebnis – „Fertig“ erstellt das Druck-PDF."]];
+    var keys = [[M + " Z", "Rückgängig"], [M + " ⇧ Z", "Wiederholen"], [M + " C · V · X", "Kopieren · Einfügen · Ausschneiden"], [M + " D", "Duplizieren"], ["Entf", "Löschen"], ["Pfeiltasten", "Verschieben (mit ⇧ in großen Schritten)"], ["⇧ + Klick", "Mehrere Elemente auswählen"], [M + " A", "Alles auswählen"], [M + " G · " + M + " ⇧ G", "Gruppieren · Gruppe auflösen"], ["Leertaste + Ziehen", "Ansicht verschieben"], ["+ · − · 0", "Vergrößern · Verkleinern · Einpassen"], ["⇧ 2", "Auf die Auswahl zoomen"], ["Rechtsklick", "Menü mit allen Befehlen"], ["Esc", "Auswahl aufheben"]];
+    modal('<h3>So funktioniert der Designer</h3><ol class="pd-help-s">' + steps.map(function (x) { return "<li><b>" + esc(x[0]) + "</b><span>" + esc(x[1]) + "</span></li>"; }).join("") + "</ol>" +
+      (isTouch ? '<p class="pd-muted">Am Handy: mit zwei Fingern zoomen und die Ansicht verschieben; ein Element antippen zeigt „Bearbeiten · Duplizieren · Löschen“.</p>' : '<h4 class="pd-help-h">Tastenkürzel</h4><dl class="pd-help-k">' + keys.map(function (x) { return "<dt>" + esc(x[0]) + "</dt><dd>" + esc(x[1]) + "</dd>"; }).join("") + "</dl>") +
+      '<div class="foot"><button type="button" class="ps-btn primary" data-a="m:ok">Alles klar</button></div>', null, "wide");
+  }
   function modal(html, cb, cls) {
     var m = document.createElement("div"); m.className = "pd-modal"; m.innerHTML = '<div class="pd-dlg ' + (cls || "") + '" role="dialog" aria-modal="true">' + html + "</div>"; D.root.appendChild(m);
     var f = m.querySelector(".primary") || m.querySelector("button"); if (f) f.focus();
@@ -1209,6 +1224,7 @@
     switch (k) {
       case "close": modal('<h3>Designer schließen?</h3><p class="pd-muted">Deine Gestaltung bleibt in diesem Browser gespeichert und ist beim nächsten Öffnen wieder da.</p><div class="foot"><button class="ps-btn" data-a="m:no">Weiter gestalten</button><button class="ps-btn primary" data-a="m:yes">Schließen</button></div>', function (r) { if (r === "yes") { autosave(); close(); } }); break;
       case "undo": undo(false); break; case "redo": undo(true); break;
+      case "help": help(); break;
       case "preview": preview(); break; case "finish": finish(); break; case "savelink": saveLink(); break;
       case "sheetclose": setPanel(null); break;
       case "guides": D.showGuides = !D.showGuides; t.setAttribute("aria-pressed", String(D.showGuides)); c.requestRenderAll(); break;
@@ -1362,6 +1378,7 @@
     if (!D) return; var tg = e.target, typing = tg && (tg.tagName === "INPUT" || tg.tagName === "TEXTAREA" || tg.isContentEditable), o = act(), editing = o && o.isEditing, mod = e.metaKey || e.ctrlKey, k = e.key;
     if (k === "Escape") { var m = D.root.querySelector(".pd-modal"); if (m) { m.remove(); e.preventDefault(); return; } if (editing) return; if (D.crop) { cropEnd(false); return; } if (o) { D.c.discardActiveObject(); D.c.requestRenderAll(); } else if (isTouch) setPanel(null); return; }
     if (typing || editing || D.root.querySelector(".pd-modal")) return;
+    if (k === "F1" || k === "?") { e.preventDefault(); help(); return; }
     if (e.code === "Space") { D.space = true; e.preventDefault(); return; }
     if (D.crop) { if (k === "Enter") { e.preventDefault(); cropEnd(true); } else if (/^Arrow/.test(k)) { e.preventDefault(); var cs = (e.shiftKey ? 5 : 0.5) * U; moveBy(D.crop.r, k === "ArrowLeft" ? -cs : k === "ArrowRight" ? cs : 0, k === "ArrowUp" ? -cs : k === "ArrowDown" ? cs : 0); D.c.requestRenderAll(); } return; }
     if (e.shiftKey && e.code === "Digit2") { e.preventDefault(); zoomSel(); return; }

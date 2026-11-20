@@ -314,6 +314,16 @@ textarea.pd-in{min-height:76px;resize:vertical;line-height:1.4}
 .pd-dlg.wide{width:min(860px,100%)}
 .pd-dlg h3{font-size:20px;margin-bottom:10px}
 .pd-dlg .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;flex-wrap:wrap}
+/* Designer-Hilfe: Schritte + Tastenkürzel */
+.pd-help-s{margin:0 0 6px;padding:0;list-style:none;counter-reset:pdh;display:grid;gap:8px}
+.pd-help-s li{counter-increment:pdh;display:grid;grid-template-columns:28px 1fr;gap:1px 10px;align-items:start}
+.pd-help-s li::before{content:counter(pdh);grid-row:1 / span 2;width:24px;height:24px;border-radius:50%;background:#0a84ff;color:#fff;display:grid;place-items:center;font-size:12.5px;font-weight:700;margin-top:1px}
+.pd-help-s li b{font-size:14.5px}.pd-help-s li span{font-size:13.5px;line-height:1.45;color:rgba(255,255,255,.66)}
+.pd-help-h{margin:16px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+.pd-help-k{display:grid;grid-template-columns:repeat(2,auto 1fr);gap:6px 12px;margin:0;font-size:13.5px;align-items:center}
+.pd-help-k dt{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:2px 7px;white-space:nowrap;justify-self:start}
+.pd-help-k dd{margin:0;color:rgba(255,255,255,.75)}
+@media(max-width:640px){.pd-help-k{grid-template-columns:auto 1fr}}
 .pd-busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(13,13,18,.7);z-index:5;font-weight:600}
 .pd-icons{grid-template-columns:repeat(auto-fill,minmax(44px,1fr))}
 .pd-icons .pd-ib{height:44px;padding:0}
@@ -2532,7 +2542,16 @@ html.ps-stu-open .ps-toast{z-index:9500}html.ps-stu-open .ps-pop,html.ps-stu-ope
 .bc-cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:20px;align-items:start}@media(max-width:900px){.bc-cols{grid-template-columns:1fr}}
 .bc-cv{background:#e9e9ee;border-radius:14px;padding:18px;display:flex;justify-content:center}.bc-cv.sm{padding:12px;margin-bottom:10px}
 .bc-svg{width:100%;max-width:620px;height:auto;display:block;box-shadow:0 6px 24px rgba(0,0,0,.25);background:#fff;touch-action:none}
-.bc-svg .bc-it{cursor:move}.bc-svg text.bc-it.sel,.bc-svg image.bc-it.sel{outline:1px dashed #0a84ff;paint-order:stroke;stroke:rgba(10,132,255,.35);stroke-width:.35px}
+.bc-svg .bc-it{cursor:move}
+/* Feldrahmen: dünn und unabhängig vom Zoom (vorher lag ein dicker gestrichelter Rahmen über dem Text) – gewähltes Feld kräftig, die anderen zart */
+.bc-svg .bc-box{stroke:rgba(10,132,255,.3);stroke-width:1px;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.bc-svg .bc-box:hover{stroke:rgba(10,132,255,.7)}
+.bc-svg .bc-box.sel{stroke:#0a84ff;stroke-width:1.5px;stroke-dasharray:none;fill:rgba(10,132,255,.07)}
+.bc-svg .bc-h{fill:#0a84ff;stroke:#fff;stroke-width:1px;vector-effect:non-scaling-stroke;cursor:nwse-resize}
+.bc-how{list-style:none;counter-reset:bch;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:4px 0 14px;padding:0}
+.bc-how li{counter-increment:bch;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:start;border:1px solid var(--ps-line2);border-radius:14px;padding:12px 14px;background:var(--surface)}
+.bc-how li::before{content:counter(bch);grid-row:1 / span 2;width:26px;height:26px;border-radius:50%;background:var(--ps-accent,#0a84ff);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px}
+.bc-how li span{font-size:13px;color:var(--text-dim);line-height:1.4}
 .bc-seg{display:inline-flex;border:1px solid var(--ps-line2);border-radius:10px;overflow:hidden;margin-bottom:10px}.bc-seg button{border:0;background:none;color:var(--text);padding:7px 14px;font:inherit;cursor:pointer}.bc-seg button[aria-pressed=true]{background:var(--accent);color:#fff}
 .bc-side{border:1px solid var(--ps-line2);border-radius:16px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:10px}.bc-side h4{margin:0}
 .bc-add{display:flex;flex-wrap:wrap;gap:6px}.bc-props{border-top:1px solid var(--ps-line2);padding-top:10px;display:flex;flex-direction:column;gap:8px}
@@ -2558,4 +2577,13 @@ html.ps-stu-open .ps-toast{z-index:9500}html.ps-stu-open .ps-pop,html.ps-stu-ope
 .bc-pop .bc-fld{gap:3px}.bc-pop .bc-fld input{padding:7px 10px}
 @media(max-width:520px){.bc-grid2 .t3{grid-column:span 3}.bc-grid2 .t3:nth-of-type(4){grid-column:1/-1}.bc-pop-b{padding:22px 18px 6px}.bc-pop-f{padding:14px 18px 18px}.bc-pop-f .ps-btn{flex:1}.bc-pop-sum b{margin-left:0;width:100%}}
 .bc-done{text-align:center;padding:30px 10px}.bc-done .ic{width:64px;height:64px;border-radius:50%;background:#30d158;color:#fff;font-size:34px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px}.bc-done .ac{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+/* Handy/Tablet (Prüfung 20.11.2026): Karte bleibt beim Scrollen sichtbar – sonst sieht man beim Ändern von Schrift, Größe oder Daten das Ergebnis nicht.
+   --bc-top = Höhe der festen Kopfleiste (setzt bcard.js); zweiseitige Bestell-Vorschau nebeneinander, damit beide Seiten Platz haben */
+@media(max-width:900px){
+  .bc-ed .bc-stage{position:sticky;top:var(--bc-top,8px);z-index:3}
+  .bc-ed .bc-stage .bc-cv{padding:10px;box-shadow:0 8px 22px rgba(0,0,0,.16)}
+  .bc-ed .bc-stage>p.small{display:none}
+  .bc-ed .bc-pair.two{grid-template-columns:1fr 1fr;gap:8px}.bc-ed .bc-pair.two figure+figure{max-width:none}
+  .bc-ed .bc-top .bc-name{min-width:0;flex:1 1 140px}
+}
 .bc-pair{display:grid;gap:12px}.bc-pair.two figure+figure{max-width:60%;justify-self:center;width:100%}.bc-pair figure{margin:0;flex-direction:column;align-items:center;gap:6px}.bc-pair figcaption{font-size:12px;color:var(--text-dim)}
