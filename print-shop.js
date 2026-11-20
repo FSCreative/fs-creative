@@ -5595,9 +5595,13 @@ module.exports = function (D) {
           meta = await handleUpload(buf, name, { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, motifs: rp.motifs || undefined });
         } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht verarbeitet werden" }); } finally { rel(); }
         const view = fileView(meta);
-        if (view.blocked) return J(res, 200, { ok: false, error: "Die Datei hat noch Fehler – bitte korrigieren und erneut hochladen.", file: view });
+        // Simon 20.11.2026 (D-261119-RPNM): abgelehnte Versuche waren unsichtbar und „Rückseite weiß lassen“ ging nicht.
+        // Jetzt: jeder abgelehnte Versuch steht im Verlauf (Datei im Cockpit ansehbar); fehlende Seiten kann der Kunde bewusst bestätigen (keep=1).
         const needP = (view.checks || []).map(c => (String(c.text || "").match(/für die gewählte Druckart werden (\d+) benötigt/) || [])[1]).filter(Boolean)[0];
-        if (needP) return J(res, 200, { ok: false, error: "Bitte alle " + needP + " Seiten in einer PDF hochladen" + (+needP === 2 ? " (Vorder- und Rückseite)" : "") + " – sonst bleibt " + (+needP === 2 ? "die Rückseite" : "der Rest") + " weiß.", file: view });
+        const keep = u.searchParams.get("keep") === "1";
+        const tryLog = async why => { try { meta.orderId = o.id; meta.rejected = true; await store.putFile(meta); o.redo.tries = (o.redo.tries || []).concat([{ at: nowIso(), fileId: meta.id, name: meta.name, why }]).slice(-10); hist(o, "Upload-Versuch vom Kunden nicht übernommen (" + why + "): " + meta.name); await store.putOrder(o); } catch (e) { log("Upload-Versuch merken", o.nr, e.message); } };
+        if (view.blocked) { await tryLog("Datei hat Fehler"); return J(res, 200, { ok: false, error: "Die Datei hat noch Fehler – bitte korrigieren und erneut hochladen.", file: view }); }
+        if (needP && !keep) { await tryLog("nur " + (view.pages || 1) + " von " + needP + " Seiten"); return J(res, 200, { ok: false, canKeep: true, error: "Die Datei hat " + (view.pages || 1) + " Seite(n), es werden " + needP + " benötigt" + (+needP === 2 ? " (Vorder- und Rückseite)" : "") + ". Bitte alle Seiten in einer PDF hochladen – oder bestätigen, dass " + (+needP === 2 ? "die Rückseite" : "der Rest") + " weiß bleiben soll.", file: view }); }
         meta.orderId = o.id; await store.putFile(meta);
         const oldId = motif > -1 ? o.motifs[motif].fileId : o.fileId;
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileKind = meta.kind; o.fileChecks = meta.checks || []; }
@@ -5605,7 +5609,7 @@ module.exports = function (D) {
         if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
         const allNew = motif < 0 || o.motifs.every((m, i) => i === motif || (o.fileHistory || []).some(h => h.by === "Kunde" && h.motif === i && h.at >= o.redo.sentAt));
         if (allNew) { o.redo.status = "uploaded"; o.redo.uploadedAt = nowIso(); }
-        hist(o, "Neue Druckdaten vom Kunden" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + meta.name); stamp(o); await store.putOrder(o);
+        hist(o, "Neue Druckdaten vom Kunden" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + ": " + meta.name + (needP && keep ? " – Kunde bestätigt: " + (+needP === 2 ? "Rückseite bleibt weiß" : "fehlende Seiten bleiben weiß") : "")); stamp(o); await store.putOrder(o);
         const who = o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ");
         if (allNew) {
           if (false && D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: "Neue Druckdaten prüfen und bei Print.com bestellen: " + o.nr + " · " + (who || ""), detail: o.product.title + " · " + o.copies + " Stk. · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
@@ -5956,7 +5960,7 @@ module.exports = function (D) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       // Intern (ohne Bezahlung): kein Umsatz, keine Marge in Kennzahlen/Listen (Simon 17.11.2026) – Einkauf bleibt sichtbar
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: isIntern(o) ? internRev(o).gross : o.price.gross, net: isIntern(o) ? internRev(o).net : o.price.net, margin: isIntern(o) ? internRev(o).margin : o.price.margin, intern: isIntern(o), internRevenue: isIntern(o) && o.internRevenue ? o.internRevenue : undefined, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? o.redo.status : "", redoTries: o.redo && o.redo.status === "open" ? (o.redo.tries || []).filter(x => x.at >= (o.redo.sentAt || "")).length : 0, warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
@@ -6413,7 +6417,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
-        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid), o.cover ? [o.cover.fileId] : []).filter(Boolean);
+        const fidQ = String(u.searchParams.get("fid") || ""), allowed = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).map(h => h.old), (o.fileHistory || []).map(h => h.new), (o.pool || []).map(x => x.fid), o.cover ? [o.cover.fileId] : [], ((o.redo && o.redo.tries) || []).map(x => x.fileId)).filter(Boolean);   // + abgelehnte Upload-Versuche des Kunden (Simon 20.11.2026)
         if (fidQ && allowed.indexOf(fidQ) < 0) return D.send(res, 404, "Datei nicht gefunden");
         const fm = await store.fileMeta(fidQ || o.fileId).catch(() => null), wantSrc = u.searchParams.get("src") === "1", sid = wantSrc && fm && fm.src;
         if (u.searchParams.get("pv") === "1" && !wantSrc && pvOk(fm)) { const pv = await previewPdf(fm).catch(() => null); if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": "inline; filename=\"" + o.nr + "-vorschau.pdf\"", "Cache-Control": "private, max-age=3600", "X-Print-Preview": "1" }); }

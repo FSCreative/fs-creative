@@ -3890,18 +3890,24 @@
     err.hidden = true; ck.innerHTML = "";
     if (f.size > UP_MAX) { err.textContent = "Die Datei ist größer als 500 MB."; err.hidden = false; return; }
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { err.textContent = "Bitte PDF, JPG oder PNG hochladen."; err.hidden = false; return; }
-    pr.hidden = false;
-    var x = upXhr(); x.open("POST", "/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/reupload?t=" + encodeURIComponent(bx.getAttribute("data-t")) + (ms ? "&motif=" + encodeURIComponent(ms.value) : ""));
+    /* Simon 20.11.2026: fehlen Seiten (z. B. nur Vorderseite), kann der Kunde bestätigen, dass der Rest weiß bleibt (keep=1) */
+    var send = function (keep) {
+    pr.hidden = false; var kb = bx.querySelector(".ps-redo-keep"); if (kb) kb.remove();
+    var x = upXhr(); x.open("POST", "/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/reupload?t=" + encodeURIComponent(bx.getAttribute("data-t")) + (ms ? "&motif=" + encodeURIComponent(ms.value) : "") + (keep ? "&keep=1" : ""));
     x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
     upPop("up", 0, f.name);
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.lastChild.textContent = ev.loaded < ev.total ? "Datei wird hochgeladen … " + pc + " %" : "Datei wird geprüft …"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.onload = function () { upPop("close"); pr.hidden = true; var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {}
       if (j.file) { pxMake(f, j.file); ck.innerHTML = checksHtml(j.file.checks || []); }
-      if (!j.ok) { err.textContent = j.error || "Upload fehlgeschlagen – bitte erneut versuchen."; err.hidden = false; return; }
+      if (!j.ok) { err.textContent = j.error || "Upload fehlgeschlagen – bitte erneut versuchen."; err.hidden = false;
+        if (j.canKeep) { var b = document.createElement("button"); b.type = "button"; b.className = "ps-btn primary ps-redo-keep"; b.style.marginTop = "10px"; b.textContent = "So übernehmen – fehlende Seite bleibt weiß"; b.onclick = function () { err.hidden = true; send(true); }; err.insertAdjacentElement("afterend", b); }
+        return; }
       if (LIVE.o) { LIVE.o.redo = j.redo; LIVE.o.files = j.files; if (j.redo.status === "uploaded") { renderStatus(LIVE.o, LIVE.id, LIVE.t); return; } }
       toast("Motiv hochgeladen ✓ – bitte auch die übrigen Motive"); };
     x.onerror = function () { upPop("close"); pr.hidden = true; err.textContent = "Upload fehlgeschlagen – bitte erneut versuchen."; err.hidden = false; };
     x.send(f);
+    };
+    send(false);
   });
   // Druckfreigabe (Wunsch Simon 05.11.2026): aufbereitete bzw. ausgetauschte Druckdaten ansehen und freigeben – oder Änderung wünschen
   function proofHtml(o, id, t) {

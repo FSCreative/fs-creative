@@ -1077,7 +1077,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const ru = (buf, name, tok) => fetch(B + "/print/api/order/" + id + "/reupload?t=" + (tok || r.j.token), { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) }), body: buf }).then(async x => ({ status: x.status, j: await x.json() }));
     assert.strictEqual((await ru(await pdfOf(89, 59, 2), "x.pdf", "falsch")).status, 404);
     const bad = await ru(await pdfOf(150, 150, 2), "falsch.pdf"); assert.strictEqual(bad.j.ok, false, JSON.stringify(bad.j)); assert.ok(bad.j.file && bad.j.file.blocked, "falsches Format wird abgelehnt");
-    const okU = await ru(await pdfOf(89, 59, 2), "neu.pdf"); assert.strictEqual(okU.j.ok, true, JSON.stringify(okU.j)); assert.strictEqual(okU.j.redo.status, "uploaded");
+    // nur Vorderseite: Kunde kann bestätigen, dass die Rückseite weiß bleibt (keep=1); abgelehnte Versuche stehen im Cockpit (Simon 20.11.2026)
+    const one = await ru(await pdfOf(89, 59, 1), "nur-vorne.pdf"); assert.strictEqual(one.j.ok, false, JSON.stringify(one.j)); assert.strictEqual(one.j.canKeep, true); assert.ok(/weiß bleiben/.test(one.j.error), one.j.error);
+    let od0 = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(od0.order.redo.tries.length, 2, "beide abgelehnten Versuche gemerkt"); assert.ok(od0.order.history.some(h => /nicht übernommen \(nur 1 von 2 Seiten\)/.test(h.what)));
+    const lst = await admin("/admin/api/print/state"); const row0 = lst.orders.find(x => x.id === id); assert.strictEqual(row0.redo, "open"); assert.strictEqual(row0.redoTries, 2);
+    const kp = await fetch(B + "/print/api/order/" + id + "/reupload?t=" + r.j.token + "&keep=1", { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": "nur-vorne.pdf" }), body: await pdfOf(89, 59, 1) }).then(x => x.json());
+    assert.strictEqual(kp.ok, true, JSON.stringify(kp)); assert.strictEqual(kp.redo.status, "uploaded");
+    od0 = await admin("/admin/api/print/order?id=" + id); assert.ok(od0.order.history.some(h => /Kunde bestätigt: Rückseite bleibt weiß/.test(h.what)));
+    const okU =await ru(await pdfOf(89, 59, 2), "neu.pdf"); assert.strictEqual(okU.j.ok, true, JSON.stringify(okU.j)); assert.strictEqual(okU.j.redo.status, "uploaded");
     const od = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(od.order.fileId, okU.j.file.fileId, "Druckdatei der Bestellung ersetzt"); assert.ok(od.order.fileHistory.some(h => h.by === "Kunde"));
     const pl2 = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.strictEqual(pl2.ok, true, JSON.stringify(pl2));
     assert.strictEqual((await ru(await pdfOf(89, 59, 2), "spaet.pdf")).status, 409, "nach dem Bestellen kein Upload mehr");
