@@ -5163,14 +5163,19 @@ module.exports = function (D) {
     return { funnel: fun, at: new Date().toISOString(), total: LIVE.size, bg, cart, carts: carts.slice(0, 20), today: VISITS && VISITS.date === today() ? VISITS.ids.size : 0, yesterday: VISITS && VISITS.prev ? VISITS.prev.n : null, todaySince: VISITS && VISITS.date === today() ? VISITS.since || null : null, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
   }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 180 s – große Dateien brauchen länger)
-  const PDF_SLOTS = { busy: 0, wait: [] };
-  function pdfSlot() {
-    const release = () => { const w = PDF_SLOTS.wait.shift(); if (w) { clearTimeout(w.t); w.res(release); } else PDF_SLOTS.busy--; };
-    if (PDF_SLOTS.busy < 2) { PDF_SLOTS.busy++; return Promise.resolve(release); }
-    if (PDF_SLOTS.wait.length >= 12) return Promise.reject(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 }));
-    return new Promise((res, rej) => { const w = { res, t: setTimeout(() => { PDF_SLOTS.wait.splice(PDF_SLOTS.wait.indexOf(w), 1); rej(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 })); }, 180000) }; PDF_SLOTS.wait.push(w); });
+  /* Zwei getrennte Schlangen (20.11.2026 – Uploads hingen minutenlang, laut Log „Beschnitt beim Hochladen ergänzen: Gerade sehr viel los“):
+     Die Upload-Routen belegen einen Platz (pdfSlot) und rufen darin withPdf auf (Beschnitt ergänzen, skalieren, Bild → PDF). Mit EINER gemeinsamen
+     Schlange à 2 Plätze blockierten sich zwei gleichzeitige Uploads gegenseitig: jeder hielt einen Platz und wartete auf einen zweiten – 180 s Stillstand,
+     alle weiteren Uploads stauten sich dahinter. withPdf hat deshalb eigene Plätze (PDF_WORK); wer in withPdf arbeitet, wartet nie auf einen Upload-Platz. */
+  const PDF_SLOTS = { busy: 0, wait: [] }, PDF_WORK = { busy: 0, wait: [] };
+  function slotOf(S) {
+    const release = () => { const w = S.wait.shift(); if (w) { clearTimeout(w.t); w.res(release); } else S.busy--; };
+    if (S.busy < 2) { S.busy++; return Promise.resolve(release); }
+    if (S.wait.length >= 12) return Promise.reject(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 }));
+    return new Promise((res, rej) => { const w = { res, t: setTimeout(() => { S.wait.splice(S.wait.indexOf(w), 1); rej(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 })); }, 180000) }; S.wait.push(w); });
   }
-  const withPdf = async fn => { const rel = await pdfSlot(); try { return await fn(); } finally { rel(); } };
+  function pdfSlot() { return slotOf(PDF_SLOTS); }
+  const withPdf = async fn => { const rel = await slotOf(PDF_WORK); try { return await fn(); } finally { rel(); } };
   // Entwürfe: je IP höchstens 150 MB pro Tag (Speicher schützen)
   const DRAFT_BYTES = new Map();
   function draftBudget(ip, bytes) { const day = new Date().toISOString().slice(0, 10), o = DRAFT_BYTES.get(ip); const used = o && o.day === day ? o.n : 0;
@@ -5184,9 +5189,14 @@ module.exports = function (D) {
   function readBody(req, max) {
     return new Promise((resolve, reject) => {
       const len = parseInt(req.headers["content-length"] || "0", 10); if (len > max) { reject(Object.assign(new Error("Datei zu groß (max. " + Math.floor(max / 1e6) + " MB)"), { status: 413 })); req.resume(); return; }
-      const chunks = []; let n = 0, dead = false;
+      /* Verbindung schon weg (Kunde hat abgebrochen, während die Anfrage auf einen PDF-Platz wartete) oder bricht mittendrin ab: sofort mit Fehler enden.
+         Sonst kommt weder „end“ noch „error“, der Aufruf endet nie und der Upload hält seinen PDF-Platz bis zum Neustart (20.11.2026). */
+      const gone = () => Object.assign(new Error("Upload abgebrochen – bitte erneut versuchen"), { status: 499 });
+      if (req.destroyed && !req.readableEnded) { reject(gone()); return; }
+      const chunks = []; let n = 0, dead = false, done = false;
       req.on("data", c => { if (dead) return; n += c.length; if (n > max) { dead = true; reject(Object.assign(new Error("Datei zu groß (max. " + Math.floor(max / 1e6) + " MB)"), { status: 413 })); req.resume(); return; } chunks.push(c); });
-      req.on("end", () => { if (!dead) resolve(Buffer.concat(chunks)); }); req.on("error", e => { if (!dead) reject(e); });
+      req.on("end", () => { done = true; if (!dead) resolve(Buffer.concat(chunks)); }); req.on("error", e => { if (!dead) { dead = true; reject(e); } });
+      req.on("close", () => { if (!done && !dead) { dead = true; reject(gone()); } });
     });
   }
   async function readJson(req, max) { if (req.__json) return req.__json; const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
