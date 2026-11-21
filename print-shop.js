@@ -1866,6 +1866,23 @@ module.exports = function (D) {
     void buf; const j = await pcApi("POST", "/pdf/preflight", body, { base: c.pcPlatform, timeout: 60000 });
     return j && j.id ? { id: String(j.id), status: "PROCESSING" } : null;
   }
+  /* Print.com-Preflight einordnen (Simon 21.11.2026): RGB ist erlaubt (Profil „CMYK + RGB“, wird beim Druck umgewandelt) → nur Hinweis statt Fehler;
+     fehlende PDF/X-Kennung verlangt niemand → nur intern; alte Meldungen einer Vorgänger-Datei („Vorderseite: Erweiterte Prüfung …“) fallen weg, sobald die neue Prüfung da ist;
+     gleiche Meldung nur einmal (englisch „RGB color is used“ = deutsche RGB-Meldung). Gilt auch für schon gespeicherte Prüfberichte (beim Lesen). */
+  const PF_RX = /^(\S+: )?Erweiterte Prüfung/, PF_KEY = t => String(t || "").replace(/^\S+: (?=Erweiterte)/, "").replace(/\s*\(\d+x on pages? [\d\s,-]+\)\s*$/i, "").replace(/RGB colou?r is used/i, "RGB-Farben in der Datei – gedruckt wird in CMYK (Farben wirken etwas ruhiger)").replace(/ \(Print\.com\)/, "");
+  function pfNorm(list) {
+    const arr = Array.isArray(list) ? list : [], hasNew = arr.some(c => /^Erweiterte Prüfung/.test(c.text || "")), seen = new Set(), out = [];
+    for (const c of arr) {
+      const t = String(c.text || "");
+      if (!PF_RX.test(t)) { out.push(c); continue; }
+      if (hasNew && !/^Erweiterte Prüfung/.test(t)) continue;
+      const k = PF_KEY(t); if (seen.has(k)) continue; seen.add(k);
+      if (/PDF\/X version is empty|PDF\/X version .{0,20}should be/i.test(t)) out.push(Object.assign({}, c, { level: "ok", admin: true }));
+      else if (c.level === "error" && /RGB/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: " + k.replace(/^Erweiterte Prüfung: /, "") }));
+      else out.push(c);
+    }
+    return out;
+  }
   async function preflightPoll(meta) {
     if (!meta.preflight || meta.preflight.status !== "PROCESSING") return meta;
     try {
@@ -1874,7 +1891,9 @@ module.exports = function (D) {
         meta.preflight = { id: meta.preflight.id, status: j.status, errors: (j.errors || []).map(x => clip(x.message, 300)).slice(0, 20), warnings: (j.warnings || []).map(x => clip(x.message, 300)).slice(0, 20), fixes: (j.fixes || []).map(x => clip(x.message, 300)).slice(0, 20), reason: clip(j.failure_reason, 300) };
         // englische Print.com-Meldungen für Kunden auf Deutsch (Review 19.11.2026); Maß-/Beschnitt-Meldungen bleiben roh – das Cockpit fasst sie zusammen (prdGroup)
         const pfTr = t => String(t).replace(/Page is empty/gi, "Seite ist leer").replace(/expected (\d+) page\(s\) received (\d+)/gi, "$1 Seite(n) erwartet, $2 in der Datei").replace(/PDF\/X-4\s*:\s*RGB is used while Output Intent is CMYK/gi, "RGB-Farben in der Datei – gedruckt wird in CMYK (Farben wirken etwas ruhiger)").replace(/Font(s)? not embedded/gi, "Schrift nicht eingebettet");
+        meta.checks = pfNorm((meta.checks || []).filter(c => !/^(\S+: )?Erweiterte Prüfung/.test(c.text || "")));
         meta.preflight.errors.forEach(t => meta.checks.push({ level: "error", text: "Erweiterte Prüfung: " + pfTr(scrubText(t)) }));
+        meta.checks = pfNorm(meta.checks);
         // Warnungen (z. B. „feine schwarze Linie nicht auf Überdrucken“) nur in der Cockpit-Kontrolle – beim Kunden wären sie irreführend; Fehler sieht auch der Kunde
         meta.preflight.warnings.forEach(t => meta.checks.push({ level: "warn", admin: true, text: "Erweiterte Prüfung (Print.com): " + scrubText(t) }));
         await store.putFile(meta);
@@ -1882,7 +1901,7 @@ module.exports = function (D) {
     } catch (e) { log("Preflight:", e.message); }
     return meta;
   }
-  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: (m.checks || []).filter(c => !c.admin), blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
+  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: pfNorm(m.checks).filter(c => !c.admin), blocked: pfNorm(m.checks).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
     needBack: needBackOf(m), bleedFix: m.bleedFix || "", back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
   // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
@@ -2181,7 +2200,9 @@ module.exports = function (D) {
   const PAGE_GENERIC = /Rückseite bleibt weiß|füllt nur die Vorderseite|Seite\(n\)|Seiten –|Seitengröße|TrimBox|Beschnitt \(|^2 Seiten:|ersetzt durch/;
   async function savePages(m, pdf, pages, pageChecks, general, pageNames, head) {
     const info = await pdfInfoX(pdf), glob = checkPdf(info, m.size, +m.bleed || 0, +m.sides || 1, !!m.multi).filter(c => /Seite\(n\)|Seiten –|passt zur gewählten Seitenzahl|Seitengröße|keinen Beschnitt|passt nicht zum gewählten Format/.test(c.text || ""));
-    const all = [head].concat(glob, general, [].concat.apply([], pageChecks.map(x => x || [])), (m.checks || []).filter(c => c.spot));   // Sonderfarben-Ergebnis bleibt erhalten
+    const noPf = l => (l || []).filter(c => !PF_RX.test(c.text || ""));   // alte Print.com-Prüfung gilt nicht für die neu zusammengesetzte Datei – die läuft neu
+    general = noPf(general); pageChecks = pageChecks.map(noPf);
+    const all = [head].concat(glob, general, [].concat.apply([], pageChecks), (m.checks || []).filter(c => c.spot));   // Sonderfarben-Ergebnis bleibt erhalten
     return newFile("upload", String(m.name || "druck.pdf").replace(/( \+ (Rückseite|Innenseite))?(\.pdf)?$/i, "") + (pageNames.length === 2 && (+m.sides || 1) === 2 && !m.multi ? " + " + pageLabel(m, 1) : "") + ".pdf", pdf,
       { product: m.product, sel: m.sel, size: m.size, bleed: m.bleed, sides: m.sides, pages, multi: m.multi }, all,
       { original: "pdf", pageChecks, generalChecks: general, pageNames, front: m.front || m.id });
@@ -6072,7 +6093,7 @@ module.exports = function (D) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: o.printcom && o.printcom.noFile && ["ordered", "in_production"].indexOf(o.status) > -1 ? "Druckdatei fehlt bei Print.com" : o.status === "pending_payment" && o.payment && o.payment.transfer ? "Überweisung unterwegs" : STATUS_DE[o.status] || o.status, review: needsReview(o), product: o.product.title, copies: o.copies,
       // Intern (ohne Bezahlung): kein Umsatz, keine Marge in Kennzahlen/Listen (Simon 17.11.2026) – Einkauf bleibt sichtbar
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: isIntern(o) ? internRev(o).gross : o.price.gross, net: isIntern(o) ? internRev(o).net : o.price.net, margin: isIntern(o) ? internRev(o).margin : o.price.margin, intern: isIntern(o), internRevenue: isIntern(o) && o.internRevenue ? o.internRevenue : undefined, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? (o.redo.status === "open" && !redoOpen(o) ? "replaced" : o.redo.status) : "", redoTries: redoOpen(o) ? (o.redo.tries || []).filter(x => x.at >= (o.redo.sentAt || "")).length : 0, warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      payment: o.payment.method, paymentStatus: o.payment.status, payFail: (o.payment.fail && o.payment.fail.text) || "", storno: o.storno || "", pcOrder: o.printcom && o.printcom.orderNumber || "", redo: o.redo ? (o.redo.status === "open" && !redoOpen(o) ? "replaced" : o.redo.status) : "", redoTries: redoOpen(o) ? (o.redo.tries || []).filter(x => x.at >= (o.redo.sentAt || "")).length : 0, warn: pfNorm(o.fileChecks).some(c => c.level !== "ok"), progress: progressOf(o),
       email: (o.customer && o.customer.email) || "", zip: shipOf(o).zip || "", city: shipOf(o).city || "", region: regionOf(shipOf(o).country, shipOf(o).zip), groupId: o.groupId || "", groupSize: o.groupSize || 1, check: o.check || "review", origin: o.origin || null, found: foundOf(o),
       invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
@@ -6492,7 +6513,7 @@ module.exports = function (D) {
           if (spot) rec = rec.filter(r => r.title !== "Technische Farben");
           // Falzlinien + Felder (Titel, Rückseite, Innen …) fürs Cockpit: aus Falzart und offenem Format der Druckdatei (gleiche Rechnung wie im Shop)
           let folds = null; try { const fsl = String((o.sel || {}).fold || ""), sz0 = m.size || o.size; if (FOLD_RX.test(fsl) && sz0 && sz0.w > 0 && sz0.h > 0) folds = foldFromOpen(fsl, +sz0.w, +sz0.h); } catch (e) { folds = null; }
-          return { label, motif: mot ? motif : null, folds, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat((m.checks || []).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          return { label, motif: mot ? motif : null, folds, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat(pfNorm(m.checks).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
