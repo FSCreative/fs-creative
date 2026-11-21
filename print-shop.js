@@ -2020,14 +2020,17 @@ module.exports = function (D) {
     '<a class="b" href="/print?produkte">Alle Produkte ansehen</a><div class="l"><a href="/print/flyer">Flyer</a><a href="/print/visitenkarten">Visitenkarten</a><a href="/print">Druckshop-Startseite</a><a href="/kontakt">Kontakt</a></div></div></main></body></html>';
   async function addBleed(buf, size, bleed, mode, insets) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
-    const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
+    const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W0 = size.w * MM_PT, H0 = size.h * MM_PT, b = bleed * MM_PT;
     const nc = mode === "zoom" ? null : await noCutDoc(buf);
     let pi = -1;
     for (const sp of src.getPages()) { pi++;
-      if (!sp.node.Contents()) { out.addPage([W + 2 * b, H + 2 * b]).setTrimBox(b, b, W, H); continue; }   // leere Seite (z. B. weiße Rückseite): bleibt leer, nur im Beschnitt-Format
+      if (!sp.node.Contents()) { out.addPage([W0 + 2 * b, H0 + 2 * b]).setTrimBox(b, b, W0, H0); continue; }   // leere Seite (z. B. weiße Rückseite): bleibt leer, nur im Beschnitt-Format
       if ((sp.getRotation().angle || 0) % 360) throw bad("Gedrehte PDF-Seiten können nicht automatisch ergänzt werden");
+      // Quer statt hoch angelegt (oder umgekehrt, z. B. Gutschein 210 × 99 auf 99 × 210): im eigenen Format der Seite ergänzen, gedreht wird beim Übergeben (rotateForPrint) – sonst „passt nicht“ bei Farben erweitern/Leicht vergrößern (Simon 21.11.2026)
+      const sz = sp.getSize(), rat = (w, h) => Math.abs((sz.width / sz.height) / (w / h) - 1) <= 0.012, bOf = (w, h) => Math.abs(sz.width - (w + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (h + 2 * b)) < 2 * MM_PT;
+      const swap = Math.abs(W0 - H0) > MM_PT && (sz.width > sz.height) !== (W0 > H0) && !rat(W0, H0) && !bOf(W0, H0) && (rat(H0, W0) || bOf(H0, W0)), W = swap ? H0 : W0, H = swap ? W0 : H0;
       // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
-      const sz = sp.getSize(), hasB = Math.abs(sz.width - (W + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (H + 2 * b)) < 2 * MM_PT;
+      const hasB = bOf(W, H);
       if (!hasB && Math.abs((sz.width / sz.height) / (W / H) - 1) > 0.012) throw bad("Seitengröße passt nicht zum Endformat – bitte unter „Anpassen“ einpassen");   // nie verzerren
       // Endformat mittig aus der Seite nehmen – Dateien mit etwas weniger Beschnitt (z. B. 107 × 76 statt 108 × 77 mm) sonst schief beschnitten (Simon 19.11.2026)
       const ox = hasB ? (sz.width - W) / 2 : 0, oy = hasB ? (sz.height - H) / 2 : 0, box = { left: ox, bottom: oy, right: ox + W, top: oy + H };
