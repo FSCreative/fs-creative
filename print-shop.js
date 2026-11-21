@@ -2738,7 +2738,17 @@ module.exports = function (D) {
     const same = ["company", "firstName", "lastName", "street", "zip", "city", "country"].every(k => String(x[k] || "").toLowerCase() === String((cust || {})[k] || "").toLowerCase());
     return same ? null : x;   // gleich wie Rechnungsadresse → keine eigene Lieferadresse
   }
-  const shipOf = o => o.shipTo || o.customer;   // wohin geliefert wird
+  const shipOf = o => o.shipTo || o.customer;
+  /* Print.com nimmt in „fullstreet“ höchstens 30 Zeichen (Fehler 21.11.2026 bei langer Adresse): längere Straße in Straße + „houseNumber“ (erste Hausnummer)
+     + „extraAddressLine“ (Rest, z. B. Stiege/Top oder zweite Adresszeile) aufteilen – kurze Adressen gehen unverändert wie bisher. */
+  function pcStreet(street) {
+    const s = String(street || "").replace(/\s+/g, " ").trim(); if (s.length <= 30) return { fullstreet: s };
+    const m = s.match(/^(.*?[^\d\s,])[\s,]*(\d+(?:\s?[a-zA-Z](?![a-zA-ZäöüÄÖÜß.]))?(?:\s?[/-]\s?\d+[a-zA-Z]?)*)[\s,]*(.*)$/);
+    let st = m ? m[1].trim() : s, hn = m ? m[2].replace(/\s+/g, "") : "", extra = m ? m[3].trim() : "";
+    if (st.length > 30) { const cut = st.lastIndexOf(" ", 30) > 10 ? st.lastIndexOf(" ", 30) : 30; extra = (st.slice(cut).trim() + (extra ? ", " + extra : "")).trim(); st = st.slice(0, cut).trim(); }
+    if (hn.length > 10) { extra = (hn.slice(10) + (extra ? " " + extra : "")).trim(); hn = hn.slice(0, 10); }
+    return Object.assign({ fullstreet: st }, hn ? { houseNumber: hn } : {}, extra ? { extraAddressLine: extra.slice(0, 60) } : {});
+  }   // wohin geliefert wird
   const addrLine = a => [a.company, a.firstName + " " + a.lastName, a.street, a.zip + " " + a.city, COUNTRIES[a.country]].filter(Boolean).join(", ");
   async function createOrder(input) {   // eine Position (bisherige API /print/api/order)
     const r = await createCheckout(Object.assign({}, input, { items: [input] }));
@@ -3195,7 +3205,7 @@ module.exports = function (D) {
     const c = o.customer, base = cfg().publicUrl;
     let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
     const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
-    const sh = shipOf(o), addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };   // nur die Lieferadresse geht an Print.com
+    const sh = shipOf(o), addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, ...pcStreet(sh.street), postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };   // nur die Lieferadresse geht an Print.com
     const sender = Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) });
     const mx = Array.isArray(o.motifs) && o.motifs.length > 1 && !motifSplit(o) ? await maxDesignsOf(o.product.sku).catch(() => null) : null;
     if (mx && o.motifs.length > mx) {
@@ -6954,7 +6964,7 @@ module.exports = function (D) {
           if (!ds.length) return J(res, 400, { ok: false, error: "Keine Dateien" });
           const files = []; for (const d of ds) { const fm = await store.fileMeta(String(d.fileId || "")); if (!fm) return J(res, 400, { ok: false, error: "Datei " + d.fileId + " nicht gefunden" }); const n = Math.round(+d.copies); if (!(n > 0)) return J(res, 400, { ok: false, error: "Stückzahl fehlt" }); const fid = (b.useSrc !== false && fm.src) || fm.id; files.push({ id: fid, copies: n, name: fm.name || "" }); }
           const total = files.reduce((a, f) => a + f.copies, 0); opts.copies = total;
-          const sh = shipOf(o), c = o.customer || {}, addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, fullstreet: sh.street, postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };
+          const sh = shipOf(o), c = o.customer || {}, addr = { companyName: sh.company || undefined, firstName: sh.firstName, lastName: sh.lastName, ...pcStreet(sh.street), postcode: sh.zip, city: sh.city, country: sh.country, telephone: sh.phone || c.phone, email: c.email };
           if (b.dry === true) {   // nur Preis + Versand ansehen
             const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", { sku, options: opts, deliveryPromise: 0 });
             const sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku, options: opts, deliveryPromise: 0 }, address: { country: sh.country || "AT", postcode: sh.zip || "6793" }, numberOfDays: 21 }).catch(() => null);
