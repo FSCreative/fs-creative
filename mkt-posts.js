@@ -339,7 +339,7 @@ module.exports = function (C) {
   let galSync = null, galIdx = null;
   const galDesc = () => galIdx || (galIdx = GIDX());
   async function syncPrintGallery(force) {
-    const st = S().mkt; if (!force && st.printGalleryAt && Date.now() - Date.parse(st.printGalleryAt) < 7 * 864e5) return 0;
+    const st = S().mkt; if (!force && st.printGalleryV === 2 && st.printGalleryAt && Date.now() - Date.parse(st.printGalleryAt) < 7 * 864e5) return 0;   // V2: auch Einstellungs- und Gruppenbilder (Simon 21.11.2026)
     if (galSync) return galSync;
     galSync = (async () => {
       fs.mkdirSync(PGAL, { recursive: true });
@@ -354,7 +354,20 @@ module.exports = function (C) {
           const f = (String(p.key).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 50) + "-" + crypto.createHash("sha1").update(asset).digest("hex").slice(0, 8) + ".jpg");
           idx["g-" + f] = clip("Produktfoto (Print.com): " + (pr.title || p.title || p.key) + (pr.desc ? " – " + pr.desc : ""), 160);
           jobs.push({ f, url: asset + "?fm=jpg&w=900&q=72" }); }
+        // Bilder zu den Einstellungen (Falzart, Veredelung, Material …) – je Bild nur einmal, beschrieben mit Produkt, Einstellung und Wert
+        for (const pp of [].concat(pr.props || [])) for (const op of [].concat((pp && pp.options) || [])) {
+          const u = String((op && op.img) || ""); if (!/^https:\/\/images\.ctfassets\.net\/.+\.(jpe?g|png|webp)/i.test(u)) continue;
+          const asset = u.split("?")[0]; if (seen.has(asset)) continue; seen.add(asset);
+          const f = "opt-" + String((pp.key || pp.name || "x")).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 30) + "-" + crypto.createHash("sha1").update(asset).digest("hex").slice(0, 8) + ".jpg";
+          idx["g-" + f] = clip("Einstellung (Print.com): " + (pp.name || pp.title || pp.key || "") + ": " + (op.name || op.title || op.label || op.key || "") + " – bei " + (pr.title || p.title || p.key), 160);
+          jobs.push({ f, url: asset + "?fm=jpg&w=900&q=72" }); }
       }
+      // Produktgruppen-Bilder (Startseite/Kategorien)
+      for (const g of [].concat((cat && cat.groups) || [])) for (const x of [g].concat(g.subs || [])) {
+        const u = String((x && x.img) || ""); if (!/^https:\/\/images\.ctfassets\.net\/.+\.(jpe?g|png|webp)/i.test(u)) continue;
+        const asset = u.split("?")[0]; if (seen.has(asset)) continue; seen.add(asset);
+        const f = "gruppe-" + String(x.slug || "x").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40) + "-" + crypto.createHash("sha1").update(asset).digest("hex").slice(0, 8) + ".jpg";
+        idx["g-" + f] = clip("Produktgruppe (Print.com): " + (x.name || x.slug), 160); jobs.push({ f, url: asset + "?fm=jpg&w=1200&q=72" }); }
       PROMO.forEach(([rel, txt]) => { const f = "werbung-" + rel.split("/").pop().toLowerCase().replace(/\.[a-z]+$/, "").replace(/[^a-z0-9_-]+/g, "-").slice(0, 50) + ".jpg"; idx["g-" + f] = clip(txt, 160); jobs.push({ f, url: "https://www.print.com/wp-content/uploads/" + rel, big: true }); });
       const want = new Set(jobs.map(j => j.f)), q = jobs.slice();
       const work = async () => { while (q.length) { const j = q.shift(), file = path.join(PGAL, j.f); if (fs.existsSync(file)) continue;
@@ -368,7 +381,7 @@ module.exports = function (C) {
       let fl = []; try { fl = fs.readdirSync(PGAL); } catch (e) {}
       fl.forEach(f => { if (/\.jpg$/.test(f) && !want.has(f)) { try { fs.unlinkSync(path.join(PGAL, f)); } catch (e) {} delete idx["g-" + f]; } });
       fs.writeFileSync(path.join(PGAL, "index.json"), JSON.stringify(idx)); galIdx = idx;
-      st.printGalleryAt = nowIso(); save(); console.log("marketing: Print.com-Bilder", added, "neu,", want.size, "gesamt"); return added;
+      st.printGalleryAt = nowIso(); st.printGalleryV = 2; save(); console.log("marketing: Print.com-Bilder", added, "neu,", want.size, "gesamt"); return added;
     })().finally(() => { galSync = null; });
     return galSync;
   }
