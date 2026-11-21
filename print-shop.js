@@ -1874,6 +1874,9 @@ module.exports = function (D) {
   const PF_RX = /^(\S+: )?Erweiterte Prüfung/, PF_KEY = t => String(t || "").replace(/^\S+: (?=Erweiterte)/, "").replace(/\s*\(\d+x on pages? [\d\s,-]+\)\s*$/i, "").replace(/RGB colou?r is used/i, "RGB-Farben in der Datei – gedruckt wird in CMYK (Farben wirken etwas ruhiger)").replace(/ \(Print\.com\)/, "");
   function pfNorm(list) {
     const arr = Array.isArray(list) ? list : [], hasNew = arr.some(c => /^Erweiterte Prüfung/.test(c.text || "")), seen = new Set(), out = [];
+    /* Auto-Beschnitt (Simon 21.11.2026, Visitenkarte 32× „≤ 149 ppi“): der Randstreifen wird aus dem Motiv gespiegelt und 5–10× gestreckt → Print.com misst dort
+       50–90 ppi, obwohl das Motiv selbst scharf ist (dort ~500 ppi). Dann nur Hinweis statt rotem Fehler. */
+    const autoBleed = arr.some(c => /wir haben ihn automatisch ergänzt/.test(c.text || ""));
     for (const c of arr) {
       const t = String(c.text || "");
       if (!PF_RX.test(t)) { out.push(c); continue; }
@@ -1881,6 +1884,7 @@ module.exports = function (D) {
       const k = PF_KEY(t); if (seen.has(k)) continue; seen.add(k);
       if (/PDF\/X version is empty|PDF\/X version .{0,20}should be/i.test(t)) out.push(Object.assign({}, c, { level: "ok", admin: true }));
       else if (c.level === "error" && /RGB/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: " + k.replace(/^Erweiterte Prüfung: /, "") }));
+      else if (c.level === "error" && autoBleed && /resolution less than or equal to \d+ ppi/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: Bilder unter 150 ppi gefunden – meist nur der automatisch ergänzte Beschnittrand (Randstreifen werden dafür gestreckt und abgeschnitten). Motiv in der Vorschau auf Schärfe prüfen." }));
       else out.push(c);
     }
     return out;
