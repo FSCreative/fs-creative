@@ -1704,7 +1704,9 @@ module.exports = function (D) {
   const hexPts = (x0, y0, x1, y1, d) => { d = d || 0; const w = x1 - x0, h = y1 - y0, k = 1.1547 * d;
     if (w >= h) { x0 += k; x1 -= k; y0 += d; y1 -= d; const q = (x1 - x0) / 4, cy = (y0 + y1) / 2; return [[x0, cy], [x0 + q, y0], [x1 - q, y0], [x1, cy], [x1 - q, y1], [x0 + q, y1]]; }
     x0 += d; x1 -= d; y0 += k; y1 -= k; const q = (y1 - y0) / 4, cx = (x0 + x1) / 2; return [[cx, y0], [x1, y0 + q], [x1, y1 - q], [cx, y1], [x0, y1 - q], [x0, y0 + q]]; };
-  const safeFor = (prod, sel) => { if (!prod || prod.imprint) return prod ? 0 : 3; const sl = sleeveMm(sel); return Math.max(+prod.safe || 3, sl ? sl + 10 : 0); };
+  const safeFor = (prod, sel) => { if (!prod || prod.imprint) return prod ? 0 : 3; const sl = sleeveMm(sel); return Math.max(+prod.safe || 3, sl ? sl + 10 : 0, hemEyeMm(sel)); };
+  /* Saum/Ösen (Simon 21.11.2026): Print.com säumt mit 4 cm (verstärkter Saum), Ösen sitzen darin → Texte/Logos mind. 5 cm innerhalb des Endformats; nur Ösen ohne Saum 4 cm */
+  const hemEyeMm = sel => { let m = 0; Object.values(sel || {}).forEach(v => { const s = String(v); if (/^hem/.test(s)) m = Math.max(m, 50); else if (/^eyelets?_/.test(s)) m = Math.max(m, 40); }); return m; };
   // ── Druckvorlage (PDF) je Produkt/Ausführung: Datenformat, Endformat, Beschnitt, Sicherheitsabstand, Falzlinien ──
   const TPL_CACHE = new Map();
   async function templatePdf(prod, n) {
