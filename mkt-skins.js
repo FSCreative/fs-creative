@@ -439,35 +439,38 @@ module.exports = function (U) {
     const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 700, fontSize: 26, color: "#fff", alignItems: "center" }, TX), "Wischen", h("div", { marginLeft: 10 }, swipeArrow("#ffffff"))) : s.cta && tpl !== "cta" ? btn(s.cta) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Inter", fontSize: 22, color: "rgba(255,255,255,0.6)" }, TX), shop ? "fs-creative.at/print" : "fs-creative.at"));
-    const R = kids => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Inter", background: rootBg(c, "#0a0a0f") }, glow.concat(corners).concat(kids));
+    /* Druckshop: auch Text-Folien (Liste, Zahl, Vergleich, Zitat, Abschluss) mit Produktfoto als abgedunkeltem Hintergrund (Simon 21.11.2026: „mehr Bilder, nicht nur Texte“) */
+    const bgPh = dim => ph ? [h("div", Object.assign({ position: "absolute", left: 0, top: 0, width: F.w, height: F.h }, DE), photo(ph, { width: F.w, height: F.h })),
+      h("div", { position: "absolute", left: 0, top: 0, width: F.w, height: F.h, background: "linear-gradient(180deg, rgba(10,10,15," + Math.max(0, dim - 0.2).toFixed(2) + ") 0%, rgba(10,10,15," + dim.toFixed(2) + ") 45%, rgba(10,10,15," + Math.min(0.96, dim + 0.12).toFixed(2) + ") 100%)" })] : [];
+    const R = (kids, dim) => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Inter", background: rootBg(c, "#0a0a0f") }, (dim ? bgPh(dim) : []).concat(glow).concat(corners).concat(kids));
     const glass = (kids, st) => h("div", Object.assign({ flexDirection: "column", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 30, padding: "28px 28px" }, st || {}, TX), kids);
     if (tpl === "list") {
       const its = (s.items || []).slice(0, 5);
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 108 : 80, 44, 0.6), "#fff")),
         h("div", { flexDirection: "column", marginTop: story ? 44 : 34, rowGap: story ? 18 : 14 }, its.map((t, i) => glass([h("div", { alignItems: "center" },
           h("div", { width: story ? 64 : 52, height: story ? 64 : 52, borderRadius: 16, background: BL, color: "#fff", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: story ? 32 : 26, marginRight: 22, flexShrink: 0 }, String(i + 1)),
-          h("div", { fontSize: fit(plain(t), W2 - 150, 2, story ? 48 : 34, 24, 0.55), fontWeight: 600, color: "#fff", width: W2 - 130 }, plain(t)))], { padding: story ? "26px 26px" : "20px 22px" })))), foot]);
+          h("div", { fontSize: fit(plain(t), W2 - 150, 2, story ? 48 : 34, 24, 0.55), fontWeight: 600, color: "#fff", width: W2 - 130 }, plain(t)))], { padding: story ? "26px 26px" : "20px 22px", background: ph ? "rgba(10,10,15,0.55)" : "rgba(255,255,255,0.05)" })))), foot], 0.76);
     }
     if (tpl === "stat") {
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick,
         glass([h("div", { fontSize: story ? 38 : 28, fontWeight: 600, color: "rgba(255,255,255,0.7)" }, plain(s.label || s.headline)),
           h("div", { marginTop: 10, fontSize: fit(plain(s.number), W2 - 80, 1, story ? 280 : 190, 80, 0.62), fontWeight: 800, letterSpacing: -6, color: "#fff", lineHeight: 1 }, plain(s.number)),
-          s.sub ? h("div", { marginTop: 16, fontSize: story ? 32 : 28, color: "rgba(255,255,255,0.7)" }, plain(s.sub)) : null], { padding: "40px 40px" })), foot]);
+          s.sub ? h("div", { marginTop: 16, fontSize: story ? 32 : 28, color: "rgba(255,255,255,0.7)" }, plain(s.sub)) : null], { padding: "40px 40px", background: ph ? "rgba(10,10,15,0.5)" : "rgba(255,255,255,0.05)" })), foot], 0.62);
     }
     if (tpl === "compare") {
       const col = (title, its, good) => glass([h("div", { fontWeight: 800, fontSize: story ? 46 : 33, color: good ? "#9cc9ff" : "rgba(255,255,255,0.65)" }, plain(title)), (its || []).slice(0, 5).map(t => h("div", { marginTop: story ? 16 : 12, fontSize: story ? 38 : 26, color: good ? "#fff" : "rgba(255,255,255,0.6)", lineHeight: 1.3 }, plain(t)))], { width: (W2 - 24) / 2, border: "1px solid " + (good ? "rgba(10,132,255,0.7)" : "rgba(255,255,255,0.12)") });
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 104 : 76, 42, 0.6), "#fff")),
-        h("div", { justifyContent: "space-between", marginTop: story ? 44 : 34 }, col(s.leftTitle || "Bisher", s.leftItems, false), col(s.rightTitle || "Mit uns", s.rightItems, true))), foot]);
+        h("div", { justifyContent: "space-between", marginTop: story ? 44 : 34 }, col(s.leftTitle || "Bisher", s.leftItems, false), col(s.rightTitle || "Mit uns", s.rightItems, true))), foot], 0.82);
     }
     if (tpl === "cta") {
       return R([h("div", { flexDirection: "column", alignItems: "center", width: W2, marginTop: "auto", marginBottom: "auto" }, h("div", Object.assign({ width: story ? 150 : 130, height: story ? 150 : 130, borderRadius: 36, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center", boxShadow: "0 0 60px rgba(10,132,255,0.35)" }, DE, { __logo: 1 }), img(svg('<path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M9 20h6M10 22h4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>', "0 0 24 24", 96, 96), { width: story ? 90 : 78, height: story ? 90 : 78 })),
         h("div", { marginTop: 40, alignSelf: "center" }, kick), h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 124 : 88, 46, 0.6), "#fff", true, W2)),
         s.sub ? h("div", Object.assign({ marginTop: 20, fontSize: story ? 40 : 30, color: "rgba(255,255,255,0.7)", textAlign: "center", justifyContent: "center" }, TX), plain(s.sub)) : null,
-        h("div", { marginTop: 44 }, btn(s.cta || (shop ? "Jetzt online bestellen" : "Gratis Entwurf anfragen"))), h("div", Object.assign({ marginTop: 22, fontSize: 24, color: "rgba(255,255,255,0.55)" }, TX), shop ? "Versand in ganz Österreich inklusive" : "Gaschurn · Montafon · Vorarlberg"))]);
+        h("div", { marginTop: 44 }, btn(s.cta || (shop ? "Jetzt online bestellen" : "Gratis Entwurf anfragen"))), h("div", Object.assign({ marginTop: 22, fontSize: 24, color: "rgba(255,255,255,0.55)" }, TX), shop ? "Versand in ganz Österreich inklusive" : "Gaschurn · Montafon · Vorarlberg"))], 0.68);
     }
     if (tpl === "quote") {
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, h("div", Object.assign({ fontSize: 160, fontWeight: 800, lineHeight: 0.8, backgroundImage: grad, backgroundClip: "text", color: "transparent", height: 110 }, TX), "“"),
-        h("div", TX, head(s.headline, fit(plain(s.headline), W2, 6, story ? 92 : 62, 36, 0.58), "#fff")), s.author ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 34 : 28, fontWeight: 600, color: "rgba(255,255,255,0.6)" }, TX), "— " + plain(s.author)) : null), foot]);
+        h("div", TX, head(s.headline, fit(plain(s.headline), W2, 6, story ? 92 : 62, 36, 0.58), "#fff")), s.author ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 34 : 28, fontWeight: 600, color: "rgba(255,255,255,0.6)" }, TX), "— " + plain(s.author)) : null), foot], 0.68);
     }
     if (ph && (tpl === "hook" || tpl === "photo")) {   // Produktfoto (Simon 20.11.2026: „keiner meiner Druckshop-Posts hat echte Produktbilder genommen“) – Foto als leuchtende Glaskarte, Text darunter
       const phH = Math.round((F.h - F.top - F.bottom) * (story ? 0.5 : 0.46));
@@ -479,7 +482,7 @@ module.exports = function (U) {
     }
     return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick,
       h("div", TX, head(s.headline, fit(plain(s.headline), W2, 4, story ? 156 : 112, 54, 0.6), "#fff")),
-      s.sub ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 44 : 34, lineHeight: 1.4, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot]);
+      s.sub ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 44 : 34, lineHeight: 1.4, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot], 0.68);
   }
 
   // ═════════════ Titelbild (Folie/Szene 1): große Headline, je Post anderes Layout + andere Farbwelt aus dem CD der Marke ═════════════
@@ -591,7 +594,7 @@ module.exports = function (U) {
 
   const SKINS = { kochdu, kantineur, blitzdings, valuero, skikaiser, huettengaudi, druckshop: c => fs(c, true), "fs-creative": c => fs(c, false) };
   // Welche Vorlagen ein Foto brauchen (aus der Bildersammlung der Marke)
-  const PHOTO_TPL = { kochdu: ["photo", "hook"], valuero: ["photo", "hook", "cta", "stat", "list"], skikaiser: ["photo", "hook", "stat", "list", "compare", "cta", "quote"], huettengaudi: ["photo", "hook"], blitzdings: ["photo", "hook"], druckshop: ["photo", "hook"] };
+  const PHOTO_TPL = { kochdu: ["photo", "hook"], valuero: ["photo", "hook", "cta", "stat", "list"], skikaiser: ["photo", "hook", "stat", "list", "compare", "cta", "quote"], huettengaudi: ["photo", "hook"], blitzdings: ["photo", "hook"], druckshop: ["photo", "hook", "list", "stat", "compare", "cta", "quote"] };
   return {
     has: key => !!SKINS[key],
     // o.cover: Titelbild (Folie/Szene 1) – nur für Folien ohne Listen/Vergleich, sonst bleibt der normale Look
