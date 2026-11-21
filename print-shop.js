@@ -2838,7 +2838,7 @@ module.exports = function (D) {
       if (f.kind === "logo" || (f.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
       if (f.product !== prod.key || canon(fileSelKey(f.sel)) !== canon(fileSelKey(n.fileSel))) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
       // Profi-Datencheck/Grafikaufbereitung (Simon 17.11.2026, Jacqueline am Handy): Fehler sperren nicht – Simon richtet die Datei vor dem Druck (geht nie automatisch raus)
-      if ((f.checks || []).some(c => c.level === "error") && input.__check !== "pro" && input.__check !== "graphic") throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren oder den Profi-Datencheck wählen (dann richten wir die Datei für dich)");
+      if (pfNorm(f.checks).some(c => c.level === "error") && input.__check !== "pro" && input.__check !== "graphic") throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren oder den Profi-Datencheck wählen (dann richten wir die Datei für dich)");
       return f;
     };
     let fm = null, motifs = null; const noFile = noFileNeeded(prod, n.sel);
