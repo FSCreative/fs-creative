@@ -42,9 +42,9 @@ F.css('.pr-list{display:grid}.pr-row{display:grid;grid-template-columns:minmax(0
   '.pr-livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#30d158;vertical-align:middle;margin-right:4px;animation:prpulse 1.6s infinite}@keyframes prpulse{0%{box-shadow:0 0 0 0 rgba(48,209,88,.55)}70%{box-shadow:0 0 0 8px rgba(48,209,88,0)}100%{box-shadow:0 0 0 0 rgba(48,209,88,0)}}'+
   '.pr-live{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;font-weight:600;font-size:13px}.pr-live.off{background:var(--warn-soft);color:var(--warn)}.pr-live.on{background:var(--ok-soft);color:var(--ok)}');
 function load(force){ if(busy) return; busy=true; F.api("/admin/api/print/state").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",orders:[]}; if(ST.ok) ST.review=(ST.orders||[]).filter(isRev).length; F.renderFor("print","heute"); try{ prdWarm(); }catch(e){} }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",orders:[]}; F.render(); }); }
-/* Simon 22.11.2026: „In Arbeit“ nur, was Print.com angenommen hat (Print.com-Auftragsnummer da). Abgelehnte Datei/neue Datei angefordert, Problem ohne
-   Print.com-Auftrag oder bestellt ohne Nummer → „Zur Prüfung“. */
-function isAct(x){ return !!x.pcOrder&&["ordered","in_production","problem"].indexOf(x.status)>-1; }
+/* Simon 22.11.2026: „In Arbeit“ nur, was Print.com angenommen hat (Print.com-Auftragsnummer da, Druckdatei dort angekommen, kein Problem/Ablehnung).
+   Abgelehnte Datei/neue Datei angefordert, Problem bei Print.com, Druckdatei fehlt bei Print.com oder bestellt ohne Nummer → „Zur Prüfung“. */
+function isAct(x){ return !!x.pcOrder&&!x.pcNoFile&&["ordered","in_production"].indexOf(x.status)>-1; }
 function isRev(x){ if(isAct(x)) return false; return !!x.review||(x.redo==="open"&&(x.status==="paid"||x.status==="invoice_requested"))||["ordered","in_production","problem"].indexOf(x.status)>-1; }
 function list(){ var o=(ST&&ST.orders)||[]; if(FILTER==="review") return o.filter(isRev); if(FILTER==="unpaid") return o.filter(function(x){ return x.status==="pending_payment"||x.status==="payment_failed"; }); if(FILTER==="active") return o.filter(isAct); if(FILTER==="done") return o.filter(function(x){ return ["shipped","delivered","rejected"].indexOf(x.status)>-1; }); return o; }
 /* Fortschrittsleiste: Bestellt → Print.com → In Produktion → Versendet → Zugestellt (Status kommt per Webhook/Abfrage von Print.com) */
