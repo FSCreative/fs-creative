@@ -3430,9 +3430,11 @@ module.exports = function (D) {
     const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
     const sh = shipOf(o), cust = Object.assign({}, o.customer, { disc: [] }), urgs = (prod.urgency || []).map(u => u.slug).filter(Boolean);
     if (!urgs.length) urgs.push(o.urgency || "standard");
+    // Eigenes Format: o.custom ist in mm gespeichert, normalizeSel erwartet cm wie im Shop (23.11.2026: Mesh-Banner 363 × 113 cm als 3630 × 1130 „cm“ → alle Liefertage weg)
+    const cm = String((o.sel || {}).custom || "").match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/), custCm = cm ? { w: +cm[1], h: +cm[2] } : o.custom && o.custom.w ? { w: o.custom.w / 10, h: o.custom.h / 10 } : o.custom;
     const pm = o.pcOptions && o.pcOptions.printingmethod ? String(o.pcOptions.printingmethod) : undefined, errs = [];   // Gründe, warum eine Lieferstufe keinen Preis hat (Simon 23.11.2026: „Keine Liefertage verfügbar“ ohne Grund)
     const rs = await Promise.all(urgs.map(async u => { try {
-      const n = normalizeSel(prod, { sel: o.sel, copies: o.copies, urgency: u, custom: o.custom, pm, wish: "" }); n.fresh = true;
+      const n = normalizeSel(prod, { sel: o.sel, copies: o.copies, urgency: u, custom: custCm, pm, wish: "" }); n.fresh = true;
       return { u, n, q: await quote(prod, n, sh.country, sh.zip, cust) }; } catch (e) { errs.push((URGENCY_DE[u] || u) + ": " + clip(e.message, 160)); return null; } }));
     const by = {};
     rs.filter(Boolean).forEach(({ u, n, q }) => (q.days || []).forEach(dd => { if (!(dd.d > today())) return; const pd = ((q.purchase && q.purchase.days) || []).find(x => x.d === dd.d); if (!pd) return;
