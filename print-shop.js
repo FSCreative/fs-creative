@@ -4207,7 +4207,8 @@ module.exports = function (D) {
     // Textil/Werbeartikel: gesucht wird „… bedrucken“ / „mit Logo“, verglichen wird der Stückpreis (10 Shirts „ab 124 €“ wirken teuer, „ab 12,46 € pro Stück“ nicht)
     const logoK = !!(full && (full.kind === "textile" || full.kind === "promo")) || (x.cat && x.cat.main === "clothing-textile");
     // Unbedruckte Produkte (Simon 23.11.2026: „Roll-Up Banner Systeme“ = nur Kassette ohne Banner): nie „drucken“, klar „ohne Druck“
-    const blankK = !logoK && !!(full && full.fixed && (String(full.fixed.printingmethod || "") === "raw_material" || /^0+$/.test(String(full.fixed.printtype || ""))));
+    const fxK = (full && full.fixed) || ((PD_CACHE.get(key) || {}).p || {}).fixed || {};   // Katalog-Produkt hat oft noch keine fixen Optionen → aus dem Produkt-Cache
+    const blankK = !logoK && (String(fxK.printingmethod || "") === "raw_material" || /^0+$/.test(String(fxK.printtype || "")));
     const loP = it && logoK ? it.rows.filter(r => r.copies > 0 && r.gross > 0).sort((a, b) => a.gross / a.copies - b.gross / b.copies)[0] : null;
     const lo = it ? it.rows.slice().sort((a, b) => a.gross - b.gross)[0] : null, fvT = fv ? " " + fmtNice(fv.label) : "", faq = productFaq(x, full, it, lo, fvT);
     // Dünne Lieferanten-Texte („Individuell bedruckt – Druckdaten hochladen.“, nur ein Druckername wie „HP Latex 3600“, „Ab 100 Stück“) ergänzen –
