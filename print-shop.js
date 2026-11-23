@@ -3258,7 +3258,7 @@ module.exports = function (D) {
         return Object.assign({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (one ? ch[0].idx + 1 : (ch[0].idx + 1) + "–" + (ch[ch.length - 1].idx + 1)), 120), options: Object.assign({}, o.pcOptions, { copies: n }) },
           one ? { fileUrl: pcFileUrl(fbase, ch[0].fileId) } : { designs: ch.map(m => ({ fileUrl: pcFileUrl(fbase, m.fileId), copies: m.copies })) },
           { fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: n }] }); });
-      const pw0 = o.price && o.price.wish, pm0 = o.price && o.price.purchase && o.price.purchase.method, wish0 = pw0 && pm0 && pw0 > today() ? { deliveryDate: pw0, method: pm0 } : null;
+      const pw0 = o.price && (o.price.wish || (o.price.purchase && o.price.purchase.deliveryDate)), pm0 = o.price && o.price.purchase && o.price.purchase.method, wish0 = pw0 && pm0 && pw0 > today() ? { deliveryDate: pw0, method: pm0 } : null;
       if (wish0) items.forEach(it => Object.assign(it.shipments[0], wish0));
       hist(o, o.motifs.length + " Motive auf " + items.length + " Positionen aufgeteilt (Print.com: höchstens " + mx + " je Position)");
       return { o, fm, items, wish: wish0, split: items.length };
@@ -3268,8 +3268,9 @@ module.exports = function (D) {
         // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
         motifDesigns(o, fbase) ? { designs: motifDesigns(o, fbase) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, fm ? { fileUrl: pcFileUrl(fbase, fm.id) } : {}), fm ? { fileOptions: { isProduction: true }, approveDesign: true } : {}, {
         senderAddress: sender, shipments: [{ address: addr, copies: o.copies }] })];
-    // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit)
-    const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wish = pw && pm && pw > today() ? { deliveryDate: pw, method: pm } : null;
+    // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit).
+    // Auch ohne angeklickten Tag den bezahlten Termin/Versand mitgeben (23.11.2026: Express 25.11. per UPS bezahlt, ohne Angabe nahm Print.com den billigsten Standardversand)
+    const pw = o.price && (o.price.wish || (o.price.purchase && o.price.purchase.deliveryDate)), pm = o.price && o.price.purchase && o.price.purchase.method, wish = pw && pm && pw > today() ? { deliveryDate: pw, method: pm } : null;
     if (wish) items.forEach(it => Object.assign(it.shipments[0], wish));
     return { o, fm, items, wish };
   }
@@ -6920,6 +6921,32 @@ module.exports = function (D) {
           if (open.length && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: open.length === 1 && grp.length === 1 ? "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" : "Im Warenkorb sind die aufbereiteten Druckdaten noch nicht freigegeben: " + open.map(x => x.nr).join(", ") + " – bestellt wird immer der ganze Warenkorb in einem Auftrag" });
           const o = await placeOrder(id, "Cockpit" + (b.force === true && open.length ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
         if (op === "transferok") { const o = await transferOk(id, b.note); return J(res, 200, { ok: true, order: o }); }
+        /* Liefertermin vor dem (Neu-)Bestellen ändern (Simon 23.11.2026, Mesh-Banner D-261122-HJP4: Express bezahlt, Termin nicht mehr möglich bzw. nicht änderbar).
+           pcdays: aktuelle Liefertage laut Print.com für genau diese Ausführung + Lieferadresse; pcwish: Tag + Versandart übernehmen (geht beim Bestellen mit) */
+        if (op === "pcdays" || op === "pcwish") {
+          const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
+          if (o1.printcom && o1.printcom.orderNumber) return J(res, 400, { ok: false, error: "Schon bei Print.com bestellt – erst „Neu bestellen“ (nach Storno bei Print.com)" });
+          const prod = await findProduct(o1.product.key); if (!prod) throw new Error("Produkt nicht gefunden");
+          const sh = shipOf(o1), opts = o1.pcOptions || {};
+          const v = await purchase0(prod, { pcOpts: opts, urgency: opts.urgency, sel: o1.sel, nocache: true }, sh.country || "AT", sh.zip);
+          const days = (v.days || []).filter(x => x.d > today());
+          if (op === "pcdays") return J(res, 200, { ok: true, days, product: v.product, current: (o1.price && (o1.price.wish || (o1.price.purchase && o1.price.purchase.deliveryDate))) || "", urgency: opts.urgency || "" });
+          const dd = days.find(x => x.d === String(b.d || "")); if (!dd) return J(res, 400, { ok: false, error: "Dieser Liefertag ist nicht mehr möglich" });
+          o1.price = o1.price || {}; const pu = o1.price.purchase || {}, oldD = o1.price.wish || pu.deliveryDate || "";
+          if (+pu.total > 0) o1.price.margin = r2((+o1.price.margin || 0) + (+pu.total) - r2(v.product + dd.ship));   // Marge mit neuem Einkauf
+          o1.price.wish = dd.d; o1.price.purchase = Object.assign({}, pu, { deliveryDate: dd.d, method: dd.method, carrier: dd.carrier, shipping: dd.ship, product: v.product, total: r2(v.product + dd.ship), actual: false });
+          hist(o1, "Liefertermin im Cockpit geändert: " + (oldD ? oldD + " → " : "") + dd.d + " (" + (dd.carrier || dd.method) + ", Versand im Einkauf " + eur(dd.ship) + ")"); stamp(o1); await store.putOrder(o1);
+          return J(res, 200, { ok: true, order: o1 }); }
+        // Neu bestellen: Auftrag wurde bei Print.com storniert (z. B. falscher Liefertermin) → Print.com-Daten ins Archiv, Auftrag wieder bestellbar
+        if (op === "pcreset") {
+          const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
+          const pc = o1.printcom || {}; if (!pc.orderNumber) return J(res, 400, { ok: false, error: "Noch nicht bei Print.com bestellt" });
+          if (!/CANCEL/i.test(String(pc.status || ""))) return J(res, 400, { ok: false, error: "Erst bei Print.com stornieren – Status dort: " + (pc.status || "unbekannt") + " (danach „Status abrufen“)" });
+          o1.printcomPrev = (o1.printcomPrev || []).concat([pc]).slice(-5); delete o1.printcom;
+          o1.status = o1.payment && o1.payment.method === "invoice" && o1.payment.status !== "paid" ? "invoice_requested" : "paid";
+          if (o1.price && o1.price.purchase) o1.price.purchase.actual = false;
+          hist(o1, "Print.com-Auftrag " + pc.orderNumber + " war storniert – Auftrag wieder bestellbar (Liefertermin prüfen, dann neu bestellen)"); stamp(o1); await store.putOrder(o1);
+          return J(res, 200, { ok: true, order: o1 }); }
         if (op === "sendinv") {   // Rechnung eines schon bestellten Auftrags fertigstellen und an den Kunden senden (nie doppelt)
           const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
           if (!(o1.printcom && o1.printcom.orderNumber)) return J(res, 400, { ok: false, error: "Noch nicht bei Print.com bestellt – die Rechnung geht beim Bestellen automatisch raus" });
