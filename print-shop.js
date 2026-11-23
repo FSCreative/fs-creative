@@ -709,8 +709,10 @@ module.exports = function (D) {
     let dims = null, dimsArea = false, sizeLabel = "";
     if (kind === "flat" && !exposed.some(x => x.slug === "size")) {
       const so = by.size && (by.size.options || []).find(o => o && String(o.slug) === fixed.size);
-      dims = (so && dimsOf(so)) || (c.dims ? c.dims.slice() : null);
-      if (!dims) { dims = (by.printing_size && (by.printing_size.options || []).map(o => o && dimsOf(o)).filter(Boolean)[0]) || null; dimsArea = !!dims; }
+      /* Platzhalter 1 × 1 mm (Print.com bei Produkten ohne Maßangabe, z. B. Weinkisten PET-Filz) ist kein Format – sonst „Druckfläche max. 1 × 1 mm“ */
+      const realD = d => (d && !(d[0] <= 2 && d[1] <= 2) ? d : null);
+      dims = realD(so && dimsOf(so)) || realD(c.dims ? c.dims.slice() : null);
+      if (!dims) { dims = (by.printing_size && (by.printing_size.options || []).map(o => o && realD(dimsOf(o))).filter(Boolean)[0]) || null; dimsArea = !!dims; }
       if (so && !dimsOf(so)) sizeLabel = clip(String((L.size && L.size[so.slug]) || so.name || ""), 80);
     }
     if (!sizeLabel && fixed.size && by.size) { const so = (by.size.options || []).find(o => o && String(o.slug) === fixed.size); if (so && so.name && !/^custom$/i.test(so.slug)) sizeLabel = clip(String(so.name), 80); }
