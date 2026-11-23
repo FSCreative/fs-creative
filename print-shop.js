@@ -3137,7 +3137,8 @@ module.exports = function (D) {
      Link-/Dateianhang-Anmerkungen, JavaScript/Aktionen. Formularfelder bleiben (Entfernen wäre nicht verlustfrei). */
   async function stripExtrasForPrint(buf) {
     if (!buf || buf.length > 150e6) return buf;
-    const s = buf.toString("latin1"); if (!/\/EmbeddedFile|\/AF\b|\/Annots|\/JavaScript|\/OpenAction|\/AA\b/.test(s)) return buf;
+    // + Objekte mit Generation > 0 (nachträglich gespeicherte Änderung, hier: angehängte C2PA-Daten) – pdf-lib schreibt die sonst kaputt zurück, siehe pdfSave
+    const s = buf.toString("latin1"), gen = /(^|[\r\n])\d+ [1-9]\d* obj\b/.test(s); if (!gen && !/\/EmbeddedFile|\/AF\b|\/Annots|\/JavaScript|\/OpenAction|\/AA\b/.test(s)) return buf;
     const { PDFDocument, PDFName, PDFDict, PDFArray } = require("pdf-lib");
     const d = await PDFDocument.load(buf, { updateMetadata: false }), cat = d.catalog; let n = 0;
     const names = cat.lookup(PDFName.of("Names"));
@@ -3148,10 +3149,10 @@ module.exports = function (D) {
       const an = nd.lookup(PDFName.of("Annots")); if (!(an instanceof PDFArray)) continue;
       const keep = an.asArray().filter(r => { const a = d.context.lookup(r); const st = a instanceof PDFDict && String(a.get(PDFName.of("Subtype")) || ""); return !/^\/(Link|FileAttachment|Sound|Movie|Screen|RichMedia)$/.test(st); });
       if (keep.length !== an.size()) { n += an.size() - keep.length; if (keep.length) nd.set(PDFName.of("Annots"), d.context.obj(keep)); else nd.delete(PDFName.of("Annots")); } }
-    if (!n) return buf;
+    if (!n && !gen) return buf;
     // die eingebetteten Dateien selbst auch aus der PDF löschen (pdf-lib schreibt sonst auch nicht mehr verknüpfte Objekte mit)
     for (const [ref, obj] of [...d.context.enumerateIndirectObjects()]) { const dict = obj instanceof PDFDict ? obj : obj && obj.dict instanceof PDFDict ? obj.dict : null; const t = dict && String(dict.get(PDFName.of("Type")) || ""); if (t === "/EmbeddedFile" || t === "/Filespec") d.context.delete(ref); }
-    return Buffer.from(await d.save({ useObjectStreams: false }));
+    return pdfSave(d);
   }
   /* Druckdatei genau so, wie Print.com sie bekommt (für /print-files/ und den Cockpit-Download „Druck-PDF für Print.com“) */
   async function pcVariant(buf, fm, o) {
