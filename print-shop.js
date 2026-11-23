@@ -1945,7 +1945,7 @@ module.exports = function (D) {
     return meta;
   }
   const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, cover: !!m.cover, pages: m.pages, size: m.size, bleed: m.bleed, checks: pfNorm(m.checks).filter(c => !c.admin), blocked: pfNorm(m.checks).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
-    needBack: needBackOf(m), bleedFix: m.bleedFix || "", back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : "" });
+    needBack: needBackOf(m), bleedFix: m.bleedFix || "", back: !!(m.front && (+m.pages || 0) >= 2), backName: Array.isArray(m.pageNames) ? m.pageNames[1] || "" : m.backName || "", pageNames: Array.isArray(m.pageNames) ? m.pageNames : null, pvk: pvOk(m) ? m.src : pvBig(m) ? m.id : "" });
   // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
   const needBackOf = m => !!(m && m.kind === "upload" && !(m.front && (+m.pages || 0) >= 2 && Array.isArray(m.pageNames)) && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
   // Datei aufs Format setzen: „fill“ = füllt die Seite inkl. Beschnitt (Ränder werden angeschnitten), „fit“ = ganz sichtbar im Endformat (Rest weiß),
@@ -2131,6 +2131,7 @@ module.exports = function (D) {
     await store.putFile(meta, pdf);
     // Print.com-Prüfung erst nach dem Speichern starten – Print.com holt die Datei über den Link
     try { const pf = await preflightStart(meta, pdf); if (pf) { meta.preflight = pf; await store.putFile(meta); } } catch (e) { log("Preflight-Start:", e.message); }
+    if (pvBig(meta)) setTimeout(() => { bigPreview(meta).catch(() => {}); }, 1500);   // leichte Vorschau gleich im Hintergrund bauen (große PDFs)
     return meta;
   }
   async function targetOf(input, loose) {
@@ -2187,7 +2188,26 @@ module.exports = function (D) {
     if (b.length > 2e6 && b.length < 200e6) { FBUF.set(id, { buf: b, at: now }); let tot = 0; const l = [...FBUF.entries()].sort((x, y) => y[1].at - x[1].at);
       for (const [k, v] of l) { tot += v.buf.length; if (tot > 200e6 || now - v.at > 600e3) FBUF.delete(k); } }
     return b; }
+  /* Große PDFs (Simon 23.11.2026: Canva-PDF 66 MB lud im Studio ewig): leichte Vorschau-PDF am Server – Vektoren bleiben, große Bilder verkleinert (print-preview.js).
+     Gedruckt wird immer das Original. Entsteht im Hintergrund nach dem Speichern, sonst beim ersten Abruf; passt die Prüfsumme nicht mehr, wird neu gebaut. */
+  const pvBig = m => !!(m && m.id && !pvOk(m) && !m.pvFail && +m.bytes > 5e6 && !/^(preview|src|proxy)$/.test(String(m.kind || "")) && !/^(jpg|png)$/.test(String(m.original || "")));
+  let PVQ = Promise.resolve(); const PVRUN = new Map();
+  function bigPreview(m) {
+    if (PVRUN.has(m.id)) return PVRUN.get(m.id);
+    const job = PVQ.then(async () => {
+      const pm = await store.fileMeta(pvId(m.id)).catch(() => null);
+      if (pm && pm.sha === (m.sha256 || "")) { const hit = await store.fileData(pvId(m.id)).catch(() => null); if (hit) return hit; }
+      const buf = await fileBufCached(m.id); if (!buf) return null;
+      const r = await require("./print-preview.js").shrinkPdf(buf, { maxPx: 5e5, deadline: Date.now() + 90e3 }).catch(e => { log("Vorschau-PDF", m.id, e.message); return null; });
+      if (!r || r.pdf.length > buf.length * 0.8) { try { const fm = await store.fileMeta(m.id); if (fm) { fm.pvFail = true; await store.putFile(fm); } } catch (e) {} return null; }
+      await store.putFile({ id: pvId(m.id), kind: "preview", of: m.id, sha: m.sha256 || "", createdAt: nowIso(), orderId: null, bytes: r.pdf.length }, r.pdf);
+      return r.pdf;
+    });
+    PVQ = job.catch(() => null); PVRUN.set(m.id, job); job.finally(() => PVRUN.delete(m.id)).catch(() => {});
+    return job;
+  }
   async function previewPdf(m) {
+    if (pvBig(m)) return bigPreview(m);
     if (!pvOk(m)) return null;
     const hit = await store.fileData(pvId(m.id)).catch(() => null); if (hit) return hit;
     const px = await store.fileData(pxId(m.src)).catch(() => null); if (!px) return null;
@@ -5782,7 +5802,7 @@ module.exports = function (D) {
       if (m && req.method === "GET") {
         if (!sigOk("file", m[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
         let fm = await store.fileMeta(m[1]); if (!fm) return J(res, 404, { ok: false, error: "not_found" });
-        if (u.searchParams.get("pdf") === "1" && u.searchParams.get("pv") === "1" && pvOk(fm)) { const pv = await previewPdf(fm).catch(e => { log("Vorschau:", e.message); return null; });
+        if (u.searchParams.get("pdf") === "1" && u.searchParams.get("pv") === "1" && (pvOk(fm) || pvBig(fm))) { const pv = await previewPdf(fm).catch(e => { log("Vorschau:", e.message); return null; });
           if (pv) return D.send(res, 200, pv, "application/pdf", { "Content-Disposition": 'inline; filename="vorschau.pdf"', "Cache-Control": "private, max-age=86400", "X-Robots-Tag": "noindex", "X-Print-Preview": "1" }); }
         if (u.searchParams.get("pdf") === "1") { const buf = await store.fileData(fm.id); return D.send(res, 200, buf, fm.kind === "logo" && fm.original !== "pdf" ? (fm.original === "png" ? "image/png" : "image/jpeg") : "application/pdf", { "Content-Disposition": 'inline; filename="druckdaten.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" }); }
         fm = await preflightPoll(fm);
