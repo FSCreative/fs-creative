@@ -1820,7 +1820,9 @@ module.exports = function (D) {
       if (legW < tw - 2 * S) { let lx = W / 2 - legW / 2; const ly = H - B - S - ls * 2.2;
         doc.save().roundedRect(lx - ls, ly - ls * 0.6, legW + ls, ls * 2.1, ls * 0.5).fillColor([0, 0, 0, 0]).fill().restore();
         leg.forEach(x => { doc.save().rect(lx, ly, ls * 1.1, ls * 0.9).fillColor(x[0]).fill().restore(); doc.fillColor(C.text).text(x[1], lx + ls * 1.5, ly - ls * 0.05, { lineBreak: false }); lx += doc.widthOfString(x[1]) + ls * 2.6; }); }
-      doc.font("Helvetica").fontSize(Math.max(3.5, ls * 0.8)).fillColor(C.muted).text("fs-creative.at/print", B + S, B + S * 0.35 > B + 2 ? B + S * 0.35 : B + 2, { lineBreak: false });
+      /* Schriftzug oben links nur, wenn er höchstens knapp die halbe Seitenbreite braucht – bei winzigen Formaten (Stempel 12 × 12 mm) lief er sonst über den Titel */
+      doc.font("Helvetica").fontSize(Math.max(3.5, ls * 0.8));
+      if (doc.widthOfString("fs-creative.at/print") < (W - 2 * B) * 0.45) doc.fillColor(C.muted).text("fs-creative.at/print", B + S, B + S * 0.35 > B + 2 ? B + S * 0.35 : B + 2, { lineBreak: false });
     }
     doc.end(); await done;
     return { pdf: Buffer.concat(chunks), sheets };
