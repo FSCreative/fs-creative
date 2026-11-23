@@ -2217,6 +2217,8 @@
     /* Unbedruckte Produkte (Simon 23.11.2026: Roll-Up Banner Systeme = nur Kassette, kein Banner): deutlich „ohne Druck“ statt Gestaltung/Druckvorlage */
     var blank = blankProd(p);
     var blankNote = blank ? '<p class="ps-musttpl" role="note"><b>Ohne Druck:</b> Du bekommst ' + esc(p.title) + (/unbedruckt/i.test(p.title) ? "" : " unbedruckt") + " – es wird nichts bedruckt, Druckdaten brauchst du keine." + (/roll-?up/i.test(p.key + " " + p.title) ? ' Das Banner ist nicht dabei – Roll-up mit bedrucktem Banner gibt es unter <a class="ps-link" href="/print/rollups">Roll-ups</a>.' : "") + "</p>" : "";
+    /* Simon 23.11.2026: bei Foldern auf den Plan (vielfach gefaltet, z. B. Orts-/Wanderpläne) verweisen */
+    if (p.key === "folder" && prodByKey("maps")) blankNote += '<p class="ps-help ps-info" role="note">Mehr Falzungen nötig – z. B. für einen Orts-, Wander- oder Pistenplan? Dafür gibt es den <a class="ps-link" href="/print/plan" data-prod="maps">Plan</a> (vielfach gefaltet).</p>';
     var foot = blank ? "" : k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Eigene Datei: bitte rundherum " + String(b0).replace(".", ",") + " mm mehr Hintergrund anlegen, der beim Schneiden wegfällt (" + mmF(sz.w + 2 * b0) + " × " + mmF(sz.h + 2 * b0) + " mm)" + (p.designer ? " – im Online-Designer automatisch" : "") : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
     return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h1>' + esc(p.title) + '</h1><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + blankNote + cfgBarHtml() + "</div></div>" +
       (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + (p.mustTpl ? '<p class="ps-musttpl" role="note"><b>⚠️ Vorlage verwenden:</b> ' + esc(p.mustTpl) + "</p>" : "") + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + mattNote(p) + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) + accHtml(p) +
@@ -2969,7 +2971,9 @@
   /* Schnelle Vorschau (Simon 10.11.2026): bei Bild-Uploads schickt der Browser eine verkleinerte Kopie (max. 2000 px, ohne EXIF-Drehung – wie der Server),
      der Server baut daraus mit derselben Platzierung eine kleine Vorschau-PDF (&pv=1). Ohne Kopie liefert der Server die volle Datei. */
   var PX = {};
-  function pvUrl(f) { return fileUrl(f) + (f.pvk ? "&pv=1" : ""); }
+  function pvUrl(f) { return fileUrl(f) + "&pv=1"; }   /* immer: Server liefert die Vorschau-PDF, wenn es eine gibt, sonst die volle Datei (auch für Dateien aus Warenkorb-Links ohne pvk) */
+  /* Ansicht (Seitenbilder, Vorschaufenster): leichte Vorschau-PDF verlangen – der Server liefert sie nur, wenn es eine gibt, sonst die volle Datei (Simon 23.11.2026) */
+  function pvize(url) { return /\/print\/api\/file\/f[a-f0-9]{24}\?/.test(url || "") && /[?&]pdf=1/.test(url) && !/[?&]pv=1/.test(url) ? url + "&pv=1" : url; }
   function pvWait(f) { var p = f && f.pvk && PX[f.pvk]; return p ? Promise.race([p, new Promise(function (r) { setTimeout(r, 12000); })]) : Promise.resolve(); }
   function pxMake(file, j) {
     if (!j || !j.pvk || PX[j.pvk] || !/^image\/(jpeg|png)$/.test(file.type || "") || !window.createImageBitmap) return;
@@ -2998,7 +3002,7 @@
     document.addEventListener("keydown", key);
     ov.addEventListener("click", function (e) { if (e.target === ov || e.target.closest(".ps-pv-x")) return close(); if (e.target.closest(".ps-pv-prev")) return show(cur - 1); if (e.target.closest(".ps-pv-next")) return show(cur + 1); var t = e.target.closest("[data-pvn]"); if (t) show(+t.getAttribute("data-pvn")); });
     var sx = null; ov.addEventListener("touchstart", function (e) { sx = e.touches[0].clientX; }, { passive: true }); ov.addEventListener("touchend", function (e) { if (sx == null) return; var dx = e.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 50) show(cur + (dx < 0 ? 1 : -1)); });
-    Promise.all(src.map(function (s2) { return pdfImgs(s2.url, { pages: 60, px: Math.min(1400, Math.round(window.innerWidth * (window.devicePixelRatio || 1))) }).then(function (l) { return l.map(function (img, i) { return { img: img, n: i + 1, of: l.length, label: s2.label }; }); }); }))
+    Promise.all(src.map(function (s2) { return pdfImgs(pvize(s2.url), { pages: 60, px: Math.min(1400, Math.round(window.innerWidth * (window.devicePixelRatio || 1))) }).then(function (l) { return l.map(function (img, i) { return { img: img, n: i + 1, of: l.length, label: s2.label }; }); }); }))
       .then(function (ll) { pages = [].concat.apply([], ll); if (!ov.isConnected) return;
         ov.querySelector(".ps-pv-st").outerHTML = '<div class="ps-pv-main"><button type="button" class="ps-pv-nav ps-pv-prev" aria-label="Vorherige Seite">‹</button><figure><img class="ps-pv-img" alt=""><figcaption class="ps-pv-c"></figcaption></figure><button type="button" class="ps-pv-nav ps-pv-next" aria-label="Nächste Seite">›</button></div>' +
           (pages.length > 1 ? '<div class="ps-pv-th">' + pages.map(function (p, i) { return '<button type="button" data-pvn="' + i + '" aria-label="Seite ' + (i + 1) + '"><img src="' + p.img + '" alt=""><span>' + (i + 1) + "</span></button>"; }).join("") + "</div>" : "") +
@@ -3634,7 +3638,7 @@
      (Handy: Pfeile) umsortieren, fehlende Rückseite als leere Karte zum Hineinziehen. Gilt für alle Produkte mit hochgeladener Datei. */
   var THB = {};
   function pageThumbs(f) { var n = Math.min(+f.pages || 1, 40); if (THB[f.fileId] || !n) return; THB[f.fileId] = "lädt";
-    pdfImgs(fileUrl(f), { pages: n, px: 260 }).then(function (l) { THB[f.fileId] = l; [].forEach.call(root.querySelectorAll('[data-pgthumb^="' + f.fileId + ':"]'), function (im) { var k = +im.getAttribute("data-pgthumb").split(":")[1]; if (l[k]) { im.src = l[k]; im.hidden = false; } }); })
+    pdfImgs(pvUrl(f), { pages: n, px: 260 }).then(function (l) { THB[f.fileId] = l; [].forEach.call(root.querySelectorAll('[data-pgthumb^="' + f.fileId + ':"]'), function (im) { var k = +im.getAttribute("data-pgthumb").split(":")[1]; if (l[k]) { im.src = l[k]; im.hidden = false; } }); })
       .catch(function () { THB[f.fileId] = []; }); }
   function pgCard(f, i, n, lab, sub, fixed) { var t = THB[f.fileId], src = Array.isArray(t) && t[i] ? t[i] : "";
     if (fixed) return '<div class="ps-pgc fixed"><span class="ps-pgc-th"><img data-pgthumb="' + esc(f.fileId) + ":" + i + '" alt=""' + (src ? ' src="' + src + '"' : " hidden") + '>' + (src ? "" : '<span class="ps-spin"></span>') + '<em>' + (i + 1) + '</em></span><span class="ps-pgc-t"><b>' + esc(lab) + '</b><small>' + esc(sub || "") + "</small></span></div>";
