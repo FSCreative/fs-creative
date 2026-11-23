@@ -3430,10 +3430,10 @@ module.exports = function (D) {
     const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
     const sh = shipOf(o), cust = Object.assign({}, o.customer, { disc: [] }), urgs = (prod.urgency || []).map(u => u.slug).filter(Boolean);
     if (!urgs.length) urgs.push(o.urgency || "standard");
-    const pm = o.pcOptions && o.pcOptions.printingmethod ? String(o.pcOptions.printingmethod) : undefined;
+    const pm = o.pcOptions && o.pcOptions.printingmethod ? String(o.pcOptions.printingmethod) : undefined, errs = [];   // Gründe, warum eine Lieferstufe keinen Preis hat (Simon 23.11.2026: „Keine Liefertage verfügbar“ ohne Grund)
     const rs = await Promise.all(urgs.map(async u => { try {
       const n = normalizeSel(prod, { sel: o.sel, copies: o.copies, urgency: u, custom: o.custom, pm, wish: "" }); n.fresh = true;
-      return { u, n, q: await quote(prod, n, sh.country, sh.zip, cust) }; } catch (e) { return null; } }));
+      return { u, n, q: await quote(prod, n, sh.country, sh.zip, cust) }; } catch (e) { errs.push((URGENCY_DE[u] || u) + ": " + clip(e.message, 160)); return null; } }));
     const by = {};
     rs.filter(Boolean).forEach(({ u, n, q }) => (q.days || []).forEach(dd => { if (!(dd.d > today())) return; const pd = ((q.purchase && q.purchase.days) || []).find(x => x.d === dd.d); if (!pd) return;
       const c = { d: dd.d, u, net: dd.net, gross: dd.gross, ship: pd.ship, method: pd.method, carrier: pd.carrier, product: q.purchase.product, def: q.purchase.def || q.purchase.deliveryDate, pcOpts: n.pcOpts, labels: n.labels };
@@ -3442,7 +3442,8 @@ module.exports = function (D) {
     const cur = days.find(x => x.d === curD) || null, cheap = l => l.slice().sort((a, b) => a.gross - b.gross)[0] || null;
     const base = cur || cheap(days.filter(x => x.u === (o.urgency || "standard"))) || cheap(days);
     rebase(days, base); days.forEach(x => { x.current = !!cur && x.d === cur.d; });
-    return { days, current: curD, curOk: !!cur };
+    if (!days.length && errs.length) log("Liefertage", o.nr, errs.join(" | "));
+    return { days, current: curD, curOk: !!cur, errors: errs };
   }
   // Aufpreis je Tag gegenüber einem Basistag; fastShip = teurerer (Express-)Versand bei gleicher Produktionsstufe
   function rebase(days, base) { days.forEach(x => { x.extraGross = base ? Math.max(0, r2(x.gross - base.gross)) : 0; x.fastShip = !!base && x.ship > base.ship + 0.004; }); }
@@ -6921,22 +6922,6 @@ module.exports = function (D) {
           if (open.length && b.force !== true) return J(res, 200, { ok: false, needForce: true, error: open.length === 1 && grp.length === 1 ? "Der Kunde hat die aufbereiteten Druckdaten noch nicht freigegeben" : "Im Warenkorb sind die aufbereiteten Druckdaten noch nicht freigegeben: " + open.map(x => x.nr).join(", ") + " – bestellt wird immer der ganze Warenkorb in einem Auftrag" });
           const o = await placeOrder(id, "Cockpit" + (b.force === true && open.length ? " (ohne Kundenfreigabe)" : "")); return J(res, 200, { ok: true, order: o }); }
         if (op === "transferok") { const o = await transferOk(id, b.note); return J(res, 200, { ok: true, order: o }); }
-        /* Liefertermin vor dem (Neu-)Bestellen ändern (Simon 23.11.2026, Mesh-Banner D-261122-HJP4: Express bezahlt, Termin nicht mehr möglich bzw. nicht änderbar).
-           pcdays: aktuelle Liefertage laut Print.com für genau diese Ausführung + Lieferadresse; pcwish: Tag + Versandart übernehmen (geht beim Bestellen mit) */
-        if (op === "pcdays" || op === "pcwish") {
-          const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
-          if (o1.printcom && o1.printcom.orderNumber) return J(res, 400, { ok: false, error: "Schon bei Print.com bestellt – erst „Neu bestellen“ (nach Storno bei Print.com)" });
-          const prod = await findProduct(o1.product.key); if (!prod) throw new Error("Produkt nicht gefunden");
-          const sh = shipOf(o1), opts = o1.pcOptions || {};
-          const v = await purchase0(prod, { pcOpts: opts, urgency: opts.urgency, sel: o1.sel, nocache: true }, sh.country || "AT", sh.zip);
-          const days = (v.days || []).filter(x => x.d > today());
-          if (op === "pcdays") return J(res, 200, { ok: true, days, product: v.product, current: (o1.price && (o1.price.wish || (o1.price.purchase && o1.price.purchase.deliveryDate))) || "", urgency: opts.urgency || "" });
-          const dd = days.find(x => x.d === String(b.d || "")); if (!dd) return J(res, 400, { ok: false, error: "Dieser Liefertag ist nicht mehr möglich" });
-          o1.price = o1.price || {}; const pu = o1.price.purchase || {}, oldD = o1.price.wish || pu.deliveryDate || "";
-          if (+pu.total > 0) o1.price.margin = r2((+o1.price.margin || 0) + (+pu.total) - r2(v.product + dd.ship));   // Marge mit neuem Einkauf
-          o1.price.wish = dd.d; o1.price.purchase = Object.assign({}, pu, { deliveryDate: dd.d, method: dd.method, carrier: dd.carrier, shipping: dd.ship, product: v.product, total: r2(v.product + dd.ship), actual: false });
-          hist(o1, "Liefertermin im Cockpit geändert: " + (oldD ? oldD + " → " : "") + dd.d + " (" + (dd.carrier || dd.method) + ", Versand im Einkauf " + eur(dd.ship) + ")"); stamp(o1); await store.putOrder(o1);
-          return J(res, 200, { ok: true, order: o1 }); }
         // Neu bestellen: Auftrag wurde bei Print.com storniert (z. B. falscher Liefertermin) → Print.com-Daten ins Archiv, Auftrag wieder bestellbar
         if (op === "pcreset") {
           const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
@@ -7098,7 +7083,7 @@ module.exports = function (D) {
           // from = Basistag: Aufpreis gegenüber dem ursprünglichen Termin nachverrechnen (Simon 16.11.2026: Termin früher ohne Aufpreis vorgezogen, Expressversand fehlte auf der Rechnung)
           if (b.from) { const bs = C.days.find(x => x.d === String(b.from)); if (!bs) throw new Error("Der ursprüngliche Liefertag ist bei Print.com nicht mehr im Angebot – Aufpreis bitte von Hand ergänzen"); rebase(C.days, bs); }
           const pub = x => ({ d: x.d, u: x.u, urgency: URGENCY_DE[x.u] || x.u, ship: x.ship, buy: r2(x.product + x.ship), extraGross: x.extraGross, extraNet: r2(x.extraGross / (1 + (o.price.rate || 0) / 100)), gross: x.gross, net: x.net, fastShip: !!x.fastShip, current: x.current });
-          if (op === "days") return J(res, 200, { ok: true, days: C.days.map(pub), current: C.current, curOk: C.curOk, earliest: C.days[0] ? C.days[0].d : "", buyNow: +pu.total || 0, business: o.customer && o.customer.type === "company",
+          if (op === "days") return J(res, 200, { ok: true, days: C.days.map(pub), errors: C.days.length ? [] : C.errors, current: C.current, curOk: C.curOk, earliest: C.days[0] ? C.days[0].d : "", buyNow: +pu.total || 0, business: o.customer && o.customer.type === "company",
             inDraft: !!(o.payment && o.payment.method === "invoice" && o.invoice && o.invoice.id && o.invoice.draft && !o.invoice.sentAt), charged: (o.extras || []).filter(x => x.kind === "lieferzeit").reduce((a, x) => r2(a + x.gross), 0) });
           const ch = C.days.find(x => x.d === String(b.date || "")) || (!b.date && C.days.find(x => x.u === (o.urgency || "standard")));
           if (!ch) throw new Error("Dieser Liefertag ist bei Print.com nicht (mehr) möglich – bitte neu laden");
