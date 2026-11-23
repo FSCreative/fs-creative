@@ -889,7 +889,7 @@ module.exports = function (D) {
     // kuratierte Produkte einmalig freischalten (danach entscheidet nur noch das Cockpit)
     let seed = false; out.products.forEach(p => { if (!s.seeded[p.sku]) { s.seeded[p.sku] = true; if (s.enabled[p.sku] === undefined) s.enabled[p.sku] = true; seed = true; } });
     if (seed) await store.setMeta("print_settings", s);
-    await store.setMeta("print_catalog", out); CAT = out; PRICE_CACHE.clear();
+    await store.setMeta("print_catalog", out); CAT = out; PRICE_CACHE.clear(); PC_DIRTY = true;
     if (out.errors.length) log("Katalog:", out.errors.join(" · "));
     if (process.env.PRINT_IMPORT !== "0") importAll(false).catch(e => log("Sortiment-Import:", e.message));
     return out;
@@ -1233,6 +1233,21 @@ module.exports = function (D) {
 
   // ── Preis (live) ──
   const PRICE_CACHE = new Map();
+  /* Preisspeicher übersteht Neustarts (Simon 23.11.2026: 15 Deploys an einem Tag → jedes Mal alle Preise/Aufpreise neu bei Print.com, Vorschläge luden lange):
+     alle 3 Minuten (nur wenn sich etwas geändert hat) die jüngsten 3000 Einträge (< 6 h) in der Datenbank sichern, beim Start wieder einlesen; zusätzlich beim Beenden versuchen */
+  let PC_DIRTY = false, PC_SAVING = false;
+  async function pcSave() {
+    if (!PC_DIRTY || PC_SAVING) return; PC_DIRTY = false; PC_SAVING = true;
+    try { const now = Date.now(), e = [...PRICE_CACHE.entries()].filter(x => x[1] && now - x[1].at < 6 * 3600e3).sort((a, b) => b[1].at - a[1].at).slice(0, 3000);
+      await store.setMeta("print_pricecache", { at: nowIso(), e }); } catch (er) { PC_DIRTY = true; log("Preisspeicher sichern:", er.message); } finally { PC_SAVING = false; }
+  }
+  setTimeout(async () => {
+    try { const m = await store.getMeta("print_pricecache"), now = Date.now(); let n = 0;
+      if (m && Array.isArray(m.e)) m.e.forEach(x => { if (Array.isArray(x) && x[1] && now - x[1].at < 6 * 3600e3 && !PRICE_CACHE.has(x[0])) { PRICE_CACHE.set(x[0], x[1]); n++; } });
+      if (n) log("Druckshop: Preisspeicher geladen (" + n + " Preise)"); } catch (er) { log("Preisspeicher laden:", er.message); }
+  }, 50);
+  const pcTimer = setInterval(() => { pcSave(); }, 180e3); if (pcTimer.unref) pcTimer.unref();
+  process.once("SIGTERM", () => { pcSave(); });
   // Produktionsangaben, die Print.com nicht in Ausschlussregeln abbildet (z. B. Bogengröße „large_indigo_sheet“ nur Digital):
   // liefert Print.com „keinen Preis“, die nächste gültige Variante probieren (sonst fiele z. B. Offset bei Broschüren weg → nur teurer Inkjet)
   const VARY = ["sheet_size", "special_size", "flexibleprintingmethod"];
@@ -1327,7 +1342,7 @@ module.exports = function (D) {
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10),
       // alle Liefertage dieser Produktionszeit mit dem günstigsten Versand je Tag (für die Datumsleiste)
       days: Object.values(poss.reduce((m, x) => { const d = String(x.deliveryDate || "").slice(0, 10); if (/^\d{4}-\d\d-\d\d$/.test(d) && (!m[d] || cost(x) < m[d].ship)) m[d] = { d, ship: r2(cost(x)), carrier: String(x.carrier || ""), method: String(x.method || "") }; return m; }, {})).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 25) };
-    PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 20000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 4000); old.forEach(k => PRICE_CACHE.delete(k)); }
+    PRICE_CACHE.set(key, { at: Date.now(), v }); PC_DIRTY = true; if (PRICE_CACHE.size > 20000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 4000); old.forEach(k => PRICE_CACHE.delete(k)); }
     return v;
   }
   // Mitbewerber in der Quellenangabe eines Preisankers – ab zwei Quellen ist der Anker der günstigste Marktpreis
@@ -5798,6 +5813,28 @@ module.exports = function (D) {
         const s0 = hit.sheets[0], nm = ("Druckvorlage_" + prod.title + "_" + (s0 ? Math.round(s0.w + 2 * s0.b) + "x" + Math.round(s0.h + 2 * s0.b) + "mm" : "")).replace(/[^A-Za-z0-9ÄÖÜäöüß_-]+/g, "-");
         return D.send(res, 200, hit.pdf, "application/pdf", { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + nm.replace(/[^\x20-\x7e]/g, "_") + '.pdf"; filename*=UTF-8\'\'' + encodeURIComponent(nm) + ".pdf", "Cache-Control": "public, max-age=3600", "X-Robots-Tag": "noindex" });
       }
+      /* Druckansicht-Seitenbilder (Simon 23.11.2026): der erste Browser zeichnet die Seiten (pdf.js) und legt sie hier ab (JPEG, ca. 900 px) – danach öffnet die Druckansicht sofort.
+         Gebunden an die Prüfsumme der Datei: ändert sich die Datei, gelten die Bilder nicht mehr. */
+      m = p.match(/^\/print\/api\/file\/(f[a-f0-9]{24})\/pages$/);
+      if (m && (req.method === "GET" || req.method === "POST")) {
+        if (!sigOk("file", m[1], u.searchParams.get("t"))) { req.resume(); return J(res, 404, { ok: false, error: "not_found" }); }
+        const fm = await store.fileMeta(m[1]); if (!fm) { req.resume(); return J(res, 404, { ok: false, error: "not_found" }); }
+        const pid = m[1] + "pg";
+        if (req.method === "GET") {
+          const pm = await store.fileMeta(pid).catch(() => null); if (!pm || pm.sha !== (fm.sha256 || "")) return J(res, 404, { ok: false, error: "keine Seitenbilder" });
+          const buf = await store.fileData(pid).catch(() => null); if (!buf) return J(res, 404, { ok: false, error: "keine Seitenbilder" });
+          return D.send(res, 200, buf, "application/json; charset=utf-8", { "Cache-Control": "private, max-age=86400", "X-Robots-Tag": "noindex" });
+        }
+        if (!sameOrigin(req)) { req.resume(); return J(res, 404, { ok: false, error: "not_found" }); }
+        if (limited("pgimg", ip, 120, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Anfragen" }); }
+        const b = await readJson(req, 40e6).catch(() => null), pages = b && Array.isArray(b.pages) ? b.pages.slice(0, 60) : [];
+        const okP = pages.length && pages.every(x => x && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(String(x.img || "")) && String(x.img).length < 2.5e6 && +x.wmm > 0 && +x.hmm > 0);
+        if (!okP) return J(res, 400, { ok: false, error: "Seitenbilder ungültig" });
+        const have = await store.fileMeta(pid).catch(() => null); if (have && have.sha === (fm.sha256 || "")) return J(res, 200, { ok: true, kept: true });
+        const out = Buffer.from(JSON.stringify({ ok: true, pages: pages.map(x => ({ wmm: +x.wmm, hmm: +x.hmm, img: String(x.img) })) }));
+        await store.putFile({ id: pid, kind: "proxy", of: m[1], sha: fm.sha256 || "", createdAt: nowIso(), orderId: null, bytes: out.length }, out);
+        return J(res, 200, { ok: true });
+      }
       m = p.match(/^\/print\/api\/file\/(f[a-f0-9]{24})$/);
       if (m && req.method === "GET") {
         if (!sigOk("file", m[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
@@ -6977,7 +7014,7 @@ module.exports = function (D) {
         await sortimentOp(b); return J(res, 200, await sortimentState());   // PRICE_CACHE bleibt: Schlüssel = reiner Print.com-Einkaufspreis (SKU/Optionen/Land), Aufschlag/Sortiment rechnet quote() jedes Mal neu (Simon 16.11.2026)
       }
       // Einkaufspreise von Print.com neu laden (Simon 16.11.2026): Einstellungen leeren den Preis-Zwischenspeicher nicht mehr – bei Bedarf hier gezielt
-      if (p === "/admin/api/print/pricecache") { const n = PRICE_CACHE.size; PRICE_CACHE.clear(); NOPRICE.clear(); return J(res, 200, { ok: true, cleared: n }); }
+      if (p === "/admin/api/print/pricecache") { const n = PRICE_CACHE.size; PRICE_CACHE.clear(); PC_DIRTY = true; NOPRICE.clear(); return J(res, 200, { ok: true, cleared: n }); }
       if (p === "/admin/api/print/settings") { const s = await saveSettings(b); return J(res, 200, { ok: true, settings: s }); }   // PRICE_CACHE bleibt: Schlüssel = reiner Print.com-Einkaufspreis (SKU/Optionen/Land), Aufschlag/Sortiment rechnet quote() jedes Mal neu (Simon 16.11.2026)
       if (p === "/admin/api/print/catalog") { const cat = await catalog(true); return J(res, 200, { ok: true, at: cat && cat.at, errors: (cat && cat.errors) || [], count: cat && cat.products ? cat.products.length : 0 }); }
       if (p === "/admin/api/print/op") {

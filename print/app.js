@@ -2704,15 +2704,25 @@
     var rnd = shapeNow(), fo = S.price && S.price.folds;
     var show = function () { var b = document.getElementById("psStuPages"); if (b && S.stuView && b.querySelector(".ps-stu-3d")) return; /* 3D-Vorschau offen: nicht überschreiben */ if (b && b.getAttribute("data-key") === key) b.innerHTML = job.figs.join("") + (job.html ? "" : '<div class="ps-stu-load"><span class="ps-spin"></span> weitere Seiten werden geladen …</div>'); };
     var q3 = can3d() ? { fid: f.fileId, pv: [], b: [], mmW: [], asp: 0, doc: null } : null;   /* saubere Seitenbilder (ohne Linien) für die 3D-Vorschau – ohne zweites Laden der Datei */
-    job.p = pvWait(f).then(function () { return pdfDoc(pvUrl(f)); }).then(function (doc) {
-      var n = Math.min(doc.numPages, 60), i = 0; if (q3) q3.doc = doc;
-      var step = function () { if (i >= n) return Promise.resolve(); var idx = i++; return doc.getPage(idx + 1).then(function (pg) {
-        var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, hmm = v0.height / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
+    /* Simon 23.11.2026: Druckansicht einmal zeichnen und als Seitenbilder am Server merken – danach sofort (große Canva-PDFs brauchten pro Seite bis 20 s) */
+    var pgUrl = "/print/api/file/" + encodeURIComponent(f.fileId) + "/pages?t=" + encodeURIComponent(f.token), saveImgs = [];
+    var srcP = fetch(pgUrl, { credentials: "same-origin", headers: { "X-Print-Shop": "1" } }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (pj) {
+      if (pj && pj.ok && Array.isArray(pj.pages) && pj.pages.length) return { n: pj.pages.length, cached: true, page: function (idx) { var p = pj.pages[idx]; return new Promise(function (res, rej) { var im = new Image(); im.onload = function () { var cv = document.createElement("canvas"); cv.width = im.naturalWidth; cv.height = im.naturalHeight; cv.getContext("2d").drawImage(im, 0, 0); res({ wmm: +p.wmm, hmm: +p.hmm, cv: cv }); }; im.onerror = rej; im.src = p.img; }); } };
+      return pvWait(f).then(function () { return pdfDoc(pvUrl(f)); }).then(function (doc) { if (q3) q3.doc = doc; return { n: Math.min(doc.numPages, 60), page: function (idx) { return doc.getPage(idx + 1).then(function (pg) {
+        var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(3, 900 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () { var wmm = v0.width / 72 * 25.4, hmm = v0.height / 72 * 25.4;
+          try { var cw = document.createElement("canvas"); cw.width = cv.width; cw.height = cv.height; var xw = cw.getContext("2d"); xw.fillStyle = "#fff"; xw.fillRect(0, 0, cw.width, cw.height); xw.drawImage(cv, 0, 0); saveImgs[idx] = { wmm: wmm, hmm: hmm, img: cw.toDataURL("image/jpeg", 0.85) }; } catch (e) {}
+          return { wmm: wmm, hmm: hmm, cv: cv }; }); }); } }; });
+    });
+    job.p = srcP.then(function (src) {
+      var n = src.n, i = 0;
+      var step = function () { if (i >= n) return Promise.resolve(); var idx = i++; return src.page(idx).then(function (pg) {
+        var wmm = pg.wmm, hmm = pg.hmm, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
         // Seite größer/kleiner, aber gleiches Seitenverhältnis wie Endformat + Beschnitt → der Server skaliert sie passend: Linien im Druckmaß einzeichnen
         var tw = trim.w + 2 * bleed, th = trim.h + 2 * bleed, mmW = wmm;
         if (!b && bleed) { if (Math.abs(wmm / hmm - tw / th) < 0.012) { b = bleed; mmW = tw; } else if (Math.abs(wmm / hmm - th / tw) < 0.012) { b = bleed; mmW = th; } }
-        var sc = Math.min(3, 900 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: "rgba(0,0,0,0)" }).promise.then(function () {
+        var cv = pg.cv;
+        return Promise.resolve().then(function () {
           var x = cv.getContext("2d"), W = cv.width, H = cv.height, pxmm = W / mmW, bp = b * pxmm, sp = (b + safe) * pxmm;
           if (q3 && idx < 2) { try { var c3 = Math.round(bp), cc = document.createElement("canvas"); cc.width = Math.max(1, W - 2 * c3); cc.height = Math.max(1, H - 2 * c3); var x3 = cc.getContext("2d"); x3.fillStyle = "#fff"; x3.fillRect(0, 0, cc.width, cc.height); x3.drawImage(cv, -c3, -c3);
             q3.pv[idx] = cc.toDataURL("image/jpeg", 0.86); q3.b[idx] = b; q3.mmW[idx] = mmW; if (!idx) q3.asp = cc.width / cc.height; if (q3.pv[0]) S3Q = q3; } catch (e3) {} }
@@ -2727,7 +2737,7 @@
             x.restore(); }
           job.figs.push('<figure class="ps-stu-pg" id="psStuPg' + (idx + 1) + '"><img src="' + cv.toDataURL("image/png") + '" alt="' + esc(stuLabel(idx, n)) + '"><figcaption><b>' + esc(stuLabel(idx, n)) + "</b></figcaption></figure>");
           show(); }); }).then(step); };
-      return step();
+      return step().then(function () { if (!src.cached && n && saveImgs.filter(Boolean).length === n) api(pgUrl, { pages: saveImgs }).catch(function () {}); });
     }).then(function () { job.html = job.figs.join(""); show(); if (q3) setTimeout(need3d, 900); })
       .catch(function () { delete STU[key]; var b3 = document.getElementById("psStuPages"); if (b3 && !(S.stuView && b3.querySelector(".ps-stu-3d"))) b3.innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – <a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF ansehen</a>.</p>'; });
   }
