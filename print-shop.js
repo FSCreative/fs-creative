@@ -6624,6 +6624,15 @@ module.exports = function (D) {
           return D.send(res, 206, buf.subarray(a, z + 1), ct, Object.assign(fh, { "Content-Range": "bytes " + a + "-" + z + "/" + len, "Content-Length": String(z - a + 1) })); }
         return D.send(res, 200, buf, ct, Object.assign(fh, { "Content-Length": String(buf.length) }));
       }
+      // Druck-PDF genau so, wie Print.com sie bekommt (bereinigt) – zum händischen Hochladen bei Print.com, wenn die Datei dort nicht angekommen ist
+      if (p === "/admin/api/print/pcfile" && req.method === "GET") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const fid = String(u.searchParams.get("fid") || o.fileId || ""), fm = await store.fileMeta(fid);
+        if (!fm || [o.fileId].concat((o.motifs || []).map(m => m.fileId)).indexOf(fid) < 0) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        let buf = await store.fileData(fid); if (!buf) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        if (!fm.pcExtra) buf = await pcVariant(buf, fm, o);
+        return D.send(res, 200, buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'attachment; filename="' + o.nr + '-printcom.pdf"', "Cache-Control": "private, no-store" });
+      }
       if (p === "/admin/api/print/brief-file" && req.method === "GET") {
         const id = String(u.searchParams.get("id") || ""), m = /^f[a-f0-9]{24}$/.test(id) ? await store.fileMeta(id) : null; if (!m || m.kind !== "brief") return D.send(res, 404, "Nicht gefunden – die Datei wurde nach Ablauf der Aufbewahrung gelöscht");
         const data = await store.fileData(id); if (!data) return D.send(res, 404, "Nicht gefunden");
@@ -6802,15 +6811,6 @@ module.exports = function (D) {
         if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
         hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + (onePage ? " · Seite " + pgN : "") + ": " + (opt0.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt0.rotate ? ", " + opt0.rotate + "° gedreht" : "") + (opt0.scale !== 1 ? ", " + Math.round(opt0.scale * 100) + " %" : "") + (opt0.dx || opt0.dy ? ", verschoben" : "")); stamp(o); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
-      }
-      // Druck-PDF genau so, wie Print.com sie bekommt (bereinigt) – zum händischen Hochladen bei Print.com, wenn die Datei dort nicht angekommen ist
-      if (p === "/admin/api/print/pcfile" && req.method === "GET") {
-        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
-        const fid = String(u.searchParams.get("fid") || o.fileId || ""), fm = await store.fileMeta(fid);
-        if (!fm || fm.orderId !== o.id) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
-        let buf = await store.fileData(fid); if (!buf) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
-        if (!fm.pcExtra) buf = await pcVariant(buf, fm, o);
-        return D.send(res, 200, buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'attachment; filename="' + o.nr + '-printcom.pdf"', "Cache-Control": "private, no-store" });
       }
       if (p === "/admin/api/print/replace" && req.method === "POST") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) { req.resume(); return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" }); }
