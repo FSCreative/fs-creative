@@ -2186,6 +2186,19 @@
   }
   /* unbedruckt geliefert (Roll-Up Banner Systeme u. a.): „ohne Druck“, keine Gestaltung – Preisfeld, mobile Leiste und Konfigurator */
   function blankProd(p) { p = p || S.prod; if (!p || isLogo()) return false; var f = p.fixed || {}; return !!(p.blank || S.noFile || String(f.printingmethod || "") === "raw_material" || /^0+$/.test(String(f.printtype || ""))); }
+  /* Matte Papiere ohne Folienkaschierung (Simon 23.11.2026, auch Umschläge/Einbände von Blöcken, Broschüren …): Hinweis auf Kratzer und Abrieb. Geprüft wird die Außenseite = eigener Umschlag, sonst das Material. */
+  function mattNote(p) {
+    var k = kind(); if (k === "textile" || k === "promo" || blankProd(p)) return "";
+    var fx = p.fixed || {}, val = function (s) { var v = S.sel[s] != null ? S.sel[s] : fx[s]; if (v == null) return ""; var pr = (p.props || []).filter(function (x) { return x.slug === s; })[0], o = pr && pr.options.filter(function (x) { return x.slug === v; })[0]; return String(v) + " " + (o ? o.name : ""); };
+    var cov = val("cover_material"), hasCov = !!cov.trim() && !/^(none|selfcover|none_cover)(\s|$)/i.test(cov.trim());
+    var surf = hasCov ? cov : val("material");
+    var isMatt = /silk|\bmatt/i.test(surf) && /papier|paper|silk|bilderdruck|terraprint/i.test(surf) && !/gesatineerd|gl(ä|a)nz|gloss|folie|foil|lamin|kaschier|vinyl|pvc/i.test(surf);
+    if (!isMatt) return "";
+    var lam = Object.keys(Object.assign({}, fx, S.sel)).some(function (s) { return /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s) && /lamin|kaschier|cellophan/i.test(val(s)); });
+    if (lam) return "";
+    var canLam = (p.props || []).some(function (pr) { return /finish/i.test(pr.slug) && !/spot/i.test(pr.slug) && pr.options.some(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name); }); });
+    return '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen" + (canLam ? ". Eine Folienkaschierung (oben bei der Veredelung) schützt die Oberfläche." : ".") + "</p>";
+  }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
     var props = presetHtml(p) + sectionsHtml(p), cust = "";
@@ -2204,7 +2217,7 @@
     var blankNote = blank ? '<p class="ps-musttpl" role="note"><b>Ohne Druck:</b> Du bekommst ' + esc(p.title) + (/unbedruckt/i.test(p.title) ? "" : " unbedruckt") + " – es wird nichts bedruckt, Druckdaten brauchst du keine." + (/roll-?up/i.test(p.key + " " + p.title) ? ' Das Banner ist nicht dabei – Roll-up mit bedrucktem Banner gibt es unter <a class="ps-link" href="/print/rollups">Roll-ups</a>.' : "") + "</p>" : "";
     var foot = blank ? "" : k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Eigene Datei: bitte rundherum " + String(b0).replace(".", ",") + " mm mehr Hintergrund anlegen, der beim Schneiden wegfällt (" + mmF(sz.w + 2 * b0) + " × " + mmF(sz.h + 2 * b0) + " mm)" + (p.designer ? " – im Online-Designer automatisch" : "") : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
     return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h1>' + esc(p.title) + '</h1><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + blankNote + cfgBarHtml() + "</div></div>" +
-      (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + (p.mustTpl ? '<p class="ps-musttpl" role="note"><b>⚠️ Vorlage verwenden:</b> ' + esc(p.mustTpl) + "</p>" : "") + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) + accHtml(p) +
+      (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + (p.mustTpl ? '<p class="ps-musttpl" role="note"><b>⚠️ Vorlage verwenden:</b> ' + esc(p.mustTpl) + "</p>" : "") + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + mattNote(p) + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) + accHtml(p) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : blank ? "Weiter" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
