@@ -3973,7 +3973,7 @@
     var r = o.redo; if (!r) return "";
     var files = (o.files || []).map(function (f) { return '<a class="ps-btn small ghost" href="' + esc(f.url) + '" target="_blank" rel="noopener">📄 ' + esc(f.label) + " ansehen</a>"; }).join(" ");
     var up = function (lab) { return r.canUpload ? '<div class="ps-redo-u">' + (r.motifs ? '<label class="ps-lbl">Motiv <select class="ps-redo-m">' + Array.apply(null, Array(r.motifs)).map(function (_, i) { return '<option value="' + i + '">Motiv ' + (i + 1) + "</option>"; }).join("") + "</select></label>" : "") +
-      '<label class="ps-btn primary ps-redo-b">' + lab + '<input type="file" accept="' + ACC_UP + '" data-redoup hidden></label><span class="pd-muted">PDF, JPG oder PNG · max. 500 MB</span></div><div class="ps-redo-p" hidden><span class="ps-spin"></span> <span>Datei wird hochgeladen und geprüft …</span></div><div class="ps-redo-c"></div><p class="ps-err" role="alert" hidden></p>' : ""; };
+      '<label class="ps-btn primary ps-redo-b">' + lab + '<input type="file" accept="' + ACC_UP + ',.ai,.eps,.tif,.tiff,.svg,.zip" data-redoup hidden></label><span class="pd-muted">am besten PDF · auch JPG, PNG, AI, EPS · max. 500 MB · wir prüfen die Datei persönlich</span></div><div class="ps-redo-p" hidden><span class="ps-spin"></span> <span>Datei wird hochgeladen …</span></div><div class="ps-redo-c"></div><p class="ps-err" role="alert" hidden></p>' : ""; };
     if (r.status === "uploaded") return ldzHtml(o, id, t) + '<div class="ps-pfx ok" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>✓ Neue Druckdaten sind angekommen</h3><p>Danke! Wir prüfen sie und geben den Auftrag dann in den Druck. Bei Fragen melden wir uns.</p><p>' + files + "</p>" + (r.canUpload ? "<details><summary>Doch eine andere Datei hochladen</summary>" + up("Andere Datei wählen") + "</details>" : "") + "</div>";
     return '<div class="ps-pfx warn" id="neu" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>Bitte neue Druckdaten hochladen</h3><p>Wir haben deine Druckdaten angesehen – so können wir sie leider noch nicht drucken lassen.</p>' +
       (r.reason ? '<p class="ps-pfx-n"><b>Grund:</b> ' + esc(r.reason) + "</p>" : "") + (files ? "<p>Bisherige Datei: " + files + "</p>" : "") + up("Neue Datei hochladen") + "</div>";
@@ -3983,16 +3983,16 @@
     var bx = inp.closest(".ps-pfx"), err = bx.querySelector(".ps-err"), pr = bx.querySelector(".ps-redo-p"), ck = bx.querySelector(".ps-redo-c"), ms = bx.querySelector(".ps-redo-m");
     err.hidden = true; ck.innerHTML = "";
     if (f.size > UP_MAX) { err.textContent = "Die Datei ist größer als 500 MB."; err.hidden = false; return; }
-    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { err.textContent = "Bitte PDF, JPG oder PNG hochladen."; err.hidden = false; return; }
+    if (!/\.(pdf|jpe?g|png|ai|eps|tiff?|svg|zip)$/i.test(f.name)) { err.textContent = "Bitte PDF, JPG, PNG, AI oder EPS hochladen."; err.hidden = false; return; }
     /* Simon 20.11.2026: fehlen Seiten (z. B. nur Vorderseite), kann der Kunde bestätigen, dass der Rest weiß bleibt (keep=1) */
     var send = function (keep) {
     pr.hidden = false; var kb = bx.querySelector(".ps-redo-keep"); if (kb) kb.remove();
     var x = upXhr(); x.open("POST", "/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/reupload?t=" + encodeURIComponent(bx.getAttribute("data-t")) + (ms ? "&motif=" + encodeURIComponent(ms.value) : "") + (keep ? "&keep=1" : ""));
     x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
     upPop("up", 0, f.name);
-    x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.lastChild.textContent = ev.loaded < ev.total ? "Datei wird hochgeladen … " + pc + " %" : "Datei wird geprüft …"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
+    x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.lastChild.textContent = ev.loaded < ev.total ? "Datei wird hochgeladen … " + pc + " %" : "Datei wird gespeichert …"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.onload = function () { upPop("close"); pr.hidden = true; var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {}
-      if (j.file) { pxMake(f, j.file); ck.innerHTML = checksHtml(j.file.checks || []); }
+      if (j.file && !j.ok) ck.innerHTML = checksHtml(j.file.checks || []);   /* Simon 23.11.2026: nach erfolgreichem Upload keine Prüfergebnisse zeigen – die Prüfung macht Simon */
       if (!j.ok) { err.textContent = j.error || "Upload fehlgeschlagen – bitte erneut versuchen."; err.hidden = false;
         if (j.canKeep) { var b = document.createElement("button"); b.type = "button"; b.className = "ps-btn primary ps-redo-keep"; b.style.marginTop = "10px"; b.textContent = "So übernehmen – fehlende Seite bleibt weiß"; b.onclick = function () { err.hidden = true; send(true); }; err.insertAdjacentElement("afterend", b); }
         return; }

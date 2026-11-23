@@ -1921,6 +1921,7 @@ module.exports = function (D) {
       if (/PDF\/X version is empty|PDF\/X version .{0,20}should be/i.test(t)) out.push(Object.assign({}, c, { level: "ok", admin: true }));
       else if (c.level === "error" && /RGB/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: " + k.replace(/^Erweiterte Prüfung: /, "") }));
       else if (c.level === "error" && autoBleed && /resolution less than or equal to \d+ ppi/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: Bilder unter 150 ppi gefunden – meist nur der automatisch ergänzte Beschnittrand (Randstreifen werden dafür gestreckt und abgeschnitten). Motiv in der Vorschau auf Schärfe prüfen." }));
+      else if (/image is larger than \d+ pixels and has a resolution less than or equal to \d+ ppi/i.test(t)) { const mP = t.match(/less than or equal to (\d+) ppi/i), mS = t.match(/\((\d+)x on pages? ([\d\s,-]+)\)/i); out.push(Object.assign({}, c, { text: "Erweiterte Prüfung: " + (mS && +mS[1] > 1 ? mS[1] + " Bilder" : "Bild") + " mit geringer Auflösung (höchstens " + (mP ? mP[1] : "149") + " ppi)" + (mS ? " auf Seite " + mS[2].trim() : "") + " – kann im Druck unscharf oder pixelig wirken. Empfohlen sind ca. 300 ppi in Originalgröße." })); }
       else out.push(c);
     }
     return out;
@@ -5385,7 +5386,7 @@ module.exports = function (D) {
       "Bitte lade über den Button eine korrigierte Datei hoch. Sobald sie da ist, prüfen wir sie und geben den Auftrag in den Druck. Der Liefertermin verschiebt sich um die Zeit, bis die neue Datei da ist."],
     rows: [["Neue Druckdatei hochladen", redoLink(o), "button"], ["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]],
     outro: ["Fragen oder lieber gemeinsam anschauen? Antworte einfach auf diese Mail."] });
-  const redoPublic = o => o.redo ? { status: o.redo.status, reason: o.redo.reason || "", sentAt: o.redo.sentAt || "", uploadedAt: o.redo.uploadedAt || "", motifs: Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.length : 0, canUpload: !!REVIEW[o.status] && !isLogoKind(o) } : null;
+  const redoPublic = o => o.redo ? { status: o.redo.status, reason: o.redo.reason || "", sentAt: o.redo.sentAt || "", uploadedAt: o.redo.uploadedAt || "", motifs: Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.length : 0, canUpload: (!!REVIEW[o.status] || o.status === "problem") && !(o.printcom && o.printcom.orderNumber) && !isLogoKind(o) } : null;
   const isLogoKind = o => o.product && (o.product.kind === "textile" || o.product.kind === "promo");
   const proofPublic = o => o.proof && o.proof.fileId ? { status: o.proof.status, sentAt: o.proof.sentAt, note: o.proof.note || "", answeredAt: o.proof.answeredAt || "", reply: o.proof.reply || "",
     files: (o.proof.files || [o.proof.fileId]).map((id, i, a) => ({ url: fileLink(id), label: a.length > 1 ? "Motiv " + (i + 1) : "Druck-PDF" })) } : null;
@@ -5819,21 +5820,24 @@ module.exports = function (D) {
         if (!sameOrigin(req) || !sigOk("order", rum[1], u.searchParams.get("t"))) { req.resume(); return J(res, 404, { ok: false, error: "not_found" }); }
         if (limited("upload", ip, 200, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" }); }
         const o = await store.getOrder(rum[1]), rp = o && redoPublic(o);
-        if (!rp || !rp.canUpload) { req.resume(); return J(res, 409, { ok: false, error: o && o.redo && !REVIEW[o.status] ? "Der Auftrag ist schon in Produktion" : "Für diese Bestellung ist kein neuer Upload offen" }); }
+        if (!rp || !rp.canUpload) { req.resume(); return J(res, 409, { ok: false, error: o && o.redo && o.printcom && o.printcom.orderNumber ? "Der Auftrag ist schon in Produktion" : "Für diese Bestellung ist kein neuer Upload offen" }); }
         const mi = parseInt(String(u.searchParams.get("motif") || ""), 10), motif = rp.motifs && mi >= 0 && mi < rp.motifs ? mi : rp.motifs ? 0 : -1;
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druckdaten")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
+        /* Simon 23.11.2026: viele Kunden kamen mit dem Link nicht weiter (Datei-Fehler/Seitenzahl blockierten). Jetzt: einfach hochladen, nichts sperrt –
+           die automatische Prüfung läuft nur noch für Simon im Hintergrund (Cockpit zeigt alles), Simon prüft selbst. Geht die Aufbereitung schief, wird die Datei unverändert übernommen. */
+        let buf;
+        try { buf = await uploadBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
           meta = await handleUpload(buf, name, { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, motifs: rp.motifs || undefined });
-        } catch (e) { return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht verarbeitet werden" }); } finally { rel(); }
+        } catch (e) {
+          if (!buf) return J(res, e.status || 400, { ok: false, error: e.status ? e.message : "Upload fehlgeschlagen – bitte erneut versuchen" });
+          try { meta = await newFile("upload", name, buf, { product: o.product.key, sel: o.sel, size: null, bleed: 0, sides: 1, pages: null }, [{ level: "warn", text: "Automatische Prüfung nicht möglich (" + clip(e.message || "Fehler", 160) + ") – Datei unverändert übernommen, bitte selbst prüfen." }], { original: "raw" }); }
+          catch (e2) { log("Neue Druckdaten speichern", o.nr, e2.message); return J(res, 500, { ok: false, error: "Upload fehlgeschlagen – bitte erneut versuchen oder die Datei per Mail schicken" }); }
+        } finally { rel(); }
         const view = fileView(meta);
-        // Simon 20.11.2026 (D-261119-RPNM): abgelehnte Versuche waren unsichtbar und „Rückseite weiß lassen“ ging nicht.
-        // Jetzt: jeder abgelehnte Versuch steht im Verlauf (Datei im Cockpit ansehbar); fehlende Seiten kann der Kunde bewusst bestätigen (keep=1).
         const needP = (view.checks || []).map(c => (String(c.text || "").match(/für die gewählte Druckart werden (\d+) benötigt/) || [])[1]).filter(Boolean)[0];
-        const keep = u.searchParams.get("keep") === "1";
-        const tryLog = async why => { try { meta.orderId = o.id; meta.rejected = true; await store.putFile(meta); o.redo.tries = (o.redo.tries || []).concat([{ at: nowIso(), fileId: meta.id, name: meta.name, why }]).slice(-10); hist(o, "Upload-Versuch vom Kunden nicht übernommen (" + why + "): " + meta.name); await store.putOrder(o); } catch (e) { log("Upload-Versuch merken", o.nr, e.message); } };
-        if (view.blocked) { await tryLog("Datei hat Fehler"); return J(res, 200, { ok: false, error: "Die Datei hat noch Fehler – bitte korrigieren und erneut hochladen.", file: view }); }
-        if (needP && !keep) { await tryLog("nur " + (view.pages || 1) + " von " + needP + " Seiten"); return J(res, 200, { ok: false, canKeep: true, error: "Die Datei hat " + (view.pages || 1) + " Seite(n), es werden " + needP + " benötigt" + (+needP === 2 ? " (Vorder- und Rückseite)" : "") + ". Bitte alle Seiten in einer PDF hochladen – oder bestätigen, dass " + (+needP === 2 ? "die Rückseite" : "der Rest") + " weiß bleiben soll.", file: view }); }
+        const keep = false;
+        if (view.blocked || needP) hist(o, "Hinweis zur neuen Datei: automatische Prüfung meldet " + (view.blocked ? "Fehler" : "") + (view.blocked && needP ? " und " : "") + (needP ? "nur " + (view.pages || 1) + " von " + needP + " Seiten" : "") + " – bitte selbst prüfen");
         meta.orderId = o.id; await store.putFile(meta);
         const oldId = motif > -1 ? o.motifs[motif].fileId : o.fileId;
         if (motif > -1) o.motifs[motif].fileId = meta.id; else { o.fileId = meta.id; o.fileName = meta.name; o.fileKind = meta.kind; o.fileChecks = meta.checks || []; }
