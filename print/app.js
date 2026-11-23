@@ -2197,7 +2197,7 @@
     var lam = Object.keys(Object.assign({}, fx, S.sel)).some(function (s) { return /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s) && /lamin|kaschier|cellophan/i.test(val(s)); });
     if (lam) return "";
     var canLam = (p.props || []).some(function (pr) { return /finish/i.test(pr.slug) && !/spot/i.test(pr.slug) && pr.options.some(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name); }); });
-    return '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen" + (canLam ? ". Eine Folienkaschierung (oben bei der Veredelung) schützt die Oberfläche." : ".") + "</p>";
+    return '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen" + (canLam ? ". Eine Folienkaschierung schützt die Oberfläche – du kannst sie oben bei den Optionen dazuwählen." : ".") + "</p>";
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
