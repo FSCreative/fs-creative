@@ -268,6 +268,7 @@
   }
   function cartRestore(id, t, op) {
     op = op === "keep" || op === "stop" ? op : "";
+    var dazu = /[?&]dazu=1(&|$)/.test(location.search);   /* Simon 23.11.2026: Warenkorb-Link mit &dazu=1 legt die Positionen zum bestehenden Warenkorb dazu statt ihn zu ersetzen */
     api("/print/api/cartremind?id=" + encodeURIComponent(id) + "&t=" + encodeURIComponent(t) + (op ? "&op=" + op : ""), null, "GET").then(function (j) {
       try { history.replaceState(null, "", "/print?warenkorb"); } catch (e) {}
       if (!j.ok || !Array.isArray(j.items)) { toast(j.error || "Warenkorb nicht mehr verfügbar", true); go(4, true); return; }
@@ -276,8 +277,9 @@
       var have = {}; S.cart.forEach(function (x) { have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] = 1; });
       // fertiger Warenkorb-Link aus dem Cockpit (j.link): ersetzt den Warenkorb – keine alten Stände/fremden Positionen (Simon 12.11.2026)
       var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile) && (j.link || !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]) && prodByKey(x.product); });
-      if (j.link && S.cart.length) toast("Dein Warenkorb wurde durch das Angebot ersetzt");
-      S.cart = j.link ? add : S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
+      if (j.link && dazu) add = add.filter(function (x) { return !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]; });
+      if (j.link && !dazu && S.cart.length) toast("Dein Warenkorb wurde durch das Angebot ersetzt");
+      S.cart = j.link && !dazu ? add : S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
       toast(add.length ? "Dein Warenkorb ist wieder da – Preise werden aktualisiert" : "Dein Warenkorb ist schon da"); go(4, true); requoteCart();
     }).catch(function () { go(4, true); });
   }
