@@ -3288,7 +3288,9 @@ module.exports = function (D) {
     try {
       const parts = []; for (const o of list) parts.push(await pcItemsOf(o));
       const base = cfg().publicUrl, multi = list.length > 1, nrs = list.map(x => x.nr);
-      const body = { deDuplicationId: multi ? o0.groupId : o0.id, customerReference: clip(multi ? nrs.join(" + ") : o0.nr, 120), poNumber: clip(multi ? nrs[0] + " +" + (nrs.length - 1) : o0.nr, 60),
+      // Neu bestellen nach Storno (23.11.2026): gleiche deDuplicationId → Print.com gab den stornierten Auftrag zurück. Je früherem Auftrag eigene Kennung.
+      const prevN = Math.max.apply(null, list.map(x => (x.printcomPrev || []).length)), prevNrs = [].concat.apply([], list.map(x => (x.printcomPrev || []).map(p => String(p.orderNumber || ""))));
+      const body = { deDuplicationId: (multi ? o0.groupId : o0.id) + (prevN ? "-r" + prevN : ""), customerReference: clip(multi ? nrs.join(" + ") : o0.nr, 120), poNumber: clip(multi ? nrs[0] + " +" + (nrs.length - 1) : o0.nr, 60),
         webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o0.id) + "/" + encodeURIComponent(o0.id), billingAddress: billingFs(), items: [].concat.apply([], parts.map(x => x.items)) };
       const fail = async e => { for (const o of list) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen" + (multi ? " (Warenkorb " + nrs.join(", ") + ")" : "") + ": " + e.message); await store.putOrder(o); } };
       const anyWish = parts.some(x => x.wish);
@@ -3302,6 +3304,7 @@ module.exports = function (D) {
       // Antwort kommt teils als { results: [...] }, teils als { order: {...} } (Warenkorb mit mehreren Positionen, 6002355487)
       const r = j && j.order && typeof j.order === "object" && !Array.isArray(j.results) ? j.order : firstOf(j), rItems = Array.isArray(r.items) ? r.items : [];
       const orderNumber = String(r.orderNumber || (rItems[0] && rItems[0].orderNumber) || "");
+      if (orderNumber && prevNrs.indexOf(orderNumber) > -1) { const e = new Error("Print.com hat den früheren (stornierten) Auftrag " + orderNumber + " zurückgegeben statt eines neuen – bitte Simon/Print.com prüfen"); await fail(e); throw e; }
       for (const x of parts) {
         const o = x.o, it = rItems.find(i => i && String(i.customerReference || "").indexOf(o.nr) === 0) || rItems[0];
         o.printcom = { orderNumber, at: nowIso(), by: by || "Cockpit", total: multi ? null : (+r.orderTotal || +r.grandTotal || null), status: String((it && it.status) || r.status || ""), group: multi ? list.map(y => y.id) : undefined };
@@ -6929,7 +6932,7 @@ module.exports = function (D) {
           const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
           const pc = o1.printcom || {}; if (!pc.orderNumber) return J(res, 400, { ok: false, error: "Noch nicht bei Print.com bestellt" });
           if (!/CANCEL/i.test(String(pc.status || ""))) return J(res, 400, { ok: false, error: "Erst bei Print.com stornieren – Status dort: " + (pc.status || "unbekannt") + " (danach „Status abrufen“)" });
-          o1.printcomPrev = (o1.printcomPrev || []).concat([pc]).slice(-5); delete o1.printcom;
+          o1.printcomPrev = (o1.printcomPrev || []).concat([pc]).slice(-5); o1.printcom = {};   // leeres Objekt (nicht löschen): Bestell-/Fehlerpfad schreibt o.printcom.error
           o1.status = o1.payment && o1.payment.method === "invoice" && o1.payment.status !== "paid" ? "invoice_requested" : "paid";
           if (o1.price && o1.price.purchase) o1.price.purchase.actual = false;
           hist(o1, "Print.com-Auftrag " + pc.orderNumber + " war storniert – Auftrag wieder bestellbar (Liefertermin prüfen, dann neu bestellen)"); stamp(o1); await store.putOrder(o1);
