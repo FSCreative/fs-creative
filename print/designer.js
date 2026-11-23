@@ -24,6 +24,23 @@
   // druckfreundliche Prozessfarben (liegen im CMYK-Farbraum, keine Warnung)
   var CMYKS = ["#1a171b", "#575756", "#9d9d9c", "#e30613", "#e6007e", "#951b81", "#312783", "#009fe3", "#008d36", "#95c11f", "#ffed00", "#f39200", "#a2662f", "#f7f3ec"];
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var mmT = function (v) { return String(Math.round(v * 10) / 10).replace(".", ","); };   // Maße mit Komma und ohne Rechenreste (1,5 statt 1.5)
+  /* Sonderform des Endformats: "round" (Kreis/Oval), "hex" (Sechseck) oder "" – gleiche Regeln wie shapeNow() in app.js. Die gewählte „Form“ entscheidet,
+     erst ohne Form-Option das Format (Komplett-Check 23.11.2026: „Viereck mit abgerundeten Ecken“ wurde als Oval gezeichnet, „Rund Ø 85 mm“ als Rechteck) */
+  function shapeOfSel(opts) {
+    var lb = function (k) { return ((opts.labels || []).filter(function (l) { return l[0] === k; })[0] || [])[1] || ""; }, sel = opts.sel || {};
+    var sh = String(sel.shape || "") + " " + lb("shape"), sz = String(sel.size || "") + " " + lb("size"), t = /\S/.test(sh) ? sh : sz;
+    return /hexagon|sechseck/i.test(sh + " " + sz) ? "hex" : /(^|[^a-zäöü])(runde?[rsn]?|round|circle|kreis|ovale?[rsn]?)(?![a-zäöü])/i.test(t) && !/eck|corner|abgerund|gerundet|rounded|doppel|double|unterseite|bottom|herz|heart/i.test(t) ? "round" : "";
+  }
+  /* Umriss des Endformats als Pfad, d = Abstand nach innen (0 = Schnittlinie, Sicherheitsabstand = innen); Sechseck wie in der Druckvorschau (Spitzen an der längeren Seite) */
+  function trimPath(ctx, T, d) {
+    d = d || 0;
+    if (D.shape === "round") { ctx.moveTo(T.x + T.w - d, T.y + T.h / 2); ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, Math.max(1, T.w / 2 - d), Math.max(1, T.h / 2 - d), 0, 0, Math.PI * 2); return; }
+    if (D.shape === "hex") { var k = 1.1547 * d, land = T.w >= T.h, x0 = T.x + (land ? k : d), x1 = T.x + T.w - (land ? k : d), y0 = T.y + (land ? d : k), y1 = T.y + T.h - (land ? d : k), q = (land ? x1 - x0 : y1 - y0) / 4;
+      var P = land ? [[x0, (y0 + y1) / 2], [x0 + q, y0], [x1 - q, y0], [x1, (y0 + y1) / 2], [x1 - q, y1], [x0 + q, y1]] : [[(x0 + x1) / 2, y0], [x1, y0 + q], [x1, y1 - q], [(x0 + x1) / 2, y1], [x0, y1 - q], [x0, y0 + q]];
+      P.forEach(function (pt, i) { if (i) ctx.lineTo(pt[0], pt[1]); else ctx.moveTo(pt[0], pt[1]); }); ctx.closePath(); return; }
+    ctx.rect(T.x + d, T.y + d, T.w - 2 * d, T.h - 2 * d);
+  }
   var r1 = function (n) { return Math.round(n * 10) / 10; };
   var isTouch = window.matchMedia && matchMedia("(pointer: coarse)").matches;
   var toast = function (m, bad) { if (window.PrintShop) window.PrintShop.toast(m, bad); };
@@ -284,8 +301,8 @@
       var tex = opts.textile || null, sz = tex ? { w: tex.pages[0].area[0], h: tex.pages[0].area[1] } : opts.size, b = tex ? 0 : opts.bleed;
       var foldName = ((opts.labels || []).filter(function (l) { return /fold|falz/i.test(l[0]); })[0] || [])[1] || "";
       var panels = opts.folds ? opts.folds.x.length + 1 : opts.product.key === "folder" ? (/wickel|zickzack|leporello|zig|letter|wrap|z-|3|drei/i.test(foldName) ? 3 : 2) : 1;
-      var shape = ((opts.labels || []).filter(function (l) { return l[0] === "shape"; })[0] || [])[1] || "";
-      D = { o: opts, W: (sz.w + 2 * b) * U, H: (sz.h + 2 * b) * U, mm: sz, b: b, safe: opts.safe || 3, sides: opts.sides, panels: panels, fold: opts.folds || null, round: /rund|round|kreis|circle/i.test(shape + " " + (opts.sel.shape || "")),
+      var shp = opts.shape != null ? String(opts.shape) : shapeOfSel(opts);
+      D = { o: opts, W: (sz.w + 2 * b) * U, H: (sz.h + 2 * b) * U, mm: sz, b: b, safe: opts.safe || 3, sides: opts.sides, panels: panels, fold: opts.folds || null, round: shp === "round", shape: shp === "round" || shp === "hex" ? shp : "",
         pages: [], cur: 0, hist: [], fut: [], panel: tex ? "text" : "tpl", tex: tex, guides: [], showGuides: true, showBleed: true, snap: true, grid: false, crop: null, imgs: {}, clip: null, dirty: false, keyH: null, loading: false, cas: +opts.cassette || 0 };   /* Roll-up: unterer Streifen in der Kassette (mm) */
       D.ink = inkOf(opts);
       D.trim = { x: b * U, y: b * U, w: sz.w * U, h: sz.h * U };
@@ -342,7 +359,7 @@
     var root = document.createElement("div"); root.className = "pd"; root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", "Designer " + o.product.title);
     var tools = function (cls) { return TOOLS.filter(function (t) { return (!D.tex || (t[0] !== "tpl" && t[0] !== "bg" && t[0] !== "spot")) && (t[0] !== "tpl" || hasTpl()) && (t[0] !== "prod" || !!(D.tex && D.o.texSide)); }).map(function (t) { return '<button type="button" class="pd-tool ' + cls + '" data-tool="' + t[0] + '" aria-pressed="false">' + svgI(t[0]) + "<span>" + t[1] + "</span></button>"; }).join(""); };
     root.innerHTML = '<div class="pd-top"><button type="button" class="pd-ib" data-a="close" aria-label="Designer schließen" title="Schließen">' + svgI("close") + '</button>' +
-      '<div class="ttl">' + esc(o.product.title) + "<small>" + (D.tex ? "Textil-Designer · " + esc(D.tex.colorName || "") + " · " + esc(D.tex.methodName || "") : D.mm.w + " × " + D.mm.h + " mm · Beschnitt " + D.b + " mm") + "</small></div>" +
+      '<div class="ttl">' + esc(o.product.title) + "<small>" + (D.tex ? "Textil-Designer · " + esc(D.tex.colorName || "") + " · " + esc(D.tex.methodName || "") : mmT(D.mm.w) + " × " + mmT(D.mm.h) + " mm · Beschnitt " + mmT(D.b) + " mm") + "</small></div>" +
       (o.motif ? '<span class="pd-mot" title="Du gestaltest Motiv ' + o.motif + (o.motifs ? " von " + o.motifs : "") + (o.motifCopies ? " (" + o.motifCopies + " Stk.)" : "") + '">Motiv ' + o.motif + (o.motifs ? "<small>/" + o.motifs + "</small>" : "") + (o.motifCopies ? "<i>" + o.motifCopies + " Stk.</i>" : "") + "</span>" : "") +
       (D.sides > 1 && !D.tex ? '<div class="pd-pages" role="tablist">' + sideNames.slice(0, D.sides).map(function (n, i) { return '<button type="button" role="tab" data-page="' + i + '" aria-current="' + (i === 0) + '"><span class="lf">' + esc(n) + '</span><span class="ls">' + (D.tex ? esc(n.split(" ")[0]) : ((D.fold || D.o.product.key === "folder") ? ["Außen", "Innen"] : ["Vorne", "Hinten"])[i]) + "</span></button>"; }).join("") + "</div>" : "") +
       '<span class="sp"></span><button type="button" class="pd-ib" data-a="undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">' + svgI("undo") + '</button><button type="button" class="pd-ib" data-a="redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">' + svgI("redo") + "</button>" +
@@ -351,7 +368,7 @@
       '<button type="button" class="pd-ib primary" data-a="finish">Fertig</button></div>' +
       '<div class="pd-rail" role="toolbar" aria-label="Werkzeuge">' + tools("") + "</div>" +
       '<div class="pd-stage">' + (D.tex ? '<div class="pd-texnav" role="toolbar" aria-label="Druckpositionen"></div>' : "") + '<div class="pd-corner"></div><canvas class="pd-rh" aria-hidden="true"></canvas><canvas class="pd-rv" aria-hidden="true"></canvas><div class="pd-cv"><canvas></canvas></div>' +
-      (D.tex ? '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f;border-top-style:dashed"></i>Druckfläche (max.) – nur was darin liegt, wird gedruckt</span></div>' : '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f"></i>Endformat (Schnitt)</span><span><i style="border-color:#ff9f9f;border-top-width:6px;opacity:.6"></i>Beschnitt ' + D.b + ' mm</span><span><i style="border-color:#0a84ff;border-top-style:dashed"></i>Sicherheitsabstand</span>' + ((D.panels > 1 || (D.fold && D.fold.y && D.fold.y.length)) ? '<span><i style="border-color:#30d158;border-top-style:dashed"></i>Falz</span>' : "") + "</div>") +
+      (D.tex ? '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f;border-top-style:dashed"></i>Druckfläche (max.) – nur was darin liegt, wird gedruckt</span></div>' : '<div class="pd-zoom"><div class="pd-legend"><span><i style="border-color:#ff375f"></i>Endformat (Schnitt)</span><span><i style="border-color:#ff9f9f;border-top-width:6px;opacity:.6"></i>Beschnitt ' + mmT(D.b) + ' mm</span><span><i style="border-color:#0a84ff;border-top-style:dashed"></i>Sicherheitsabstand</span>' + ((D.panels > 1 || (D.fold && D.fold.y && D.fold.y.length)) ? '<span><i style="border-color:#30d158;border-top-style:dashed"></i>Falz</span>' : "") + "</div>") +
       '<div class="grp"><button type="button" class="pd-ib" data-a="guides" aria-pressed="true" title="Hilfslinien ein/aus">' + svgI("eye") + '</button><button type="button" class="pd-ib" data-a="cut" aria-pressed="false" title="Schnittvorschau (ohne Beschnitt)">✂︎</button><button type="button" class="pd-ib" data-a="zoomout" aria-label="Verkleinern">' + svgI("minus") + '</button><span id="pdZ">100 %</span><button type="button" class="pd-ib" data-a="zoomin" aria-label="Vergrößern">' + svgI("plus") + '</button><button type="button" class="pd-ib" data-a="fit" title="Einpassen (0)" aria-label="Einpassen">' + svgI("fit") + '</button><button type="button" class="pd-ib" data-a="zsel" title="Auf Auswahl zoomen (Umschalt+2)" aria-label="Auf Auswahl zoomen">' + svgI("zsel") + '</button>' +
       '<button type="button" class="pd-ib" data-a="snap" aria-pressed="true" title="Ausrichtungshilfen (Einrasten an Seite, Sicherheitsabstand und Objekten)" aria-label="Ausrichtungshilfen">' + svgI("magnet") + '</button><button type="button" class="pd-ib" data-a="grid" aria-pressed="false" title="Raster 5 mm mit Einrasten" aria-label="Raster 5 mm">' + svgI("grid") + "</button></div></div></div>" +
       '<div class="pd-props" aria-live="polite"><div class="pd-sheet-h"><b id="pdPT"></b><button type="button" class="pd-ib" data-a="sheetclose" aria-label="Schließen">' + svgI("close") + '</button></div><div id="pdP"></div></div>' +
@@ -407,10 +424,12 @@
   //    Kleidungsstücks (print/garments/<art>-<ansicht>.webp, weiß, Maske im Alphakanal) in der gewählten Farbe eingefärbt. Ursprung = Mitte auf Höhe
   //    Halsansatz (Ärmel: oben an der Armkugel), Maßstab über die Brustbreite (Größe L). Nur Ansicht zur Visualisierung – exportiert wird
   //    ausschließlich die Druckfläche (transparent). Brust links = Träger links = vom Betrachter rechts; die Seitenansicht zeigt den linken Ärmel.
-  function texKind() { var k = (D.tex && D.tex.kind) || "tee"; return /zip|jacke/.test(k) ? "zip" : /hood/.test(k) ? "hoodie" : /sweat|pullover/.test(k) ? "sweat" : /polo/.test(k) ? "polo" : "tee"; }
+  /* "other" = Textil ohne passendes Foto (Schürze, Cap, Weste, Decke …): neutrale Ansicht nur mit der Druckfläche – kein T-Shirt vortäuschen (Komplett-Check 23.11.2026) */
+  function texKind() { var k = (D.tex && D.tex.kind) || "tee"; if (k === "other") return "other"; return /zip|jacke/.test(k) ? "zip" : /hood/.test(k) ? "hoodie" : /sweat|pullover/.test(k) ? "sweat" : /polo/.test(k) ? "polo" : "tee"; }
   var isHeavy = function (k) { return k === "hoodie" || k === "zip" || k === "sweat"; };
   function texPlace(i) {   // Lage der Druckfläche in mm (ax/ay = linke obere Ecke) und Ansicht
     var pg = D.tex.pages[i] || D.tex.pages[0], s = pg.slug, w = pg.area[0], h = pg.area[1], k = texKind(), heavy = isHeavy(k);
+    if (k === "other") return { view: "front", ax: -w / 2, ay: 0 };   // ohne Foto: Druckfläche mittig
     // Lage nach üblichen Druckmaßen ab Halsansatz (Größe L): Brustlogo Mitte ca. 19–21 cm tief und 10 cm neben der Mitte, Frontdruck ca. 7 cm unter
     // dem Ausschnitt, Rückendruck ca. 7 cm unter dem Kragen (Hoodie/Zip unter der Kapuze), Ärmel Mitte ca. 10 cm (kurz) bzw. 17 cm (lang) unter der Schulter
     if (/sleeve/.test(s)) { var right = /right/.test(s); return { view: right ? "sleeveR" : "sleeveL", ax: -w / 2, ay: (heavy ? 170 : 100) - h / 2, side: right ? "rechts" : "links" }; }
@@ -461,6 +480,7 @@
     GTINT[tk] = cv; return { m: m, img: cv };
   }
   function garmentBox() {   // Ausschnitt in Arbeitsflächen-Einheiten (für Einpassen und Vorschau): Foto ohne Randbereich
+    if (texKind() === "other") { var pd = Math.max(D.mm.w, D.mm.h) * 0.2; return { x: -pd * U, y: -pd * U, w: (D.mm.w + 2 * pd) * U, h: (D.mm.h + 2 * pd + 26) * U }; }   // nur Druckfläche mit Rand (unten Platz für die Beschriftung)
     var P = texPlace(D.cur), m = GARM[garmKey(P.view)] || [632, 100, 1, 1], V = garmVis(P, m), su = V.su, cx = P.view === "sleeveR" ? 1264 - m[0] : m[0];
     var b = [(60 - cx) / su, (30 - m[1]) / su, (1204 - cx) / su, (1234 - m[1]) / su];
     return { x: (b[0] - V.ox) * U, y: (b[1] - V.oy) * U, w: (b[2] - b[0]) * U, h: (b[3] - b[1] + 70) * U };
@@ -470,18 +490,20 @@
     var c = D.c, ctx = (e && e.ctx) || c.contextContainer, v = c.viewportTransform, P = texPlace(D.cur), z = v[0] * U, G = garmOf(P.view), V = garmVis(P, G ? G.m : [632, 100, 1, 1]);
     ctx.save(); ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]); ctx.translate(-V.ox * U, -V.oy * U); ctx.scale(U, U);
     ctx.fillStyle = G ? G.m[5] : "#eef0f3"; ctx.fillRect(-8000, -8000, 16000, 16000);   // Studio-Hintergrund des Fotos über die ganze Fläche
+    var oth = texKind() === "other", opd = Math.max(D.mm.w, D.mm.h) * 0.12;
+    if (oth) { ctx.fillStyle = hexOf(D.tex.color || "#ffffff"); ctx.beginPath(); rrect(ctx, -D.mm.w / 2 - opd, -opd, D.mm.w + 2 * opd, D.mm.h + 2 * opd, 5); ctx.fill(); ctx.strokeStyle = "rgba(0,0,0,.14)"; ctx.lineWidth = 0.4; ctx.stroke(); }   // Stoffmuster in der Produktfarbe: Kontrast des Motivs bleibt beurteilbar
     if (G && G.img) {
       var m = G.m, f = 1264 / G.img.width;   // Bild → 1264er-Pixel
       ctx.save(); if (P.view === "sleeveR") ctx.scale(-1, 1);   // rechter Ärmel = gespiegelte Seitenansicht
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.drawImage(G.img, -m[0] / V.su, -m[1] / V.su, G.img.width * f / V.su, G.img.height * f / V.su); ctx.restore();
     }
-    if (!D.exporting && G) {
-      var yb = (1234 - G.m[1]) / V.su + 22, fs = 13 / z;
-      var lab = (P.side ? "Ärmel " + P.side : P.view === "front" ? "Vorderseite" : "Rückseite") + " · Druckfläche max. " + (D.mm.w / 10).toString().replace(".", ",") + " × " + (D.mm.h / 10).toString().replace(".", ",") + " cm";
+    if (!D.exporting && (G || oth)) {
+      var yb = oth ? D.mm.h + opd + 9 : (1234 - G.m[1]) / V.su + 22, fs = 13 / z;
+      var lab = (oth ? String((D.tex.pages[D.cur] || {}).title || "Druckfläche") : P.side ? "Ärmel " + P.side : P.view === "front" ? "Vorderseite" : "Rückseite") + " · Druckfläche max. " + (D.mm.w / 10).toString().replace(".", ",") + " × " + (D.mm.h / 10).toString().replace(".", ",") + " cm";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillStyle = "rgba(60,60,67,.75)"; ctx.font = "600 " + fs + "px -apple-system,Segoe UI,sans-serif"; ctx.fillText(lab, 0, yb);   // Schrift zoomunabhängig
       ctx.fillStyle = "rgba(60,60,67,.6)"; ctx.font = (11.5 / z) + "px -apple-system,Segoe UI,sans-serif";
       var nw = ((ctx.canvas.clientWidth || 360) - 24) / z, ln = [], cur = "";   // Hinweis am Handy umbrechen statt abschneiden
-      "Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.".split(" ").forEach(function (w) { var t = cur ? cur + " " + w : w; if (cur && ctx.measureText(t).width > nw) { ln.push(cur); cur = w; } else cur = t; }); if (cur) ln.push(cur);
+      (oth ? "Ansicht ohne Produktfoto – du siehst die Druckfläche in Originalgröße; die Lage am Produkt ergibt sich aus der gewählten Druckposition." : "Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.").split(" ").forEach(function (w) { var t = cur ? cur + " " + w : w; if (cur && ctx.measureText(t).width > nw) { ln.push(cur); cur = w; } else cur = t; }); if (cur) ln.push(cur);
       ln.forEach(function (t, i) { ctx.fillText(t, 0, yb + fs * 1.5 + i * 15 / z); });
     }
     ctx.restore();
@@ -512,14 +534,14 @@
     ctx.save(); ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]);
     // Beschnittzone
     ctx.beginPath(); ctx.rect(0, 0, D.W, D.H);
-    if (D.round) { ctx.moveTo(T.x + T.w, T.y + T.h / 2); ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, T.w / 2, T.h / 2, 0, 0, Math.PI * 2, true); } else { ctx.moveTo(T.x, T.y); ctx.lineTo(T.x, T.y + T.h); ctx.lineTo(T.x + T.w, T.y + T.h); ctx.lineTo(T.x + T.w, T.y); ctx.closePath(); }
+    trimPath(ctx, T, 0);   /* Aussparung des Endformats (Füllregel evenodd – Richtung egal) */
     ctx.fillStyle = D.showBleed ? "rgba(255,69,58,.13)" : "#2a2b33"; ctx.fill("evenodd");
     if (D.grid) { var gs = 5 * U; ctx.strokeStyle = "rgba(10,132,255,.22)"; ctx.lineWidth = 1 / z; ctx.beginPath(); for (var gx = T.x % gs; gx <= D.W; gx += gs) { ctx.moveTo(gx, 0); ctx.lineTo(gx, D.H); } for (var gy = T.y % gs; gy <= D.H; gy += gs) { ctx.moveTo(0, gy); ctx.lineTo(D.W, gy); } ctx.stroke(); }
     if (D.showGuides) {
       ctx.lineWidth = 1.3 / z; ctx.strokeStyle = "#ff375f"; ctx.setLineDash([]);
-      ctx.beginPath(); if (D.round) ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, T.w / 2, T.h / 2, 0, 0, Math.PI * 2); else ctx.rect(T.x, T.y, T.w, T.h); ctx.stroke();
+      ctx.beginPath(); trimPath(ctx, T, 0); ctx.stroke();
       ctx.lineWidth = 1 / z; ctx.strokeStyle = "#0a84ff"; ctx.setLineDash([6 / z, 4 / z]); ctx.beginPath();
-      if (D.round) ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, S.w / 2, S.h / 2, 0, 0, Math.PI * 2); else ctx.rect(S.x, S.y, S.w, S.h); ctx.stroke();
+      if (D.shape) trimPath(ctx, T, S.x - T.x); else ctx.rect(S.x, S.y, S.w, S.h); ctx.stroke();
       if (D.panels > 1 || foldYs().length) { ctx.strokeStyle = "#30d158"; ctx.setLineDash([8 / z, 5 / z]); foldXs().forEach(function (fx) { ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, D.H); ctx.stroke(); }); foldYs().forEach(function (fy) { ctx.beginPath(); ctx.moveTo(0, fy); ctx.lineTo(D.W, fy); ctx.stroke(); });
         // Sicherheitsabstand an der Falz (3 mm je Seite): Texte nicht in den Bruch
         ctx.strokeStyle = "rgba(10,132,255,.45)"; ctx.setLineDash([4 / z, 4 / z]); var SR = D.saferect, fs = 3 * U;
@@ -1083,7 +1105,9 @@
   }
   function texTell() { D.texPrice = "Preis wird berechnet …"; var el = D.root.querySelector("#pdTexPrice"); if (el) el.textContent = D.texPrice; if (D.o.onTexPositions) D.o.onTexPositions(D.tex.pages.map(function (x) { return x.slug; })); }
   function texApi() { return { has: function () { return D.tex.pages.map(function (x) { return x.slug; }); }, add: texAdd, del: function (slug) { texDel(slug); } }; }
-  function texColorSet(hex) { if (!D || !D.tex) return; D.tex.color = hex; D.c.requestRenderAll(); }   // Kleidungsstück neu einfärben (Foto wird je Farbe zwischengespeichert)
+  function texColorSet(hex, name) { if (!D || !D.tex) return; D.tex.color = hex;
+    if (name) { D.tex.colorName = name; var sm = document.querySelector(".pd-top .ttl small"); if (sm) sm.textContent = "Textil-Designer · " + name + " · " + (D.tex.methodName || ""); }   // Farbname in der Kopfzeile mitführen (blieb beim Farbwechsel stehen)
+    D.c.requestRenderAll(); }   // Kleidungsstück neu einfärben (Foto wird je Farbe zwischengespeichert)
   function texSideRefresh() { if (D && D.tex && D.panel === "prod") renderPanel(); }
   function snapshotDesign() { if (!D) return null; saveCur(); return { pages: D.pages.slice(), slugs: D.tex ? D.tex.pages.map(function (x) { return x.slug; }) : undefined }; }
   function texPrice(txt) { if (!D || !D.tex) return; D.texPrice = txt || ""; var el = D.root.querySelector("#pdTexPrice"); if (el) el.textContent = D.texPrice; }
@@ -1097,7 +1121,7 @@
   function checkHtml(list) {
     return '<div class="pd-sec"><h4>Aktuelle Seite</h4>' + (list.length ? '<ul class="ps-checks">' + list.map(function (x) { return '<li class="' + (x.level === "info" ? "warn" : x.level) + '">' + esc(x.text) +
       (x.idx > -1 ? '<span class="pd-fixes"><button type="button" class="ps-link" data-a="isel:' + x.idx + '">Zeigen</button>' + (x.fix === "safe" ? '<button type="button" class="ps-link" data-a="ifix:' + x.idx + ',safe">In den Sicherheitsabstand schieben</button>' : x.fix === "bleed" ? '<button type="button" class="ps-link" data-a="ifix:' + x.idx + ',bleed">Bis zum Beschnittrand ziehen</button>' : "") + "</span>" : "") + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li>Keine Auffälligkeiten – Texte im Sicherheitsabstand, Bilder ausreichend aufgelöst.</li></ul>') +
-      '<div class="pd-geo"><span><i class="t"></i>Endformat <b>' + D.mm.w + " × " + D.mm.h + ' mm</b></span><span><i class="b"></i>Beschnitt (Druckzugabe) <b>' + D.b + ' mm</b> je Seite → Datei ' + (D.mm.w + 2 * D.b) + " × " + (D.mm.h + 2 * D.b) + ' mm</span><span><i class="s"></i>Sicherheitsabstand <b>' + D.safe + ' mm</b> – Texte &amp; Logos innerhalb</span></div><p class="pd-muted">Hintergründe und randlose Bilder bis zum äußeren Rand (Beschnitt) ziehen. Farben werden für den Druck in CMYK umgerechnet.' + (D.panels > 1 ? " Falzlinien sind grün markiert – keine Texte über der Falz." : "") + (D.asFail ? " Automatisches Speichern im Browser war nicht möglich (zu groß) – nutze „Link“." : "") + "</p></div>";
+      '<div class="pd-geo"><span><i class="t"></i>Endformat <b>' + mmT(D.mm.w) + " × " + mmT(D.mm.h) + ' mm</b></span><span><i class="b"></i>Beschnitt (Druckzugabe) <b>' + mmT(D.b) + ' mm</b> je Seite → Datei ' + mmT(D.mm.w + 2 * D.b) + " × " + mmT(D.mm.h + 2 * D.b) + ' mm</span><span><i class="s"></i>Sicherheitsabstand <b>' + mmT(D.safe) + ' mm</b> – Texte &amp; Logos innerhalb</span></div><p class="pd-muted">Hintergründe und randlose Bilder bis zum äußeren Rand (Beschnitt) ziehen. Farben werden für den Druck in CMYK umgerechnet.' + (D.panels > 1 ? " Falzlinien sind grün markiert – keine Texte über der Falz." : "") + (D.asFail ? " Automatisches Speichern im Browser war nicht möglich (zu groß) – nutze „Link“." : "") + "</p></div>";
   }
 
   // ── Vorschau, Export ──
@@ -1161,7 +1185,7 @@
     eachPage(function () { return renderPreview(use3d && D.fold ? 2000 : use3d ? 1500 : 1100); }).then(function (pv) { busy(false);
       modal('<h3>Vorschau</h3>' + (D.tex ? '<p class="pd-muted">Nur Vorschau zur Visualisierung – Schnitt, Farbe und Lage können am gelieferten Kleidungsstück abweichen.</p>' : "") + (use3d ? '<div class="pd-3d" id="pd3d">' + mock(pv) + "</div>" : mock(pv)) + '<div class="ps-thumbs" style="margin-top:14px">' + pv.map(function (s, i) { return '<figure><img src="' + s + '" alt=""><figcaption>' + (D.tex ? esc((D.tex.pages[i] || {}).title || "") : (pv.length > 1 ? sideName(i) : "Endformat") + " – so wird geschnitten") + "</figcaption></figure>"; }).join("") + '</div><div class="foot"><button class="ps-btn primary" data-a="m:ok">Schließen</button></div>', null, "wide");
       if (use3d) need3d().then(function (P3) { var host = document.getElementById("pd3d"); if (!host || !P3 || !D) return; var lk = look3d();
-        P3.mount(host, { pages: pv, mm: D.mm, folds: D.fold, shape: D.round ? "round" : "", radius: lk.radius, finish: lk.finish, gsm: lk.gsm, caption: "Vorschau – Farben am Bildschirm können vom Druck abweichen" }); });
+        P3.mount(host, { pages: pv, mm: D.mm, folds: D.fold, shape: D.shape || "", radius: lk.radius, finish: lk.finish, gsm: lk.gsm, caption: "Vorschau – Farben am Bildschirm können vom Druck abweichen" }); });
     }).catch(function (e) { busy(false); toast(e.message, true); });
   }
   function finish() {

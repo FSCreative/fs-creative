@@ -626,12 +626,13 @@ module.exports = function (D) {
       const hex = JSON.stringify(o.enrichments || "").match(/#[0-9a-f]{6}\b/i); if (hex) x.color = hex[0];
       if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
       return x; };
-    const optOut = (slug, o) => { const d = slug === "size" || slug === areaProp ? (dimsOf(o) || (slug === "size" && c.dims ? c.dims.slice() : null)) : null;
+    /* 1 × 1 mm ist bei Print.com der Platzhalter für „Unbedruckt“/„Ohne“ (Kontrollarmbänder, Thermoskannen) – kein Format, sonst steht im Shop „Druckfläche max. 1 × 1 mm“ (Komplett-Check 23.11.2026) */
+    const optOut = (slug, o) => { const d0 = slug === "size" || slug === areaProp ? (dimsOf(o) || (slug === "size" && c.dims ? c.dims.slice() : null)) : null, d = d0 && d0[0] <= 2 && d0[1] <= 2 ? null : d0;
       let nm = (L[slug] && L[slug][o.slug]) || (/^printtype/.test(slug) && ptName(o.name, o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
       if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(nm) || /^(color|colour|color_.*)$/.test(slug) && /^[a-z]/.test(nm)) nm = humanSlug(nm);   // „navy_blue_hoodie_bc_inspire_zipped_hood“ → „Navyblau“
       const OPT_DE = { selfcover: "Ohne eigenen Umschlag (wie Innenseiten)", "basic kit": "Basis-Set", "premium kit": "Premium-Set" }, ox = OPT_DE[String(nm).trim().toLowerCase()];
       if (ox) nm = ox; else nm = String(nm).replace(/^Din Large\b/i, "DIN lang");
-      nm = String(nm).replace(/\s{2,}/g, " ").replace(/(\d)\s*x\s*(\d)/g, "$1 × $2").trim();   // „1/3 A4 -  99 x 210 mm“ → „1/3 A4 - 99 × 210 mm“
+      nm = deDec(String(nm).replace(/\s{2,}/g, " ").replace(/(\d)\s*x\s*(\d)/g, "$1 × $2").trim());   // „1/3 A4 -  99 x 210 mm“ → „1/3 A4 - 99 × 210 mm“, Maße mit Komma („29.7 cm“ → „29,7 cm“)
       if (/^colou?r(_|$)/.test(slug)) nm = colorDe(/^[A-Za-z]+(_[A-Za-z]+)+$/.test(nm) ? nm.replace(/_/g, " ") : nm);
       const nm2 = /^[a-zäöü]/.test(nm) && !/^\d|^[a-z]\d|^(x|ca\.|mm|cm)\b/.test(nm) ? nm.charAt(0).toUpperCase() + nm.slice(1) : nm;   // „stuhl“ → „Stuhl“
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm2, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
@@ -732,10 +733,10 @@ module.exports = function (D) {
     // Vorauswahl: bevorzugte Optionen zuerst (kuratiert bzw. Papier 115–170 g Bilderdruck), dann die erste Kombination ohne Ausschluss
     const pref = c.prefer || {}, paper = c.paper !== undefined ? c.paper : kind === "flat" ? [115, 170] : null;
     // Druck-Eigenschaften (Druck, Druckposition, Druckseite …): „Unbedruckt“/„Ohne“ nur als letzter Ausweg – beim Öffnen soll ein bedrucktes Produkt mit Preis stehen
-    const PRINTISH = /^(printtype.*|print_position.*|print_side.*|printing_(position|side|colou?rs?).*|positions?_.*|imprint.*)$/, BLANK = o => NONE_SLUG.test(String(o.slug)) || /^0+(_.*)?$|^0\/0|unprint|blank|^none$/i.test(String(o.slug)) || /^(unbedruckt|ohne( druck)?|keine?|blanko|neutral)$/i.test(String(o.name || "").trim());
+    const PRINTISH = /^(printtype.*|print_position.*|print_side.*|printing_(position|side|colou?rs?).*|positions?_.*|imprint.*|color_print.*|print_colou?rs?.*)$/, BLANK = o => NONE_SLUG.test(String(o.slug)) || /^0+(_.*)?$|^0\/0|unprint|blank|^none$/i.test(String(o.slug)) || /^(unbedruckt|ohne( druck)?|keine?|blanko|neutral)$/i.test(String(o.name || "").trim());
     const order = pr => { const o = pr.options.map(x => x.slug); const p = (pref[pr.slug] || (pr.slug === "printtype" ? ["40", "44"] : [])).filter(x => o.indexOf(x) > -1); let rest = o.filter(x => p.indexOf(x) < 0);
       if (!pref[pr.slug] && OPT_EXTRA.test(pr.slug)) { const none = pr.options.filter(x => x.slug === NONE_OPT || NONE_SLUG.test(String(x.slug))).map(x => x.slug); rest = none.concat(rest.filter(x => none.indexOf(x) < 0)); }
-      if (!pref[pr.slug] && PRINTISH.test(pr.slug)) { const blank = pr.options.filter(BLANK).map(x => x.slug); rest = rest.filter(x => blank.indexOf(x) < 0).concat(rest.filter(x => blank.indexOf(x) > -1)); }
+      if (!pref[pr.slug] && (PRINTISH.test(pr.slug) || pr.slug === "size")) { const blank = pr.options.filter(BLANK).map(x => x.slug);   /* auch „Druckformat: Unbedruckt/Ohne“ (Armbänder, Thermoskannen) nur als letzter Ausweg */ rest = rest.filter(x => blank.indexOf(x) < 0).concat(rest.filter(x => blank.indexOf(x) > -1)); }
       if (!pref[pr.slug] && paper && /^(material|paper)/.test(pr.slug)) { const good = pr.options.filter(x => { const g = weightOf(x); return g >= paper[0] && g <= paper[1]; }).sort((a, b) => coated(b) - coated(a) || weightOf(a) - weightOf(b)).map(x => x.slug); rest = good.concat(rest.filter(x => good.indexOf(x) < 0)); }
       return p.concat(rest); };
     // Nie mitgeschickte Eigenschaften (Personalisierung aus Excel): Print.com rechnet dann mit „ohne“ – die Ausschlussregeln genauso prüfen
@@ -946,8 +947,12 @@ module.exports = function (D) {
   const CMS_LINK = /<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>|\[([^\]]*)\]\s*\(([^)]*)\)/gi, EXT_URL = /print\.com|ctfassets\.net|downloads\./i;
   const CTA_RX = /\b(hier|klick|bestell|konfigur|findest du|sieh dir|erhältlich|übersicht)/i;
   const PROMISE_RX = /\b\d{1,2}([:.]\d{2})?\s*Uhr\b|nächsten (Werk|Arbeits)?tag|folgenden (Werk|Arbeits)?tag|\bWerktag|über ?nacht|same.?day/i;
+  /* Print.com-CMS liefert bei manchen Produkten (Süßwaren: Fruchtgummis, Tic Tac, Mentos …) als Beschreibung nur den Inhalt eines <style>-Blocks
+     („table tr td {border: none !important;} …“, teils „übersetzt“) – Stil-Regeln nie als Text zeigen (Komplett-Check 23.11.2026) */
+  const noCss = t => { const s = String(t || "").replace(/<style\b[\s\S]*?<\/style>/gi, " "); if (!/\{[^{}]*:[^{}]*\}/.test(s)) return s;
+    return s.split("\n").map(l => { let g = 0; while (/\{[^{}]*:[^{}]*\}/.test(l) && g++ < 60) l = l.replace(/^[^{}]*\{[^{}]*\}\}?/, ""); return l; }).join("\n"); };
   function cmsClean(t) {
-    return String(t || "").replace(/\s+in Rekordzeit/gi, "")
+    return noCss(t).replace(/\s+in Rekordzeit/gi, "")
       .replace(/\[([^\]]*)\]\s*\(([^)]*)\)/g, (m, tx, u) => /^\s*((https?:)?\/\/|www\.)/i.test(tx) || /^\s*(hier|link|download|pdf|anleitung)\s*$/i.test(tx) ? "\u0001" : tx)   // [Text](Link) → Text; „[hier](…)“ → Marker
       .replace(/\[\s*(https?:)?\/\/[^\]\s]*\s*\]?/gi, "\u0001")   // „[https://downloads…]“ bzw. abgeschnittene Links → Marker (Satz fällt weg)
       .replace(/\s*\(\s*(https?:)?\/\/[^)]*\)/gi, "").replace(/(https?:)?\/\/\S+/gi, "\u0001")
@@ -959,6 +964,8 @@ module.exports = function (D) {
     }).filter(x => x !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
   const noHtml = t => String(t || "").replace(/<[^>]*>?/g, " ").replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").trim();   // Beschreibungen aus dem Print.com-CMS teils mit HTML
+  /* Maßangaben von Print.com mit Dezimalpunkt („42 × 29.7 cm“, „12.7 x 8.7 cm“) → Komma; nur vor Maßeinheit oder „×“, nie Tausenderpunkte oder Versionsnummern (Komplett-Check 23.11.2026) */
+  const deDec = t => String(t == null ? "" : t).replace(/(\d)\.(\d{1,2})(?!\d)(?=\s*(?:×|x\s*\d|mm|cm|m\b|µm|ml|l\b|kg|g\b))/g, "$1,$2");
   const BRIEF_EXT = /^(pdf|jpe?g|png|gif|webp|svg|ai|eps|psd|tiff?|zip|docx?|txt|rtf|odt)$/i;
   const shortDesc = (cp, fb) => { const t = cp && (cmsClean(cp.s) || cmsClean(cp.d).split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(noHtml(t || fb || ""), 140); };
   const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
@@ -981,7 +988,7 @@ module.exports = function (D) {
     return { key: p.key, mustTpl: MUST_TPL[p.sku] || MUST_TPL[p.key] || "", title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: addedOf(p.sku, cp), icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g) && !blankFx(p), blank: blankFx(p) || undefined, bleed: p.bleed, safe: p.safe, imprint: !!p.imprint, generic: !!p.generic, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
-      excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : x[1], x[2]].concat(x[3] ? [x[3]] : [])), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, maxDesigns: p.maxDesigns || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+      excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: deDec(p.sizeLabel || ""), specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : typeof x[1] === "string" ? deDec(x[1]) : x[1], x[2]].concat(x[3] ? [x[3]] : [])), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, maxDesigns: p.maxDesigns || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
   const MAIN_INTO = { "gift-packaging": ["packaging-bags", "gift-packaging"], "displays-pos-material": ["indoor-interior", "displays-pos-material"], "outdoor-furniture": ["outdoor-advertising", "outdoor-furniture"], "materials-samples": ["outdoor-advertising", "banners-outdoor"] };
@@ -1060,9 +1067,11 @@ module.exports = function (D) {
   const START_MM = { "vinyl-cut-letters": [200, 100] };   // Startformat je Produkt in mm, gleich wie print/app.js (Klebebuchstaben 20 × 10 cm)
   function startOf(p) {
     if (!p) return null;
-    if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: 10, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }
+    if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: Math.max(10, m.min || 1), textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }   /* Auflage = Summe der Größen (Mindestmenge der Druckart, z. B. Siebdruck ab 25) */
     const C = p.custom, cm = C && C.unit === "cm", f = cm ? 10 : 1, cl = (v, a, b) => Math.max(a, Math.min(b, v));
-    const s0 = START_MM[p.key] || (cm ? [2000, 1000] : [148, 210]), custom = C ? { w: cl(s0[0], C.minW, C.maxW) / f, h: cl(s0[1], C.minH, C.maxH) / f } : null, cu = sel => p.kind === "banner" || (!!C && sel.size === "custom");
+    /* Start mit freiem Format (z. B. Lesezeichen „Rechteckig“): Maße des ersten Standardformats statt A5 – sonst öffnet ein Lesezeichen mit 148 × 210 mm (Komplett-Check 23.11.2026) */
+    const std0 = !cm && (((p.props || []).find(pr => pr.slug === "size") || {}).options || []).find(o => o && o.w > 0 && o.h > 0);
+    const s0 = START_MM[p.key] || (std0 ? [std0.w, std0.h] : cm ? [2000, 1000] : [148, 210]), custom = C ? { w: cl(s0[0], C.minW, C.maxW) / f, h: cl(s0[1], C.minH, C.maxH) / f } : null, cu = sel => p.kind === "banner" || (!!C && sel.size === "custom");
     const ok = (sel, n) => { const pm = pmsFor(p, n), r = resolveSel(p, sel, cu(sel) ? { size: "custom" } : null, pm ? { printingmethod: pm } : null);
       return !r.excluded && (!pm || r.all.printingmethod == null || pm.indexOf(String(r.all.printingmethod)) > -1); };
     const fix = (sel, n) => {   // übrige Optionen auf die nächste gültige Kombination (aktuelle Werte zuerst), Druckverfahren passend zur Menge
@@ -1182,6 +1191,7 @@ module.exports = function (D) {
     const pcOpts = Object.assign({}, all, { copies }); if (prod.urgency.length) pcOpts.urgency = urgency;
     if (prod.white && prod.white.yes && /^5/.test(String(all.printtype || ""))) pcOpts.white_print = prod.white.yes;   // sonst wie bisher nicht senden
     if (kind === "flat" && !size) size = sizeOf(prod, all);
+    if (size && size.w <= 2 && size.h <= 2) size = null;   /* Print.com-Platzhalter 1 × 1 mm („Unbedruckt“/Druckfläche unbekannt) ist kein Format */
     let folds = null, closed = null;
     if (size && all.fold) { folds = foldSpec(all.fold, size.w, size.h); if (folds) { closed = size; size = folds.open; more.push(["Format offen", size.w + " × " + size.h + " mm"]); } }
     if (!fmt && size && !prod.props.some(pr => pr.slug === "size") && kind === "flat") fmt = ["Endformat", fmtDims([size.w, size.h])];
@@ -1321,6 +1331,14 @@ module.exports = function (D) {
   // Mitbewerber in der Quellenangabe eines Preisankers – ab zwei Quellen ist der Anker der günstigste Marktpreis
   const ANC_SRC = [/druck\.at/i, /flyeralarm/i, /saxoprint/i, /onlineprinters/i, /bannerstop/i];
   const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
+  /* weitere Verfahren nur für die Anzeige (eigene Liste, damit PM_DE an anderen Stellen unverändert bleibt) */
+  const PM_MORE = { lfp_latex: "Latex-Großformatdruck", lfp_latex_160: "Latex-Großformatdruck (bis 1,6 m Breite)", lfp_latex_320: "Latex-Großformatdruck (bis 3,2 m Breite)", lfp_solvent: "Solvent-Großformatdruck", lfp_dye_sublimation: "Sublimationsdruck (Großformat)",
+    lfp_uvgel: "UV-Gel-Großformatdruck", lfp_uv: "UV-Großformatdruck", digital_large: "Digitaldruck (Großbogen)", nano_print: "Nanografie-Druck", digital_die_cut: "Digitaldruck mit Stanzung", sample: "Musterdruck",
+    heat_transfer: "Transferdruck", digital_transfer: "Digitaler Transferdruck", direct_to_film: "DTF-Transferdruck", pad_printing: "Tampondruck", engraving: "Gravur", flexo: "Flexodruck", digitaal_label: "Etiketten-Digitaldruck",
+    rollenco: "Rollen-Digitaldruck", toner: "Tonerdruck", digital_360: "360°-Digitaldruck", sticker_print: "Aufkleberdruck", reactive_textile: "Reaktivdruck (Textil)", ctype_lambda: "Fotobelichtung (C-Print)", raw_material: "Ohne Druck" };
+  /* Anzeigename eines Druckverfahrens – nie den technischen Schlüssel zeigen (Komplett-Check 23.11.2026: „lfp_latex_320“ stand in der Zusammenfassung von Bannern/Bauzaun) */
+  const pmDe = pm => { const k = String(pm || ""), b = k.replace(/_\d+$/, ""), hit = PM_DE[k] || PM_MORE[k] || PM_DE[b] || PM_MORE[b]; if (hit) return hit;
+    return /latex/.test(k) ? "Latex-Großformatdruck" : /^lfp/.test(k) ? "Großformatdruck" : /transfer/.test(k) ? "Transferdruck" : /uv/.test(k) ? "UV-Druck" : /digital|toner/.test(k) ? "Digitaldruck" : "Druck (" + k.replace(/_/g, " ") + ")"; };
   async function quote(prod, n, country, postcode, cust) {
     if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
@@ -1400,8 +1418,8 @@ module.exports = function (D) {
         const off = ok.find(x => x.pm === "offset"), offOk = off && netOf(off.v) <= netOf(ok[0].v);
         const pick = (n.pmWanted && n.pmWanted !== "auto" && ok.find(x => x.pm === n.pmWanted)) || (offOk ? off : ok[0]); buy = pick.v;
         n.pcOpts = pick.pcOpts; n.pm = pick.pm;
-        if (n.labels && !n.labels.some(l => l[0] === "Druckverfahren")) n.labels.push(["Druckverfahren", PM_DE[pick.pm] || pick.pm]);
-        methods = ok.map(x => { const nt = netOf(x.v); return { pm: x.pm, name: PM_DE[x.pm] || x.pm, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)), deliveryDate: x.v.deliveryDate }; });
+        if (n.labels && !n.labels.some(l => l[0] === "Druckverfahren")) n.labels.push(["Druckverfahren", pmDe(pick.pm)]);
+        methods = ok.map(x => { const nt = netOf(x.v); return { pm: x.pm, name: pmDe(x.pm), net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)), deliveryDate: x.v.deliveryDate }; });
       }
     }
     if (!buy) { const r = await (n.quick ? buyFirst : buyAny)(prod, n, n.pcMore, country, postcode); buy = r.v; n.pcOpts = r.pcOpts; }
@@ -1700,8 +1718,11 @@ module.exports = function (D) {
   // Sicherheitsabstand ab Endformat: Produktwert; bei Tunnelsaum (sleeve_Xcm) liegt die Stange im Saum → Tunnelbreite + 1 cm frei halten
   const sleeveMm = sel => { let m = 0; Object.values(sel || {}).forEach(v => { const x = /^sleeve_(\d+)_?cm$/.exec(String(v)); if (x) m = Math.max(m, +x[1] * 10); }); return m; };
   // Sonderform des Endformats (Simon 16.11.2026: Foto-Platte „Sechseck“ wurde im Studio als Rechteck gezeigt) – "hex" | "round" | ""
-  const shapeOf = (sel, labels) => { const t = (labels || []).filter(l => l && /format|form\b|größe|grösse|size|shape/i.test(l[0])).map(l => l[1]).concat([sel && sel.size, sel && sel.shape]).filter(Boolean).join(" ");
-    return /hexagon|sechseck/i.test(t) ? "hex" : /\b(rund|kreis|oval|round|circle)/i.test(t) && !/eckig/i.test(t) ? "round" : ""; };
+  /* Gleiche Regeln wie im Shop (shapeNow in print/app.js) und im Designer (shapeOfSel): die gewählte „Form“ entscheidet, erst ohne Form-Option das Format –
+     „Doppelter runder Bierdeckel“, „Runde Unterseite“, „abgerundete Ecken“ sind keine Kreise (Komplett-Check 23.11.2026) */
+  const shapeOf = (sel, labels) => { const lv = rx => (labels || []).filter(l => l && rx.test(String(l[0]))).map(l => l[1]).join(" ");
+    const sh = [sel && sel.shape, lv(/\bform\b|shape/i)].filter(Boolean).join(" "), sz = [sel && sel.size, lv(/format|größe|grösse|size/i)].filter(Boolean).join(" "), t = /\S/.test(sh) ? sh : sz;
+    return /hexagon|sechseck/i.test(sh + " " + sz) ? "hex" : /(^|[^a-zäöü])(runde?[rsn]?|round|circle|kreis|ovale?[rsn]?)(?![a-zäöü])/i.test(t) && !/eck|corner|abgerund|gerundet|rounded|doppel|double|unterseite|bottom|herz|heart/i.test(t) ? "round" : ""; };
   // Sechseck in einem Rechteck: breiter als hoch = Spitzen links/rechts; d = Abstand nach innen (Sicherheitslinie)
   const hexPts = (x0, y0, x1, y1, d) => { d = d || 0; const w = x1 - x0, h = y1 - y0, k = 1.1547 * d;
     if (w >= h) { x0 += k; x1 -= k; y0 += d; y1 -= d; const q = (x1 - x0) / 4, cy = (y0 + y1) / 2; return [[x0, cy], [x0 + q, y0], [x1 - q, y0], [x1, cy], [x1 - q, y1], [x0 + q, y1]]; }
@@ -1739,7 +1760,7 @@ module.exports = function (D) {
       // Falzlinien (Innenseite gespiegelt)
       const f = !sh.area && n.folds, xs = f ? f.x.map(x => sh.side ? sh.w - x : x).sort((a, b) => a - b) : [], ys = f ? f.y : [], FS = 3;
       // Sicherheitsabstand – bei Foldern je Feld (an der Falz 3 mm Abstand, damit nichts im Bruch liegt)
-      { const cx = [0].concat(xs).concat([sh.w]), cy = [0].concat(ys).concat([sh.h]);
+      if (S > 0) { const cx = [0].concat(xs).concat([sh.w]), cy = [0].concat(ys).concat([sh.h]);   /* ohne Sicherheitsabstand (Druckfläche/Aufdruck) keine zweite Linie auf der Schnittkante */
         doc.save().lineWidth(lw).dash(dash, { space: dash * 0.7 }).strokeColor(C.safe);
         if (round) doc.ellipse(W / 2, H / 2, tw / 2 - S, th / 2 - S);
         else if (hex) doc.polygon(...hexPts(B, B, B + tw, B + th, S));
@@ -1766,7 +1787,13 @@ module.exports = function (D) {
       // Infoblock im größten Feld
       const big = cells.reduce((a, c) => (c.x1 - c.x0) * (c.y1 - c.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? c : a, cells[0]);
       const bx = B + mm(big.x0) + S + fs * 0.5, bwid = Math.max(20, mm(big.x1 - big.x0) - 2 * S - fs);
-      const lines = [
+      /* Druckfläche (Aufdruck, Werbeartikel, Textil): kein Beschnitt, kein Sicherheitsabstand – eigene, kurze Hinweise (Komplett-Check 23.11.2026) */
+      const lines = sh.area && !sh.b ? [
+        ["b", "Druckvorlage " + prod.title + " – " + sh.title],
+        ["", "Druckfläche (max.): " + fmtMm(sh.w) + " × " + fmtMm(sh.h) + " mm"],
+        ["", "Motiv in dieser Größe oder kleiner anlegen – ohne Beschnitt und ohne Hintergrundfläche."],
+        ["", "Diese Hilfslinien vor dem Export ausblenden bzw. löschen."]
+      ] : [
         ["b", "Druckvorlage " + prod.title + " – " + sh.title],
         ["", sh.area ? "Druckfläche: " + fmtMm(sh.w) + " × " + fmtMm(sh.h) + " mm" : "Datenformat (Dateigröße): " + fmtMm(sh.w + 2 * sh.b) + " × " + fmtMm(sh.h + 2 * sh.b) + " mm"],
         ["", "Endformat" + (n.folds ? " offen" : "") + ": " + fmtMm(sh.w) + " × " + fmtMm(sh.h) + " mm" + (n.closed ? " · gefalzt " + fmtMm(n.closed.w) + " × " + fmtMm(n.closed.h) + " mm" : "")],
@@ -1779,10 +1806,13 @@ module.exports = function (D) {
       const totH = sz => lines.reduce((a, l) => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? sz * 1.15 : sz); return a + doc.heightOfString(l[1], { width: bwid }) + sz * 0.35; }, 0);
       let size = fs; const fit = () => lines.every(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(size); return doc.heightOfString(l[1], { width: bwid }) < size * 3.6; }) && totH(size) <= bot - top;
       while (size > 3.5 && !fit()) size -= 0.25;
+      /* Sehr kleine Formate (z. B. Bügel 65 × 8 mm, Kugelschreiber 50 × 6 mm): Hinweise von hinten weglassen, bis der Block passt – sonst lief der Text über
+         die Seite und pdfkit hängte eine leere Zusatzseite im Letter-Format an (Komplett-Check 23.11.2026). Passt nicht einmal der Titel, bleibt die Fläche leer. */
+      while (lines.length > 1 && !fit()) lines.pop();
       const tot = totH(size); let y = Math.max(top, (top + bot) / 2 - tot / 2);
-      lines.forEach(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? size * 1.15 : size).fillColor(l[0] ? C.text : C.muted); doc.text(l[1], bx, y, { width: bwid, align: "center" }); y = doc.y + size * 0.35; });
+      if (fit()) lines.forEach(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? size * 1.15 : size).fillColor(l[0] ? C.text : C.muted); doc.text(l[1], bx, y, { width: bwid, align: "center", height: Math.max(size * 1.3, H - y - 1) }); y = doc.y + size * 0.35; });
       // Legende unten
-      const leg = [[C.bleed, "Beschnitt (wird abgeschnitten)"], [C.trim, "Endformat / Schnittkante"], [C.safe, "Sicherheitsabstand"]].concat(xs.length || ys.length ? [[C.fold, "Falzlinie"]] : []).filter((x, i) => sh.b || i);
+      const leg = sh.area && !sh.b ? [[C.trim, "Druckfläche (max.)"]] : [[C.bleed, "Beschnitt (wird abgeschnitten)"], [C.trim, "Endformat / Schnittkante"], [C.safe, "Sicherheitsabstand"]].concat(xs.length || ys.length ? [[C.fold, "Falzlinie"]] : []).filter((x, i) => sh.b || i);
       const ls = Math.max(4, size * 0.85); doc.font("Helvetica").fontSize(ls);
       const legW = leg.reduce((a, x) => a + doc.widthOfString(x[1]) + ls * 2.6, 0);
       if (legW < tw - 2 * S) { let lx = W / 2 - legW / 2; const ly = H - B - S - ls * 2.2;

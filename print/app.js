@@ -984,8 +984,10 @@
   function flagDraw(x, d, ox, oy, w, h, mir) { var t = String(d).match(/[MLCZ]|-?[\d.]+(?:e-?\d+)?/g) || [], i = 0, op = "", P = function () { var a = +t[i++], b2 = +t[i++]; return [ox + (mir ? 1 - a : a) * w, oy + b2 * h]; };
     while (i < t.length) { if (/^[MLCZ]$/.test(t[i])) op = t[i++]; if (op === "Z") { x.closePath(); op = ""; continue; } if (i >= t.length || /^[MLCZ]$/.test(t[i])) continue;
       if (op === "M") { var m = P(); x.moveTo(m[0], m[1]); op = "L"; } else if (op === "L") { var l = P(); x.lineTo(l[0], l[1]); } else if (op === "C") { var p1 = P(), p2 = P(), p3 = P(); x.bezierCurveTo(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]); } else i++; } }
-  function shapeNow() { if (flagShape()) return "flag"; var t = String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape") + " " + labelOf("size");
-    return /hexagon|sechseck/i.test(t) ? "hex" : /\b(rund|round|circle|kreis)/i.test(t) && !/eckig|corner/i.test(t) ? "round" : ""; }
+  /* Die gewählte „Form“ entscheidet, erst ohne Form-Option das Format (Komplett-Check 23.11.2026: „Viereck mit abgerundeten Ecken“ galt im Designer als rund,
+     „Oval“ nirgends; „Runde Unterseite“ und „Doppelter runder Bierdeckel“ sind keine Kreise) – gleiche Regeln im Designer (shapeOfSel in designer.js) */
+  function shapeNow() { if (flagShape()) return "flag"; var sh = String(S.sel.shape || "") + " " + labelOf("shape"), sz = String(S.sel.size || "") + " " + labelOf("size"), t = /\S/.test(sh) ? sh : sz;
+    return /hexagon|sechseck/i.test(sh + " " + sz) ? "hex" : /(^|[^a-zäöü])(runde?[rsn]?|round|circle|kreis|ovale?[rsn]?)(?![a-zäöü])/i.test(t) && !/eck|corner|abgerund|gerundet|rounded|doppel|double|unterseite|bottom|herz|heart/i.test(t) ? "round" : ""; }
   function shapePath(x, W, H, b, d, shape) { var x0 = b + d, y0 = b + d, x1 = W - b - d, y1 = H - b - d;
     if (shape === "flag") { var fl = flagShape(); if (fl && H >= W) { flagDraw(x, d > 0 ? fl.s : fl.c, b, b, W - 2 * b, H - 2 * b, S.sel.finish_side === "right"); return; } }
     if (shape === "round") { x.ellipse(W / 2, H / 2, Math.max(1, (x1 - x0) / 2), Math.max(1, (y1 - y0) / 2), 0, 0, Math.PI * 2); return; }
@@ -2236,8 +2238,8 @@
   }
   function tplBtn(cls) {
     var p = S.prod; if (!p || p.kind === "textile" || p.kind === "promo" || (!sizeOf() && !(S.sel.fold && FOLD_RX.test(S.sel.fold)))) return "";
-    var f = S.price && S.price.folds;
-    return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(tplUrl()) + '" download><span class="ic" aria-hidden="true">📐</span><span><b>Druckvorlage herunterladen (PDF)</b><small>Für InDesign, Illustrator, Affinity, Canva &amp; Co. – mit Beschnitt, Sicherheitsabstand' + (f ? " und Falzlinien" : "") + ", passend zu deiner Auswahl.</small></span><span class=\"dl\" aria-hidden=\"true\">↓</span></a>" +
+    var f = S.price && S.price.folds, b0 = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0;
+    return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(tplUrl()) + '" download><span class="ic" aria-hidden="true">📐</span><span><b>Druckvorlage herunterladen (PDF)</b><small>Für InDesign, Illustrator, Affinity, Canva &amp; Co. – ' + (p.imprint ? "mit der Druckfläche in Originalgröße" : (b0 ? "mit Beschnitt, Sicherheitsabstand" : "mit Endformat und Sicherheitsabstand") + (f ? " und Falzlinien" : "")) + ", passend zu deiner Auswahl.</small></span><span class=\"dl\" aria-hidden=\"true\">↓</span></a>" +
       pcTpl(p, cls);
   }
   function pcTpl(p, cls) { return (PC_TPL[p.key] || []).map(function (x) { return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(x.u) + '" target="_blank" rel="noopener" download><span class="ic" aria-hidden="true">' + x.ic + "</span><span><b>" + esc(x.t) + "</b><small>" + esc(x.s) + '</small></span><span class="dl" aria-hidden="true">↓</span></a>'; }).join(""); }
@@ -2282,13 +2284,14 @@
   }
   function reqSketch(sz, b, safe, f) {
     var W = 200, H = Math.round(W * sz.h / sz.w); if (H > 250) { H = 250; W = Math.round(H * sz.w / sz.h); } if (H < 70) H = 70;
+    if (W < 70) W = 70;   /* sehr schmale, hohe Formate (z. B. 15 × 500 mm): Mindestbreite – sonst negative Breiten in der Skizze (Konsolenfehler, Komplett-Check 23.11.2026) */
     var pb = 9, ps = 13, VW = W + 2 * pb, VH = H + 2 * pb, lines = "";
     if (f) { (f.x || []).forEach(function (x) { var xx = pb + x / sz.w * W; lines += '<line x1="' + xx + '" y1="' + (pb - 4) + '" x2="' + xx + '" y2="' + (pb + H + 4) + '" class="fo"/>'; });
       (f.y || []).forEach(function (y) { var yy = pb + y / sz.h * H; lines += '<line x1="' + (pb - 4) + '" y1="' + yy + '" x2="' + (pb + W + 4) + '" y2="' + yy + '" class="fo"/>'; }); }
     return '<svg class="ps-req-svg" viewBox="0 0 ' + VW + " " + VH + '" role="img" aria-label="Skizze: Beschnitt, Endformat und Sicherheitsabstand">' +
       (b ? '<rect x="0.75" y="0.75" width="' + (VW - 1.5) + '" height="' + (VH - 1.5) + '" rx="3" class="bl"/>' : "") +
       '<rect x="' + pb + '" y="' + pb + '" width="' + W + '" height="' + H + '" class="tr"/>' +
-      '<rect x="' + (pb + ps) + '" y="' + (pb + ps) + '" width="' + Math.max(10, W - 2 * ps) + '" height="' + Math.max(10, H - 2 * ps) + '" rx="2" class="sa"/>' + lines +
+      (safe ? '<rect x="' + (pb + ps) + '" y="' + (pb + ps) + '" width="' + Math.max(10, W - 2 * ps) + '" height="' + Math.max(10, H - 2 * ps) + '" rx="2" class="sa"/>' : "") + lines +   /* ohne Sicherheitsabstand (Aufdruck/Druckfläche) keine grüne Linie */
       '<g class="tx"><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 10) + '" width="' + Math.min(70, W - 2 * ps - 16) + '" height="6" rx="3"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 22) + '" width="' + Math.min(110, W - 2 * ps - 16) + '" height="4" rx="2"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 31) + '" width="' + Math.min(90, W - 2 * ps - 16) + '" height="4" rx="2"/></g></svg>';
   }
   // Sicherheitsabstand: Produktwert, bei Tunnelsaum Tunnelbreite + 1 cm (wie Server safeFor)
@@ -2358,8 +2361,9 @@
     var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
-    return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + fmtSize(fileW, fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
-      '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + '<figcaption><span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>" + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
+    return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + (p.imprint ? "Druckfläche max. " + fmtSize(sz.w, sz.h) : fmtSize(fileW, fileH) + (b ? " inkl. Beschnitt" : " · ohne Beschnitt")) + "</small></span><i aria-hidden=\"true\">▾</i></summary>" +
+      /* Aufdruck-Produkte (Druckfläche): kein Beschnitt, kein Sicherheitsabstand – in Kopfzeile und Legende auch nicht so nennen (Komplett-Check 23.11.2026) */
+      '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + "<figcaption>" + (p.imprint ? '<span><i class="tr"></i>Druckfläche (max.)</span>' : '<span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>") + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
       reqList(items.filter(function (x) { return x[3] !== "wide"; }), "") + "</div>" +
       // lange Hinweise (Ausführung, Herstellerangaben) über die volle Breite in zwei Spalten – sonst bleibt links unter der Skizze alles leer (Simon 16.11.2026)
       reqList(items.filter(function (x) { return x[3] === "wide"; }), " ps-req-w") +
@@ -2400,7 +2404,8 @@
   function vDesign0() {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     var cl = S.price && S.price.folds && S.price.closed;
-    var spec = sz ? (cl ? "offen " : "") + sz.w + " × " + sz.h + " mm" + (cl ? ", gefalzt " + cl.w + " × " + cl.h + " mm" : "") + (b ? " (Datei mit Beschnitt " + (sz.w + 2 * b) + " × " + (sz.h + 2 * b) + " mm)" : "") : "";
+    /* Maße immer mit Komma und ohne Rechenreste (85,4 statt 85.4) */
+    var spec = sz ? (cl ? "offen " : "") + mmF(sz.w) + " × " + mmF(sz.h) + " mm" + (cl ? ", gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "") + (b ? " (Datei mit Beschnitt " + mmF(sz.w + 2 * b) + " × " + mmF(sz.h + 2 * b) + " mm)" : "") : "";
     var mtabs = "";
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = cbackHtml() + '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0" + U() + " · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
@@ -2482,7 +2487,7 @@
       if (n) S.textile.sizes[sl] = n; else delete S.textile.sizes[sl]; x.closest(".pd-tsz").classList.toggle("on", !!n); var tt = el.querySelector("#pdTsTot"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + "\u00a0Stk.";
       clearTimeout(tm); tm = setTimeout(function () { S.file = null; loadPrice(); }, 450); });
     el.addEventListener("click", function (e) { var b = e.target.closest("[data-tscol]"); if (!b || !cpr) return; S.sel[cpr.slug] = b.getAttribute("data-tscol"); fixSel(); S.file = null; loadPrice();
-      if (window.PrintDesigner && window.PrintDesigner.texColor) window.PrintDesigner.texColor(texColor().hex); texSide(el, dapi); });
+      if (window.PrintDesigner && window.PrintDesigner.texColor) window.PrintDesigner.texColor(texColor().hex, texColor().name); texSide(el, dapi); });
   }
   // Produkt im Designer wechseln: Gestaltung, passende Druckbereiche, Größen und Farbe (gleicher Name) mitnehmen
   function texSwitch(key) {
@@ -2505,7 +2510,7 @@
       var tt = document.getElementById("psToast"); if (tt && /wird geladen/.test(tt.textContent)) tt.className = "ps-toast";
       var dz = S.texDesign && S.texDesign.pages && S.texDesign.pages.length === pos.length && S.texDesign.key === pos.map(function (x) { return x.slug; }).join(",") ? S.texDesign : null;
       return D.open({ product: S.prod, sel: S.sel, labels: [], copies: totalCopies(), urgency: S.urgency, size: { w: pos[0].area[0], h: pos[0].area[1] }, bleed: 0, safe: 0, sides: pos.length, fonts: S.cat.fonts, design: dz, texImages: images || null,
-        textile: { pages: pos.map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), all: S.prod.positions.filter(function (x) { return (m.positions || []).indexOf(x.slug) > -1; }).map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), color: c.hex, colorName: c.name, methodName: (m.label || "").replace(/ \(.*$/, ""), kind: /zip|reißverschluss|jacke/.test(k) ? "zip" : /hoodie|kapuz/.test(k) ? "hoodie" : /polo/.test(k) ? "polo" : /sweat|pullover/.test(k) ? "sweat" : /jacke/.test(k) ? "jacke" : "tee" },
+        textile: { pages: pos.map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), all: S.prod.positions.filter(function (x) { return (m.positions || []).indexOf(x.slug) > -1; }).map(function (x) { return { slug: x.slug, title: x.title, area: x.area }; }), color: c.hex, colorName: c.name, methodName: (m.label || "").replace(/ \(.*$/, ""), kind: /schürze|caps?\b|kappe|mütze|beanie|decke|weste|vest\b|socke|handtuch|tasche|beutel/.test(k) ? "other" /* kein Oberteil: neutrale Ansicht nur mit Druckfläche statt T-Shirt-Foto (Komplett-Check 23.11.2026) */ : /zip|reißverschluss|jacke/.test(k) ? "zip" : /hoodie|kapuz/.test(k) ? "hoodie" : /polo/.test(k) ? "polo" : /sweat|pullover/.test(k) ? "sweat" : /jacke/.test(k) ? "jacke" : "tee" },
         textileSel: S.textile, texSide: texSide,
         texPrice: texPriceText(),
         onTexPositions: function (slugs) { S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return slugs.indexOf(x) > -1; }); S.logos = {}; S.file = null; S.texDesign = null; loadPrice(); },   // Positionen im Designer an-/abgewählt → neuer Preis
