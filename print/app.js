@@ -1478,7 +1478,7 @@
   function v2Home() {
     var sl = ""; try { sl = xmasTeaser(); } catch (e) {} if (!sl) return "";
     var P = function (k) { return prodByKey(k); }, bn = P("pvc-banner") || S.cat.products.filter(function (p) { return p.kind === "banner"; })[0], tx = P("tshirt-basic"), mug = P("tasse");
-    var cats = [[P("flyer"), "Flyer & Folder"], [P("visitenkarten"), "Visitenkarten"], [P("plakate"), "Plakate & Poster"], [bn, "Banner & Planen"], [P("aufkleber"), "Aufkleber", "stickers-tapes"], [tx, "Textilien", "clothing-textile", "clothing"], [mug, "Werbeartikel", "gifts-merchandise-promotional"]].filter(function (c) { return c[0]; });
+    var cats = [[P("flyer"), "Flyer"], [P("folder"), "Folder"],[P("visitenkarten"), "Visitenkarten"], [P("plakate"), "Plakate & Poster"], [bn, "Banner & Planen"], [P("aufkleber"), "Aufkleber", "stickers-tapes"], [tx, "Textilien", "clothing-textile", "clothing"], [mug, "Werbeartikel", "gifts-merchandise-promotional"]].filter(function (c) { return c[0]; });
     var tile = function (c) { var p = c[0], at = c[2] ? 'data-nav="produkte" data-navgroup="' + esc(c[2]) + '"' + (c[3] ? ' data-navsub="' + esc(c[3]) + '"' : "") : 'data-prod="' + esc(p.key) + '"';
       return '<button type="button" class="ps-v2t" ' + at + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : "") + '</span><b>' + esc(c[1]) + ' <i aria-hidden="true">→</i></b></button>'; };
     var usp = [["truck", "Schnelle Lieferung", "frei Haus in ganz Österreich"], ["check", "Datencheck inklusive", "automatisch – Profi-Check optional"], ["pen", "Einfach gestalten", "online im Designer oder Datei hochladen"], ["pin", "Regional & persönlich", "dein Druckpartner aus dem Montafon"]];
