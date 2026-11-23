@@ -2546,6 +2546,14 @@
   function blk(f) { return !!(f && f.blocked && !S.fixByUs && S.upWho !== "pro"); }   // gesperrt, außer der Kunde lässt die Datei von uns richten
   // Vorschau der Druckdatei (pdf.js) mit Beschnitt, Endformat und Sicherheitsabstand + Randanalyse (Inhalte zu nah am Rand, fehlender Beschnitt)
   var PDFJS = null, PFV = {};
+  /* Simon 23.11.2026 (Aquarena, 66-MB-Datei): Studio lud dieselbe PDF bis zu 7× parallel (Vorschau, 3D, Randmessung, Seitenbilder) – jetzt einmal laden, geteilt nutzen */
+  var PDOC = {}, PDOCK = [];
+  function pdfDoc(url) {
+    if (PDOC[url]) return PDOC[url];
+    PDOCK.push(url); if (PDOCK.length > 8) delete PDOC[PDOCK.shift()];
+    PDOC[url] = pdfjs().then(function (L) { return L.getDocument({ url: url, withCredentials: true }).promise; }).catch(function (e) { delete PDOC[url]; throw e; });
+    return PDOC[url];
+  }
   function pdfjs() { if (PDFJS) return PDFJS; PDFJS = new Promise(function (res, rej) { var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = function () { PDFJS = null; rej(new Error("pdf.js")); }; document.head.appendChild(sc); }); return PDFJS; }
   // Tiefenprüfung je Seite: effektive Bildauflösung (Platzierung aus dem Inhaltsstrom) und nicht eingebettete Schriften
   function pdfDeep(pg) {
@@ -2694,7 +2702,7 @@
     var rnd = shapeNow(), fo = S.price && S.price.folds;
     var show = function () { var b = document.getElementById("psStuPages"); if (b && S.stuView && b.querySelector(".ps-stu-3d")) return; /* 3D-Vorschau offen: nicht überschreiben */ if (b && b.getAttribute("data-key") === key) b.innerHTML = job.figs.join("") + (job.html ? "" : '<div class="ps-stu-load"><span class="ps-spin"></span> weitere Seiten werden geladen …</div>'); };
     var q3 = can3d() ? { fid: f.fileId, pv: [], b: [], mmW: [], asp: 0, doc: null } : null;   /* saubere Seitenbilder (ohne Linien) für die 3D-Vorschau – ohne zweites Laden der Datei */
-    job.p = pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
+    job.p = pvWait(f).then(function () { return pdfDoc(pvUrl(f)); }).then(function (doc) {
       var n = Math.min(doc.numPages, 60), i = 0; if (q3) q3.doc = doc;
       var step = function () { if (i >= n) return Promise.resolve(); var idx = i++; return doc.getPage(idx + 1).then(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, hmm = v0.height / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
@@ -2756,7 +2764,7 @@
     if (PFV[key]) { c.innerHTML = PFV[key].html; document.getElementById("psPfvW").innerHTML = PFV[key].warn; return; }
     var trim = f.size || sizeOf(), bleed = f.bleed != null ? f.bleed : (S.prod.bleed || 0), safe = safeOf();
     if (!trim) { c.textContent = ""; return; }
-    pvWait(f).then(pdfjs).then(function (L) { return L.getDocument({ url: pvUrl(f), withCredentials: true }).promise; }).then(function (doc) {
+    pvWait(f).then(function () { return pdfDoc(pvUrl(f)); }).then(function (doc) {
       var n = Math.min(doc.numPages, 2), jobs = []; for (var i = 1; i <= n; i++) jobs.push(doc.getPage(i));
       return Promise.all(jobs).then(function (pages) { return Promise.all(pages.map(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
@@ -2946,7 +2954,7 @@
       return api("/print/api/file/bleed", { fileId: j.fileId, token: j.token, mode: "mirror", refine: true, insets: ins }).then(function (r) { if (r && r.ok && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; S.fh = null; render(); pollPreflight(); } }); }).catch(function () {});
   }
   function edgeInsets(f) {
-    var work = pdfjs().then(function (L) { return L.getDocument({ url: fileUrl(f), withCredentials: true }).promise; }).then(function (doc) { var out = [], n = Math.min(doc.numPages, 8);
+    var work = pdfDoc(fileUrl(f)).then(function (doc) { var out = [], n = Math.min(doc.numPages, 8);
       var one = function (i) { if (i > n) return out; return doc.getPage(i).then(function (pg) { var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(5, 1200 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
         var x = cv.getContext("2d", { willReadFrequently: true }); x.fillStyle = "#fff"; x.fillRect(0, 0, cv.width, cv.height);
         return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () {
@@ -3000,7 +3008,7 @@
     setTimeout(function () { var b = ov.querySelector(".ps-pv-x"); if (b) b.focus(); }, 0);
   }
   function pdfImgs(url, o) {
-    return pdfjs().then(function (L) { return L.getDocument({ url: url, withCredentials: true }).promise; }).then(function (doc) {
+    return pdfDoc(url).then(function (doc) {
       var jobs = []; for (var i = 1; i <= Math.min(o.pages || 1, doc.numPages); i++) jobs.push(doc.getPage(i));
       return Promise.all(jobs.map(function (pp) { return pp.then(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(3, (o.px || 700) / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
