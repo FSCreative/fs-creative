@@ -1240,7 +1240,7 @@
       (S.cat.countries.length > 1 ? '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select>" : "") + "</div>";
   }
   function renderPrice() {
-    var b = document.getElementById("psPrice"), cta = S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
+    var b = document.getElementById("psPrice"), cta = S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : blankProd() ? "Weiter" : "Weiter zur Gestaltung") + " →</button>" :
        S.step === 3 && S.file && !blk(S.file) ?'<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "";
     // Reihenfolge (06.11.2026): Preis → Liefertag → Weiter → Privat/Firma; alles Weitere aufklappbar
     var ph = priceHtml(false), hasSlot = ph.indexOf("<!--CTA-->") > -1;
@@ -1317,7 +1317,7 @@
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Weiter zur Kasse</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
     if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
       m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Weiter zur Lieferung</button>'; root.appendChild(m4); }
-    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !blk(S.file) ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
+    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : blankProd() ? "Weiter" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !blk(S.file) ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) { renderPrice(); secNav(); fillRows(); dlKick(); }
   }
   // Ausführung: Listen-Kacheln stehen paarweise; bleibt eine allein in der Reihe, nimmt sie die ganze Breite
@@ -1603,7 +1603,7 @@
   function cardSm(p) {
     return '<a class="ps-pc' + (p.best ? " best" : "") + '" href="' + (p.slug ? "/print/" + p.slug : "/print?produkt=" + encodeURIComponent(p.key)) + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : isNew(p) ? '<span class="ps-badge nw">Neu</span>' : "") +
       (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="bd"><b>' + esc(p.title) + "</b>" +
-      (p.designer ? '<span class="ps-pc-d">Online-Designer</span>' : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></a>";
+      (p.blank ? '<span class="ps-pc-d">Ohne Druck</span>' : p.designer ? '<span class="ps-pc-d">Online-Designer</span>' : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></a>";
   }
   function catA(main, sub, cls, inner, attrs) { return '<a' + (cls ? ' class="' + cls + '"' : "") + ' href="/print?produkte' + (main ? "&amp;kategorie=" + encodeURIComponent(main) : "") + (sub ? "&amp;unter=" + encodeURIComponent(sub) : "") + '" data-cat="' + esc(main || "") + "|" + esc(sub || "") + '"' + (attrs || "") + ">" + inner + "</a>"; }
   function isNew(p) { if (!p.added) return false; var t = Date.parse(p.added + "T12:00:00"); return isFinite(t) && Date.now() - t < 120 * 864e5; }
@@ -2182,6 +2182,8 @@
       return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(HINT[x.id] + " · " + desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + "</div>" +
       '<p class="ps-pre-more">' + (kind() === "banner" ? "Oder unten alles selbst einstellen – Größe, Material, Konfektion und Stückzahl." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.") + "</p></section>";
   }
+  /* unbedruckt geliefert (Roll-Up Banner Systeme u. a.): „ohne Druck“, keine Gestaltung – Preisfeld, mobile Leiste und Konfigurator */
+  function blankProd(p) { p = p || S.prod; if (!p || isLogo()) return false; var f = p.fixed || {}; return !!(p.blank || S.noFile || String(f.printingmethod || "") === "raw_material" || /^0+$/.test(String(f.printtype || ""))); }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
     var props = presetHtml(p) + sectionsHtml(p), cust = "";
@@ -2196,7 +2198,7 @@
         return '<button type="button" data-galpop="' + (i + 1) + '" aria-label="' + (rest ? "Alle " + im.length + " Bilder ansehen" : "Bild " + (i + 2) + " ansehen") + '"><img src="' + esc(String(u).replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy">' + (rest ? "<span>+" + rest + "</span>" : "") + "</button>"; }).join("") + "</div>" : "") + "</div>" : "";
     var fct = facts(p), sz = sizeOf(), b0 = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     /* Unbedruckte Produkte (Simon 23.11.2026: Roll-Up Banner Systeme = nur Kassette, kein Banner): deutlich „ohne Druck“ statt Gestaltung/Druckvorlage */
-    var blank = !isLogo() && (S.noFile || (function (f) { return String(f.printingmethod || "") === "raw_material" || /^0+$/.test(String(f.printtype || "")); })(p.fixed || {}));
+    var blank = blankProd(p);
     var blankNote = blank ? '<p class="ps-musttpl" role="note"><b>Ohne Druck:</b> Du bekommst ' + esc(p.title) + " unbedruckt – es wird nichts bedruckt, Druckdaten brauchst du keine." + (/roll-?up/i.test(p.key + " " + p.title) ? ' Das Banner ist nicht dabei – Roll-up mit bedrucktem Banner gibt es unter <a class="ps-link" href="/print/rollups">Roll-ups</a>.' : "") + "</p>" : "";
     var foot = blank ? "" : k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">' + (U(p) === "m" ? "Motivfläche (wiederholt sich auf dem ganzen Band) " : "Endformat ") + fmtSize(sz.w, sz.h) + (b0 ? " · Eigene Datei: bitte rundherum " + String(b0).replace(".", ",") + " mm mehr Hintergrund anlegen, der beim Schneiden wegfällt (" + mmF(sz.w + 2 * b0) + " × " + mmF(sz.h + 2 * b0) + " mm)" + (p.designer ? " – im Online-Designer automatisch" : "") : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
     return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h1>' + esc(p.title) + '</h1><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + blankNote + cfgBarHtml() + "</div></div>" +
