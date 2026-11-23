@@ -4216,14 +4216,18 @@ module.exports = function (D) {
     // Textil/Werbeartikel: gesucht wird „… bedrucken“ / „mit Logo“, verglichen wird der Stückpreis (10 Shirts „ab 124 €“ wirken teuer, „ab 12,46 € pro Stück“ nicht)
     const logoK = !!(full && (full.kind === "textile" || full.kind === "promo")) || (x.cat && x.cat.main === "clothing-textile");
     // Unbedruckte Produkte (Simon 23.11.2026: „Roll-Up Banner Systeme“ = nur Kassette ohne Banner): nie „drucken“, klar „ohne Druck“
-    const fxK = (full && full.fixed) || ((PD_CACHE.get(key) || {}).p || {}).fixed || {};   // Katalog-Produkt hat oft noch keine fixen Optionen → aus dem Produkt-Cache
+    let fxK = (full && full.fixed) || ((PD_CACHE.get(key) || {}).p || {}).fixed || null;   // Katalog-Produkt hat oft noch keine fixen Optionen → aus dem Produkt-Cache
+    // nach Neustart ist der Produkt-Cache kalt (Fund 23.11.2026: 52 unbedruckte Produkte wieder „… drucken“) → Produkt kurz nachladen, höchstens 1,5 s
+    if (!fxK && !logoK) { const fp = await Promise.race([findProduct(key).catch(() => null), new Promise(r => setTimeout(() => r(null), 1500))]); fxK = fp && fp.fixed; }
+    fxK = fxK || {};
     const blankK = !logoK && (String(fxK.printingmethod || "") === "raw_material" || /^0+$/.test(String(fxK.printtype || "")));
+    const blankIn = /unbedruckt|ohne druck|blanko/i.test(x.title || "");   // Name sagt es schon („Briefumschläge farbig (unbedruckt)“) → nicht doppelt
     const loP = it && logoK ? it.rows.filter(r => r.copies > 0 && r.gross > 0).sort((a, b) => a.gross / a.copies - b.gross / b.copies)[0] : null;
     const lo = it ? it.rows.slice().sort((a, b) => a.gross - b.gross)[0] : null, fvT = fv ? " " + fmtNice(fv.label) : "", faq = productFaq(x, full, it, lo, fvT);
     // Dünne Lieferanten-Texte („Individuell bedruckt – Druckdaten hochladen.“, nur ein Druckername wie „HP Latex 3600“, „Ab 100 Stück“) ergänzen –
     // aus echten Produktdaten (Ausführungen, Standard-Ausführung, Einstiegspreis), für Kunden, Google, Bing und KI-Assistenten (Wunsch Simon 05.11.2026, gilt für alle Produkte)
     if (!OWN_DESC[key]) desc = enrichDesc(desc, x, full, it, lo, logoK);
-    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title + (fv ? " " + fmtNice(fv.label) : "")) + (logoK ? " mit Logo bedrucken" : blankK ? " – unbedruckt, ohne Druck" : " online drucken") + "</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
+    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title + (fv ? " " + fmtNice(fv.label) : "")) + (logoK ? " mit Logo bedrucken" : blankK ? (blankIn ? "" : " – unbedruckt, ohne Druck") : " online drucken") + "</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
       (it ? "<h2>" + (it.entry ? "Einstiegspreise" : "Preise") + " (Stand " + escH(dateDe(it.at || P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
       (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(scrubText(z[0])) + ":</b> " + escH(scrubText(z[1])) + "</li>").join("") + "</ul>" : "") +
       seoFormats(it0, key, x.title) + faqHtml(faq) +
@@ -4237,11 +4241,11 @@ module.exports = function (D) {
     // Titel/Beschreibung: Produkt (+ Format), günstigster Preis der Preisübersicht, Versand inkl. – Beschreibung an der Wortgrenze gekürzt
     const t = escH(logoK ? x.title + " bedrucken mit Logo" + (loP ? " – ab " + (loP.copies > 1 ? pieceDe(loP.gross, loP.copies) : eurDe(loP.gross)) + " pro Stück" : "") + " | FS Creative"
       : LOOKBOOK_SKUS[key] ? x.title + (lo ? " – ab " + eurDe(lo.gross) + " inkl. Versand" : "") + " | FS Creative"   // Musterordner: kein „drucken“
-      : blankK ? x.title + fvT + " (ohne Druck)" + (lo ? " – ab " + eurDe(lo.gross) + " inkl. Versand" : "") + " | FS Creative"
+      : blankK ? x.title + fvT + (blankIn ? "" : " (ohne Druck)") + (lo ? " – ab " + eurDe(lo.gross) + " inkl. Versand" : "") + " | FS Creative"
       : x.title + fvT + (lo ? " drucken – ab " + eurDe(lo.gross) + " inkl. Versand" : " online drucken – Preis sofort") + " | FS Creative");
     const d = escH(logoK ? cutWords(x.title + " mit deinem Logo bedrucken" + (loP ? ": ab " + (loP.copies > 1 ? pieceDe(loP.gross, loP.copies) : eurDe(loP.gross)) + " pro Stück (" + loP.copies.toLocaleString("de-AT") + " Stück " + eurDe(loP.gross) + ") inkl. 20 % USt und Versand in ganz Österreich." : ", Preis sofort im Konfigurator, Versand in Österreich inklusive.") + (lo && lo.copies === 1 ? " Schon ab 1 Stück." : "") + " Logo hochladen, Druckposition wählen, automatischer Datencheck.", 158)
       : LOOKBOOK_SKUS[key] ? cutWords(x.title + ": echte Papier- und Materialmuster im neutral schwarzen Ordner, deutsch beschriftet" + (lo ? " – ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : "."), 155)
-      : blankK ? cutWords(x.title + fvT + " unbedruckt – ohne Druck, keine Druckdaten nötig" + (lo ? ": ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : ", Preis sofort im Konfigurator, Versand in Österreich inklusive.") + " FS Creative aus dem Montafon.", 158)
+      : blankK ? cutWords(x.title + fvT + (blankIn ? " – ohne Druck, keine Druckdaten nötig" : " unbedruckt – ohne Druck, keine Druckdaten nötig") + (lo ? ": ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : ", Preis sofort im Konfigurator, Versand in Österreich inklusive.") + " FS Creative aus dem Montafon.", 158)
       : cutWords(x.title + fvT + " drucken" + (lo ? ": " + lo.copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : " mit Preis sofort im Konfigurator, Versand in ganz Österreich inklusive.") + " Online gestalten oder Druckdaten hochladen, automatischer Datencheck. FS Creative aus dem Montafon.", 158));
     const rvP = ld.aggregateRating ? "<p>★ " + escH(String(ld.aggregateRating.ratingValue).replace(".", ",")) + " von 5 – " + ld.aggregateRating.ratingCount + " Kundenbewertungen</p>" : "";
     return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => rvP ? block.replace('<p class="pd-muted">Konfigurator wird geladen', rvP + '<p class="pd-muted">Konfigurator wird geladen') : block)
