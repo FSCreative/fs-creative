@@ -3132,6 +3132,39 @@ module.exports = function (D) {
     for (const [ref] of objs) if (bad.has(ref.toString())) ctx.delete(ref);
     return Buffer.from(await d.save({ useObjectStreams: false }));
   }
+  /* Nicht druckende Beigaben entfernen (Simon 23.11.2026, Visitenkarten D-261122-UEZX: Print.com übernahm die Datei nicht – darin eine eingebettete
+     C2PA-Datei „Content Credentials“ + Link). Verlustfrei: Bilder/Vektoren/Text bleiben unverändert; weg sind nur eingebettete Dateien (/EmbeddedFiles, /AF),
+     Link-/Dateianhang-Anmerkungen, JavaScript/Aktionen. Formularfelder bleiben (Entfernen wäre nicht verlustfrei). */
+  async function stripExtrasForPrint(buf) {
+    if (!buf || buf.length > 150e6) return buf;
+    const s = buf.toString("latin1"); if (!/\/EmbeddedFile|\/AF\b|\/Annots|\/JavaScript|\/OpenAction|\/AA\b/.test(s)) return buf;
+    const { PDFDocument, PDFName, PDFDict, PDFArray } = require("pdf-lib");
+    const d = await PDFDocument.load(buf, { updateMetadata: false }), cat = d.catalog; let n = 0;
+    const names = cat.lookup(PDFName.of("Names"));
+    if (names instanceof PDFDict) { ["EmbeddedFiles", "JavaScript"].forEach(k => { if (names.get(PDFName.of(k))) { names.delete(PDFName.of(k)); n++; } }); if (!names.keys().length) cat.delete(PDFName.of("Names")); }
+    ["AF", "OpenAction", "AA"].forEach(k => { if (cat.get(PDFName.of(k))) { cat.delete(PDFName.of(k)); n++; } });
+    for (const pg of d.getPages()) { const nd = pg.node;
+      ["AF", "AA"].forEach(k => { if (nd.get(PDFName.of(k))) { nd.delete(PDFName.of(k)); n++; } });
+      const an = nd.lookup(PDFName.of("Annots")); if (!(an instanceof PDFArray)) continue;
+      const keep = an.asArray().filter(r => { const a = d.context.lookup(r); const st = a instanceof PDFDict && String(a.get(PDFName.of("Subtype")) || ""); return !/^\/(Link|FileAttachment|Sound|Movie|Screen|RichMedia)$/.test(st); });
+      if (keep.length !== an.size()) { n += an.size() - keep.length; if (keep.length) nd.set(PDFName.of("Annots"), d.context.obj(keep)); else nd.delete(PDFName.of("Annots")); } }
+    if (!n) return buf;
+    // die eingebetteten Dateien selbst auch aus der PDF löschen (pdf-lib schreibt sonst auch nicht mehr verknüpfte Objekte mit)
+    for (const [ref, obj] of [...d.context.enumerateIndirectObjects()]) { const dict = obj instanceof PDFDict ? obj : obj && obj.dict instanceof PDFDict ? obj.dict : null; const t = dict && String(dict.get(PDFName.of("Type")) || ""); if (t === "/EmbeddedFile" || t === "/Filespec") d.context.delete(ref); }
+    return Buffer.from(await d.save({ useObjectStreams: false }));
+  }
+  /* Druckdatei genau so, wie Print.com sie bekommt (für /print-files/ und den Cockpit-Download „Druck-PDF für Print.com“) */
+  async function pcVariant(buf, fm, o) {
+    buf = await fitForPrint(buf, fm, o).catch(e => { log("Format vereinheitlichen", o.nr, e.message); return buf; });
+    if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
+    buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
+    buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
+    buf = await FONTFIX.embedStdFonts(buf, { allowNear: (o.fontOk || {})[fm.id] || null }).then(r => { if (r.replaced.length) log("Schriften eingebettet", o.nr, r.replaced.map(x => x.name + " → " + x.with).join(", ")); return r.buf; }).catch(e => { log("Schriften einbetten", o.nr, e.message); return buf; });
+    buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
+    buf = await stripExtrasForPrint(buf).catch(e => { log("Beigaben entfernen", o.nr, e.message); return buf; });
+    if (buf.length < 150e6) buf = await findProduct(o.product.key).then(pr => spotFixForPrint(buf, pr, o.sel)).catch(e => { log("Sonderfarben umbenennen", o.nr, e.message); return buf; });
+    return buf;
+  }
   async function fitForPrint(buf, fm, o) {
     const sz = o && o.size, b = +(o && o.bleed) || 0;
     if (!sz || !(sz.w > 0) || !(sz.h > 0) || /^(textile|promo)$/.test((o.product && o.product.kind) || "") || (fm && fm.kind === "motifs")) return buf;
@@ -5432,13 +5465,7 @@ module.exports = function (D) {
         let buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
         // Zusatzbestellung (pcextra): Datei genau so liefern, wie sie ist – nicht an Format/Seiten der ursprünglichen Bestellung anpassen
         if (fm.pcExtra) return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '-x.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
-        buf = await fitForPrint(buf, fm, o).catch(e => { log("Format vereinheitlichen", o.nr, e.message); return buf; });
-        if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
-        buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
-        buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
-        buf = await FONTFIX.embedStdFonts(buf, { allowNear: (o.fontOk || {})[fm.id] || null }).then(r => { if (r.replaced.length) log("Schriften eingebettet", o.nr, r.replaced.map(x => x.name + " → " + x.with).join(", ")); return r.buf; }).catch(e => { log("Schriften einbetten", o.nr, e.message); return buf; });
-        buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
-        if (buf.length < 150e6) buf = await findProduct(o.product.key).then(pr => spotFixForPrint(buf, pr, o.sel)).catch(e => { log("Sonderfarben umbenennen", o.nr, e.message); return buf; });
+        buf = await pcVariant(buf, fm, o);
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
       if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/flagshapes.js" || p === "/print/bcard.js" || p === "/print/view3d.js" || p === "/print/print.css") {
@@ -6776,9 +6803,19 @@ module.exports = function (D) {
         hist(o, "Druckdaten im Cockpit angepasst" + (motif > -1 ? " · Motiv " + (motif + 1) : "") + (onePage ? " · Seite " + pgN : "") + ": " + (opt0.mode === "fit" ? "ganz eingepasst" : "Format füllen") + (opt0.rotate ? ", " + opt0.rotate + "° gedreht" : "") + (opt0.scale !== 1 ? ", " + Math.round(opt0.scale * 100) + " %" : "") + (opt0.dx || opt0.dy ? ", verschoben" : "")); stamp(o); await store.putOrder(o);
         return J(res, 200, { ok: true, order: o });
       }
+      // Druck-PDF genau so, wie Print.com sie bekommt (bereinigt) – zum händischen Hochladen bei Print.com, wenn die Datei dort nicht angekommen ist
+      if (p === "/admin/api/print/pcfile" && req.method === "GET") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        const fid = String(u.searchParams.get("fid") || o.fileId || ""), fm = await store.fileMeta(fid);
+        if (!fm || fm.orderId !== o.id) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        let buf = await store.fileData(fid); if (!buf) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        if (!fm.pcExtra) buf = await pcVariant(buf, fm, o);
+        return D.send(res, 200, buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'attachment; filename="' + o.nr + '-printcom.pdf"', "Cache-Control": "private, no-store" });
+      }
       if (p === "/admin/api/print/replace" && req.method === "POST") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) { req.resume(); return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" }); }
-        if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)))) { req.resume(); return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Austausch nicht mehr möglich" }); }
+        // auch erlaubt, wenn Print.com die Druckdatei nicht übernommen hat (Simon 23.11.2026) – danach Druck-PDF bei Print.com hochladen
+        if (!(REVIEW[o.status] || (o.status === "problem" && !(o.printcom && o.printcom.orderNumber)) || (o.printcom && o.printcom.noFile && ["ordered", "in_production", "problem"].indexOf(o.status) > -1))) { req.resume(); return J(res, 409, { ok: false, error: "Schon bei Print.com bestellt – Austausch nicht mehr möglich" }); }
         const mi = u.searchParams.get("motif"), motif = mi != null && mi !== "" && Array.isArray(o.motifs) && o.motifs.length > 1 ? parseInt(mi, 10) : -1;
         if (motif !== -1 && !(motif >= 0 && motif < o.motifs.length)) { req.resume(); return J(res, 400, { ok: false, error: "Motiv unbekannt" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druckdaten.pdf")), 120).replace(/[\\/:*?"<>|]/g, "_");

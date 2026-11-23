@@ -460,7 +460,8 @@ window.addEventListener("keydown",function(e){
   else if((e.metaKey||e.ctrlKey)&&(e.key==="s"||e.key==="S")){ e.preventDefault(); e.stopPropagation(); saveDraft(false); }
   else if((e.metaKey||e.ctrlKey)&&(e.key==="k"||e.key==="K")){ e.stopPropagation(); }
 },true);
-window.addEventListener("click",function(e){ if(C.open&&e.target===host()){ e.stopPropagation(); closeCompose(); } },true);
+/* Klick daneben schließt nicht mehr (Simon 23.11.2026: Text markieren und mit gedrückter Maus über den Rand hinaus ziehen landete als Klick auf dem Hintergrund → Mail zu, im Entwurf). Schließen nur über X oder Esc. */
+window.addEventListener("click",function(e){ if(C.open&&e.target===host()) e.stopPropagation(); },true);
 window.addEventListener("pagehide",function(){ if(C.open) saveIfMeaningful(true); });
 
 /* ---------- F.compose für alle Module: {title,to,cc,bcc,subject,text,html,inReplyTo,account,atts,after} ----------
