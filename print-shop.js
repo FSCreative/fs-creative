@@ -2357,6 +2357,21 @@ module.exports = function (D) {
     const j = r.json || {}, keys = (Array.isArray(j.keys) ? j.keys : []).map(String).filter((k, i, a) => AIS_CAT.keys.has(k) && a.indexOf(k) === i).slice(0, 12);
     return { keys, hint: clip(String(j.hint || ""), 200) };
   }
+  /* Simon 23.11.2026 (Hartschaumplatte 619,9 × 219,9 statt 620 × 220 mm → Print.com meldete „Seitengröße passt nicht“): Dateien, die höchstens 0,6 mm
+     vom Maß inkl. Beschnitt abweichen, still auf das exakte Maß bringen (Inhalt minimal gestreckt, < 0,1 %) – ohne Meldung. Gedrehte/ungleiche Seiten bleiben unverändert. */
+  async function snapSize(buf, size, bleed, info) {
+    if (!size || !size.w || !info || !info.media || +info.pages > 400) return null;
+    const m = info.media, near = (bl0) => { const W = size.w + 2 * bl0, H = size.h + 2 * bl0, d1 = Math.max(Math.abs(m.w - W), Math.abs(m.h - H)), d2 = Math.max(Math.abs(m.w - H), Math.abs(m.h - W)); return { W, H, bl: bl0, rot: d2 < d1, d: Math.min(d1, d2) }; };
+    const c = [near(+bleed || 0), near(0)].sort((a, x) => a.d - x.d)[0];   // mit Beschnitt oder genau Endformat (Beschnitt ergänzt danach der Server)
+    if (!(c.d > 0.02 && c.d <= 0.6)) return null;
+    const bl = c.bl, W = c.W, H = c.H, rot = c.rot;
+    const { PDFDocument } = require("pdf-lib"), src = await PDFDocument.load(buf, { updateMetadata: false });
+    const pw = (rot ? H : W) * MM_PT, ph = (rot ? W : H) * MM_PT, tol = 0.6 * MM_PT, b = bl * MM_PT;
+    if (src.getPages().some(p => (p.getRotation().angle || 0) % 360 || Math.abs(p.getWidth() - pw) > tol || Math.abs(p.getHeight() - ph) > tol)) return null;
+    const out = await PDFDocument.create(), eps = await out.embedPdf(src, src.getPageIndices());
+    for (const ep of eps) { const pg = out.addPage([pw, ph]); pg.drawPage(ep, { x: 0, y: 0, width: pw, height: ph }); if (b) { pg.setBleedBox(0, 0, pw, ph); pg.setTrimBox(b, b, pw - 2 * b, ph - 2 * b); } }
+    return Buffer.from(await out.save());
+  }
   async function handleUpload(buf, name, input) {
     const t0 = await uploadTarget(input);
     if (t0.pos) return handleLogo(buf, name, t0.prod, t0.pos);
@@ -2370,7 +2385,8 @@ module.exports = function (D) {
       return newFile("upload", name, buf, target, [{ level: "warn", text: "Das Format kann hier nicht automatisch geprüft werden – bitte kontrolliere es selbst laut Produktbeschreibung oder wähle an der Kasse den Profi-Datencheck." + (info.media ? " Seitengröße der Datei: " + info.media.w + " × " + info.media.h + " mm." : "") }], { original: "pdf" });
     }
     if (type === "pdf") {
-      const info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
+      let info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
+      if (!input.cover) { const sn = await snapSize(buf, target.size, target.bleed, info).catch(e => { log("Maß angleichen:", e.message); return null; }); if (sn) { buf = sn; info = await pdfInfoX(buf); } }
       target.pages = info.pages;
       const spc = input.cover ? { checks: [] } : await spotCheck(buf, prod, t0.n.sel); if (spc.buf) buf = spc.buf;   // Sonderfarben prüfen (ggf. umbenannt → ab hier die korrigierte PDF)
       const checks = cutBleed(checkPdf(info, target.size, target.bleed, target.sides, target.multi), !input.cover && freeCutOf(prod, t0.n.sel)).concat(spc.checks), src = target.multi ? null : await keepSrc(buf, "pdf", name);
