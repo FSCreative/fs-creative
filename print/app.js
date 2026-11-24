@@ -2227,7 +2227,7 @@
     var close = function () { d.remove(); document.removeEventListener("keydown", esc0); }, esc0 = function (e) { if (e.key === "Escape") close(); };
     document.addEventListener("keydown", esc0);
     d.addEventListener("click", function (e) { var b = e.target.closest("[data-mp]"); if (!b) return; var a = b.getAttribute("data-mp"); close();
-      if (a === "ok") { S.mattOk = key; next(); } else if (a === "scr" && opt) { setProp(scr.slug, opt.slug); toast("Kratzfeste matte Folienkaschierung gewählt – der Preis wird aktualisiert."); } });
+      if (a === "ok") { S.mattOk = key; next(); } else if (a === "scr" && opt) { setProp(scr.slug, opt.slug); var tw = 0, sw = setInterval(function () { var w = root.querySelector(".ps-wish") || document.querySelector(".ps-wish"); if (w) { clearInterval(sw); w.scrollIntoView({ behavior: "smooth", block: "center" }); } else if (++tw > 20) clearInterval(sw); }, 400); } });   // nicht lieferbar mit diesem Papier → Shop zeigt passende Alternativen (z. B. stärkeres Papier)
     var f = d.querySelector(".ps-btn.primary"); if (f) f.focus();
     return true;
   }
