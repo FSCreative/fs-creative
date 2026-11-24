@@ -2836,8 +2836,15 @@
           var cmk = cropMarks(data, W, H, pxmm);
           if (cmk >= 2) warns.push(lab + "Möglicherweise Schnittmarken an den Ecken – bitte in der Vorschau prüfen. Falls ja: PDF ohne Schnittmarken exportieren (nur mit " + (r.b || S.prod.bleed || 2) + " mm Beschnitt), sonst werden sie mitgedruckt. Falls nein: einfach weitermachen.");
           else if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
-          if (r.b > 0) { var wo = 0, ci = 0, tot = 0; for (var yy = Math.round(sp); yy < H - sp; yy += 5) { tot++; var o1 = px(Math.max(0, Math.round(bp * 0.4)), yy), i1 = px(Math.round(bp) + 2, yy); if (o1[0] > 245 && o1[1] > 245 && o1[2] > 245 && !(i1[0] > 245 && i1[1] > 245 && i1[2] > 245)) wo++; }
-            if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden kann ein feiner weißer Rand sichtbar sein. Hintergrund bitte bis ganz an den Rand der Datei ziehen."); }
+          /* Hintergrund endet vor dem Ende des Beschnitts (Simon 24.11.2026, Aquarena Spare Ribs: oben/rechts fehlte der Beschnitt) – alle 4 Seiten, zwei Tiefen im Beschnitt.
+             Nicht melden, wenn der Kunde die Datei selbst kleiner gemacht hat (Anpassen: eingepasst/verkleinert) – dann gewollt. */
+          var selfSmall = f.place && !f.place.orig && (f.place.mode === "fit" || (+f.place.scale || 1) < 0.999);
+          if (r.b > 0 && !selfSmall) { var wsd = [], whp = function (p2) { return p2[0] > 245 && p2[1] > 245 && p2[2] > 245; }, ib = Math.round(bp) + 2;
+            [["links", function (k, dd2) { return [dd2, k]; }, H], ["rechts", function (k, dd2) { return [W - 1 - dd2, k]; }, H], ["oben", function (k, dd2) { return [k, dd2]; }, W], ["unten", function (k, dd2) { return [k, H - 1 - dd2]; }, W]].forEach(function (sd) {
+              var wo2 = 0, tot2 = 0; for (var kk = Math.round(sp); kk < sd[2] - sp; kk += 5) { tot2++; var inn = sd[1](kk, ib), iP = px(inn[0], inn[1]); if (whp(iP)) continue;
+                var gap = [0.15, 0.6].some(function (fr) { var q = sd[1](kk, Math.max(0, Math.round(bp * fr))); return whp(px(q[0], q[1])); }); if (gap) wo2++; }
+              if (tot2 && wo2 / tot2 > 0.3) wsd.push(sd[0]); });
+            if (wsd.length) warns.push(lab + "Der Hintergrund reicht nicht bis zum Ende des Beschnitts (" + wsd.join(", ") + ") – nach dem Schneiden kann dort ein weißer Rand bleiben. Hintergrund bitte bis ganz an den Rand der Datei ziehen oder unter „Anpassen“ das Format füllen."); }
           // Weißer Rand im Endformat (Wunsch Simon 06.11.2026: nur bei farbigem Hintergrund mit erkennbarem weißem Rahmen, ganz weiße Seiten sind egal): je Seite Abstand von der Schnittlinie bis zum ersten nicht-weißen Pixel – ist er auf fast allen Zeilen
           // gleich (ein Streifen statt verstreuter Texte auf weißem Grund), ist das ein weißer Rahmen bzw. ein zu klein platziertes Motiv → Hinweis (kein Fehler, kann gewollt sein)
           var wht = function (p2) { return p2[0] > 238 && p2[1] > 238 && p2[2] > 238; }, maxD = Math.round(Math.min(20 * pxmm, Math.min(W, H) / 4)), frm = [], fmm = [];

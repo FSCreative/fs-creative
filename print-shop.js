@@ -2048,7 +2048,7 @@ module.exports = function (D) {
      der Kunde sieht die Datei 1:1 im Studio und passt sie dort selbst an). Rückgabe: { pdf, place } */
   async function origPlace(data, size, bleed, sides) {
     const r = await withPdf(() => placeFile(data, "pdf", size, bleed, { mode: "fill", orig: true, bg: "white" }, sides));
-    return { pdf: r.pdf, rot: r.rot, place: { mode: "fill", rotate: r.rot, scale: Math.round(r.scale * 10000) / 10000, bg: "white" } };
+    return { pdf: r.pdf, rot: r.rot, place: { mode: "fill", rotate: r.rot, scale: Math.round(r.scale * 10000) / 10000, bg: "white", orig: true } };   // orig: nicht vom Kunden verkleinert → Hinweis „Hintergrund reicht nicht bis zum Beschnitt“ bleibt
   }
   function stretchPt() { return 0.3 * MM_PT; }   // Breite des Randstreifens, dessen Farben in Beschnitt/freie Flächen gezogen werden
   /* Lücken je Kante aus dem Browser (Text/Detail direkt an der Kante): [von, bis, Quelle davor, Quelle danach] in mm entlang der Kante
