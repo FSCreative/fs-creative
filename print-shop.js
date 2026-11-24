@@ -3019,6 +3019,12 @@ module.exports = function (D) {
       if (net > 0) { o.price.designFee = { net, vat, gross }; o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net); }
       o.briefId = br.id;
     }
+    // Aufschlag aus einem Warenkorb-Link des Cockpits (z. B. „Datenaufbereitung“, Simon 24.11.2026) – nur mit gültiger Signatur, sonst ignoriert
+    const lf = input.linkFee && typeof input.linkFee === "object" ? input.linkFee : null;
+    if (lf && !o.price.designFee && fm && +lf.net > 0 && sigOk("linkfee", [String(input.fileId || ""), r2(+lf.net), prod.key, String(lf.label || "")].join(":"), String(lf.sig || ""))) {
+      const net = r2(+lf.net), vat = r2(net * (o.price.rate || 0) / 100), gross = r2(net + vat);
+      o.price.designFee = { net, vat, gross, label: clip(String(lf.label || "Datenaufbereitung"), 60) }; o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net);
+    }
     // Weiß & Sonderfarben gegen die bestellte Ausführung (die Datei kann mit einer anderen Ausführung hochgeladen worden sein): Fehler → Bestellung geht in die Prüfung
     o.fileChecks = (o.fileChecks || []).slice();
     for (const fid of (motifs ? motifs.map(x => x.fileId) : [o.fileId]).filter(Boolean)) {
@@ -3056,7 +3062,7 @@ module.exports = function (D) {
     const c = o.customer, mot = Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs : null;
     const posName = (withNr ? o.nr + " · " : "") + o.product.title + " – " + o.copies + " Stück" + (mot ? " (" + mot.length + " Motive)" : "");
     const posText = (mot ? ["Motive: " + mot.map(m => "Motiv " + m.motif + " × " + m.copies + " Stk.").join(", ")] : []).concat(o.labels.map(l => l[0] + ": " + l[1])).concat(["Lieferzeit: " + (URGENCY_DE[o.urgency] || o.urgency), "inkl. Versand nach " + COUNTRIES[c.country]]).join("\n");
-    return [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0) - (o.extras || []).reduce((a, x) => a + x.gross, 0)), taxRate: o.price.rate }].concat((o.extras || []).filter(x => x.inMain).map(x => ({ name: (withNr ? o.nr + " · " : "") + x.label, text: "Geänderte Lieferzeit: " + (URGENCY_DE[x.u] || x.u) + ", Lieferung voraussichtlich " + deDate(x.d), qty: 1, priceGross: x.gross, taxRate: x.rate }))).concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []);
+    return [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0) - (o.extras || []).reduce((a, x) => a + x.gross, 0)), taxRate: o.price.rate }].concat((o.extras || []).filter(x => x.inMain).map(x => ({ name: (withNr ? o.nr + " · " : "") + x.label, text: "Geänderte Lieferzeit: " + (URGENCY_DE[x.u] || x.u) + ", Lieferung voraussichtlich " + deDate(x.d), qty: 1, priceGross: x.gross, taxRate: x.rate }))).concat(o.price.designFee ? [{ name: o.price.designFee.label || "Grafikbearbeitung", text: o.price.designFee.label ? "Aufbereitung der Druckdaten durch FS Creative" : "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: o.price.checkFee.kind === "graphic" ? "Datencheck mit Grafikaufbereitung" : "Profi-Datencheck", text: o.price.checkFee.kind === "graphic" ? "Druckfertige Aufbereitung der Grafik durch FS Creative inkl. Freigabe vor dem Druck" : "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []);
   }
   const paidOnline = o => o.payment.method === "mollie" && o.payment.status === "paid" && !!o.payment.mollieId;   // „Zahlung nachgewiesen“ (transfer_ok) = Überweisung, noch nicht bezahlt
   function invHead(o, nrs) {
@@ -6569,6 +6575,11 @@ module.exports = function (D) {
         const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true));
         if (!items.length) return J(res, 400, { ok: false, error: "Keine Positionen mit Datei" });
         for (const x of items) { if (x.noFile) continue; const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
+        // Aufschlag je Position (z. B. Datenaufbereitung): nur hier im Cockpit signiert – an der Kasse wird die Signatur geprüft (Simon 24.11.2026)
+        for (const x of items) { delete x.designFee; const n0 = x.linkFee && +x.linkFee.net;
+          if (!(n0 > 0) || x.noFile) { delete x.linkFee; continue; }
+          const net = Math.round(n0 * 100) / 100, label = clip(String(x.linkFee.label || "Datenaufbereitung"), 60);
+          x.linkFee = { net, label, sig: sig("linkfee", [x.fileId, net, x.product, label].join(":")) }; x.designFee = { net, gross: Math.round(net * 120) / 100, vat: Math.round(net * 20) / 100, label }; }
         const all = await crGet();
         // replace: alte Warenkorb-Links (Kurzlink-ID, /print/l/…, ?wk=… oder Warenkorb-ID) überschreiben – bereits verschickte Links zeigen dann den neuen Stand (Simon 13.11.2026)
         const repl = [], shorts = await shortGet();
