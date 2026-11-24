@@ -1972,13 +1972,22 @@ module.exports = function (D) {
     if (!(page >= 1)) { const g = Object.assign(cur, change); if (Object.keys(pages).length) g.pages = pages; return g; }
     pages[String(page)] = Object.assign(pagePlace(pl0, page), change); return Object.assign(cur, { pages });
   }
+  /* Sichtbarer Seitenrahmen (CropBox ∩ MediaBox) mit echten Koordinaten (Simon 24.11.2026, Gutschein „nicht mittig“): pdf-lib bettet Seiten sonst ab 0/0 ein –
+     beginnt die MediaBox z. B. bei 4,25 pt, rutscht das Motiv um 1,5 mm und am Rand entsteht ein leerer Streifen. vsub = Ausschnitt relativ zum sichtbaren Rahmen. */
+  function vbox(p) {
+    const m = p.getMediaBox(); let c = m; try { c = p.getCropBox() || m; } catch (e) { c = m; }
+    const l = Math.max(m.x, c.x), b = Math.max(m.y, c.y), r = Math.min(m.x + m.width, c.x + c.width), t = Math.min(m.y + m.height, c.y + c.height);
+    return r - l > 1 && t - b > 1 ? { left: l, bottom: b, right: r, top: t } : { left: m.x, bottom: m.y, right: m.x + m.width, top: m.y + m.height };
+  }
+  const vsize = p => { const v = vbox(p); return { width: v.right - v.left, height: v.top - v.bottom }; };
+  const vsub = (p, x) => { const v = vbox(p); return { left: v.left + x.left, bottom: v.bottom + x.bottom, right: v.left + x.right, top: v.bottom + x.top }; };
   async function placeFile(buf, type, size, bleed, o, sides) {
     const { PDFDocument, degrees } = require("pdf-lib");
     const out = await PDFDocument.create(), b = (+bleed || 0) * MM_PT, W = size.w * MM_PT + 2 * b, H = size.h * MM_PT + 2 * b;
     const o0 = o;
     let items = [];
     if (type === "pdf") { const src = await PDFDocument.load(buf), nc = o.bg !== "white" ? await noCutDoc(buf) : null; let k = -1;
-      for (const sp of src.getPages()) { k++; items.push(sp.node.Contents() ? { el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true, sp, spM: nc ? nc.getPage(k) : null } : { blank: true }); } }
+      for (const sp of src.getPages()) { k++; items.push(sp.node.Contents() ? { el: await out.embedPage(sp, vbox(sp)), rot: (sp.getRotation().angle || 0), page: true, sp, spM: nc ? nc.getPage(k) : null } : { blank: true }); } }
     else items.push({ el: type === "png" ? await out.embedPng(buf) : await out.embedJpg(buf), rot: 0 });
     for (let pi = 0; pi < items.length; pi++) { const it = items[pi], o = pagePlace(o0, pi + 1);
       const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.05, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
@@ -2002,7 +2011,7 @@ module.exports = function (D) {
       if (gap && o.bg !== "white" && mw > 1 && mh > 1) {
         try {
           const tmp = await PDFDocument.create(), tp = tmp.addPage([mw, mh]);
-          const tel = it.page ? await tmp.embedPage(it.spM || it.sp) : type === "png" ? await tmp.embedPng(buf) : await tmp.embedJpg(buf);
+          const tel = it.page ? await tmp.embedPage(it.spM || it.sp, vbox(it.spM || it.sp)) : type === "png" ? await tmp.embedPng(buf) : await tmp.embedJpg(buf);
           const tx = mw / 2 - (a / 2 * cos - c / 2 * sin), ty = mh / 2 - (a / 2 * sin + c / 2 * cos);
           if (it.page) tp.drawPage(tel, { x: tx, y: ty, xScale: f, yScale: f, rotate: opt.rotate }); else tp.drawImage(tel, { x: tx, y: ty, width: a, height: c, rotate: opt.rotate });
           const mem = await out.embedPage((await PDFDocument.load(await tmp.save())).getPage(0)), e = 0.4;
@@ -2104,14 +2113,14 @@ module.exports = function (D) {
       if (!sp.node.Contents()) { out.addPage([W0 + 2 * b, H0 + 2 * b]).setTrimBox(b, b, W0, H0); continue; }   // leere Seite (z. B. weiße Rückseite): bleibt leer, nur im Beschnitt-Format
       if ((sp.getRotation().angle || 0) % 360) throw bad("Gedrehte PDF-Seiten können nicht automatisch ergänzt werden");
       // Quer statt hoch angelegt (oder umgekehrt, z. B. Gutschein 210 × 99 auf 99 × 210): im eigenen Format der Seite ergänzen, gedreht wird beim Übergeben (rotateForPrint) – sonst „passt nicht“ bei Farben erweitern/Leicht vergrößern (Simon 21.11.2026)
-      const sz = sp.getSize(), rat = (w, h) => Math.abs((sz.width / sz.height) / (w / h) - 1) <= 0.012, bOf = (w, h) => Math.abs(sz.width - (w + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (h + 2 * b)) < 2 * MM_PT;
+      const sz = vsize(sp), rat = (w, h) => Math.abs((sz.width / sz.height) / (w / h) - 1) <= 0.012, bOf = (w, h) => Math.abs(sz.width - (w + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (h + 2 * b)) < 2 * MM_PT;
       const swap = Math.abs(W0 - H0) > MM_PT && (sz.width > sz.height) !== (W0 > H0) && !rat(W0, H0) && !bOf(W0, H0) && (rat(H0, W0) || bOf(H0, W0)), W = swap ? H0 : W0, H = swap ? W0 : H0;
       // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
       const hasB = bOf(W, H);
       if (!hasB && Math.abs((sz.width / sz.height) / (W / H) - 1) > 0.012) throw bad("Seitengröße passt nicht zum Endformat – bitte unter „Anpassen“ einpassen");   // nie verzerren
       // Endformat mittig aus der Seite nehmen – Dateien mit etwas weniger Beschnitt (z. B. 107 × 76 statt 108 × 77 mm) sonst schief beschnitten (Simon 19.11.2026)
       const ox = hasB ? (sz.width - W) / 2 : 0, oy = hasB ? (sz.height - H) / 2 : 0, box = { left: ox, bottom: oy, right: ox + W, top: oy + H };
-      const emb = hasB ? await out.embedPage(sp, box) : await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
+      const emb = hasB ? await out.embedPage(sp, vsub(sp, box)) : await out.embedPage(sp, vbox(sp)), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
       if (mode === "zoom") { const f = Math.max((W + 2 * b) / pw, (H + 2 * b) / ph); pg.drawPage(emb, { x: (W + 2 * b - pw * f) / 2, y: (H + 2 * b - ph * f) / 2, xScale: f, yScale: f }); }
       else {   // 8 gespiegelte Kopien rundum, leicht überlappend (keine Nahtlinien), Mitte zuletzt obenauf
         // Weiße Streifen am Rand der Datei (vom Cockpit gemessen, Simon 11.11.2026): ab der echten Motivkante spiegeln, sonst wird Weiß in den Beschnitt gespiegelt
@@ -2119,7 +2128,7 @@ module.exports = function (D) {
         const L = Math.min(lim(ins.l), W * 0.1), R = Math.min(lim(ins.r), W * 0.1), T = Math.min(lim(ins.t), H * 0.1), Bo = Math.min(lim(ins.b), H * 0.1), any = L + R + T + Bo > 0;
         const xa = [b + L, b + W - R], ya = [b + Bo, b + H - T];   // Spiegelachsen = Motivkanten
         const g = ins.g || {}, gaps = { l: bleedGaps(g.l, ya[1] - ya[0]), r: bleedGaps(g.r, ya[1] - ya[0]), t: bleedGaps(g.t, xa[1] - xa[0]), b: bleedGaps(g.b, xa[1] - xa[0]) };
-        const ncp = nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, box) : await out.embedPage(ncp)) : emb;   // Beschnitt ohne Schneidelinien
+        const ncp = nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, vsub(ncp, box)) : await out.embedPage(ncp, vbox(ncp))) : emb;   // Beschnitt ohne Schneidelinien
         bleedFill(pg, embM, { pushGraphicsState, popGraphicsState, rectangle, clip, endPath }, { W, H, b, sx, sy, xa, ya, gaps });
         if (any) pg.pushOperators(pushGraphicsState(), rectangle(xa[0], ya[0], xa[1] - xa[0], ya[1] - ya[0]), clip(), endPath());
         pg.drawPage(emb, { x: b, y: b, xScale: sx, yScale: sy });
@@ -2367,8 +2376,8 @@ module.exports = function (D) {
     const bl = c.bl, W = c.W, H = c.H, rot = c.rot;
     const { PDFDocument } = require("pdf-lib"), src = await PDFDocument.load(buf, { updateMetadata: false });
     const pw = (rot ? H : W) * MM_PT, ph = (rot ? W : H) * MM_PT, tol = 0.6 * MM_PT, b = bl * MM_PT;
-    if (src.getPages().some(p => (p.getRotation().angle || 0) % 360 || Math.abs(p.getWidth() - pw) > tol || Math.abs(p.getHeight() - ph) > tol)) return null;
-    const out = await PDFDocument.create(), eps = await out.embedPdf(src, src.getPageIndices());
+    if (src.getPages().some(p => (p.getRotation().angle || 0) % 360 || Math.abs(vsize(p).width - pw) > tol || Math.abs(vsize(p).height - ph) > tol)) return null;
+    const out = await PDFDocument.create(), eps = []; for (const p of src.getPages()) eps.push(await out.embedPage(p, vbox(p)));
     for (const ep of eps) { const pg = out.addPage([pw, ph]); pg.drawPage(ep, { x: 0, y: 0, width: pw, height: ph }); if (b) { pg.setBleedBox(0, 0, pw, ph); pg.setTrimBox(b, b, pw - 2 * b, ph - 2 * b); } }
     return Buffer.from(await out.save());
   }
