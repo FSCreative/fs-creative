@@ -7044,6 +7044,16 @@ module.exports = function (D) {
           if (o1.price && o1.price.purchase) o1.price.purchase.actual = false;
           hist(o1, "Print.com-Auftrag " + pc.orderNumber + " war storniert – Auftrag wieder bestellbar (Liefertermin prüfen, dann neu bestellen)"); stamp(o1); await store.putOrder(o1);
           return J(res, 200, { ok: true, order: o1 }); }
+        // Einzelne Datei ohne Bestellung sofort löschen (z. B. Testdatei, Simon 24.11.2026) – samt Original (src) und Vorschau-Kopien; nie, wenn sie zu einer Bestellung oder einem gespeicherten Warenkorb gehört
+        if (op === "delfile") {
+          const fid = String(b.fid || ""); if (!/^f[a-f0-9]{24}$/.test(fid)) return J(res, 400, { ok: false, error: "Datei-ID ungültig" });
+          const fm = await store.fileMeta(fid); if (!fm) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+          if (fm.orderId) return J(res, 400, { ok: false, error: "Gehört zur Bestellung – nicht löschbar" });
+          const inCart = (await crGet().catch(() => [])).some(r => (r.items || []).some(x => [x.fileId].concat((x.motifs || []).map(m => m.fileId)).indexOf(fid) > -1));
+          if (inCart) return J(res, 400, { ok: false, error: "Liegt in einem gespeicherten Warenkorb – nicht löschbar" });
+          const ids = [fid, fid + "pv", fid + "pg"]; if (fm.src) { const sm = await store.fileMeta(fm.src).catch(() => null); if (sm && !sm.orderId) ids.push(fm.src); }
+          for (const x of ids) await store.delFile(x).catch(() => {});
+          log("Datei gelöscht (Cockpit):", fid, fm.name || ""); return J(res, 200, { ok: true, deleted: ids.length }); }
         // Bei Print.com selbst neu angelegt (Simon 24.11.2026, Sonnenbrillen D-261124-BCKE → 6002370618): neue Auftragsnummer verknüpfen, alte ins Archiv, Status abrufen
         if (op === "pclink") {
           const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
