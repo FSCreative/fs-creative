@@ -103,6 +103,19 @@ async function fontsOf(buf) {
     assert.deepStrictEqual(seen, ['[[97,40,98,41,99]]', '[[[120],-20,[65,66]]]', '[[122]]']);
   });
 
+  // Simon 24.11.2026 (Visitenkarte): Schrift in eigenem leeren BT-Block gesetzt + „•“ als Code 127 → gilt als benutzt und wird eingebettet
+  await t("Tf in eigenem BT/ET-Block + Aufzählungspunkt \\177", async () => {
+    const d = await PDFDocument.create(), p = d.addPage([240, 156]), ctx = d.context;
+    const f1 = ctx.register(ctx.obj({ Type: "Font", Subtype: "Type1", BaseFont: "Helvetica", Encoding: "WinAnsiEncoding" })), f2 = ctx.register(ctx.obj({ Type: "Font", Subtype: "Type1", BaseFont: "Helvetica-Bold", Encoding: "WinAnsiEncoding" }));
+    p.node.set(PDFName.of("Resources"), ctx.obj({ Font: { F1: f1, F2: f2 } }));
+    const cs = "BT /F1 12 Tf 14.4 TL ET\nBT /F2 16 Tf 19.2 TL ET\nBT 1 0 0 1 60 128 Tm (MUSTER) Tj T* ET\nBT /F1 5.4 Tf 6.48 TL ET\nBT 1 0 0 1 78 120 Tm (A \\177 B \\344) Tj T* ET\n";
+    p.node.set(PDFName.of("Contents"), ctx.register(ctx.flateStream(Buffer.from(cs, "latin1"))));
+    const buf = Buffer.from(await d.save({ useObjectStreams: false }));
+    const u = await F.usedFontRefs(buf); assert.strictEqual(u.size, 2, "beide Schriften drucken Text");
+    const r = await F.embedStdFonts(buf); assert.deepStrictEqual(r.replaced.map(x => x.name).sort(), ["Helvetica", "Helvetica-Bold"], JSON.stringify(r.skipped));
+    assert.ok((await fontsOf(r.buf)).every(f => f.emb), "alles eingebettet");
+  });
+
   console.log(fail ? "FEHLER: " + pass + " bestanden, " + fail + " fehlgeschlagen\n  " + fails.join("\n  ") : "OK: " + pass + " bestanden, 0 fehlgeschlagen");
   process.exit(fail ? 1 : 0);
 })();

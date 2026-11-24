@@ -59,6 +59,8 @@ function tables() {
   const sf = require("@pdf-lib/standard-fonts");
   const name2u = {}, win = {};
   for (const [u, [code, name]] of Object.entries(sf.Encodings.WinAnsi.unicodeMappings)) { if (!(name in name2u)) name2u[name] = +u; if (!(code in win)) win[code] = name; }
+  // PDF-Referenz Anhang D, Anm. 6: in WinAnsi zeigen unbelegte Codes den Aufzählungspunkt – z. B. „•“ als \177 (Simon 24.11.2026, Visitenkarte Stadium Cutz)
+  for (let c = 127; c < 160; c++) if (!(c in win)) win[c] = "bullet";
   Object.assign(name2u, { fi: 0xFB01, fl: 0xFB02, fraction: 0x2044, dotlessi: 0x131, Lslash: 0x141, lslash: 0x142, hungarumlaut: 0x2DD, ogonek: 0x2DB, caron: 0x2C7, breve: 0x2D8, dotaccent: 0x2D9, ring: 0x2DA, quotesingle: 0x27, grave: 0x60, florin: 0x192, minus: 0x2212, Euro: 0x20AC, nbspace: 0xA0, sfthyphen: 0xAD });
   const std = {};
   for (let c = 32; c < 127; c++) std[c] = win[c];
@@ -292,4 +294,10 @@ async function planStdFonts(buf) {
   return { replaced: [...new Map(plans.map(p => [p.baseName, { name: p.baseName, with: label(p.fam, p.style) }])).values()], skipped, near };
 }
 
-module.exports = { embedStdFonts, planStdFonts, matchName, NEAR_MIN, _lexOps: lexOps };
+// Welche Schrift-Objekte drucken wirklich Text? Der Schriftzustand gilt über BT/ET hinweg: „BT /F1 9 Tf ET“ und danach „BT (Text) Tj ET“ druckt mit F1
+async function usedFontRefs(buf) {
+  const PL = require("pdf-lib"); const d = await PL.PDFDocument.load(buf, { updateMetadata: false });
+  return new Set([...collectUse(PL, d).entries()].filter(([, v]) => v && v.size).map(([k]) => k));
+}
+
+module.exports = { embedStdFonts, planStdFonts, usedFontRefs, matchName, NEAR_MIN, _lexOps: lexOps };

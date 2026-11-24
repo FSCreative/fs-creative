@@ -83,6 +83,24 @@ srv.listen(0, "127.0.0.1", async () => {
     ok(rp.ok && !rp.mailed && rp.link.msgs.slice(-1)[0].by === "fs", "Antwort im Chat gespeichert, ohne Adresse keine Mail");
     ok((await J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "reply", id: lk.id, text: "  " }) })).status === 400, "leere Antwort abgewiesen");
     const cl = await J(B + "/list"); ok(cl.msgs.map(m => m.by + ":" + m.text).join("|") === "kunde:Hallo|fs:Danke, passt!", "Kunde sieht den Chat-Verlauf");
+    // Korrekturen im Aktuellen Stand (Simon 24.11.2026): Kommentar + Zeichnung setzen, Cockpit hakt ab, PDF mit Korrekturen
+    { const PL = require("pdf-lib"), pd0 = await PL.PDFDocument.create(); pd0.addPage([420, 595]); pd0.addPage([420, 595]); const pdfB = Buffer.from(await pd0.save());
+      await A({ op: "update", id: lk.id, book: true });
+      const si = await A({ op: "init", name: "Zeitschrift.pdf", size: pdfB.length, dir: "Aktueller Stand" });
+      await J("/admin/api/uploads/chunk?link=" + lk.id + "&f=" + si.id + "&o=0", { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: pdfB });
+      ok((await fetch(base + B)).status === 200 && /Korrekturen eintragen/.test(await fetch(base + B).then(r => r.text())), "Kunde: Knopf „Korrekturen eintragen“");
+      const k1 = await J(B + "/mark", { method: "POST", headers: H, body: JSON.stringify({ op: "add", f: si.id, page: 2, kind: "pin", pts: [[0.5, 0.25]], text: "Überschrift größer – „Titel“", name: "Max Muster" }) });
+      const k2 = await J(B + "/mark", { method: "POST", headers: H, body: JSON.stringify({ op: "add", f: si.id, page: 1, kind: "pen", pts: [[0.1, 0.1], [0.2, 0.15], [0.3, 0.12]] }) });
+      ok(k1.ok && k2.ok && k1.mark.page === 2 && k2.mark.pts.length === 3, "Kunde: Kommentar und Zeichnung gespeichert");
+      ok((await J(B + "/mark", { method: "POST", headers: H, body: JSON.stringify({ op: "add", f: si.id, page: 1, kind: "pin", pts: [[0.5, 0.5]], text: " " }) })).status === 400, "leerer Kommentar abgewiesen");
+      ok((await J(B + "/mark", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "add", f: si.id, page: 1, kind: "pin", pts: [[0.5, 0.5]], text: "x" }) })).status === 403, "ohne X-Upload → 403");
+      const ml = await J(B + "/marks?f=" + si.id); ok(ml.ok && ml.marks.length === 2, "Kunde: Liste der Korrekturen");
+      const cs = (await J("/admin/api/uploads")).links.find(x => x.id === lk.id).marks; ok(cs.open === 2 && cs.pins.length === 1 && cs.draw === 1, "Cockpit: Zusammenfassung");
+      const dn = await A({ op: "markDone", id: lk.id, mark: k1.mark.id, done: true }); ok(dn.ok && dn.link.marks.open === 1, "Cockpit: abhaken");
+      ok((await J(B + "/mark", { method: "POST", headers: H, body: JSON.stringify({ op: "del", id: k1.mark.id }) })).status === 400, "Kunde kann Erledigtes nicht löschen");
+      ok((await J(B + "/mark", { method: "POST", headers: H, body: JSON.stringify({ op: "del", id: k2.mark.id }) })).ok, "Kunde löscht eigene Zeichnung");
+      const mp = await fetch(base + "/admin/api/uploads/markpdf?link=" + lk.id); const mpb = Buffer.from(await mp.arrayBuffer());
+      ok(mp.status === 200 && mpb.slice(0, 4).toString() === "%PDF" && (await PL.PDFDocument.load(mpb)).getPageCount() === 3, "PDF mit Korrekturen (+ Übersichtsseite)"); }
     // ohne Anmeldung kein Cockpit
     authed = false; ok((await J("/admin/api/uploads")).status === 401, "Cockpit ohne Login → 401"); authed = true;
     // schließen → Seite 410, Upload abgewiesen
@@ -92,7 +110,7 @@ srv.listen(0, "127.0.0.1", async () => {
     // Löschen nur mit Bestätigung
     ok((await J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "deleteFile", id: lk.id, file: f.id }) })).status === 400, "Löschen ohne confirm abgewiesen");
     const d = await J("/admin/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "deleteFile", id: lk.id, file: f.id, confirm: true }) });
-    ok(d.ok && d.link.count === 0 && !fs.existsSync(path.join(dir, "uploads", lk.id, f.id)), "Datei gelöscht");
+    ok(d.ok && d.link.count === 1 && !fs.existsSync(path.join(dir, "uploads", lk.id, f.id)), "Datei gelöscht");
   } catch (e) { fail++; console.log("FEHLER:", e.stack); }
   srv.close(); fs.rmSync(dir, { recursive: true, force: true });
   console.log((fail ? "FEHLGESCHLAGEN" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen"); process.exit(fail ? 1 : 0);

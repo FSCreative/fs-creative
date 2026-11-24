@@ -3206,10 +3206,11 @@ module.exports = function (D) {
       const res = dict.get(PDFName.of("Resources")) && ctx.lookup(dict.get(PDFName.of("Resources"))), f = res instanceof PDFDict && res.lookup(PDFName.of("Font"));
       const scan = x => { for (const [k, v] of x.entries()) if (bad.has(v.toString())) names.set(k.toString(), bad.get(v.toString())); };
       if (f instanceof PDFDict) scan(f); if (!dict.get(PDFName.of("Type")) && [...dict.entries()].some(([k, v]) => /^\/F/.test(k.toString()) && bad.has(v.toString()))) scan(dict); }
-    const used = new Set(), esc2 = n => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-    for (const [, obj] of objs) { if (!(obj instanceof PDFRawStream)) continue; const st = obj.dict.get(PDFName.of("Subtype")); if (!((st && st.toString() === "/Form") || (!obj.dict.get(PDFName.of("Type")) && !st && !obj.dict.get(PDFName.of("Length1")) && !obj.dict.get(PDFName.of("Length2"))))) continue;
-      let txt; try { txt = Buffer.from(decodePDFRawStream(obj).decode()).toString("latin1"); } catch (e) { continue; }
-      for (const [n, base] of names) { const t2 = txt.replace(new RegExp("BT\\s+" + esc2(n) + "\\s+[\\d.]+\\s+Tf\\s+(?:[\\d.]+\\s+TL\\s+)?ET", "g"), ""); if (new RegExp(esc2(n) + "\\s+[\\d.]+\\s+Tf").test(t2)) used.add(base); } }
+    // „benutzt“ = es wird wirklich Text mit dieser Schrift gedruckt. Der Schriftzustand gilt über BT/ET hinweg (Simon 24.11.2026, Visitenkarte:
+    // „BT /F1 5.4 Tf ET“ + „BT (Text) Tj ET“ galt fälschlich als unbenutzt → Schrift und Größenwechsel wurden gelöscht, Text kam viel zu groß)
+    const used = new Set(), uref = await FONTFIX.usedFontRefs(buf).catch(() => null);
+    for (const [r, base] of bad) if (!uref || uref.has(r)) used.add(base);   // im Zweifel: benutzt
+    void names; void decodePDFRawStream; void PDFRawStream;
     const all = [...new Set(bad.values())], un = all.filter(x => !used.has(x));
     if (used.size) {
       // Simon 20.11.2026 (D-261119-CTMM): maßgleiche freie Schriften werden vor der Übergabe automatisch eingebettet (print-fontfix.js) – nur wenn jedes gedruckte Zeichen exakt gleich breit ist
@@ -3232,6 +3233,9 @@ module.exports = function (D) {
     for (const [ref, obj] of objs) { if (!(obj instanceof PDFDict)) continue; const t = obj.get(PDFName.of("Type")); if (!t || t.toString() !== "/Font") continue;
       const st = String(obj.get(PDFName.of("Subtype")) || ""); if (st === "/Type3" || st === "/Type0") continue;
       const fd = obj.lookup(PDFName.of("FontDescriptor")); if (!(fd && (fd.get(PDFName.of("FontFile")) || fd.get(PDFName.of("FontFile2")) || fd.get(PDFName.of("FontFile3"))))) bad.add(ref.toString()); }
+    if (!bad.size) return buf;
+    const uref = await FONTFIX.usedFontRefs(buf).catch(() => null); if (!uref) return buf;   // im Zweifel nichts entfernen
+    for (const r of [...bad]) if (uref.has(r)) bad.delete(r);   // druckt Text → bleibt, auch wenn Tf in einem eigenen BT/ET-Block steht
     if (!bad.size) return buf;
     const fontDicts = [];   // Schrift-Verzeichnisse (/F1 6 0 R …), die auf eine dieser Schriften zeigen
     for (const [, obj] of objs) { const dict = obj instanceof PDFRawStream ? obj.dict : obj instanceof PDFDict ? obj : null; if (!dict) continue;
