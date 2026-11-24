@@ -2190,36 +2190,36 @@
   }
   /* unbedruckt geliefert (Roll-Up Banner Systeme u. a.): „ohne Druck“, keine Gestaltung – Preisfeld, mobile Leiste und Konfigurator */
   function blankProd(p) { p = p || S.prod; if (!p || isLogo()) return false; var f = p.fixed || {}; return !!(p.blank || S.noFile || String(f.printingmethod || "") === "raw_material" || /^0+$/.test(String(f.printtype || ""))); }
-  /* Matte Papiere ohne Folienkaschierung (Simon 23.11.2026, auch Umschläge/Einbände von Blöcken, Broschüren …): Hinweis auf Kratzer und Abrieb. Geprüft wird die Außenseite = eigener Umschlag, sonst das Material.
-     Simon 24.11.2026: bei mattem Papier und bei matter Folienkaschierung (auch Softtouch) die kratzfeste Kaschierung empfehlen – Veredelungs-Zeile bleibt orange markiert, bis kratzfest gewählt ist */
+  /* Matte Papiere (Simon 23./24.11.2026, auch Umschläge/Einbände von Blöcken, Broschüren …): kratzfeste matte Folienkaschierung empfehlen – Veredelungs-Zeile orange,
+     Hinweis + Pop-up vor der Gestaltung, bis kratzfest gewählt ist. NUR bei mattem Papier und NUR wenn kratzfest mit dem gewählten Papier wirklich möglich ist – sonst gar kein Hinweis.
+     Geprüft wird die Außenseite = eigener Umschlag, sonst das Material. */
   function mattInfo(p) {
-    var none = { tile: "", tileTxt: "", note: "", pop: "" }, k = kind(); if (!p || k === "textile" || k === "promo" || blankProd(p)) return none;
+    var none = { tile: "", tileTxt: "", note: "", pop: "", scr: null, opts: [] }, k = kind(); if (!p || k === "textile" || k === "promo" || blankProd(p)) return none;
     var fx = p.fixed || {}, val = function (s) { var v = S.sel[s] != null ? S.sel[s] : fx[s]; if (v == null) return ""; var pr = (p.props || []).filter(function (x) { return x.slug === s; })[0], o = pr && pr.options.filter(function (x) { return x.slug === v; })[0]; return String(v) + " " + (o ? o.name : ""); };
     var cov = val("cover_material"), hasCov = !!cov.trim() && !/^(none|selfcover|none_cover)(\s|$)/i.test(cov.trim());
     var surf = hasCov ? cov : val("material");
     var isMatt = /silk|\bmatt/i.test(surf) && /papier|paper|silk|bilderdruck|terraprint/i.test(surf) && !/gesatineerd|gl(ä|a)nz|gloss|folie|foil|lamin|kaschier|vinyl|pvc/i.test(surf);
-    var finSlugs = Object.keys(Object.assign({}, fx, S.sel)).filter(function (s) { return /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s); });
-    var lamOf = function (s) { return /lamin|kaschier|cellophan/i.test(val(s)); }, lamSlugs = finSlugs.filter(lamOf), lamVals = lamSlugs.map(val);
-    var scratchRx = /scratch|kratzfest/i;
-    if (lamVals.some(function (v) { return scratchRx.test(v); })) return none;
-    var finProps = (p.props || []).filter(function (pr) { return /finish|lamin/i.test(pr.slug) && !/spot/i.test(pr.slug) && propVisible(pr); });
-    var scrProp = finProps.filter(function (pr) { return pr.options.some(function (o) { return scratchRx.test(o.slug + " " + o.name); }); })[0];
-    var lamProp = finProps.filter(function (pr) { return pr.options.some(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name); }); })[0];
-    var tip = scrProp ? " Unsere Empfehlung: die <b>kratzfeste matte Folienkaschierung</b> – sie ist deutlich widerstandsfähiger, du kannst sie oben bei der Veredelung wählen." : "";
-    var mattLam = lamVals.some(function (v) { return /matt|soft_?touch/i.test(v) && !/gloss|gl(ä|a)nz/i.test(v); });
-    if (mattLam) return scrProp ? { tile: scrProp.slug, scr: scrProp, pop: isMatt ? "matt" : "", tileTxt: "Kratzfeste matte Folienkaschierung empfohlen – normale matte Kaschierung zerkratzt leicht.", note: '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> Matte Folienkaschierungen sind empfindlich – bei häufigem Anfassen kann es zu Kratzern und Abrieb kommen.' + tip + "</p>" } : none;
     if (!isMatt) return none;
-    var tp = scrProp || (lamSlugs.length ? null : lamProp);
-    var out = { tile: tp ? tp.slug : "", scr: scrProp || null, pop: lamSlugs.length ? "" : "matt", tileTxt: scrProp ? "Bei mattem Papier dringend empfohlen: kratzfeste matte Folienkaschierung." : "Bei mattem Papier dringend empfohlen: Folienkaschierung.", note: "" };
-    if (!lamSlugs.length) out.note = '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen." + (tip || (lamProp ? " Eine Folienkaschierung schützt die Oberfläche – du kannst sie oben bei der Veredelung dazuwählen." : "")) + "</p>";
-    return out;
+    var scratchRx = /scratch|kratzfest/i;
+    var finSlugs = Object.keys(Object.assign({}, fx, S.sel)).filter(function (s) { return /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s); });
+    var lamVals = finSlugs.map(val).filter(function (v) { return /lamin|kaschier|cellophan/i.test(v); });
+    if (lamVals.some(function (v) { return scratchRx.test(v); })) return none;
+    var scr = null, opts = [];
+    (p.props || []).forEach(function (pr) { if (scr || !/finish|lamin/i.test(pr.slug) || /spot/i.test(pr.slug) || !propVisible(pr)) return;
+      var ok = pr.options.filter(function (o) { if (!scratchRx.test(o.slug + " " + o.name)) return false; var t = Object.assign({}, S.sel); t[pr.slug] = o.slug; try { return !excluded(t); } catch (e) { return false; } });
+      if (ok.length) { scr = pr; opts = ok; } });
+    if (!scr) return none;   // kratzfest mit diesem Papier nicht möglich → keine Hinweise
+    var mattLam = lamVals.some(function (v) { return /matt|soft_?touch/i.test(v) && !/gloss|gl(ä|a)nz/i.test(v); }), unprot = !lamVals.length || mattLam;
+    var tip = " Unsere Empfehlung: die <b>kratzfeste matte Folienkaschierung</b> – sie ist deutlich widerstandsfähiger, du kannst sie oben bei der Veredelung wählen.";
+    return { tile: scr.slug, scr: scr, opts: opts, pop: unprot ? "matt" : "", tileTxt: "Bei mattem Papier dringend empfohlen: kratzfeste matte Folienkaschierung.",
+      note: !unprot ? "" : '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (mattLam ? "Mattes Papier mit normaler matter Folienkaschierung ist empfindlich" : hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen." + tip + "</p>" };
   }
   function mattNote(p) { return mattInfo(p).note; }
   /* Simon 24.11.2026: „Weiter zur Gestaltung“ bei mattem Papier ohne Schutz (keine bzw. nur normale matte Kaschierung) → Pop-up mit Haftungshinweis; mit kratzfester Kaschierung kein Pop-up */
   function mattPop(next) {
     var mi = mattInfo(S.prod), key = S.prod.key + "|" + JSON.stringify(S.sel);
     if (!mi.pop || S.mattOk === key) return false;
-    var scr = mi.scr, cur = scr ? String(S.sel[scr.slug] || "") : "", opt = scr && (scr.options.filter(function (o) { return /scratch|kratzfest/i.test(o.slug + " " + o.name) && (/double|beidseitig/i.test(cur) === /double|beidseitig/i.test(o.slug + " " + o.name)); })[0] || scr.options.filter(function (o) { return /scratch|kratzfest/i.test(o.slug + " " + o.name); })[0]);
+    var scr = mi.scr, cur = scr ? String(S.sel[scr.slug] || "") : "", opt = scr && (mi.opts.filter(function (o) { return /double|beidseitig/i.test(cur) === /double|beidseitig/i.test(o.slug + " " + o.name); })[0] || mi.opts[0]);
     var old = document.getElementById("psMattPop"); if (old) old.remove();
     var d = document.createElement("div"); d.id = "psMattPop"; d.className = "ps-mpop";
     d.innerHTML = '<div class="ps-mpop-bg" data-mp="x"></div><div class="ps-mpop-c" role="dialog" aria-modal="true" aria-labelledby="psMpT"><h3 id="psMpT">⚠️ Mattes Papier ohne Kratzschutz</h3><p>Du hast mattes Papier ohne kratzfeste Folienkaschierung gewählt. Matte Oberflächen sind empfindlich – durch Produktion, Weiterverarbeitung und Transport kann es zu <b>Kratzern und Abrieb</b> kommen.</p><p>Für solche Kratzer oder Abriebe übernehmen wir <b>keine Haftung</b>.</p>' + (opt ? '<p>Mit der <b>kratzfesten matten Folienkaschierung</b> ist die Oberfläche geschützt – wir empfehlen sie dringend.</p>' : "") + '<div class="ps-mpop-b">' + (opt ? '<button type="button" class="ps-btn primary" data-mp="scr">Kratzfest wählen</button>' : "") + '<button type="button" class="ps-btn' + (opt ? "" : " primary") + '" data-mp="ok">Verstanden, trotzdem weiter</button></div></div>';
