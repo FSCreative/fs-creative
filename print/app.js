@@ -2206,7 +2206,7 @@
     if (lamVals.some(function (v) { return scratchRx.test(v); })) return none;
     var scr = null, opts = [];
     (p.props || []).forEach(function (pr) { if (scr || !/finish|lamin/i.test(pr.slug) || /spot/i.test(pr.slug) || !propVisible(pr)) return;
-      var ok = pr.options.filter(function (o) { if (!scratchRx.test(o.slug + " " + o.name)) return false; var t = Object.assign({}, S.sel); t[pr.slug] = o.slug; try { return !excluded(t); } catch (e) { return false; } });
+      var ok = pr.options.filter(function (o) { if (!scratchRx.test(o.slug + " " + o.name)) return false; try { var ch = resolveWith(pr.slug, o.slug); if (ch === null || Object.keys(ch).some(function (k) { return /material|weight|paper/i.test(k); })) return false; var db = dlBase(); return !(db && DLT[db + "|" + pr.slug + "|" + o.slug] === false); } catch (e) { return false; } });   // „ändert Material“ bzw. laut Print.com nicht lieferbar = mit diesem Papier nicht möglich
       if (ok.length) { scr = pr; opts = ok; } });
     if (!scr) return none;   // kratzfest mit diesem Papier nicht möglich → keine Hinweise
     var mattLam = lamVals.some(function (v) { return /matt|soft_?touch/i.test(v) && !/gloss|gl(ä|a)nz/i.test(v); }), unprot = !lamVals.length || mattLam;
