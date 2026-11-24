@@ -721,7 +721,8 @@ module.exports = function (D) {
     const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10),
       large = (dims && Math.max(dims[0], dims[1]) >= 1000) || (!dims && exposed.some(x => x.slug === "size") && (by.size && by.size.options || []).some(o => { const d = o && String(o.slug) !== "custom" && dimsOf(o); return d && Math.max(d[0], d[1]) >= 1000; }));
     const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null && !/shape|complex|simple|die_?cut|thru_?cut|contour/i.test(String(fixed.custom_shape || "").replace(/^clean_cut$/, "")), safe: c.safe || 3, sku: String(sku),
-      bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
+      // Beschnitt immer mindestens 3 mm (Simon 24.11.2026: Print.com-Vorlagen verlangen 3 mm, die Produktdaten nannten teils 1,5 mm → leerer Streifen bei Print.com)
+      bleed: kind === "textile" || kind === "promo" ? 0 : Math.max(3, +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 3), dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
       props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, maxDesigns: +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       // Weißdruck (Print.com blendet „white_print“ aus): bei Druck „Farbe + Weiß“ (5/…) muss er mit, sonst gibt es keinen Preis (Acrylglas, Fotokacheln …)
       white: by.white_print && !exposed.some(x => x.slug === "white_print") && fixed.white_print == null ? (wo => ({ yes: wo.find(v => !NONE_SLUG.test(v)) || "", no: wo.find(v => NONE_SLUG.test(v)) || "" }))((by.white_print.options || []).map(o => String(o.slug))) : null,
@@ -921,7 +922,9 @@ module.exports = function (D) {
     const p = cat && (cat.products || []).find(x => x.key === key); if (!p) return null;
     const g = catOf(p.sku, s, p.group || OTHER, p.cat);
     if (!any && !shown(s, p.sku, p.key, g)) return null;
-    return withStart(p, Object.assign(withAllow(p, s), { group: g.main, cat: g }), s);
+    // gespeicherter Katalog kann noch 1,5 mm Beschnitt enthalten → immer mindestens 3 mm (Simon 24.11.2026)
+    const bl = p.kind === "textile" || p.kind === "promo" || p.imprint || !(+p.bleed > 0) ? {} : { bleed: Math.max(3, +p.bleed) };
+    return withStart(p, Object.assign(withAllow(p, s), { group: g.main, cat: g }, bl), s);
   }
   // Produkt für Shop/Preis/Bestellung: kuratiert (Schlüssel) oder allgemein (Print.com-SKU, nur wenn im Cockpit freigeschaltet; any = Cockpit-Vorschau)
   async function findProduct(key, s, any) {
@@ -989,7 +992,7 @@ module.exports = function (D) {
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, mustTpl: MUST_TPL[p.sku] || MUST_TPL[p.key] || "", title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: addedOf(p.sku, cp), icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
-      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g) && !blankFx(p), blank: blankFx(p) || undefined, bleed: p.bleed, safe: p.safe, imprint: !!p.imprint, generic: !!p.generic, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
+      kind: p.kind || "flat", unit: /meter/i.test(JSON.stringify(p.fixed || {})) ? "m" : "", designer: designFits(p, g) && !blankFx(p), blank: blankFx(p) || undefined, bleed: p.kind === "textile" || p.kind === "promo" || p.imprint || !(+p.bleed > 0) ? p.bleed : Math.max(3, +p.bleed), safe: p.safe, imprint: !!p.imprint, generic: !!p.generic, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: deDec(p.sizeLabel || ""), specs: (p.specs || []).map(x => [x[0], x[2] === "brand_name" && SPEC_BRAND_FIX[p.sku] ? SPEC_BRAND_FIX[p.sku] : typeof x[1] === "string" ? deDec(x[1]) : x[1], x[2]].concat(x[3] ? [x[3]] : [])), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, maxDesigns: p.maxDesigns || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
@@ -1515,6 +1518,9 @@ module.exports = function (D) {
     // mehr Beschnitt als nötig (z. B. 3 mm statt 2 mm), Endformat laut TrimBox stimmt → nicht skalieren, sondern den Überschuss abschneiden (Simon 12.11.2026, Programmheft 154 × 216 mm)
     else if (info.trim && fits(info.trim, size.w, size.h, 1) && fits(info.media, info.trim.w + 2 * Math.max(0, (info.media.w - info.trim.w) / 2), info.trim.h + 2 * Math.max(0, (info.media.h - info.trim.h) / 2), 0.5) && Math.min(info.media.w - info.trim.w, info.media.h - info.trim.h) / 2 > bleed + 0.3)
       out.push({ level: "ok", text: "Die Datei hat " + fmtMm(r2(Math.min(info.media.w - info.trim.w, info.media.h - info.trim.h) / 2)) + " mm Beschnitt – mehr als nötig. Das Endformat passt, der überschüssige Beschnitt wird auf " + fmtMm(bleed) + " mm abgeschnitten (nichts wird verkleinert)." });
+    // etwas Beschnitt, aber weniger als nötig (z. B. 1,5 statt 3 mm, Simon 24.11.2026): Endformat mittig, Rest wird beim Hochladen aus den Randfarben ergänzt
+    else if (bleed > 0 && info.media && (([mw, mh]) => mw > size.w + 0.4 && mh > size.h + 0.4 && mw < W - 0.4 && mh < H - 0.4 && Math.abs((mw - size.w) - (mh - size.h)) <= 1.2)((info.media.w > info.media.h) === (size.w > size.h) || Math.abs(size.w - size.h) < 1 ? [info.media.w, info.media.h] : [info.media.h, info.media.w]))
+      out.push({ level: "warn", text: "Die Datei hat nur ca. " + fmtMm(r2(Math.min(info.media.w - size.w, info.media.h - size.h) / 2)) + " mm Beschnitt – zu wenig Beschnitt, gebraucht werden " + fmtMm(bleed) + " mm je Seite (" + fmtMm(W) + " × " + fmtMm(H) + " mm)." });
     else if (fits(info.media, size.w, size.h, 1)) out.push({ level: "warn", text: "Die Datei hat keinen Beschnitt. Bitte im Format " + fmtMm(W) + " × " + fmtMm(H) + " mm anliefern (Endformat " + fmtMm(size.w) + " × " + fmtMm(size.h) + " mm + " + fmtMm(bleed) + " mm Beschnitt je Seite) – reicht der Hintergrund nicht über den Rand, kann nach dem Schneiden ein feiner weißer Rand sichtbar sein." });
     else if (info.media) {
       const ar = (info.media.w / info.media.h), arT = W / H;
@@ -2129,7 +2135,9 @@ module.exports = function (D) {
       const sz = vsize(sp), rat = (w, h) => Math.abs((sz.width / sz.height) / (w / h) - 1) <= 0.012, bOf = (w, h) => Math.abs(sz.width - (w + 2 * b)) < 2 * MM_PT && Math.abs(sz.height - (h + 2 * b)) < 2 * MM_PT;
       const swap = Math.abs(W0 - H0) > MM_PT && (sz.width > sz.height) !== (W0 > H0) && !rat(W0, H0) && !bOf(W0, H0) && (rat(H0, W0) || bOf(H0, W0)), W = swap ? H0 : W0, H = swap ? W0 : H0;
       // Seite hat schon das Format inkl. Beschnitt (z. B. nach Verkleinern/Einpassen im Studio): nur den Endformat-Bereich nehmen und von dort aus spiegeln (Simon 10.11.2026)
-      const hasB = bOf(W, H);
+      // Seite hat schon (etwas) Beschnitt, z. B. 1,5 statt 3 mm: Endformat mittig herausnehmen und auf den vollen Beschnitt erweitern (Simon 24.11.2026)
+      const part = (w, h) => sz.width > w + 0.4 * MM_PT && sz.height > h + 0.4 * MM_PT && sz.width < w + 2 * b + 2 * MM_PT && sz.height < h + 2 * b + 2 * MM_PT && Math.abs((sz.width - w) - (sz.height - h)) <= 1.2 * MM_PT;
+      const hasB = bOf(W, H) || part(W, H);
       if (!hasB && Math.abs((sz.width / sz.height) / (W / H) - 1) > 0.012) throw bad("Seitengröße passt nicht zum Endformat – bitte unter „Anpassen“ einpassen");   // nie verzerren
       // Endformat mittig aus der Seite nehmen – Dateien mit etwas weniger Beschnitt (z. B. 107 × 76 statt 108 × 77 mm) sonst schief beschnitten (Simon 19.11.2026)
       const ox = hasB ? (sz.width - W) / 2 : 0, oy = hasB ? (sz.height - H) / 2 : 0, box = { left: ox, bottom: oy, right: ox + W, top: oy + H };
@@ -2426,10 +2434,11 @@ module.exports = function (D) {
       const sc = checks.findIndex(c => /Seitenverhältnis passt/.test(c.text || ""));
       // Datei genau im Endformat, aber ohne Beschnitt → Beschnitt gleich beim Hochladen ergänzen (Ränder spiegeln, Motiv bleibt 1:1). Sonst ging die Seite ohne
       // Beschnitt an Print.com und nach dem Schneiden blieb ein weißer Rand (Simon 17.11.2026: Banner 2000 × 1000, Flyer 148 × 210, Lifesizer). Gilt für alle Seiten.
-      if (+target.bleed > 0 && checks.some(c => /Die Datei hat keinen Beschnitt/.test(c.text || ""))) {
+      if (+target.bleed > 0 && checks.some(c => /Die Datei hat keinen Beschnitt|zu wenig Beschnitt/.test(c.text || ""))) {
         try { const m0 = info.media, sz2 = m0 && near(m0.w, target.size.h, 1) && near(m0.h, target.size.w, 1) && !near(m0.w, target.size.w, 1) ? { w: target.size.h, h: target.size.w } : target.size;   // quer angelegt: im eigenen Format ergänzen, gedreht wird beim Übergeben
           const out = await withPdf(() => addBleed(buf, sz2, +target.bleed, "mirror"));
-          const ck = [{ level: "ok", text: "Deine Datei hatte keinen Beschnitt – wir haben ihn automatisch ergänzt (Randfarben " + fmtMm(target.bleed) + " mm nach außen erweitert, dein Motiv bleibt unverändert). Seite jetzt " + fmtMm(sz2.w + 2 * target.bleed) + " × " + fmtMm(sz2.h + 2 * target.bleed) + " mm – bitte in der Vorschau kontrollieren." }].concat(checks.filter(c => !/Die Datei hat keinen Beschnitt/.test(c.text || "")));
+          const part = checks.some(c => /zu wenig Beschnitt/.test(c.text || ""));
+          const ck = [{ level: "ok", text: (part ? "Deine Datei hatte zu wenig Beschnitt – wir haben ihn automatisch auf " + fmtMm(target.bleed) + " mm ergänzt" : "Deine Datei hatte keinen Beschnitt – wir haben ihn automatisch ergänzt") + " (Randfarben " + fmtMm(target.bleed) + " mm nach außen erweitert, dein Motiv bleibt unverändert). Seite jetzt " + fmtMm(sz2.w + 2 * target.bleed) + " × " + fmtMm(sz2.h + 2 * target.bleed) + " mm – bitte in der Vorschau kontrollieren." }].concat(checks.filter(c => !/Die Datei hat keinen Beschnitt|zu wenig Beschnitt/.test(c.text || "")));
           return newFile("upload", name, out, target, ck, { original: "pdf", src, bleedFix: "mirror" });
         } catch (e) { log("Beschnitt beim Hochladen ergänzen:", e.message);
           try { const op = await origPlace(buf, target.size, target.bleed, target.sides);   // nie ohne Beschnitt: dann wenigstens weißer Beschnitt rundum
@@ -3238,18 +3247,20 @@ module.exports = function (D) {
     if (!sz || !(sz.w > 0) || !(sz.h > 0) || /^(textile|promo)$/.test((o.product && o.product.kind) || "") || (fm && fm.kind === "motifs")) return buf;
     const k = fm.id + ":" + buf.length; if (FITTED.has(k)) return FITTED.get(k);
     const { PDFDocument } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false, ignoreEncryption: true }), MM = 25.4 / 72, near = (a, x, t) => Math.abs(a - x) <= t;
-    let changed = false;
+    let changed = false, short = false;
     d.getPages().forEach(pg => {
       let t; try { t = pg.getTrimBox(); } catch (e) { return; } const m = pg.getMediaBox(); if (!t || !m) return;
       const tw = t.width * MM, th = t.height * MM, flip = !(near(tw, sz.w, 1.5) && near(th, sz.h, 1.5)) && near(tw, sz.h, 1.5) && near(th, sz.w, 1.5);
       if (!flip && !(near(tw, sz.w, 1.5) && near(th, sz.h, 1.5))) return;   // anderes Format – nicht anfassen
       const W = (flip ? sz.h : sz.w) / MM, H = (flip ? sz.w : sz.h) / MM, B = b / MM, cx = t.x + t.width / 2, cy = t.y + t.height / 2;
       const x0 = cx - W / 2 - B, y0 = cy - H / 2 - B, x1 = cx + W / 2 + B, y1 = cy + H / 2 + B, tol = 0.3 / MM;
-      if (x0 < m.x - tol || y0 < m.y - tol || x1 > m.x + m.width + tol || y1 > m.y + m.height + tol) return;   // zu wenig Beschnitt: nichts dazuerfinden
+      if (x0 < m.x - tol || y0 < m.y - tol || x1 > m.x + m.width + tol || y1 > m.y + m.height + tol) { short = true; return; }   // zu wenig Beschnitt → unten aus den Randfarben ergänzen
       if (near(m.x, x0, tol) && near(m.y, y0, tol) && near(m.width, x1 - x0, tol) && near(m.height, y1 - y0, tol) && near(tw, W * MM, 0.1) && near(th, H * MM, 0.1)) return;   // passt schon
       pg.setMediaBox(x0, y0, x1 - x0, y1 - y0); pg.setCropBox(x0, y0, x1 - x0, y1 - y0); pg.setBleedBox(x0, y0, x1 - x0, y1 - y0); pg.setTrimBox(cx - W / 2, cy - H / 2, W, H); pg.setArtBox(cx - W / 2, cy - H / 2, W, H); changed = true;
     });
-    const out = changed ? await pdfSave(d) : buf;
+    let out = changed ? await pdfSave(d) : buf;
+    // zu wenig Beschnitt (z. B. 1,5 statt 3 mm aus älteren Warenkörben): Endformat mittig nehmen, Beschnitt aus den Randfarben auf das volle Maß ergänzen (Simon 24.11.2026)
+    if (short && !changed && b > 0) { try { out = await withPdf(() => addBleed(buf, sz, b, "mirror")); log("Beschnitt für Print.com ergänzt", o.nr || "", "→", b, "mm"); } catch (e) { log("Beschnitt ergänzen (Print.com):", e.message); } }
     if (out !== buf) memo(FITTED, k, out);
     return out;
   }
@@ -7033,6 +7044,17 @@ module.exports = function (D) {
           if (o1.price && o1.price.purchase) o1.price.purchase.actual = false;
           hist(o1, "Print.com-Auftrag " + pc.orderNumber + " war storniert – Auftrag wieder bestellbar (Liefertermin prüfen, dann neu bestellen)"); stamp(o1); await store.putOrder(o1);
           return J(res, 200, { ok: true, order: o1 }); }
+        // Bei Print.com selbst neu angelegt (Simon 24.11.2026, Sonnenbrillen D-261124-BCKE → 6002370618): neue Auftragsnummer verknüpfen, alte ins Archiv, Status abrufen
+        if (op === "pclink") {
+          const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
+          const nr = String(b.nr || "").trim(); if (!/^\d{8,14}$/.test(nr)) return J(res, 400, { ok: false, error: "Print.com-Auftragsnummer ungültig" });
+          let raw; try { raw = await pcApi("GET", "/orders/" + encodeURIComponent(nr)); } catch (e) { return J(res, 400, { ok: false, error: "Print.com kennt den Auftrag " + nr + " nicht (" + e.message + ")" }); }
+          const pc = o1.printcom || {}; if (pc.orderNumber && pc.orderNumber !== nr) o1.printcomPrev = (o1.printcomPrev || []).concat([pc]).slice(-5);
+          o1.printcom = { orderNumber: nr, at: nowIso(), by: "Cockpit (manuell verknüpft)" }; void raw;
+          if (["paid", "invoice_requested", "rejected"].indexOf(o1.status) > -1 || /CANCEL/i.test(String(pc.status || ""))) o1.status = "ordered";
+          hist(o1, "Print.com-Auftrag " + nr + " manuell verknüpft" + (pc.orderNumber && pc.orderNumber !== nr ? " (vorher " + pc.orderNumber + (pc.status ? ", " + pc.status : "") + ")" : "")); stamp(o1);
+          await store.putOrder(o1); try { await pollOrder(o1); await store.putOrder(o1); } catch (e) { log("Status", o1.nr, e.message); }
+          return J(res, 200, { ok: true, order: await store.getOrder(id) }); }
         if (op === "sendinv") {   // Rechnung eines schon bestellten Auftrags fertigstellen und an den Kunden senden (nie doppelt)
           const o1 = await store.getOrder(id); if (!o1) throw new Error("Bestellung nicht gefunden");
           if (!(o1.printcom && o1.printcom.orderNumber)) return J(res, 400, { ok: false, error: "Noch nicht bei Print.com bestellt – die Rechnung geht beim Bestellen automatisch raus" });

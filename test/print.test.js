@@ -133,7 +133,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.deepStrictEqual(cat.products.find(p => p.key === "pvc-banner").cat.main, "outdoor-advertising", "kuratierte Zuordnung vor Print.com (materials-samples)");
     const bc = cat.products.find(p => p.key === "visitenkarten");
     assert.deepStrictEqual(bc.props.map(p => p.slug), ["size", "material", "printtype", "finish"], "printingmethod/clean_cut nicht sichtbar");
-    assert.deepStrictEqual(bc.tiers, [100, 250, 500, 1000, 2500]); assert.strictEqual(bc.fixed.printingmethod, "digital"); assert.strictEqual(bc.bleed, 2);
+    assert.deepStrictEqual(bc.tiers, [100, 250, 500, 1000, 2500]); assert.strictEqual(bc.fixed.printingmethod, "digital"); assert.strictEqual(bc.bleed, 3);   // mindestens 3 mm (Simon 24.11.2026)
     assert.deepStrictEqual([bc.props[0].options[0].w, bc.props[0].options[0].h], [85, 55]);
     assert.ok(cat.fonts.length >= 10 && cat.fonts.some(f => f.family === "Montserrat")); assert.ok(cat.agbVersion);
     const g = M.log.find(l => l.path === "/pc/products/businesscards"); assert.ok(g && g.lang === "de-DE" && g.auth === "PrintApiKey pc-test-key");
@@ -236,7 +236,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const bl = await admin("/admin/api/print/briefs"), br = bl.briefs[0];
     const code = Buffer.from(JSON.stringify({ s: BC.sel, q: BC.copies, u: "standard" })).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const link = B + "/print?produkt=visitenkarten&c=" + code;
-    const upf = await (await fetch(B + "/admin/api/print/brief/file", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/octet-stream", "x-brief-id": br.id, "x-brief-link": encodeURIComponent(link), "x-file-name": "fertig.pdf" }, body: await pdfOf(89, 59, 2) })).json();
+    const upf = await (await fetch(B + "/admin/api/print/brief/file", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/octet-stream", "x-brief-id": br.id, "x-brief-link": encodeURIComponent(link), "x-file-name": "fertig.pdf" }, body: await pdfOf(91, 61, 2) })).json();
     assert.ok(upf.ok && upf.fileId && !upf.blocked, JSON.stringify(upf));
     assert.strictEqual((await admin("/admin/api/print/brief", { id: br.id, op: "offer", fileId: upf.fileId, link, feeNet: "abc" })).ok, false, "Aufschlag muss Zahl sein");
     const of = await admin("/admin/api/print/brief", { id: br.id, op: "offer", fileId: upf.fileId, link, feeNet: "45", note: "Schrift größer" }); assert.strictEqual(of.ok, true, JSON.stringify(of));
@@ -293,7 +293,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/price", BC, { origin: B })).status, 200);
   });
   await t("Upload in Stücken (bis 500 MB): Start, Stücke der Reihe nach (falsche Stelle → 409), dann normaler Upload mit Verweis; Verweis nur einmal gültig", async () => {
-    const pdf = await pdfOf(89, 59, 2), half = Math.floor(pdf.length / 2), SH = { "x-print-shop": "1" };
+    const pdf = await pdfOf(91, 61, 2), half = Math.floor(pdf.length / 2), SH = { "x-print-shop": "1" };
     assert.strictEqual((await fetch(B + "/print/api/chunk", { method: "POST", headers: Object.assign({ "x-upload-size": String(600e6) }, SH) })).status, 413, "über 500 MB abgelehnt");
     assert.strictEqual((await fetch(B + "/print/api/chunk", { method: "POST", headers: { "x-upload-size": "1000" } })).status, 403, "nur vom Shop");
     const c = await (await fetch(B + "/print/api/chunk", { method: "POST", headers: Object.assign({ "x-upload-size": String(pdf.length) }, SH) })).json(); assert.ok(c.ok && c.id && c.k, JSON.stringify(c));
@@ -322,10 +322,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   let upOk;
   await t("Upload PDF: passende Größe inkl. Beschnitt + 2 Seiten → ok; falsches Format → Fehler; Nicht-PDF/Bild → 415", async () => {
-    const r = await upload(await pdfOf(89, 59, 2), "karte.pdf", BC); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const r = await upload(await pdfOf(91, 61, 2), "karte.pdf", BC); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     assert.strictEqual(r.j.blocked, false); assert.ok(r.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text))); assert.strictEqual(r.j.pages, 2); upOk = r.j;
     const bad = await upload(await pdfOf(210, 297, 1), "a4.pdf", BC); assert.strictEqual(bad.j.blocked, true); assert.ok(bad.j.checks.some(c => c.level === "error" && /passt nicht/.test(c.text)));
     // Datei im Endformat ohne Beschnitt: Beschnitt wird beim Hochladen automatisch ergänzt (gespiegelt, alle Seiten) – seit 17.11.2026
+    // nur 1,5 mm Beschnitt (88 × 58) statt 3 mm (Simon 24.11.2026): wird auf 3 mm ergänzt (91 × 61), nicht verkleinert und nicht weiß platziert
+    const part = await upload(await pdfOf(88, 58, 2), "halb.pdf", BC); assert.strictEqual(part.status, 200, JSON.stringify(part.j));
+    assert.ok(part.j.checks.some(c => c.level === "ok" && /zu wenig Beschnitt – wir haben ihn automatisch auf 3 mm ergänzt/.test(c.text)), JSON.stringify(part.j.checks));
+    { const pp = (await require("pdf-lib").PDFDocument.load(Buffer.from(await (await fetch(B + "/print/api/file/" + part.j.fileId + "?t=" + part.j.token + "&pdf=1")).arrayBuffer()))).getPage(0).getSize(); assert.deepStrictEqual([mm(pp.width), mm(pp.height)], [91, 61], "1,5 → 3 mm Beschnitt"); }
     const noB = await upload(await pdfOf(85, 55, 2), "ohne.pdf", BC); assert.strictEqual(noB.status, 200, JSON.stringify(noB.j));
     assert.ok(noB.j.checks.some(c => c.level === "ok" && /automatisch ergänzt/.test(c.text)) && !noB.j.checks.some(c => c.level === "warn" && /keinen Beschnitt/.test(c.text)) && noB.j.pages === 2, JSON.stringify(noB.j.checks));
     // Einseitige Datei behält das Original (src) → „Anpassen“ möglich
@@ -367,7 +371,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(!low.j.checks.some(c => /Inhalte im Beschnitt/.test(c.text)), "kein Dauer-Hinweis bei jedem Bild");
     const hi = await upload(png(1060, 700, [10, 10, 10]), "foto.png", BC); assert.ok(hi.j.checks.some(c => c.level === "ok" && /dpi/.test(c.text)), JSON.stringify(hi.j.checks));
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=" + hi.j.token + "&pdf=1")).arrayBuffer());
-    const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
+    const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [91, 61]);
     assert.strictEqual((await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=falsch")).status, 404);
     // Schnelle Vorschau: verkleinerte Kopie (JPEG) → kleine Vorschau-PDF mit gleicher Seitengröße; ohne Kopie bzw. bei falschem Seitenverhältnis die volle Datei
     assert.ok(hi.j.pvk, "Bild-Upload hat einen Vorschau-Schlüssel");
@@ -378,23 +382,23 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/file/proxy", { fileId: hi.j.fileId, token: "falsch", img: jpg(106, 70) })).status, 403);
     const px = await post("/print/api/file/proxy", { fileId: hi.j.fileId, token: hi.j.token, img: jpg(106, 70) }); assert.strictEqual(px.status, 200, JSON.stringify(px.j));
     const pr = await fetch(pvu); assert.strictEqual(pr.headers.get("x-print-preview"), "1"); const pvb = Buffer.from(await pr.arrayBuffer());
-    const mb2 = mediaBox(pvb); assert.deepStrictEqual([mm(mb2[2]), mm(mb2[3])], [89, 59], "gleiche Seitengröße wie die Druckdatei");
+    const mb2 = mediaBox(pvb); assert.deepStrictEqual([mm(mb2[2]), mm(mb2[3])], [91, 61], "gleiche Seitengröße wie die Druckdatei");
     const fit = await post("/print/api/file/fit", { fileId: hi.j.fileId, token: hi.j.token, mode: "fit", rotate: 0 }); assert.strictEqual(fit.status, 200, JSON.stringify(fit.j)); assert.strictEqual(fit.j.pvk, hi.j.pvk, "Anpassen: gleiche Kopie");
     assert.strictEqual((await fetch(B + "/print/api/file/" + fit.j.fileId + "?t=" + fit.j.token + "&pdf=1&pv=1")).headers.get("x-print-preview"), "1", "angepasste Datei: Vorschau aus derselben Kopie");
-    const pdfUp = await upload(await pdfOf(89, 59, 2), "v.pdf", BC); assert.strictEqual(pdfUp.j.pvk, "", "PDF-Upload: keine Kopie, volle Datei");
+    const pdfUp = await upload(await pdfOf(91, 61, 2), "v.pdf", BC); assert.strictEqual(pdfUp.j.pvk, "", "PDF-Upload: keine Kopie, volle Datei");
   });
 
   await t("Upload anpassen: Hochformat-Bild wird gedreht statt abgelehnt, PDF mit anderer Größe in Originalgröße mittig (nicht skaliert), Einpassen/Drehen/Skalieren vom Original", async () => {
     const tall = await upload(png(700, 1060, [10, 90, 10]), "hoch.png", BC); assert.strictEqual(tall.status, 200, JSON.stringify(tall.j));
     assert.strictEqual(tall.j.blocked, false, JSON.stringify(tall.j.checks)); assert.ok(tall.j.checks.some(c => /automatisch um 90° gedreht/.test(c.text))); assert.strictEqual(tall.j.adj, true); assert.strictEqual(tall.j.place.rotate, 90);
-    let mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + tall.j.fileId + "?t=" + tall.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
-    const big = await upload(await pdfOf(178, 118, 1), "doppelt.pdf", BC); assert.strictEqual(big.j.blocked, false, JSON.stringify(big.j.checks)); assert.ok(big.j.checks.some(c => c.level === "warn" && /Originalgröße mittig/.test(c.text)), JSON.stringify(big.j.checks));
+    let mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + tall.j.fileId + "?t=" + tall.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [91, 61]);
+    const big = await upload(await pdfOf(182, 122, 1), "doppelt.pdf", BC); assert.strictEqual(big.j.blocked, false, JSON.stringify(big.j.checks)); assert.ok(big.j.checks.some(c => c.level === "warn" && /Originalgröße mittig/.test(c.text)), JSON.stringify(big.j.checks));
     assert.ok(Math.abs(big.j.place.scale - 2) < 0.01 && big.j.place.bg === "white", "zu große Datei: 1:1 (nicht skaliert), Rest weiß – Simon 24.11.2026 " + JSON.stringify(big.j.place));
-    mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + big.j.fileId + "?t=" + big.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
+    mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + big.j.fileId + "?t=" + big.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [91, 61]);
     const a4 = await upload(await pdfOf(210, 297, 1), "a4.pdf", BC); assert.strictEqual(a4.j.blocked, true); assert.strictEqual(a4.j.adj, true, "falsches Format → Anpassen möglich");
     const fit = await post("/print/api/file/fit", { fileId: a4.j.fileId, token: a4.j.token, mode: "fit", rotate: 90, scale: 0.9 }); assert.strictEqual(fit.status, 200, JSON.stringify(fit.j));
     assert.strictEqual(fit.j.blocked, false, JSON.stringify(fit.j.checks)); assert.ok(fit.j.fileId !== a4.j.fileId && /angepasst/.test(fit.j.name)); assert.deepStrictEqual([fit.j.place.mode, fit.j.place.rotate, fit.j.place.scale], ["fit", 90, 0.9]);
-    mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + fit.j.fileId + "?t=" + fit.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
+    mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + fit.j.fileId + "?t=" + fit.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [91, 61]);
     const again = await post("/print/api/file/fit", { fileId: fit.j.fileId, token: fit.j.token, mode: "fill", rotate: 0 }); assert.strictEqual(again.status, 200, "erneut anpassen (vom Original)"); assert.ok(!/angepasst\) \(angepasst/.test(again.j.name));
     const img = await post("/print/api/file/fit", { fileId: tall.j.fileId, token: tall.j.token, mode: "fit", rotate: 270, scale: 1.5, dx: 3, dy: -2 }); assert.strictEqual(img.status, 200, JSON.stringify(img.j));
     assert.strictEqual((await post("/print/api/file/fit", { fileId: tall.j.fileId, token: "falsch", mode: "fit" })).status, 403);
@@ -438,9 +442,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(r.j.blocked, false); assert.strictEqual(r.j.pages, 2);
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + r.j.fileId + "?t=" + r.j.token + "&pdf=1")).arrayBuffer());
     const s = pdf.toString("latin1"), mb = mediaBox(pdf);
-    assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59], "85×55 + 2×2 mm");
+    assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [91, 61], "85×55 + 2×3 mm");
     const tb = (s.match(/\/TrimBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/) || []).slice(1).map(Number);
-    assert.deepStrictEqual(tb.map(mm), [2, 2, 87, 57], "TrimBox = Endformat");
+    assert.deepStrictEqual(tb.map(mm), [3, 3, 88, 58], "TrimBox = Endformat");
     assert.ok(/\/BaseFont\s*\/[A-Z]{6}\+Montserrat-Bold/.test(s), "Montserrat Bold eingebettet");
     assert.ok(/\/BaseFont\s*\/[A-Z]{6}\+PlayfairDisplay-Italic/.test(s), "Playfair Italic eingebettet");
     assert.ok(/\/FontFile2/.test(s), "Schriftdatei eingebettet");
@@ -495,7 +499,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage(all), svgPage(fab.grad + fab.curve)] }));
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.pages, 2);
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + r.j.fileId + "?t=" + r.j.token + "&pdf=1")).arrayBuffer());
-    const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59], "85×55 + 2×2 mm");
+    const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [91, 61], "85×55 + 2×3 mm");
     const s = pdf.toString("latin1"); assert.ok(/\/ShadingType\s+2/.test(s) && /\/ShadingType\s+3/.test(s), "linearer + radialer Verlauf als PDF-Shading");
     // maskiertes Bild: 600 px auf 120 Einheiten = 30 mm → ca. 508 dpi (dpi-Messung auch innerhalb von Masken-Gruppen korrekt)
     assert.ok(r.j.checks.some(c => c.level === "ok" && /ausreichender Auflösung/.test(c.text)), JSON.stringify(r.j.checks));
@@ -643,7 +647,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(r.order.statusAt && r.order.statusAt.ordered && r.order.statusAt.shipped, "statusAt gestempelt");
   });
   await t("Ausführung geändert: Datei wird für die neue Ausführung neu geprüft (rebind) und passt dann an der Kasse; falsches Token → 403", async () => {
-    const up = await upload(await pdfOf(89, 59, 2), "wechsel.pdf", BC); assert.ok(up.j.ok, JSON.stringify(up.j));
+    const up = await upload(await pdfOf(91, 61, 2), "wechsel.pdf", BC); assert.ok(up.j.ok, JSON.stringify(up.j));
     const BC2 = Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { material: "400gr_uncoated" }) });
     const bad = await post("/print/api/file/rebind", { fileId: up.j.fileId, token: "x", config: BC2 }); assert.strictEqual(bad.status, 403);
     const rb = await post("/print/api/file/rebind", { fileId: up.j.fileId, token: up.j.token, config: BC2 }); assert.strictEqual(rb.status, 200, JSON.stringify(rb.j));
@@ -652,7 +656,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     if (pr.j.ok) { const r = await post("/print/api/order", Object.assign(order({ fileId: rb.j.fileId, fileToken: rb.j.token, expectedGross: pr.j.price.gross }), { sel: BC2.sel })); assert.notStrictEqual(r.status, 409, "Datei passt zur neuen Ausführung: " + JSON.stringify(r.j)); }
   });
   await t("Rechnung für Firmen: nur mit gültiger UID; AT-Firma → 20 % USt, Freigabe nötig, keine Zahlung", async () => {
-    const up = await upload(await pdfOf(89, 59, 2), "firma.pdf", BC);
+    const up = await upload(await pdfOf(91, 61, 2), "firma.pdf", BC);
     const priv = await post("/print/api/order", order({ fileId: up.j.fileId, fileToken: up.j.token, payment: "invoice" })); assert.strictEqual(priv.status, 400);
     const firm = Object.assign({}, cust, { type: "company", company: "Testfirma GmbH", uid: "ATU 12345678", country: "AT", zip: "6780", city: "Schruns", street: "Bahnhofstraße 1" });
     const pr = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780", customerType: "company", uid: "ATU12345678" }, BC)); assert.strictEqual(pr.j.price.rate, 20); assert.strictEqual(pr.j.price.gross, 38.4);
@@ -662,7 +666,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "invoice_requested");
     const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(inv.invoicePosSave[0].taxRate, 20);
     assert.ok(!/innergemeinschaftliche Lieferung/.test(inv.invoice.footText || ""));
-    const bad = Object.assign({}, firm, { uid: "ATU99999999" }); const up2 = await upload(await pdfOf(89, 59, 2), "firma2.pdf", BC);
+    const bad = Object.assign({}, firm, { uid: "ATU99999999" }); const up2 = await upload(await pdfOf(91, 61, 2), "firma2.pdf", BC);
     assert.strictEqual((await post("/print/api/order", order({ fileId: up2.j.fileId, fileToken: up2.j.token, payment: "invoice", customer: bad, expectedGross: 38.4 }))).status, 400, "ungültige UID → keine Rechnung");
     assert.strictEqual(M.orders.length, 1, "weiterhin keine automatische Print.com-Bestellung");
   });
@@ -697,7 +701,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     r = await post("/print/api/account/cart", { items: [{ id: "a", product: "visitenkarten" }] }, { cookie: ck }); assert.strictEqual(r.j.cart.length, 1);
     assert.strictEqual((await post("/print/api/account/login", { email: em, password: "falsch123" })).status, 400);
     assert.strictEqual((await post("/print/api/account/login", { email: em, password: "geheim1234" })).j.customer.email, em);
-    const u1 = await upload(await pdfOf(89, 59, 2), "k1.pdf", BC), u2 = await upload(await pdfOf(89, 59, 2), "k2.pdf", BC);
+    const u1 = await upload(await pdfOf(91, 61, 2), "k1.pdf", BC), u2 = await upload(await pdfOf(91, 61, 2), "k2.pdf", BC);
     const nPay = Object.keys(M.payments).length;
     const it = (u, g) => Object.assign({}, BC, { fileId: u.j.fileId, fileToken: u.j.token, expectedGross: g });
     const base = { customer: Object.assign({}, cust, { email: em }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
@@ -747,18 +751,18 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const cl = await admin("/admin/api/print/customers"); const kc = cl.customers.find(c => c.email === em); assert.ok(kc && kc.orders === 3 && kc.type === "company", "2 Bestellungen + Nachbestellung");
     assert.strictEqual((await admin("/admin/api/print/customers", { op: "discount", id: kc.id, pct: 5, note: "Stammkunde" })).ok, true);
     pv = await post("/print/api/price", Object.assign({ customerType: "company" }, BC), { cookie: ck }); assert.strictEqual(pv.j.price.net, 30.4); assert.strictEqual(pv.j.price.bonus.tier, "Kundenrabatt");
-    const u4 = await upload(await pdfOf(89, 59, 2), "k4.pdf", BC), fc = Object.assign({}, cust, { email: em, type: "company", company: "Karl GmbH" });
+    const u4 = await upload(await pdfOf(91, 61, 2), "k4.pdf", BC), fc = Object.assign({}, cust, { email: em, type: "company", company: "Karl GmbH" });
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [it(u4, 0)] }, base, { customer: fc, voucher: "NOPE" }), { cookie: ck })).status, 400);
     pv = await post("/print/api/price", Object.assign({ customerType: "company", voucher: "TEST10" }, BC), { cookie: ck }); const g4 = pv.j.price.gross; assert.strictEqual(pv.j.price.net, 28.4, "Rabatt + Gutschein nie unter Mindestmarge nach Gebühr");
     r = await post("/print/api/checkout", Object.assign({ items: [it(u4, g4)] }, base, { customer: fc, voucher: "test10" }), { cookie: ck }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const vl = await admin("/admin/api/print/vouchers"); assert.strictEqual(vl.vouchers[0].used, 1);
     assert.ok(/vollständig eingelöst/.test((await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC))).j.voucherErr));
     // Gast-Checkout mit Kontoanlage
-    const u3 = await upload(await pdfOf(89, 59, 2), "k3.pdf", BC);
+    const u3 = await upload(await pdfOf(91, 61, 2), "k3.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [it(u3, 38.4)], createAccount: true, accountPassword: "neuespw123" }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.accountCreated, true); assert.ok(M.mails.some(m => m.to === "gast@example.com" && /Code/.test(m.subject)));
     // Gastbestellung nachträglich als Kundenkonto speichern (Bestellseite)
-    const u5 = await upload(await pdfOf(89, 59, 2), "k5.pdf", BC);
+    const u5 = await upload(await pdfOf(91, 61, 2), "k5.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [it(u5, 38.4)] }, base, { customer: Object.assign({}, cust, { email: "spaet@example.com" }) })); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const gid = r.j.orderId, gt = r.j.token, gst = async () => (await (await fetch(B + "/print/api/order/" + gid + "?t=" + gt)).json()).order;
     assert.strictEqual((await gst()).canAccount, true, "Gast → Angebot sichtbar");
@@ -768,12 +772,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(ga.status, 200, JSON.stringify(ga.j)); assert.strictEqual(ga.j.accountCreated, true); assert.ok(M.mails.some(m => m.to === "spaet@example.com" && /Code/.test(m.subject)));
     assert.strictEqual((await gst()).canAccount, false, "danach verknüpft");
     assert.strictEqual((await post("/print/api/order/" + gid + "/account?t=" + gt, { password: "neuespw123" })).status, 400, "nicht zweimal");
-    const u6 = await upload(await pdfOf(89, 59, 2), "k6.pdf", BC);
+    const u6 = await upload(await pdfOf(91, 61, 2), "k6.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [it(u6, 38.4)] }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));
     ga = await post("/print/api/order/" + r.j.orderId + "/account?t=" + r.j.token, { password: "neuespw123" }); assert.strictEqual(ga.status, 409); assert.strictEqual(ga.j.exists, true, "Konto gibt es schon → anmelden");
   });
   await t("Ablehnen/Erstatten: Mollie-Erstattung nur auf Klick, Rechnungsentwurf gelöscht, Kunde informiert", async () => {
-    const up = await upload(await pdfOf(89, 59, 2), "ref.pdf", BC);
+    const up = await upload(await pdfOf(91, 61, 2), "ref.pdf", BC);
     const r = await post("/print/api/order", order({ fileId: up.j.fileId, fileToken: up.j.token })); const pid = r.j.checkoutUrl.split("/").pop();
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     assert.strictEqual(M.refunds.length, 0);
@@ -1016,19 +1020,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Datencheck: Profi (+5 €, Warteschlange, eigene Rechnungszeile) bzw. direkt freigegeben (bezahlt → sofort an Print.com)", async () => {
     const base = { customer: Object.assign({}, cust, { email: "check@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
-    const u1 = await upload(await pdfOf(89, 59, 2), "c1.pdf", BC);
+    const u1 = await upload(await pdfOf(91, 61, 2), "c1.pdf", BC);
     let r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     let pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "43.40");
     const nPc = M.orders.length; M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     let st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "paid"); assert.strictEqual(M.orders.length, nPc, "Profi-Check: wartet auf Prüfung");
     const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(inv.invoicePosSave.length, 2); assert.ok(/Profi-Datencheck/.test(JSON.stringify(inv.invoicePosSave[1])));
-    const u2 = await upload(await pdfOf(89, 59, 2), "c2.pdf", BC);
+    const u2 = await upload(await pdfOf(91, 61, 2), "c2.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u2.j.fileId, fileToken: u2.j.token, expectedGross: 38.4 })], check: "self" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "38.40");
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "ordered", "direkt freigegeben → sofort bei Print.com"); assert.strictEqual(M.orders.length, nPc + 1);
     // Warenkorb mit 2 Positionen, Profi-Datencheck nur für Position 1 (je Position wählbar): +5 € einmal, EINE Sammelrechnung mit 3 Zeilen; Position 2 geht direkt an Print.com
-    const u3 = await upload(await pdfOf(89, 59, 2), "c3.pdf", BC), u4 = await upload(await pdfOf(89, 59, 2), "c4.pdf", BC), nInv = sevMock.state.invoices.length;
+    const u3 = await upload(await pdfOf(91, 61, 2), "c3.pdf", BC), u4 = await upload(await pdfOf(91, 61, 2), "c4.pdf", BC), nInv = sevMock.state.invoices.length;
     r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u3.j.fileId, fileToken: u3.j.token, expectedGross: 38.4, check: "pro" }), Object.assign({}, BC, { fileId: u4.j.fileId, fileToken: u4.j.token, expectedGross: 38.4 })], check: "self" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "81.80", "Profi-Datencheck nur für eine Position");
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
@@ -1044,7 +1048,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Nach abgebrochener Zahlung denselben Warenkorb erneut bestellen (Datei wieder frei); offene Zahlung → Hinweis statt „gehört schon zu einer Bestellung“", async () => {
     const base = { customer: Object.assign({}, cust, { email: "retry@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "self" };
-    const u = await upload(await pdfOf(89, 59, 2), "retry.pdf", BC), item = Object.assign({}, BC, { fileId: u.j.fileId, fileToken: u.j.token, expectedGross: 38.4 });
+    const u = await upload(await pdfOf(91, 61, 2), "retry.pdf", BC), item = Object.assign({}, BC, { fileId: u.j.fileId, fileToken: u.j.token, expectedGross: 38.4 });
     let r = await post("/print/api/checkout", Object.assign({ items: [item] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const r2 = await post("/print/api/checkout", Object.assign({ items: [item] }, base)); assert.strictEqual(r2.status, 409); assert.ok(/Zahlung offen/.test(r2.j.error), r2.j.error);
     const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "canceled"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
@@ -1052,7 +1056,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("„Zahlung nachgewiesen“ im Warenkorb: alle Positionen bleiben bestellt (kein Rücksprung auf „bezahlt“), Rechnung ohne „online bezahlt“; Korrektur „fixup“", async () => {
     const base = { customer: Object.assign({}, cust, { email: "transfer@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "self" };
-    const u1 = await upload(await pdfOf(89, 59, 2), "tr1.pdf", BC), u2 = await upload(await pdfOf(89, 59, 2), "tr2.pdf", BC), n0 = M.orders.length, inv0 = sevMock.state.invoices.length;
+    const u1 = await upload(await pdfOf(91, 61, 2), "tr1.pdf", BC), u2 = await upload(await pdfOf(91, 61, 2), "tr2.pdf", BC), n0 = M.orders.length, inv0 = sevMock.state.invoices.length;
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 }), Object.assign({}, BC, { fileId: u2.j.fileId, fileToken: u2.j.token, expectedGross: 38.4 })] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const tr = await admin("/admin/api/print/op", { op: "transferok", id: r.j.orders[0].id, confirm: true, note: "Beleg" }); assert.strictEqual(tr.ok, true, JSON.stringify(tr));
     assert.strictEqual(M.orders.length, n0 + 1, "ein Print.com-Auftrag"); assert.strictEqual(M.orders[M.orders.length - 1].items.length, 2);
@@ -1062,7 +1066,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const fx = await admin("/admin/api/print/op", { op: "fixup", id: r.j.orders[1].id, confirm: true, invoice: { id: "9999", nr: "RE-TEST" }, graphicFee: true }); assert.strictEqual(fx.ok, true, JSON.stringify(fx));
     assert.ok(fx.orders.every(x => x.invoice === "RE-TEST" && x.status === "ordered")); assert.strictEqual(Math.round(fx.orders.reduce((a, x) => a + x.gross, 0) * 100) / 100, 96.8, "+20 € Grafikaufbereitung");
     // versehentlich storniert → nur mit restore wieder „bestellt“
-    const u3 = await upload(await pdfOf(89, 59, 2), "tr3.pdf", BC), r3 = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u3.j.fileId, fileToken: u3.j.token, expectedGross: 38.4 })] }, base));
+    const u3 = await upload(await pdfOf(91, 61, 2), "tr3.pdf", BC), r3 = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u3.j.fileId, fileToken: u3.j.token, expectedGross: 38.4 })] }, base));
     assert.strictEqual((await admin("/admin/api/print/op", { op: "reject", id: r3.j.orders[0].id, confirm: true, reason: "Test", silent: true })).ok, true);
     let fx2 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, orderNumber: "6000999" }); assert.strictEqual(fx2.orders[0].status, "rejected", "ohne restore bleibt storniert");
     fx2 = await admin("/admin/api/print/op", { op: "fixup", id: r3.j.orders[0].id, confirm: true, orderNumber: "6000999", restore: true }); assert.strictEqual(fx2.orders[0].status, "ordered"); assert.strictEqual(fx2.orders[0].orderNumber, "6000999");
@@ -1072,7 +1076,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Druckdaten ablehnen: Mail-Vorschau, Senden, Bestellen gesperrt, Kunde lädt neue Datei hoch (Prüfung wie im Shop), danach wieder bestellbar", async () => {
     const base = { customer: Object.assign({}, cust, { email: "redo@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
-    const u1 = await upload(await pdfOf(89, 59, 2), "r1.pdf", BC);
+    const u1 = await upload(await pdfOf(91, 61, 2), "r1.pdf", BC);
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     const id = r.j.orderId, mails0 = M.mails.length;
@@ -1084,25 +1088,25 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pl = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.ok(!pl.ok && /neue Druckdaten/.test(pl.error), JSON.stringify(pl));
     let st = (await (await fetch(B + "/print/api/order/" + id + "?t=" + r.j.token)).json()).order; assert.strictEqual(st.redo.status, "open"); assert.strictEqual(st.redo.canUpload, true);
     const ru = (buf, name, tok) => fetch(B + "/print/api/order/" + id + "/reupload?t=" + (tok || r.j.token), { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) }), body: buf }).then(async x => ({ status: x.status, j: await x.json() }));
-    assert.strictEqual((await ru(await pdfOf(89, 59, 2), "x.pdf", "falsch")).status, 404);
+    assert.strictEqual((await ru(await pdfOf(91, 61, 2), "x.pdf", "falsch")).status, 404);
     // Simon 23.11.2026: nichts sperrt mehr – auch eine fehlerhafte Datei oder nur die Vorderseite wird übernommen, Simon prüft selbst (Hinweis im Verlauf)
     const bad = await ru(await pdfOf(150, 150, 2), "falsch.pdf"); assert.strictEqual(bad.j.ok, true, JSON.stringify(bad.j)); assert.strictEqual(bad.j.redo.status, "uploaded");
     let od0 = await admin("/admin/api/print/order?id=" + id); assert.ok(od0.order.history.some(h => /automatische Prüfung meldet Fehler/.test(h.what)), "Hinweis für Simon im Verlauf");
     const lst = await admin("/admin/api/print/state"); const row0 = lst.orders.find(x => x.id === id); assert.strictEqual(row0.redo, "uploaded");
-    const one = await ru(await pdfOf(89, 59, 1), "nur-vorne.pdf"); assert.strictEqual(one.j.ok, true, JSON.stringify(one.j));
+    const one = await ru(await pdfOf(91, 61, 1), "nur-vorne.pdf"); assert.strictEqual(one.j.ok, true, JSON.stringify(one.j));
     od0 = await admin("/admin/api/print/order?id=" + id); assert.ok(od0.order.history.some(h => /nur 1 von 2 Seiten – bitte selbst prüfen/.test(h.what)));
     const junk = await ru(Buffer.from("kein pdf ".repeat(40)), "logo.ai"); assert.strictEqual(junk.j.ok, true, "unbekanntes Format wird unverändert übernommen: " + JSON.stringify(junk.j));
-    const okU =await ru(await pdfOf(89, 59, 2), "neu.pdf"); assert.strictEqual(okU.j.ok, true, JSON.stringify(okU.j)); assert.strictEqual(okU.j.redo.status, "uploaded");
+    const okU =await ru(await pdfOf(91, 61, 2), "neu.pdf"); assert.strictEqual(okU.j.ok, true, JSON.stringify(okU.j)); assert.strictEqual(okU.j.redo.status, "uploaded");
     const od = await admin("/admin/api/print/order?id=" + id); assert.strictEqual(od.order.fileId, okU.j.file.fileId, "Druckdatei der Bestellung ersetzt"); assert.ok(od.order.fileHistory.some(h => h.by === "Kunde"));
     const pl2 = await admin("/admin/api/print/op", { op: "place", id, confirm: true }); assert.strictEqual(pl2.ok, true, JSON.stringify(pl2));
-    assert.strictEqual((await ru(await pdfOf(89, 59, 2), "spaet.pdf")).status, 409, "nach dem Bestellen kein Upload mehr");
+    assert.strictEqual((await ru(await pdfOf(91, 61, 2), "spaet.pdf")).status, 409, "nach dem Bestellen kein Upload mehr");
   });
   await t("Lieferzeit nach Druckdaten-Korrektur: Kunde wählt Tag – Mollie-Aufpreis erst nach Zahlung, Rechnungskauf auf der Rechnung, Cockpit mit eigener Rechnung", async () => {
     const iso = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10), d1 = iso(6), d2 = iso(8);
     M.possOf = u => [{ carrier: "DPD", method: "DPD_B2C", deliveryDate: d1, pickupDate: iso(4), urgency: u, price: { base: 5, cost: 5, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 2, allowedDeliveryPromises: [0] },
       { carrier: "UPS", method: "UPS_EXPRESS", deliveryDate: d2, pickupDate: iso(4), urgency: u, price: { base: 15, cost: 15, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 1, allowedDeliveryPromises: [0] }];
     const mk = async (email, payment) => {
-      const u1 = await upload(await pdfOf(89, 59, 2), "l1.pdf", BC);
+      const u1 = await upload(await pdfOf(91, 61, 2), "l1.pdf", BC);
       const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, { customer: Object.assign({}, cust, payment === "invoice" ? { type: "company", company: "Lieferzeit GmbH", uid: "ATU12345678" } : {}, { email }), payment, acceptTerms: true, acceptFagg: true, acceptProof: true }), { "x-forwarded-for": "203.0.113.77" });
       assert.strictEqual(r.status, 200, JSON.stringify(r.j)); const id = r.j.orderId || r.j.orders[0].id, tok = r.j.token || r.j.orders[0].token;
       if (payment === "mollie") { const pid = r.j.checkoutUrl.split("/").pop(); M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid }); }
@@ -1112,7 +1116,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.strictEqual((await admin("/admin/api/print/op", { op: "redo", id, reason: "Beschnitt fehlt – bitte ergänzen.", send: true, confirm: true })).ok, true);
       const LZ = "/print/api/order/" + id + "/lieferzeit?t=" + tok;
       assert.strictEqual((await (await fetch(B + LZ)).json()).ok, false, "erst nach dem Upload");
-      const up = await fetch(B + "/print/api/order/" + id + "/reupload?t=" + tok, { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": "neu.pdf" }), body: await pdfOf(89, 59, 2) }).then(x => x.json()); assert.strictEqual(up.ok, true, JSON.stringify(up));
+      const up = await fetch(B + "/print/api/order/" + id + "/reupload?t=" + tok, { method: "POST", headers: Object.assign({}, H, { "content-type": "application/octet-stream", "x-file-name": "neu.pdf" }), body: await pdfOf(91, 61, 2) }).then(x => x.json()); assert.strictEqual(up.ok, true, JSON.stringify(up));
       return LZ;
     };
     try {
@@ -1156,7 +1160,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Zahlungsnachweis: Überweisung unterwegs → in Arbeit; Geld kommt später an → keine zweite Bestätigung/Rechnung", async () => {
     const base = { customer: Object.assign({}, cust, { email: "ueberweisung@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
-    const u1 = await upload(await pdfOf(89, 59, 2), "t1.pdf", BC);
+    const u1 = await upload(await pdfOf(91, 61, 2), "t1.pdf", BC);
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const id = r.j.orderId, pid = r.j.checkoutUrl.split("/").pop(), inv0 = sevMock.state.invoices.length;
     const ok = await admin("/admin/api/print/op", { op: "transferok", id, note: "Beleg per Mail", confirm: true }); assert.strictEqual(ok.ok, true, JSON.stringify(ok));
@@ -1186,7 +1190,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Datencheck mit Grafikaufbereitung (+20 €): Druckdaten austauschen, zur Freigabe senden, Kunde gibt frei bzw. wünscht Änderung, erst dann bestellen", async () => {
     const base = { customer: Object.assign({}, cust, { email: "grafik@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
-    const u1 = await upload(await pdfOf(89, 59, 2), "g1.pdf", BC);
+    const u1 = await upload(await pdfOf(91, 61, 2), "g1.pdf", BC);
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 38.4 })], check: "graphic" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "58.40", "+20 € Grafikaufbereitung");
     const nPc = M.orders.length; M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
@@ -1196,7 +1200,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const put = (q, body, h) => fetch(B + "/admin/api/print/replace" + q, { method: "POST", headers: Object.assign({ cookie: COOKIE, "content-type": "application/pdf", "x-file-name": "neu.pdf" }, h || {}), body }).then(x => x.json());
     assert.strictEqual((await put("?id=" + r.j.orderId, Buffer.from("kein pdf ".repeat(20)))).ok, false, "nur PDF");
     const old = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order.fileId;
-    const rp = await put("?id=" + r.j.orderId, await pdfOf(89, 59, 2)); assert.strictEqual(rp.ok, true, JSON.stringify(rp)); assert.notStrictEqual(rp.order.fileId, old); assert.strictEqual(rp.order.fileHistory[0].old, old);
+    const rp = await put("?id=" + r.j.orderId, await pdfOf(91, 61, 2)); assert.strictEqual(rp.ok, true, JSON.stringify(rp)); assert.notStrictEqual(rp.order.fileId, old); assert.strictEqual(rp.order.fileHistory[0].old, old);
     // Ohne Freigabe: Bestellen nur mit „trotzdem“
     let pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, false); assert.strictEqual(pl.needForce, true);
     // Zur Freigabe senden → Kunde sieht die Datei, wünscht Änderung
@@ -1212,11 +1216,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await admin("/admin/api/print/op", { op: "proof", id: r.j.orderId, confirm: true })).order.proof.round, 2);
     a1 = await pf({ op: "approve" }); assert.strictEqual(a1.j.proof.status, "approved");
     pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl)); assert.strictEqual(M.orders.length, nPc + 1);
-    assert.strictEqual((await put("?id=" + r.j.orderId, await pdfOf(89, 59, 2))).ok, false, "nach der Bestellung kein Austausch mehr");
+    assert.strictEqual((await put("?id=" + r.j.orderId, await pdfOf(91, 61, 2))).ok, false, "nach der Bestellung kein Austausch mehr");
   });
   await t("Mehrere Motive: Stückzahlen je Motiv, PDFs zusammengeführt, variants + Seitenzuordnung", async () => {
     const base = { customer: Object.assign({}, cust, { email: "motive@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
-    const m1 = await upload(await pdfOf(89, 59, 2), "m1.pdf", BC), m2 = await upload(await pdfOf(89, 59, 2), "m2.pdf", BC);
+    const m1 = await upload(await pdfOf(91, 61, 2), "m1.pdf", BC), m2 = await upload(await pdfOf(91, 61, 2), "m2.pdf", BC);
     // Postgres (jsonb) speichert die Auswahl mit umsortierten Schlüsseln – das darf nicht als „andere Ausführung“ gelten
     for (const m of [m1, m2]) { const fp = path.join(dir, "print-shop", "files", m.j.fileId + ".json"), meta = JSON.parse(fs.readFileSync(fp, "utf8")); const ks = Object.keys(meta.sel).reverse(); meta.sel = Object.fromEntries(ks.map(k => [k, meta.sel[k]])); fs.writeFileSync(fp, JSON.stringify(meta)); }
     const it = (a, b, g) => Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: g, motifs: [{ copies: a, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: b, fileId: m2.j.fileId, fileToken: m2.j.token }] });
@@ -1230,12 +1234,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pcb = M.orders[M.orders.length - 1].items[0]; assert.ok(Array.isArray(pcb.designs) && pcb.designs.length === 2, JSON.stringify(pcb).slice(0, 300));
     assert.deepStrictEqual(pcb.designs.map(d => d.copies), [150, 100]); assert.ok(!pcb.fileUrl && !pcb.variants, "fileUrl/variants schließen designs aus");
     for (const d of pcb.designs) { const fr = await fetch(B + new URL(d.fileUrl).pathname); assert.strictEqual(fr.status, 200, "Motiv-PDF für Print.com abrufbar"); }
-    const u3 = await upload(await pdfOf(89, 59, 2), "m3.pdf", BC);
+    const u3 = await upload(await pdfOf(91, 61, 2), "m3.pdf", BC);
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 38.4, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
   });
   await t("Mehr Motive als Print.com je Position erlaubt (maxDesigns): an der Kasse abgelehnt, ältere Bestellungen auf mehrere Positionen aufgeteilt", async () => {
     const base = { customer: Object.assign({}, cust, { email: "motive2@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
-    const ups = []; for (let i = 0; i < 3; i++) ups.push(await upload(await pdfOf(89, 59, 2), "mx" + i + ".pdf", BC));
+    const ups = []; for (let i = 0; i < 3; i++) ups.push(await upload(await pdfOf(91, 61, 2), "mx" + i + ".pdf", BC));
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: ups[0].j.fileId, fileToken: ups[0].j.token, expectedGross: 38.4, motifs: [[150, 0], [50, 1], [50, 2]].map(([c, i]) => ({ copies: c, fileId: ups[i].j.fileId, fileToken: ups[i].j.token })) })] }, base), { "x-forwarded-for": "203.0.113.77" });   // eigene IP: Bestell-Limit (40/h) der vorigen Tests
     assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const mpid = r.j.checkoutUrl.split("/").pop(); M.payments[mpid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mpid });
@@ -1252,7 +1256,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     } finally { delete pd.maxDesigns; M.orderWrap = false; }
   });
   await t("Abgebrochene Zahlung: Zahlart, Ablehnungsgrund und Dauer von Mollie im Verlauf; nachträglich abrufbar", async () => {
-    const up = await upload(await pdfOf(89, 59, 2), "pf.pdf", BC);
+    const up = await upload(await pdfOf(91, 61, 2), "pf.pdf", BC);
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: up.j.fileId, fileToken: up.j.token, expectedGross: 38.4 })] }, { customer: Object.assign({}, cust, { email: "zahlung@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true }), { "x-forwarded-for": "203.0.113.78" });
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); const mpid = r.j.checkoutUrl.split("/").pop();
     Object.assign(M.payments[mpid], { status: "failed", method: "creditcard", createdAt: "2026-11-13T10:00:00Z", failedAt: "2026-11-13T10:03:00Z", details: { failureReason: "insufficient_funds", cardLabel: "Mastercard", cardCountryCode: "AT" } });
@@ -1264,7 +1268,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const st = await admin("/admin/api/print/state"); assert.ok(/keine Zahlart gewählt/.test((st.orders.find(x => x.id === r.j.orderId) || {}).payFail), "Cockpit-Liste");
   });
   await t("Zusatzbestellung bei Print.com (pcextra): Lieferadresse der Bestellung, Dateien als designs, Einkauf ersetzt", async () => {
-    const up = await upload(await pdfOf(89, 59, 2), "ex.pdf", BC), up2 = await upload(await pdfOf(89, 59, 2), "ex2.pdf", BC);
+    const up = await upload(await pdfOf(91, 61, 2), "ex.pdf", BC), up2 = await upload(await pdfOf(91, 61, 2), "ex2.pdf", BC);
     const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: up.j.fileId, fileToken: up.j.token, expectedGross: 38.4 })] }, { customer: Object.assign({}, cust, { email: "extra@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true }), { "x-forwarded-for": "203.0.113.79" });
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); { const mp = r.j.checkoutUrl.split("/").pop(); M.payments[mp].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mp }); }
     const id = r.j.orderId, sku = (await admin("/admin/api/print/order?id=" + id)).order.product.sku;
@@ -1286,15 +1290,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(b1.j.checks.some(c => /Rückseite: .*gedreht/.test(c.text)) && !b1.j.checks.some(c => /Rückseite bleibt weiß/.test(c.text)), JSON.stringify(b1.j.checks));
     const { PDFDocument } = require(path.join(ROOT, "node_modules", "pdf-lib"));
     const doc = await PDFDocument.load(Buffer.from(await (await fetch(B + "/print/api/file/" + b1.j.fileId + "?t=" + b1.j.token + "&pdf=1")).arrayBuffer()));
-    assert.strictEqual(doc.getPageCount(), 2); doc.getPages().forEach(pg => { const z = pg.getSize(); assert.deepStrictEqual([mm(z.width), mm(z.height)], [89, 59]); });
-    const b2 = await back(b1.j, await pdfOf(89, 59, 1), "hinten.pdf"); assert.strictEqual(b2.status, 200, JSON.stringify(b2.j)); assert.strictEqual(b2.j.pages, 2); assert.strictEqual(b2.j.backName, "hinten.pdf", "ersetzen – wieder von der Vorderseite aus");
+    assert.strictEqual(doc.getPageCount(), 2); doc.getPages().forEach(pg => { const z = pg.getSize(); assert.deepStrictEqual([mm(z.width), mm(z.height)], [91, 61]); });
+    const b2 = await back(b1.j, await pdfOf(91, 61, 1), "hinten.pdf"); assert.strictEqual(b2.status, 200, JSON.stringify(b2.j)); assert.strictEqual(b2.j.pages, 2); assert.strictEqual(b2.j.backName, "hinten.pdf", "ersetzen – wieder von der Vorderseite aus");
     // einzelne Seite ersetzen: nur die Vorderseite, die Rückseite bleibt; Prüfungen der alten Vorderseite fallen weg
     const page = async (f, n, buf, name) => { const r = await fetch(B + "/print/api/file/page", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token, "x-print-page": String(n) }, body: buf }); return { status: r.status, j: await r.json() }; };
     const p1 = await page(b1.j, 1, png(1060, 700, [0, 160, 0]), "neu-vorne.png"); assert.strictEqual(p1.status, 200, JSON.stringify(p1.j));
     assert.deepStrictEqual(p1.j.pageNames, ["neu-vorne.png", "hinten.png"]); assert.strictEqual(p1.j.pages, 2); assert.strictEqual(p1.j.needBack, false);
     assert.ok(p1.j.checks.some(c => /Vorderseite ersetzt durch „neu-vorne\.png“/.test(c.text)) && p1.j.checks.some(c => /^Rückseite: .*gedreht/.test(c.text)), JSON.stringify(p1.j.checks));
     assert.ok(!p1.j.checks.some(c => /Vorderseite: Auflösung nur/.test(c.text)) && p1.j.checks.filter(c => /^Vorderseite: Auflösung/.test(c.text)).length === 1, JSON.stringify(p1.j.checks));
-    const two0 = await upload(await pdfOf(89, 59, 2), "beide0.pdf", BC), p2 = await page(two0.j, 2, png(1060, 700, [9, 9, 9]), "rueck.png");
+    const two0 = await upload(await pdfOf(91, 61, 2), "beide0.pdf", BC), p2 = await page(two0.j, 2, png(1060, 700, [9, 9, 9]), "rueck.png");
     assert.strictEqual(p2.status, 200, JSON.stringify(p2.j)); assert.deepStrictEqual(p2.j.pageNames, ["beide0.pdf", "rueck.png"]);
     assert.strictEqual((await page(two0.j, 3, png(10, 10, [1, 1, 1]), "x.png")).status, 400, "Seite 3 gibt es nicht");
     // gemeinsame Rückseite (mehrere Motive): schon hochgeladene Datei als Quelle, kein neuer Upload; nur ihre Seite 1
@@ -1304,8 +1308,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(!sb.j.checks.some(c => /verwendet wird Seite 1/.test(c.text)), JSON.stringify(sb.j.checks));
     const sp = await src(p1.j, "/print/api/file/page", { "x-print-page": "2" }); assert.strictEqual(sp.status, 200, JSON.stringify(sp.j)); assert.deepStrictEqual(sp.j.pageNames, ["neu-vorne.png", "gemeinsam"]);
     assert.strictEqual((await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "x-print-file": m2.j.fileId, "x-print-token": m2.j.token, "x-print-src-file": cb.j.fileId, "x-print-src-token": "falsch" } })).status, 400);
-    const pf = await upload(await pdfOf(89, 59, 1), "vorne.pdf", BC); assert.strictEqual(pf.j.needBack, true, "1-seitige PDF bei 4/4");
-    const two = await upload(await pdfOf(89, 59, 2), "beide.pdf", BC); assert.strictEqual(two.j.needBack, false, "2-seitige PDF braucht keine Rückseite");
+    const pf = await upload(await pdfOf(91, 61, 1), "vorne.pdf", BC); assert.strictEqual(pf.j.needBack, true, "1-seitige PDF bei 4/4");
+    const two = await upload(await pdfOf(91, 61, 2), "beide.pdf", BC); assert.strictEqual(two.j.needBack, false, "2-seitige PDF braucht keine Rückseite");
     const one = await upload(png(1060, 700, [1, 1, 1]), "x.png", Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { printtype: "40" }) })); assert.strictEqual(one.status, 200, JSON.stringify(one.j)); assert.strictEqual(one.j.needBack, false);
     assert.strictEqual((await back(one.j, png(1060, 700, [1, 1, 1]), "y.png")).status, 400, "einseitig: keine Rückseite");
     assert.strictEqual((await back({ fileId: fr.j.fileId, token: "falsch" }, png(10, 10, [1, 1, 1]), "z.png")).status, 403);
