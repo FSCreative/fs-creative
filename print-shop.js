@@ -3242,7 +3242,10 @@ module.exports = function (D) {
       const res = dict.get(PDFName.of("Resources")) && ctx.lookup(dict.get(PDFName.of("Resources"))); const f = res instanceof PDFDict && res.lookup(PDFName.of("Font")); if (f instanceof PDFDict) fontDicts.push(f);
       if (!dict.get(PDFName.of("Type")) && [...dict.entries()].some(([k, v]) => /^\/F/.test(k.toString()) && bad.has(v.toString()))) fontDicts.push(dict); }
     const names = new Set(); fontDicts.forEach(f => { for (const [k, v] of f.entries()) if (bad.has(v.toString())) names.add(k.toString()); });
-    if (!names.size) return buf;
+    // Namen, die irgendwo auf eine benutzte Schrift zeigen, nie anfassen (Simon 24.11.2026: mehrere Kopien von „/F1“ nach Farben erweitern –
+    // eine ungenutzte Kopie ließ die Schriftwechsel aller Kopien löschen, der Text kam viel zu groß)
+    fontDicts.forEach(f => { for (const [k, v] of f.entries()) if (!bad.has(v.toString())) names.delete(k.toString()); });
+    if (!names.size) { fontDicts.forEach(f => { for (const [k, v] of [...f.entries()]) if (bad.has(v.toString())) f.delete(k); }); for (const [ref] of objs) if (bad.has(ref.toString())) ctx.delete(ref); return Buffer.from(await d.save({ useObjectStreams: false })); }
     const esc2 = n => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), edits = [];
     for (const [ref, obj] of objs) { if (!(obj instanceof PDFRawStream)) continue; const st = obj.dict.get(PDFName.of("Subtype")), isForm = st && st.toString() === "/Form", isContent = !obj.dict.get(PDFName.of("Type")) && !st && !obj.dict.get(PDFName.of("Length1")) && !obj.dict.get(PDFName.of("Length2"));
       if (!isForm && !isContent) continue; let txt; try { txt = Buffer.from(decodePDFRawStream(obj).decode()).toString("latin1"); } catch (e) { continue; }
