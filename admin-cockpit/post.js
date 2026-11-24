@@ -174,6 +174,27 @@ F.action("molder",function(){
   .then(function(errs){ var e=errs.filter(Boolean)[0]; if(e) F.toast("Ältere Mails: "+e,true); }, function(){ F.toast("Ältere Mails konnten nicht geladen werden – keine Verbindung",true); })
   .then(function(){ S.olderBusy=false; var srv=S.messages.filter(function(m){ return !m.olderOf; }); S.messages=srv.concat(olderKeep(srv.filter(function(m){ return !m.local; }))); UI.mshow=Math.max(UI.mshow||150,baseView().length); M.changed(); M.refresh(); });
 });
+/* Gesendete Mails der letzten 14 Tage (bis 500) automatisch nachladen (Simon 24.11.2026, Mail an Marco Neher fehlte):
+   der Mail-Dienst liefert je Ordner nur den neuesten Block (~40) – die automatischen Shop-Mails (Bestätigungen, Rechnungen, Codes) drängen eigene
+   Mails aus dem Fenster. Ohne sie fehlen sie unter „Gesendet“ und Antworten der Kunden lassen sich nicht mit der eigenen Mail gruppieren. */
+var SENT_DAYS=14, sentAutoAt=0, sentAutoBusy=false;
+function autoOlderSent(){
+  if(sentAutoBusy||Date.now()-sentAutoAt<10*60000) return; sentAutoBusy=true; sentAutoAt=Date.now();
+  var lim0=Date.now()-SENT_DAYS*864e5;
+  var ts=accounts().map(function(a){ var p=M.sentPath(a.key), fo=S.folders.filter(function(y){ return y.path===p&&(y.account||primaryAcct())===a.key; })[0];
+    if(!fo||!fo.before||!(fo.older>0)) return null;
+    var inWin=S.messages.filter(function(m){ return accOf(m)===a.key&&m.folder===p&&!m.local; }).map(function(m){ return Date.parse(m.date)||0; });
+    if(inWin.length&&Math.min.apply(null,inWin)<lim0) return null;   // Fenster reicht schon 14 Tage zurück
+    return {acc:a.key,path:p,key:a.key+"|"+p,before:fo.before,older:fo.older}; }).filter(Boolean);
+  if(!ts.length){ sentAutoBusy=false; return; }
+  Promise.all(ts.map(function(t){ var lim=Math.min(500,t.older);
+    return F.api("/admin/api/mail-older?account="+encodeURIComponent(t.acc)+"&folder="+encodeURIComponent(t.path)+"&before="+encodeURIComponent(t.before)+"&limit="+lim).then(function(j){
+      if(!j||!j.ok||!Array.isArray(j.messages)) return;
+      var got=j.messages.map(function(m){ var x=norm(m); x.lite=!!m.lite; x.olderOf=t.path; return x; }).filter(function(x){ return (Date.parse(x.date)||0)>=lim0; });
+      S.older=S.older.filter(function(m){ return !(accOf(m)===t.acc&&m.olderOf===t.path); }).concat(got); S.olderN[t.key]=Math.max(S.olderN[t.key]||0,got.length); }).catch(function(){}); }))
+  .then(function(){ sentAutoBusy=false; var sig0=viewSig(), srv=S.messages.filter(function(m){ return !m.olderOf; }); S.messages=srv.concat(olderKeep(srv.filter(function(m){ return !m.local; }))); M.changed(); if(viewSig()!==sig0) M.refresh(); });
+}
+M.autoOlderSent=autoOlderSent;
 /* Nach jeder lokalen Änderung: andere Module (Heute, Zähler) sehen denselben Stand */
 M.changed=function(){
   S.ver++;
@@ -193,7 +214,8 @@ M.loadFull=function(){
     var d={mail:md}; S.loading=false; M._lf=null;
     if(md&&Array.isArray(md.messages)){ S.err=""; S.etag=md.etag||""; srvFlags(md); ingest(md,true);
       /* Der Server puffert den Abruf ~20 s: solange Verschiebungen noch nicht sichtbar sind, später erneut laden */
-      if(Object.keys(OV).some(function(k){ return "folder" in OV[k]; })) M.scheduleReload(12000); }
+      if(Object.keys(OV).some(function(k){ return "folder" in OV[k]; })) M.scheduleReload(12000);
+      setTimeout(autoOlderSent,300); }
     else S.err=md&&md.error==="mail_not_available"?"Der Mail-Dienst antwortet gerade nicht.":"Postfach konnte nicht geladen werden.";
     var lr=S.lrend; S.lrend=false; if(!wasLoaded||lr||viewSig()!==sig0) M.refresh(); return d;
   }).catch(function(){ S.loading=false; M._lf=null; S.err="Keine Verbindung zum Server."; M.refresh(); });
