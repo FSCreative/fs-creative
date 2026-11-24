@@ -3023,7 +3023,8 @@ module.exports = function (D) {
     const lf = input.linkFee && typeof input.linkFee === "object" ? input.linkFee : null;
     if (lf && !o.price.designFee && fm && +lf.net > 0 && sigOk("linkfee", [String(input.fileId || ""), r2(+lf.net), prod.key, String(lf.label || "")].join(":"), String(lf.sig || ""))) {
       const net = r2(+lf.net), vat = r2(net * (o.price.rate || 0) / 100), gross = r2(net + vat);
-      o.price.designFee = { net, vat, gross, label: clip(String(lf.label || "Datenaufbereitung"), 60) }; o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net);
+      if (String(lf.label || "")) o.price.designFee = { net, vat, gross, label: clip(String(lf.label), 60) }; else o.price.linkAdd = { net, vat, gross };   // ohne Bezeichnung: im Produktpreis enthalten (Simon 24.11.2026)
+      o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net);
     }
     // Weiß & Sonderfarben gegen die bestellte Ausführung (die Datei kann mit einer anderen Ausführung hochgeladen worden sein): Fehler → Bestellung geht in die Prüfung
     o.fileChecks = (o.fileChecks || []).slice();
@@ -6578,8 +6579,8 @@ module.exports = function (D) {
         // Aufschlag je Position (z. B. Datenaufbereitung): nur hier im Cockpit signiert – an der Kasse wird die Signatur geprüft (Simon 24.11.2026)
         for (const x of items) { delete x.designFee; const n0 = x.linkFee && +x.linkFee.net;
           if (!(n0 > 0) || x.noFile) { delete x.linkFee; continue; }
-          const net = Math.round(n0 * 100) / 100, label = clip(String(x.linkFee.label || "Datenaufbereitung"), 60);
-          x.linkFee = { net, label, sig: sig("linkfee", [x.fileId, net, x.product, label].join(":")) }; x.designFee = { net, gross: Math.round(net * 120) / 100, vat: Math.round(net * 20) / 100, label }; }
+          const net = Math.round(n0 * 100) / 100, label = x.linkFee.merge ? "" : clip(String(x.linkFee.label || "Datenaufbereitung"), 60);
+          x.linkFee = { net, label, sig: sig("linkfee", [x.fileId, net, x.product, label].join(":")) }; x.designFee = { net, gross: Math.round(net * 120) / 100, vat: Math.round(net * 20) / 100, label, merge: !label || undefined }; }
         const all = await crGet();
         // replace: alte Warenkorb-Links (Kurzlink-ID, /print/l/…, ?wk=… oder Warenkorb-ID) überschreiben – bereits verschickte Links zeigen dann den neuen Stand (Simon 13.11.2026)
         const repl = [], shorts = await shortGet();
