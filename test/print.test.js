@@ -384,11 +384,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pdfUp = await upload(await pdfOf(89, 59, 2), "v.pdf", BC); assert.strictEqual(pdfUp.j.pvk, "", "PDF-Upload: keine Kopie, volle Datei");
   });
 
-  await t("Upload anpassen: Hochformat-Bild wird gedreht statt abgelehnt, PDF mit passendem Seitenverhältnis wird skaliert, Einpassen/Drehen/Skalieren vom Original", async () => {
+  await t("Upload anpassen: Hochformat-Bild wird gedreht statt abgelehnt, PDF mit anderer Größe in Originalgröße mittig (nicht skaliert), Einpassen/Drehen/Skalieren vom Original", async () => {
     const tall = await upload(png(700, 1060, [10, 90, 10]), "hoch.png", BC); assert.strictEqual(tall.status, 200, JSON.stringify(tall.j));
     assert.strictEqual(tall.j.blocked, false, JSON.stringify(tall.j.checks)); assert.ok(tall.j.checks.some(c => /automatisch um 90° gedreht/.test(c.text))); assert.strictEqual(tall.j.adj, true); assert.strictEqual(tall.j.place.rotate, 90);
     let mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + tall.j.fileId + "?t=" + tall.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
-    const big = await upload(await pdfOf(178, 118, 1), "doppelt.pdf", BC); assert.strictEqual(big.j.blocked, false, JSON.stringify(big.j.checks)); assert.ok(big.j.checks.some(c => c.level === "ok" && /automatisch auf 89 × 59 mm/.test(c.text)), JSON.stringify(big.j.checks));
+    const big = await upload(await pdfOf(178, 118, 1), "doppelt.pdf", BC); assert.strictEqual(big.j.blocked, false, JSON.stringify(big.j.checks)); assert.ok(big.j.checks.some(c => c.level === "warn" && /Originalgröße mittig/.test(c.text)), JSON.stringify(big.j.checks));
+    assert.ok(Math.abs(big.j.place.scale - 2) < 0.01 && big.j.place.bg === "white", "zu große Datei: 1:1 (nicht skaliert), Rest weiß – Simon 24.11.2026 " + JSON.stringify(big.j.place));
     mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + big.j.fileId + "?t=" + big.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
     const a4 = await upload(await pdfOf(210, 297, 1), "a4.pdf", BC); assert.strictEqual(a4.j.blocked, true); assert.strictEqual(a4.j.adj, true, "falsches Format → Anpassen möglich");
     const fit = await post("/print/api/file/fit", { fileId: a4.j.fileId, token: a4.j.token, mode: "fit", rotate: 90, scale: 0.9 }); assert.strictEqual(fit.status, 200, JSON.stringify(fit.j));
