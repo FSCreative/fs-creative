@@ -6794,7 +6794,9 @@ module.exports = function (D) {
       if (p === "/admin/api/print/pcfile" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fid = String(u.searchParams.get("fid") || o.fileId || ""), fm = await store.fileMeta(fid);
-        if (!fm || [o.fileId].concat((o.motifs || []).map(m => m.fileId)).indexOf(fid) < 0) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
+        // auch frühere Versionen aus dem Verlauf (nur lesen – z. B. Original nach der Bestellung neu aufbereiten und selbst bei Print.com hochladen, Simon 24.11.2026)
+        const known = [o.fileId].concat((o.motifs || []).map(m => m.fileId), (o.fileHistory || []).reduce((a, h) => a.concat([h.old, h.new]), []));
+        if (!fm || known.indexOf(fid) < 0) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
         let buf = await store.fileData(fid); if (!buf) return J(res, 404, { ok: false, error: "Datei nicht gefunden" });
         if (!fm.pcExtra) buf = await pcVariant(buf, fm, o);
         return D.send(res, 200, buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'attachment; filename="' + o.nr + '-printcom.pdf"', "Cache-Control": "private, no-store" });
