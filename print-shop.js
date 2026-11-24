@@ -1372,7 +1372,9 @@ module.exports = function (D) {
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
     let ancX = false, ancMulti = false;
     const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
-      const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
+      const hit = sel => anc.find(x => Object.keys(x.sig).every(k => String(sel[k]) === String(x.sig[k])));
+      // Rückendruck = gleiche Fläche (28 × 40 cm) und Druckart wie „Vorne groß“: ohne eigenen Vergleichspreis gilt der von vorne (Simon 24.11.2026 – Rücken kostete sonst deutlich weniger als vorne bei gleichem Einkauf)
+      const a = hit(n.sel) || (String(n.sel.positionen || "") === "positions_back" ? hit(Object.assign({}, n.sel, { positionen: "positions_front" })) : null); if (!a) return 0;
       ancMulti = ANC_SRC.filter(rx => rx.test(String(a.src || ""))).length >= 2;
       // Zusatzoptionen (Stanzung, Veredelung, Bohrloch, Bündelung …), die der Vergleich nicht kennt: Vergleichspreis gilt nicht (sonst drückt der Standardpreis z. B. die Stanzung auf die Mindestmarge)
       if (Object.keys(n.sel).some(k => (OPT_EXTRA.test(k) || EXTRA_PROPS.test(k)) && !(k in a.sig) && n.sel[k] != null && String(n.sel[k]) !== NONE_OPT && !NONE_SLUG.test(String(n.sel[k])))) return 0;
