@@ -1935,6 +1935,11 @@ module.exports = function (D) {
       const k = PF_KEY(t); if (seen.has(k)) continue; seen.add(k);
       if (/PDF\/X version is empty|PDF\/X version .{0,20}should be/i.test(t)) out.push(Object.assign({}, c, { level: "ok", admin: true }));
       else if (c.level === "error" && /RGB/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: " + k.replace(/^Erweiterte Prüfung: /, "") }));
+      // Simon 24.11.2026 (Aquarena): Bilder mit eingebettetem ICC-Profil (Grau/CMYK) sind druckbar – werden umgerechnet wie RGB → Hinweis statt Fehler
+      else if (c.level === "error" && /ICC based (gray|CMYK)/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: Bilder mit eingebettetem Farbprofil (Graustufen/CMYK) – werden für den Druck umgerechnet, Farben bitte in der Vorschau kontrollieren." }));
+      // Sonderfarben, die gewollt sind (Weißdruck, Schnitt-/Stanzkontur): Print.com zählt sie als „separations“ → nur intern als Info, nicht blockieren
+      else if (c.level === "error" && /uses \d+ separations?.*?: (.+)$/i.test(t) && String(t.match(/: ([^:]+)$/)[1]).split(/\s*,\s*/).every(n => n && (SPOT_ALIAS.White.test(n.trim()) || isCutSpot(n.trim()))))
+        out.push(Object.assign({}, c, { level: "ok", admin: true, text: "Erweiterte Prüfung: Sonderfarbe " + t.match(/: ([^:]+)$/)[1].trim() + " in der Datei – gewollt (Weißdruck bzw. Kontur)." }));
       else if (c.level === "error" && autoBleed && /resolution less than or equal to \d+ ppi/i.test(t)) out.push(Object.assign({}, c, { level: "warn", text: "Erweiterte Prüfung: Bilder unter 150 ppi gefunden – meist nur der automatisch ergänzte Beschnittrand (Randstreifen werden dafür gestreckt und abgeschnitten). Motiv in der Vorschau auf Schärfe prüfen." }));
       else if (/image is larger than \d+ pixels and has a resolution less than or equal to \d+ ppi/i.test(t)) { const mP = t.match(/less than or equal to (\d+) ppi/i), mS = t.match(/\((\d+)x on pages? ([\d\s,-]+)\)/i); out.push(Object.assign({}, c, { text: "Erweiterte Prüfung: " + (mS && +mS[1] > 1 ? mS[1] + " Bilder" : "Bild") + " mit geringer Auflösung (höchstens " + (mP ? mP[1] : "149") + " ppi)" + (mS ? " auf Seite " + mS[2].trim() : "") + " – kann im Druck unscharf oder pixelig wirken. Empfohlen sind ca. 300 ppi in Originalgröße." })); }
       else out.push(c);
