@@ -1793,9 +1793,9 @@
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
     if (pr.slug === "pages" && opts.length > 12 && opts.every(function (o) { return parseFloat(o.slug) > 0; })) return pagesStepper(pr, opts, cur);
     var best = cur && isBest(pr, cur.slug), its = propItems(pr), nseg = its.length >= 3 && its.length <= 4;
-    var ttl = rowTitle(pr);
-    return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(ttl) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, ttl, its, S.sel[pr.slug]) +
-      (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + morePc(its.more) + "</div>";
+    var ttl = rowTitle(pr), mi = /finish|lamin/i.test(pr.slug) ? mattInfo(S.prod) : null, rec = mi && mi.tile === pr.slug;
+    return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (rec ? " ps-rec" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(ttl) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, ttl, its, S.sel[pr.slug]) +
+      (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + (rec ? '<span class="ps-rect" role="note">⚠️ ' + esc(mi.tileTxt) + "</span>" : "") + morePc(its.more) + "</div>";
   }
   function sec(title, inner, extra) { return (inner || "") + (extra ? fmtRow(extra) : ""); }
   // Freies Format als eigene Zeile: eingeklappt Maß + Grenzen, aufgeklappt Schnellwahl, Breite/Höhe und Hinweis
@@ -2084,7 +2084,8 @@
     // Günstig: Kandidaten (leichtere bzw. gleich schwere Papiere) – gewählt wird nach echtem Preis
     var cheap = [];   // bewusst kein „Günstig“-Paket: nur Beliebt und Hochwertig
     // Hochwertig: schwereres mattes Papier + matte Folie, sonst Rückfall-Varianten
-    var lams = fin ? fin.options.filter(function (o) { return /matt/.test(o.slug) && /lamination/.test(o.slug); }).sort(function (a, b) { return (/^double/.test(b.slug) === (base.printtype === "44")) - (/^double/.test(a.slug) === (base.printtype === "44")); }) : [];
+    var lams = fin ? fin.options.filter(function (o) { return /matt|scratch/.test(o.slug) && /lamin/.test(o.slug); }).sort(function (a, b) { return (/^double/.test(b.slug) === (base.printtype === "44")) - (/^double/.test(a.slug) === (base.printtype === "44")); }) : [];
+    if (lams.some(function (o) { return /scratch/.test(o.slug); })) lams = lams.filter(function (o) { return /scratch/.test(o.slug); });
     var heav = coated.filter(function (o) { return /silk/.test(o.slug) && gr(o) > g0; }).sort(function (a, b) { return Math.abs(gr(a) - g0 * 1.35) - Math.abs(gr(b) - g0 * 1.35); });
     var prem = []; heav.slice(0, 3).forEach(function (h) { lams.slice(0, 2).forEach(function (l) { prem.push(mk({ material: h.slug, finish: l.slug })); }); }); lams.slice(0, 2).forEach(function (l) { prem.push(mk({ finish: l.slug })); }); heav.slice(0, 2).forEach(function (h) { prem.push(mk({ material: h.slug })); });
     prem = prem.filter(ok)[0];
@@ -2131,6 +2132,7 @@
     if (opts.length > 12) { opts = opts.slice().sort(function (a, b) { return svGr(a) - svGr(b); }); var st = (opts.length - 1) / 11, pk = []; for (var i = 0; i < 12; i++) if (pk.indexOf(opts[Math.round(i * st)]) < 0) pk.push(opts[Math.round(i * st)]); opts = pk; }
     opts.forEach(function (o, i) { var s = Object.assign({}, base); s[q.slug] = o.slug; if (none) s.finish = none.slug; add("q" + i, s); if (none && excluded(s)) { var s2 = Object.assign({}, base); s2[q.slug] = o.slug; add("r" + i, s2); } });
     var dbl = base.printtype === "44", lams = fin ? fin.options.filter(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name) && /matt/i.test(o.slug + " " + o.name); }) : [];
+    var lamScr = lams.filter(function (o) { return /scratch|kratzfest/i.test(o.slug + " " + o.name); }); if (lamScr.length) lams = lamScr;   // Hochwertig: immer kratzfeste Kaschierung, sofern möglich (Simon 24.11.2026)
     lams.sort(function (a, b) { return (/^double|beidseit/i.test(b.slug + b.name) === dbl) - (/^double|beidseit/i.test(a.slug + a.name) === dbl); });
     q.options.filter(function (o) { return svGr(o) > 0; }).sort(function (a, b) { return (coat(b) - coat(a)) || (svGr(b) - svGr(a)); }).slice(0, 3).forEach(function (h, i) {
       lams.slice(0, 2).forEach(function (l, j) { var s = Object.assign({}, base); s[q.slug] = h.slug; s.finish = l.slug; add("p" + i + j, s, { lam: true }); }); });
@@ -2188,18 +2190,46 @@
   }
   /* unbedruckt geliefert (Roll-Up Banner Systeme u. a.): „ohne Druck“, keine Gestaltung – Preisfeld, mobile Leiste und Konfigurator */
   function blankProd(p) { p = p || S.prod; if (!p || isLogo()) return false; var f = p.fixed || {}; return !!(p.blank || S.noFile || String(f.printingmethod || "") === "raw_material" || /^0+$/.test(String(f.printtype || ""))); }
-  /* Matte Papiere ohne Folienkaschierung (Simon 23.11.2026, auch Umschläge/Einbände von Blöcken, Broschüren …): Hinweis auf Kratzer und Abrieb. Geprüft wird die Außenseite = eigener Umschlag, sonst das Material. */
-  function mattNote(p) {
-    var k = kind(); if (k === "textile" || k === "promo" || blankProd(p)) return "";
+  /* Matte Papiere ohne Folienkaschierung (Simon 23.11.2026, auch Umschläge/Einbände von Blöcken, Broschüren …): Hinweis auf Kratzer und Abrieb. Geprüft wird die Außenseite = eigener Umschlag, sonst das Material.
+     Simon 24.11.2026: bei mattem Papier und bei matter Folienkaschierung (auch Softtouch) die kratzfeste Kaschierung empfehlen – Veredelungs-Zeile bleibt orange markiert, bis kratzfest gewählt ist */
+  function mattInfo(p) {
+    var none = { tile: "", tileTxt: "", note: "", pop: "" }, k = kind(); if (!p || k === "textile" || k === "promo" || blankProd(p)) return none;
     var fx = p.fixed || {}, val = function (s) { var v = S.sel[s] != null ? S.sel[s] : fx[s]; if (v == null) return ""; var pr = (p.props || []).filter(function (x) { return x.slug === s; })[0], o = pr && pr.options.filter(function (x) { return x.slug === v; })[0]; return String(v) + " " + (o ? o.name : ""); };
     var cov = val("cover_material"), hasCov = !!cov.trim() && !/^(none|selfcover|none_cover)(\s|$)/i.test(cov.trim());
     var surf = hasCov ? cov : val("material");
     var isMatt = /silk|\bmatt/i.test(surf) && /papier|paper|silk|bilderdruck|terraprint/i.test(surf) && !/gesatineerd|gl(ä|a)nz|gloss|folie|foil|lamin|kaschier|vinyl|pvc/i.test(surf);
-    if (!isMatt) return "";
-    var lam = Object.keys(Object.assign({}, fx, S.sel)).some(function (s) { return /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s) && /lamin|kaschier|cellophan/i.test(val(s)); });
-    if (lam) return "";
-    var canLam = (p.props || []).some(function (pr) { return /finish/i.test(pr.slug) && !/spot/i.test(pr.slug) && pr.options.some(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name); }); });
-    return '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen" + (canLam ? ". Eine Folienkaschierung schützt die Oberfläche – du kannst sie oben bei den Optionen dazuwählen." : ".") + "</p>";
+    var finSlugs = Object.keys(Object.assign({}, fx, S.sel)).filter(function (s) { return /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s); });
+    var lamOf = function (s) { return /lamin|kaschier|cellophan/i.test(val(s)); }, lamSlugs = finSlugs.filter(lamOf), lamVals = lamSlugs.map(val);
+    var scratchRx = /scratch|kratzfest/i;
+    if (lamVals.some(function (v) { return scratchRx.test(v); })) return none;
+    var finProps = (p.props || []).filter(function (pr) { return /finish|lamin/i.test(pr.slug) && !/spot/i.test(pr.slug) && propVisible(pr); });
+    var scrProp = finProps.filter(function (pr) { return pr.options.some(function (o) { return scratchRx.test(o.slug + " " + o.name); }); })[0];
+    var lamProp = finProps.filter(function (pr) { return pr.options.some(function (o) { return /lamin|kaschier/i.test(o.slug + " " + o.name); }); })[0];
+    var tip = scrProp ? " Unsere Empfehlung: die <b>kratzfeste matte Folienkaschierung</b> – sie ist deutlich widerstandsfähiger, du kannst sie oben bei der Veredelung wählen." : "";
+    var mattLam = lamVals.some(function (v) { return /matt|soft_?touch/i.test(v) && !/gloss|gl(ä|a)nz/i.test(v); });
+    if (mattLam) return scrProp ? { tile: scrProp.slug, scr: scrProp, pop: isMatt ? "matt" : "", tileTxt: "Kratzfeste matte Folienkaschierung empfohlen – normale matte Kaschierung zerkratzt leicht.", note: '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> Matte Folienkaschierungen sind empfindlich – bei häufigem Anfassen kann es zu Kratzern und Abrieb kommen.' + tip + "</p>" } : none;
+    if (!isMatt) return none;
+    var tp = scrProp || (lamSlugs.length ? null : lamProp);
+    var out = { tile: tp ? tp.slug : "", scr: scrProp || null, pop: lamSlugs.length ? "" : "matt", tileTxt: scrProp ? "Bei mattem Papier dringend empfohlen: kratzfeste matte Folienkaschierung." : "Bei mattem Papier dringend empfohlen: Folienkaschierung.", note: "" };
+    if (!lamSlugs.length) out.note = '<p class="ps-help ps-info" role="note"><b>Hinweis:</b> ' + (hasCov ? "Der Umschlag bzw. Einband ist aus mattem Papier ohne Folienkaschierung" : "Mattes Papier ohne Folienkaschierung") + " – dadurch kann es zu Kratzern und Abrieb kommen." + (tip || (lamProp ? " Eine Folienkaschierung schützt die Oberfläche – du kannst sie oben bei der Veredelung dazuwählen." : "")) + "</p>";
+    return out;
+  }
+  function mattNote(p) { return mattInfo(p).note; }
+  /* Simon 24.11.2026: „Weiter zur Gestaltung“ bei mattem Papier ohne Schutz (keine bzw. nur normale matte Kaschierung) → Pop-up mit Haftungshinweis; mit kratzfester Kaschierung kein Pop-up */
+  function mattPop(next) {
+    var mi = mattInfo(S.prod), key = S.prod.key + "|" + JSON.stringify(S.sel);
+    if (!mi.pop || S.mattOk === key) return false;
+    var scr = mi.scr, cur = scr ? String(S.sel[scr.slug] || "") : "", opt = scr && (scr.options.filter(function (o) { return /scratch|kratzfest/i.test(o.slug + " " + o.name) && (/double|beidseitig/i.test(cur) === /double|beidseitig/i.test(o.slug + " " + o.name)); })[0] || scr.options.filter(function (o) { return /scratch|kratzfest/i.test(o.slug + " " + o.name); })[0]);
+    var old = document.getElementById("psMattPop"); if (old) old.remove();
+    var d = document.createElement("div"); d.id = "psMattPop"; d.className = "ps-mpop";
+    d.innerHTML = '<div class="ps-mpop-bg" data-mp="x"></div><div class="ps-mpop-c" role="dialog" aria-modal="true" aria-labelledby="psMpT"><h3 id="psMpT">⚠️ Mattes Papier ohne Kratzschutz</h3><p>Du hast mattes Papier ohne kratzfeste Folienkaschierung gewählt. Matte Oberflächen sind empfindlich – durch Produktion, Weiterverarbeitung und Transport kann es zu <b>Kratzern und Abrieb</b> kommen.</p><p>Für solche Kratzer oder Abriebe übernehmen wir <b>keine Haftung</b>.</p>' + (opt ? '<p>Mit der <b>kratzfesten matten Folienkaschierung</b> ist die Oberfläche geschützt – wir empfehlen sie dringend.</p>' : "") + '<div class="ps-mpop-b">' + (opt ? '<button type="button" class="ps-btn primary" data-mp="scr">Kratzfest wählen</button>' : "") + '<button type="button" class="ps-btn' + (opt ? "" : " primary") + '" data-mp="ok">Verstanden, trotzdem weiter</button></div></div>';
+    document.body.appendChild(d);
+    var close = function () { d.remove(); document.removeEventListener("keydown", esc0); }, esc0 = function (e) { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", esc0);
+    d.addEventListener("click", function (e) { var b = e.target.closest("[data-mp]"); if (!b) return; var a = b.getAttribute("data-mp"); close();
+      if (a === "ok") { S.mattOk = key; next(); } else if (a === "scr" && opt) { setProp(scr.slug, opt.slug); toast("Kratzfeste matte Folienkaschierung gewählt – der Preis wird aktualisiert."); } });
+    var f = d.querySelector(".ps-btn.primary"); if (f) f.focus();
+    return true;
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
@@ -3392,7 +3422,7 @@
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
     if (k === "psheetx") { closeSheet(); return; }
     // ohne Datei immer zur Auswahl (Designer oder Upload), nicht wieder direkt in den Upload
-    if (k === "next2") { if (S.price && !S.priceBusy) { if (!S.file && S.mode === "upload") S.mode = ""; go(3); } else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
+    if (k === "next2") { if (S.price && !S.priceBusy) { var n2 = function () { if (!S.file && S.mode === "upload") S.mode = ""; go(3); }; if (!mattPop(n2)) n2(); } else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
     if (k === "texdesign") return openTexDesigner();
     if (k === "texscreen" || k === "textransfer") { var mm = S.prod.methods.filter(function (x) { return x.key === (k === "texscreen" ? "screen1" : "transfer"); })[0]; if (!mm) return; S.textile.method = mm.key; S.textile.positions = S.textile.positions.filter(function (x) { return mm.positions.indexOf(x) > -1; }); if (!S.textile.positions.length) S.textile.positions = [mm.positions[0]]; render(); loadPrice(); toast("Druckart: " + mm.label.replace(/ \(.*$/, "") + " – Preis wird neu berechnet"); return; }

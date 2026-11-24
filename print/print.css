@@ -2592,3 +2592,14 @@ html.ps-stu-open .ps-toast{z-index:9500}html.ps-stu-open .ps-pop,html.ps-stu-ope
   .bc-ed .bc-top .bc-name{min-width:0;flex:1 1 140px}
 }
 .bc-pair{display:grid;gap:12px}.bc-pair.two figure+figure{max-width:60%;justify-self:center;width:100%}.bc-pair figure{margin:0;flex-direction:column;align-items:center;gap:6px}.bc-pair figcaption{font-size:12px;color:var(--text-dim)}
+
+/* Matt-Hinweis (Simon 24.11.2026): Veredelung leicht orange, bis kratzfest gewählt ist + Pop-up vor der Gestaltung */
+.ps-tile.ps-rec,.ps-cfg .ps-tile.ps-rec{border-color:#ff9f0a;background:rgba(255,159,10,.08);box-shadow:0 0 0 1px rgba(255,159,10,.35) inset}
+.ps-rect{display:block;margin-top:6px;font-size:12.5px;line-height:1.4;font-weight:600;color:#ffb35c}
+html.light .ps-rect{color:#c2410c}
+.ps-mpop{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px}
+.ps-mpop-bg{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.ps-mpop-c{position:relative;max-width:460px;width:100%;background:var(--ps-field,#15151d);color:var(--text,inherit);border:2px solid #ff9f0a;border-radius:14px;padding:20px 20px 16px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.ps-mpop-c h3{margin:0 0 10px;font-size:18px}
+.ps-mpop-c p{margin:0 0 10px;font-size:14.5px;line-height:1.5}
+.ps-mpop-b{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:14px}
