@@ -3192,70 +3192,8 @@ module.exports = function (D) {
      die PDF enthielt Helvetica/Times-Roman ohne Einbettung, nur in leeren Textblöcken „BT /F1 12 Tf ET“, wie sie manche PDF-Programme anlegen).
      Wird eine solche Schrift wirklich für Text benutzt, bleibt die Datei unverändert. Druckbild ändert sich nicht. */
   // Schriften-Prüfung für die Kontrolle im Cockpit (Simon 17.11.2026: „bei so falschen Dateien möchte ich in der Prüfungsansicht wissen warum“):
-  // nicht eingebettete Schriften – benutzt (Print.com lehnt ab) oder nur angelegt (wird beim Senden entfernt). admin: true → nur im Cockpit, nicht beim Kunden.
-  async function fontCheck(buf) {
-    if (!buf || buf.length > 40e6) return null;
-    const { PDFDocument, PDFName, PDFDict, PDFRawStream, decodePDFRawStream } = require("pdf-lib");
-    const d = await PDFDocument.load(buf, { updateMetadata: false }), ctx = d.context, objs = [...ctx.enumerateIndirectObjects()], bad = new Map();
-    for (const [ref, obj] of objs) { if (!(obj instanceof PDFDict)) continue; const t = obj.get(PDFName.of("Type")); if (!t || t.toString() !== "/Font") continue;
-      const st = String(obj.get(PDFName.of("Subtype")) || ""); if (st === "/Type3" || st === "/Type0") continue;
-      const fd = obj.lookup(PDFName.of("FontDescriptor")); if (!(fd && (fd.get(PDFName.of("FontFile")) || fd.get(PDFName.of("FontFile2")) || fd.get(PDFName.of("FontFile3"))))) bad.set(ref.toString(), String(obj.get(PDFName.of("BaseFont")) || "?").replace(/^\/([A-Z]{6}\+)?/, "")); }
-    if (!bad.size) return null;
-    const names = new Map();
-    for (const [, obj] of objs) { const dict = obj instanceof PDFRawStream ? obj.dict : obj instanceof PDFDict ? obj : null; if (!dict) continue;
-      const res = dict.get(PDFName.of("Resources")) && ctx.lookup(dict.get(PDFName.of("Resources"))), f = res instanceof PDFDict && res.lookup(PDFName.of("Font"));
-      const scan = x => { for (const [k, v] of x.entries()) if (bad.has(v.toString())) names.set(k.toString(), bad.get(v.toString())); };
-      if (f instanceof PDFDict) scan(f); if (!dict.get(PDFName.of("Type")) && [...dict.entries()].some(([k, v]) => /^\/F/.test(k.toString()) && bad.has(v.toString()))) scan(dict); }
-    // „benutzt“ = es wird wirklich Text mit dieser Schrift gedruckt. Der Schriftzustand gilt über BT/ET hinweg (Simon 24.11.2026, Visitenkarte:
-    // „BT /F1 5.4 Tf ET“ + „BT (Text) Tj ET“ galt fälschlich als unbenutzt → Schrift und Größenwechsel wurden gelöscht, Text kam viel zu groß)
-    const used = new Set(), uref = await FONTFIX.usedFontRefs(buf).catch(() => null);
-    for (const [r, base] of bad) if (!uref || uref.has(r)) used.add(base);   // im Zweifel: benutzt
-    void names; void decodePDFRawStream; void PDFRawStream;
-    const all = [...new Set(bad.values())], un = all.filter(x => !used.has(x));
-    if (used.size) {
-      // Simon 20.11.2026 (D-261119-CTMM): maßgleiche freie Schriften werden vor der Übergabe automatisch eingebettet (print-fontfix.js) – nur wenn jedes gedruckte Zeichen exakt gleich breit ist
-      const plan = await FONTFIX.planStdFonts(buf).catch(() => ({ replaced: [], skipped: [] }));
-      const ok = plan.replaced.filter(r => used.has(r.name)), rest = [...used].filter(n => !ok.some(r => r.name === n));
-      if (!rest.length) return { level: "ok", admin: true, text: "Schrift nicht eingebettet (" + ok.map(r => r.name).join(", ") + ") – wird vor der Übergabe an Print.com automatisch durch die maßgleiche Schrift " + [...new Set(ok.map(r => r.with))].join(", ") + " ersetzt und eingebettet (gleiche Zeichenbreiten, Druckbild bleibt gleich)." };
-      const why = plan.skipped.filter(s => rest.indexOf(s.name) >= 0).map(s => s.name + ": " + s.reason).join("; ");
-      // Simon 20.11.2026: „wenns nicht ausreichend passt und übereinstimmt zu 95 % zeig mir immer noch einen vergleich“ → fontNear: Vergleich + Freigabe im Cockpit
-      const near = (plan.near || []).filter(n => rest.indexOf(n.name) >= 0).map(n => ({ name: n.name, with: n.with, score: Math.floor(n.score * 1000) / 1000, diffs: n.diffs.slice(0, 12) }));
-      if (near.length) return { level: "warn", admin: true, fontNear: near, text: "Schrift nicht eingebettet: " + near.map(n => n.name + " – Ersatz " + n.with + " stimmt zu " + Math.floor(n.score * 100) + " % überein (anders breit: " + n.diffs.slice(0, 5).map(x => "„" + x.ch + "“").join(" ") + ")").join("; ") + (rest.length > near.length ? "; ohne Ersatz: " + rest.filter(r => !near.some(n => n.name === r)).join(", ") : "") + (ok.length ? "; " + ok.map(r => r.name).join(", ") + " wird automatisch eingebettet" : "") + ". Vergleich ansehen und Ersatz freigeben – sonst geht die Datei mit nicht eingebetteter Schrift an Print.com." };
-      return { level: "warn", admin: true, text: "Schrift nicht eingebettet und im Text verwendet: " + rest.join(", ") + (why ? " (kein exakt gleicher Ersatz – " + why + ")" : "") + (ok.length ? "; " + ok.map(r => r.name).join(", ") + " wird automatisch eingebettet" : "") + " – Print.com lehnt solche Dateien oft ab („Verarbeitung hat nicht geklappt“). Kunden um eine PDF mit eingebetteten Schriften bzw. Text in Pfaden bitten." };
-    }
-    return { level: "warn", admin: true, text: "Nicht eingebettete Schrift(en) in der Datei angelegt, aber nicht verwendet: " + un.join(", ") + " – werden vor der Übergabe an Print.com automatisch entfernt (Druckbild bleibt gleich)." };
-  }
-  async function dropUnusedFonts(buf) {
-    if (!buf || buf.length > 40e6) return buf;
-    const { PDFDocument, PDFName, PDFDict, PDFRawStream, decodePDFRawStream } = require("pdf-lib");
-    const d = await PDFDocument.load(buf, { updateMetadata: false }), ctx = d.context, objs = [...ctx.enumerateIndirectObjects()];
-    const bad = new Set();
-    for (const [ref, obj] of objs) { if (!(obj instanceof PDFDict)) continue; const t = obj.get(PDFName.of("Type")); if (!t || t.toString() !== "/Font") continue;
-      const st = String(obj.get(PDFName.of("Subtype")) || ""); if (st === "/Type3" || st === "/Type0") continue;
-      const fd = obj.lookup(PDFName.of("FontDescriptor")); if (!(fd && (fd.get(PDFName.of("FontFile")) || fd.get(PDFName.of("FontFile2")) || fd.get(PDFName.of("FontFile3"))))) bad.add(ref.toString()); }
-    if (!bad.size) return buf;
-    const uref = await FONTFIX.usedFontRefs(buf).catch(() => null); if (!uref) return buf;   // im Zweifel nichts entfernen
-    for (const r of [...bad]) if (uref.has(r)) bad.delete(r);   // druckt Text → bleibt, auch wenn Tf in einem eigenen BT/ET-Block steht
-    if (!bad.size) return buf;
-    const fontDicts = [];   // Schrift-Verzeichnisse (/F1 6 0 R …), die auf eine dieser Schriften zeigen
-    for (const [, obj] of objs) { const dict = obj instanceof PDFRawStream ? obj.dict : obj instanceof PDFDict ? obj : null; if (!dict) continue;
-      const res = dict.get(PDFName.of("Resources")) && ctx.lookup(dict.get(PDFName.of("Resources"))); const f = res instanceof PDFDict && res.lookup(PDFName.of("Font")); if (f instanceof PDFDict) fontDicts.push(f);
-      if (!dict.get(PDFName.of("Type")) && [...dict.entries()].some(([k, v]) => /^\/F/.test(k.toString()) && bad.has(v.toString()))) fontDicts.push(dict); }
-    const names = new Set(); fontDicts.forEach(f => { for (const [k, v] of f.entries()) if (bad.has(v.toString())) names.add(k.toString()); });
-    // Namen, die irgendwo auf eine benutzte Schrift zeigen, nie anfassen (Simon 24.11.2026: mehrere Kopien von „/F1“ nach Farben erweitern –
-    // eine ungenutzte Kopie ließ die Schriftwechsel aller Kopien löschen, der Text kam viel zu groß)
-    fontDicts.forEach(f => { for (const [k, v] of f.entries()) if (!bad.has(v.toString())) names.delete(k.toString()); });
-    if (!names.size) { fontDicts.forEach(f => { for (const [k, v] of [...f.entries()]) if (bad.has(v.toString())) f.delete(k); }); for (const [ref] of objs) if (bad.has(ref.toString())) ctx.delete(ref); return Buffer.from(await d.save({ useObjectStreams: false })); }
-    const esc2 = n => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), edits = [];
-    for (const [ref, obj] of objs) { if (!(obj instanceof PDFRawStream)) continue; const st = obj.dict.get(PDFName.of("Subtype")), isForm = st && st.toString() === "/Form", isContent = !obj.dict.get(PDFName.of("Type")) && !st && !obj.dict.get(PDFName.of("Length1")) && !obj.dict.get(PDFName.of("Length2"));
-      if (!isForm && !isContent) continue; let txt; try { txt = Buffer.from(decodePDFRawStream(obj).decode()).toString("latin1"); } catch (e) { continue; }
-      let out = txt; for (const n of names) { out = out.replace(new RegExp("BT\\s+" + esc2(n) + "\\s+[\\d.]+\\s+Tf\\s+(?:[\\d.]+\\s+TL\\s+)?ET", "g"), ""); if (new RegExp(esc2(n) + "\\s+[\\d.]+\\s+Tf").test(out)) return buf; }   // wirklich benutzt → nichts ändern
-      if (out !== txt) edits.push([ref, obj, out]); }
-    for (const [ref, obj, out] of edits) { const dict = {}; for (const [k, v] of obj.dict.entries()) if (["/Filter", "/Length", "/DecodeParms"].indexOf(k.toString()) < 0) dict[k.toString().slice(1)] = v; ctx.assign(ref, ctx.flateStream(Buffer.from(out, "latin1"), dict)); }
-    fontDicts.forEach(f => { for (const [k, v] of [...f.entries()]) if (bad.has(v.toString())) f.delete(k); });
-    for (const [ref] of objs) if (bad.has(ref.toString())) ctx.delete(ref);
-    return Buffer.from(await d.save({ useObjectStreams: false }));
-  }
+  // Schriften prüfen/bereinigen: in print-fontfix.js (Simon 24.11.2026 – dort ohne Shop testbar, test/print-fontpipeline.test.js)
+  const fontCheck = b => FONTFIX.fontCheck(b), dropUnusedFonts = b => FONTFIX.dropUnusedFonts(b);
   /* Nicht druckende Beigaben entfernen (Simon 23.11.2026, Visitenkarten D-261122-UEZX: Print.com übernahm die Datei nicht – darin eine eingebettete
      C2PA-Datei „Content Credentials“ + Link). Verlustfrei: Bilder/Vektoren/Text bleiben unverändert; weg sind nur eingebettete Dateien (/EmbeddedFiles, /AF),
      Link-/Dateianhang-Anmerkungen, JavaScript/Aktionen. Formularfelder bleiben (Entfernen wäre nicht verlustfrei). */
