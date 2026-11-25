@@ -1387,10 +1387,11 @@ module.exports = function (D) {
         if (t[c]) return Math.min(t[c], cap); const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return Math.min(cap, t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo)); };
       if (a.area) {   // Wunschgröße: Preis über die Fläche interpolieren (gleiche Fläche → günstigster Mitbewerberpreis), nur innerhalb der verglichenen Flächen
         if (!n.size) return 0; const m2 = n.size.w * n.size.h / 1e6, by = {};
-        a.area.forEach(p => { const v = at(p[1]); if (v > 0 && (!by[p[0]] || v < by[p[0]])) by[p[0]] = v; });
+        // ancX nur von den beiden Flächen, zwischen denen wirklich interpoliert wird – sonst schaltete eine kleinere Staffel einer ganz anderen Fläche (z. B. 1 m² nur bis 10 Stk.) die Anker-Erhöhung für alle Flächen ab (25.11.2026)
+        const xs = {}; a.area.forEach(p => { ancX = false; const v = at(p[1]); if (v > 0 && (!by[p[0]] || v < by[p[0]])) { by[p[0]] = v; xs[p[0]] = ancX; } }); ancX = false;
         const pts = Object.keys(by).map(Number).sort((x, y) => x - y).map(x => [x, by[x]]); if (pts.length < 2 || m2 < pts[0][0] * 0.98 || m2 > pts[pts.length - 1][0] * 1.02) return 0;
         const hi = pts.find(p => p[0] >= m2) || pts[pts.length - 1], lo = pts.filter(p => p[0] <= m2).pop() || pts[0];
-        return hi[0] === lo[0] ? lo[1] : lo[1] + (hi[1] - lo[1]) * (m2 - lo[0]) / (hi[0] - lo[0]);
+        ancX = !!(xs[lo[0]] || xs[hi[0]]); return hi[0] === lo[0] ? lo[1] : lo[1] + (hi[1] - lo[1]) * (m2 - lo[0]) / (hi[0] - lo[0]);
       }
       return n.kind === "banner" ? 0 : at(a.tiers); })();
     // Günstige Produkte (Vergleichspreis unter anchorSmallBelow, Standard 100 € brutto): nur anchorGapSmall (Standard 0,05 €) darunter – mehr Marge,
