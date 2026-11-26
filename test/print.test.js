@@ -321,6 +321,33 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(!/immutable/.test((await fetch(B + "/print/app.js")).headers.get("cache-control")), "ohne Version nicht ewig");
   });
   let upOk;
+  await t("Bildauflösung: Bilder werden unverändert übernommen (gleiche Bytes) und der ergänzte Beschnitt streckt sie nie unter 150 ppi (26.11.2026)", async () => {
+    const { PDFDocument, PDFRawStream, PDFName } = require("pdf-lib"), MMP = 72 / 25.4;
+    const jpgB = (w, h) => { const b = Buffer.from("/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=", "base64"), i = b.indexOf(Buffer.from([0xff, 0xc2])); b.writeUInt16BE(h, i + 5); b.writeUInt16BE(w, i + 7); return new Uint8Array(b); };
+    const mk = async (dpi) => { const d = await PDFDocument.create(), pg = d.addPage([85 * MMP, 55 * MMP]);
+      const p = await d.embedPng(png(Math.round(85 / 25.4 * dpi), Math.round(55 / 25.4 * dpi), [30, 90, 160])); pg.drawImage(p, { x: 0, y: 0, width: 85 * MMP, height: 55 * MMP });
+      const j = await d.embedJpg(jpgB(Math.round(40 / 25.4 * dpi), Math.round(20 / 25.4 * dpi))); pg.drawImage(j, { x: 0, y: 0, width: 40 * MMP, height: 20 * MMP });   // JPEG an der Ecke (reicht in den Beschnitt)
+      return Buffer.from(await d.save()); };
+    const imgs = async buf => { const d = await PDFDocument.load(buf), out = []; for (const [, o] of d.context.enumerateIndirectObjects()) if (o instanceof PDFRawStream && String(o.dict.get(PDFName.of("Subtype"))) === "/Image") out.push(crypto.createHash("sha1").update(o.contents).digest("hex")); return out; };
+    const ppiList = buf => { const f = path.join(os.tmpdir(), "fsc-ppi-" + process.pid + ".pdf"); fs.writeFileSync(f, buf);
+      try { return cp.execFileSync("pdfimages", ["-list", f]).toString().split("\n").slice(2).map(l => l.trim().split(/\s+/)).filter(a => a.length > 13 && a[2] === "image" && +a[3] > 64).map(a => Math.min(+a[12], +a[13])); } finally { fs.unlinkSync(f); } };
+    for (const dpi of [300, 100]) {
+      const src = await mk(dpi), up = await upload(src, "aufloesung-" + dpi + ".pdf", BC); assert.strictEqual(up.status, 200, JSON.stringify(up.j));
+      assert.ok(up.j.checks.some(c => /automatisch ergänzt/.test(c.text)), "Beschnitt ergänzt: " + JSON.stringify(up.j.checks));
+      const out = Buffer.from(await (await fetch(B + "/print/api/file/" + up.j.fileId + "?t=" + up.j.token + "&pdf=1")).arrayBuffer());
+      const a = await imgs(src), z = await imgs(out); assert.ok(a.length === 2 && a.every(h => z.includes(h)), "Bilder byte-gleich übernommen (keine Neu-Kompression)");
+      let pp = null; try { pp = ppiList(out); } catch (e) { pp = null; }   // ohne Poppler nur die Byte-Prüfung
+      if (pp) { assert.ok(pp.length >= 2, "Platzierungen gefunden"); const min = Math.min.apply(null, pp);
+        if (dpi === 300) assert.ok(min >= 150, "kein Randstreifen unter 150 ppi (min " + min + ", alle " + pp.join(",") + ")");
+        else assert.ok(min >= dpi - 2, "Randstreifen nicht schwächer als das Bild selbst (min " + min + ")");
+        // Beschnitt sichtbar gefüllt (Ecken oben + Kanten nicht weiß): Seite 91 × 61 mm bei 40 dpi rendern, Pixel in den äußeren 3 mm prüfen
+        const f = path.join(os.tmpdir(), "fsc-bl-" + process.pid); fs.writeFileSync(f + ".pdf", out);
+        try { cp.execFileSync("pdftoppm", ["-r", "40", "-f", "1", "-l", "1", "-singlefile", f + ".pdf", f]); const pm = fs.readFileSync(f + ".ppm"), hd = pm.toString("latin1", 0, 40).split(/\s+/), W = +hd[1], H = +hd[2], off = pm.length - W * H * 3;
+          const px = (x, y) => { const i = off + (y * W + x) * 3; return [pm[i], pm[i + 1], pm[i + 2]]; }, blue = p => p[2] > 120 && p[0] < 90;
+          for (const [x, y] of [[1, 1], [W - 2, 1], [W - 2, Math.round(H / 2)], [Math.round(W * 0.75), H - 2], [Math.round(W / 2), 1], [W - 2, H - 2]]) assert.ok(blue(px(x, y)), "Beschnitt bei " + x + "/" + y + " gefüllt (" + px(x, y) + ")");
+        } finally { [".pdf", ".ppm"].forEach(s => { try { fs.unlinkSync(f + s); } catch (e) {} }); } }
+    }
+  });
   await t("Upload PDF: passende Größe inkl. Beschnitt + 2 Seiten → ok; falsches Format → Fehler; Nicht-PDF/Bild → 415", async () => {
     const r = await upload(await pdfOf(91, 61, 2), "karte.pdf", BC); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     assert.strictEqual(r.j.blocked, false); assert.ok(r.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text))); assert.strictEqual(r.j.pages, 2); upOk = r.j;

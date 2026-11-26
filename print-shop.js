@@ -1955,6 +1955,26 @@ module.exports = function (D) {
     }
     return out;
   }
+  /* Cockpit (Simon 26.11.2026: „Bilder unter 150 dpi – Original oder Übertragung?“): Print.com prüft unsere Druckdatei, nicht die Kundendatei.
+     Gespeichert wird die Kundendatei unverändert (Bilder werden nie neu komprimiert oder gerastert, nur als Ganzes eingebettet) – darum hier mit den
+     Bild-Infos der Original-Datei (info.images: Pixel, mm, dpi je Platzierung) einordnen: echtes Kundenbild mit wenig dpi → genau benennen (Seite, Pixel, mm);
+     alle Bilder ≥ 150 dpi → Meldung stammt aus unseren Randstreifen (Beschnitt ergänzt/Ränder gezogen) → nur Hinweis. Ohne Infos bleibt die Meldung, wie sie ist. */
+  const LOWRES_RX = /resolution less than or equal to \d+ ppi|Bilder unter 150 ppi|geringer Auflösung|resolution between 149 and 224 ppi/i;
+  function lowResJudge(list, info, m) {
+    const imgs = ((info && info.images) || []).filter(i => i && i.dpi > 0 && Math.max(i.w, i.h) > 64);
+    if (!imgs.length || !Array.isArray(list) || !list.some(c => c && PF_RX.test(c.text || "") && LOWRES_RX.test(c.text || ""))) return list;
+    const sc = Math.max(0.05, +(m && m.place && m.place.scale) || 1), eff = i => Math.round(i.dpi / sc), low = imgs.filter(i => eff(i) < 150), mid = imgs.filter(i => eff(i) >= 150 && eff(i) < 225);
+    const desc = i => "Seite " + i.page + ": " + i.w + " × " + i.h + " px auf " + fmtMm(i.mm[0]) + " × " + fmtMm(i.mm[1]) + " mm = " + eff(i) + " dpi";
+    const lo = Math.min.apply(null, imgs.map(eff)), hi = Math.max.apply(null, imgs.map(eff)), out = []; let done = false;
+    for (const c of list) {
+      const t = String((c && c.text) || ""); if (!PF_RX.test(t) || !LOWRES_RX.test(t)) { out.push(c); continue; }
+      if (done) continue; done = true;
+      if (low.length) out.push(Object.assign({}, c, { level: c.level === "ok" ? "warn" : c.level, text: "Erweiterte Prüfung: " + low.length + (low.length > 1 ? " Bilder" : " Bild") + " schon in der Kundendatei mit wenig Auflösung – " + low.slice(0, 6).map(desc).join("; ") + (low.length > 6 ? " …" : "") + ". So geliefert, nicht durch die Übertragung (Bilder werden unverändert übernommen). Empfohlen sind ca. 300 dpi." }));
+      else if (mid.length && /between 149 and 224/i.test(t)) out.push(Object.assign({}, c, { level: "warn", admin: true, text: "Erweiterte Prüfung: " + mid.length + (mid.length > 1 ? " Bilder" : " Bild") + " mit 150–224 dpi in der Kundendatei (" + mid.slice(0, 4).map(desc).join("; ") + ") – druckbar, etwas weniger scharf als 300 dpi." }));
+      else out.push(Object.assign({}, c, { level: "ok", admin: true, text: "Erweiterte Prüfung: Print.com meldet wenig Auflösung nur in den von uns ergänzten Randbereichen (Beschnitt bzw. gezogene Ränder, werden abgeschnitten oder sind einfarbig). Die Bilder der Kundendatei haben " + (lo === hi ? lo : lo + "–" + hi) + " dpi und werden unverändert übertragen." }));
+    }
+    return out;
+  }
   async function preflightPoll(meta) {
     if (!meta.preflight || meta.preflight.status !== "PROCESSING") return meta;
     try {
@@ -2085,6 +2105,10 @@ module.exports = function (D) {
     const { pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = ops;
     const { W, H, b, sx, sy, xa, ya, gaps } = o, OW = W + 2 * b, OH = H + 2 * b, e = 1.5, J = 0.4, JA = 0.3;
     const OFF = 0.1 * MM_PT, SW0 = 0.3 * MM_PT, NB = 0.1 * MM_PT, KMAX = 10, MID = OFF + SW0 / 2, CL = 0.08 * MM_PT, ID = { A: 0, p: 0, sg: 1, k: 1 };
+    /* Streckung begrenzen (Simon 26.11.2026, „Bilder unter 150 dpi“): die Randstreifen zeichnen dasselbe Bild k-fach gestreckt – Print.com misst dort
+       ppi / k. kMax = höchste Streckung, bei der das schwächste Bild der Seite noch ≥ 152 ppi hat (aus den Bild-Infos, Vektorseiten unverändert 10).
+       k = 1 heißt: im gleichen Maßstab gespiegelt bzw. danebengelegt – gleiche Auflösung wie das Motiv. */
+    const KM = Math.max(1, Math.min(KMAX, +o.kMax || KMAX));
     const draw = (rects, X, Y) => {
       const r = rects.filter(q => q[2] > 0.01 && q[3] > 0.01); if (!r.length) return;
       pg.pushOperators(pushGraphicsState(), ...r.map(q => rectangle(q[0], q[1], q[2], q[3])), clip(), endPath());
@@ -2098,8 +2122,10 @@ module.exports = function (D) {
     const corners = [[0, 0, xa[0], ya[0], "l", "b", 0, 0], [xa[1], 0, OW - xa[1], ya[0], "r", "b", 0, LX], [0, ya[1], xa[0], OH - ya[1], "l", "t", LY, 0], [xa[1], ya[1], OW - xa[1], OH - ya[1], "r", "t", LY, LX]];
     for (const [cx, cy, cw, ch, sv, sh, alongV, alongH] of corners) {
       if (cw <= 0.01 || ch <= 0.01) continue;
-      const py = ya[0] + free(gaps[sv], alongV === 0 ? MID : LY - MID, LY), pxx = xa[0] + free(gaps[sh], alongH === 0 ? MID : LX - MID, LX);
-      draw([[Math.max(0, cx - J), Math.max(0, cy - J), cw + 2 * J, ch + 2 * J]], { A: cx + cw / 2, p: pxx, sg: 1, k: Math.min(KMAX, (cw + 2 * J) / CL) }, { A: cy + ch / 2, p: py, sg: 1, k: Math.min(KMAX, (ch + 2 * J) / CL) });
+      // Quellzelle (Ecke) = Zelle / k – bei begrenzter Streckung größer, darum so weit nach innen rücken, dass sie ganz im Motiv liegt
+      const kx = Math.min(KM, (cw + 2 * J) / CL), ky = Math.min(KM, (ch + 2 * J) / CL), mX = Math.max(MID, (cw / 2 + J) / kx + 0.05 * MM_PT), mY = Math.max(MID, (ch / 2 + J) / ky + 0.05 * MM_PT);
+      const py = ya[0] + free(gaps[sv], alongV === 0 ? mY : LY - mY, LY), pxx = xa[0] + free(gaps[sh], alongH === 0 ? mX : LX - mX, LX);
+      draw([[Math.max(0, cx - J), Math.max(0, cy - J), cw + 2 * J, ch + 2 * J]], { A: cx + cw / 2, p: pxx, sg: 1, k: kx }, { A: cy + ch / 2, p: py, sg: 1, k: ky });
     }
     /* 2) Kanten: Randstreifen exakt nach außen ziehen (ohne Überlappung in die Lücken), danach die Lücken aus der sauberen Fläche daneben füllen */
     const sides = [
@@ -2109,14 +2135,14 @@ module.exports = function (D) {
       { s: "t", v: false, ax: ya[1], p: ya[1] - OFF, band: [ya[1] - e, OH] }];
     for (const sd of sides) {
       const bw = sd.band[1] - sd.band[0]; if (bw <= e + 0.01) continue;
-      const SW = Math.max(SW0, (bw - e) / KMAX), perp = { A: sd.ax, p: sd.p, sg: -1, k: Math.max(1, (bw - e) / SW + 0.5) }, org = sd.v ? ya[0] : xa[0], len = sd.v ? LY : LX, gl = gaps[sd.s] || [];
+      const SW = Math.max(SW0, (bw - e) / KM), perp = { A: sd.ax, p: sd.p, sg: -1, k: Math.max(1, Math.min(KM, (bw - e) / SW + 0.5)) }, org = sd.v ? ya[0] : xa[0], len = sd.v ? LY : LX, gl = gaps[sd.s] || [];
       const rect = (u0, u1) => sd.v ? [sd.band[0], org + u0 - JA, bw, u1 - u0 + 2 * JA] : [org + u0 - JA, sd.band[0], u1 - u0 + 2 * JA, bw];
       const rectG = (u0, u1) => sd.v ? [sd.band[0], org + u0, bw, u1 - u0] : [org + u0, sd.band[0], u1 - u0, bw];
       const put = (rects, al) => sd.v ? draw(rects, perp, al) : draw(rects, al, perp);
       const good = []; let pos = 0; for (const [a, c] of gl) { if (a > pos) good.push(rectG(pos === 0 ? -1 : pos, a)); pos = Math.max(pos, c); } if (pos < len) good.push(rectG(pos === 0 ? -1 : pos, len + 1));
       put(good, ID);
       const SEG = KMAX * CL - 2 * JA;
-      const fill = (u0, u1, s) => { const ns = Math.max(1, Math.ceil((u1 - u0) / SEG)), sl = (u1 - u0) / ns; for (let i = 0; i < ns; i++) { const u = u0 + i * sl, v = u + sl; put([rect(u, v)], { A: org + (u + v) / 2, p: org + s, sg: 1, k: (sl + 2 * JA) / CL }); } };
+      const fill = (u0, u1, s) => { const ns = Math.max(1, Math.ceil((u1 - u0) / SEG)), sl = (u1 - u0) / ns; for (let i = 0; i < ns; i++) { const u = u0 + i * sl, v = u + sl; put([rect(u, v)], { A: org + (u + v) / 2, p: org + s, sg: 1, k: Math.min(KM, (sl + 2 * JA) / CL) }); } };
       for (const [a, c, sA, sC] of gl) {
         const m = (a + c) / 2, lo = sA != null ? sA : a - NB, hi = sC != null ? sC : c + NB, okLo = lo >= CL / 2 && lo <= a, okHi = hi <= len - CL / 2 && hi >= c;
         if (okLo && okHi) { fill(a, m, lo); fill(m, c, hi); } else if (okLo) fill(a, c, lo); else if (okHi) fill(a, c, hi); else put([rect(a, c)], ID);
@@ -2137,6 +2163,9 @@ module.exports = function (D) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
     const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W0 = size.w * MM_PT, H0 = size.h * MM_PT, b = bleed * MM_PT;
     const nc = mode === "zoom" ? null : await noCutDoc(buf);
+    // schwächstes Bild je Seite (ppi in der Datei) → wie stark die Randstreifen höchstens gestreckt werden dürfen (bleedFill kMax); Bilder ≤ 64 px zählt Print.com nicht
+    const minDpi = {}; if (mode !== "zoom" && buf.length < 80e6) { try { const fi = await FILEINFO.fileInfo(buf, "pdf");
+      for (const im of (fi && fi.images) || []) if (im.dpi > 0 && Math.max(im.w, im.h) > 64) minDpi[im.page] = Math.min(minDpi[im.page] || Infinity, im.dpi); } catch (e) { log("Beschnitt: Bild-Infos", e.message); } }
     let pi = -1;
     for (const sp of src.getPages()) { pi++;
       if (!sp.node.Contents()) { out.addPage([W0 + 2 * b, H0 + 2 * b]).setTrimBox(b, b, W0, H0); continue; }   // leere Seite (z. B. weiße Rückseite): bleibt leer, nur im Beschnitt-Format
@@ -2160,7 +2189,8 @@ module.exports = function (D) {
         const xa = [b + L, b + W - R], ya = [b + Bo, b + H - T];   // Spiegelachsen = Motivkanten
         const g = ins.g || {}, gaps = { l: bleedGaps(g.l, ya[1] - ya[0]), r: bleedGaps(g.r, ya[1] - ya[0]), t: bleedGaps(g.t, xa[1] - xa[0]), b: bleedGaps(g.b, xa[1] - xa[0]) };
         const ncp = nc && nc.getPage(pi), embM = ncp ? (hasB ? await out.embedPage(ncp, vsub(ncp, box)) : await out.embedPage(ncp, vbox(ncp))) : emb;   // Beschnitt ohne Schneidelinien
-        bleedFill(pg, embM, { pushGraphicsState, popGraphicsState, rectangle, clip, endPath }, { W, H, b, sx, sy, xa, ya, gaps });
+        const md = minDpi[pi + 1], kMax = md ? md / (152 * Math.max(sx, sy, 0.01)) : 0;
+        bleedFill(pg, embM, { pushGraphicsState, popGraphicsState, rectangle, clip, endPath }, { W, H, b, sx, sy, xa, ya, gaps, kMax });
         if (any) pg.pushOperators(pushGraphicsState(), rectangle(xa[0], ya[0], xa[1] - xa[0], ya[1] - ya[0]), clip(), endPath());
         pg.drawPage(emb, { x: b, y: b, xScale: sx, yScale: sy });
         if (any) pg.pushOperators(popGraphicsState());
@@ -6792,7 +6822,7 @@ module.exports = function (D) {
           if (spot) rec = rec.filter(r => r.title !== "Technische Farben");
           // Falzlinien + Felder (Titel, Rückseite, Innen …) fürs Cockpit: aus Falzart und offenem Format der Druckdatei (gleiche Rechnung wie im Shop)
           let folds = null; try { const fsl = String((o.sel || {}).fold || ""), sz0 = m.size || o.size; if (FOLD_RX.test(fsl) && sz0 && sz0.w > 0 && sz0.h > 0) folds = foldFromOpen(fsl, +sz0.w, +sz0.h); } catch (e) { folds = null; }
-          return { label, motif: mot ? motif : null, folds, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat(pfNorm(m.checks).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
+          return { label, motif: mot ? motif : null, folds, fileId: fid, name: m.name || "", kind: m.kind || "", src: m.src || null, info: srcInfo, effDpi, original: m.original || "", bytes: m.bytes || 0, rec, pages: m.pages || null, size: m.size || o.size || null, bleed: m.bleed != null ? +m.bleed : +(o.bleed || 0), checks: (spot ? spot.checks.map(c => Object.assign({ admin: true }, c)) : []).concat(lowResJudge(pfNorm(m.checks), srcInfo, m).filter(c => !(spot && c.spot) && !((m.bleedFix || freeCutOf(prodX, o.sel)) && (BLEED_RX.test(c.text || "") || CUT_BLEED_RX.test(c.text || ""))))), spot: spot ? { white: spot.white, spots: spot.spots, needs: spot.needs } : null, mirr: !!(m.size && (m.bleedFix || (m.src && m.place)) && (m.src || m.from)) ? (m.bleedFix ? "bleed" : "adj") : "", adj: !!m.size, place: m.src && m.place ? m.place : { mode: "fill", rotate: 0, scale: 1, dx: 0, dy: 0 }, copies: mot ? o.motifs[motif].copies : o.copies, safe: safeMm, shape: shapeOf(o.sel, o.labels), ok: !!(o.docOk && o.docOk[mot ? "m" + motif : "f"] && o.docOk[mot ? "m" + motif : "f"].fid === fid), pv: pvOk(m),
             prev: hs ? { fileId: hs.old, name: (om && om.name) || "", at: hs.at, by: hs.by || "Cockpit", pv: pvOk(om) } : null }; };
         const prodX = await findProduct(o.product.key).catch(() => null), safeMm = safeFor(prodX, o.sel);   // Sicherheitsabstand des Produkts (ab Endformat), z. B. Banner 30 mm
         const docs = mot ? await Promise.all(o.motifs.map((m, i) => dv(m.fileId, "Motiv " + (i + 1) + " · " + m.copies + " Stk.", i))) : o.fileId ? [await dv(o.fileId, "Druckdatei", null)] : [];
