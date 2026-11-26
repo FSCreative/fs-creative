@@ -4283,7 +4283,7 @@ module.exports = function (D) {
               if (motN > 1) { const per = Math.floor(n.copies / motN), sp = Array.from({ length: motN }, (x, i) => per + (i < n.copies - per * motN ? 1 : 0)); c.mo = { n: motN, sp, f: [] }; }
               const long = cfgLink(P.key, c); let link = long; try { link = await shortMake(long); } catch (e) {}
               vs.push(Object.assign({ copies: n.copies, net: qt.net, gross: qt.gross, date: qt.deliveryDate || "", link }, motN > 1 ? { motifs: motN } : {}, motSep ? { sep: motSep } : {}));
-              if (!lab) { lab = (n.labels || []).filter(l => l && l[1] != null && String(l[1]).trim() && !/^(ohne|keine?|nein|offen geliefert|standard|nicht personalisiert)$/i.test(String(l[1]).trim())); used = n; }
+              if (!lab) { lab = (n.labels || []).filter(l => l && l[1] != null && String(l[1]).trim() && !/^(ohne|keine?|kein|nein|offen geliefert|standard|nicht personalisiert)(\b|$)/i.test(String(l[1]).trim())); used = n; }
               break;
             } catch (e) { if (ti === tries.length - 1 && !strict) log("Mail-Vorschlag Preis " + P.key + ":", e.message); }
           }
