@@ -1034,7 +1034,7 @@
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
         if (j.ok) { S.undo = null; S.autoFix = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
-        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); tierKick(); }
+        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); tierKick(); vinylKick(); }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice(); texPriceTell();
       }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); texPriceTell(); });
@@ -1096,7 +1096,28 @@
       if (best || split) { S.tierHint = best; S.splitHint = split; var b = document.getElementById("psPrice"); if (b) renderPrice(); }
     }).catch(function () {});
   }
-  function tierHintHtml() { var h = S.tierHint, sp = S.splitHint, co = S.ctype === "company"; if (!S.price) return "";
+  /* Kleine Aufkleber (Simon 26.11.2026 „stell die kleinen auf Vinyl um“): Bogen-Aufkleber (PP/Papier) sind bei kleinen Mengen im Einkauf
+     bis 3× teurer als Vinyl-Aufkleber. Nichts ausblenden – aber ist Vinyl in gleicher Größe + Menge ≥ 5 % günstiger, gut sichtbar anbieten
+     (ehrlich: anderes Material, Folie weiß glänzend, wasserfest) mit Ein-Klick-Wechsel. Preis kommt vom Server (/print/api/price). */
+  var vinSeq = 0, VIN_FIN = { geen: "no_laminate", single_sided_gloss_lamination: "monomeer_gloss_lamination_oraguard_200", single_sided_matt_lamination: "monomeer_matt_lamination_oraguard_200" };
+  function vinylKick() {
+    S.vinylHint = null; var p = S.prod, my = ++vinSeq, s = S.sel || {}, n = +S.copies || 0;
+    if (!p || p.key !== "aufkleber" || !S.price || !n || (S.mot && S.mot.n > 1) || !prodByKey("sticker-vinyl")) return;
+    if (/transpar/i.test(s.material || "") || String(s.printtype || "40") !== "40" || (s.personalize && s.personalize !== "none") || s.type_glue === "detachable" || !(s.finish in VIN_FIN)) return;
+    var sz = sizeOf(); if (!sz || Math.min(sz.w, sz.h) < 50) return;   // Vinyl ab 50 × 50 mm
+    var sel = { material: "monomeer_white_gloss_orajet_3162", finish: VIN_FIN[s.finish], custom_shape: "clean_cut_stickers", size: "custom", printtype: "40", application_side: "outside", number_of_contour_lines: "no_contour_lines" };
+    api("/print/api/price", { product: "sticker-vinyl", sel: sel, copies: n, custom: { w: String(sz.w), h: String(sz.h) }, urgency: "standard", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }).then(function (j) {
+      if (my !== vinSeq || !j || !j.ok || !S.price || !S.prod || S.prod.key !== "aufkleber") return; var co = S.ctype === "company", cur = co ? S.price.net : S.price.gross, v = co ? j.price.net : j.price.gross;
+      if (!(v > 0) || v > cur * 0.95) return;
+      S.vinylHint = { total: v, cur: cur, w: sz.w, h: sz.h, n: n, sel: sel, date: j.price.deliveryDate || "" }; var b = document.getElementById("psPrice"); if (b) renderPrice();
+    }).catch(function () {});
+  }
+  function vinylHintHtml() { var h = S.vinylHint, co = S.ctype === "company"; if (!h || !S.price || !S.prod || S.prod.key !== "aufkleber" || h.n !== +S.copies) return "";
+    return '<p class="ps-tierhint ps-tiermore ps-vinyl">💧 Günstiger und wasserfest: <b>Vinyl-Aufkleber</b> in gleicher Größe (' + h.w + " × " + h.h + " mm, " + h.n.toLocaleString("de-AT") + " Stk.) kosten nur <b>" + eur(h.total) + "</b> " + (co ? "netto" : "inkl. USt") + " statt " + eur(h.cur) + " – " + eur(h.cur - h.total) + " weniger. " +
+      "Material: Klebefolie weiß glänzend, wasser- und UV-beständig, auf Kontur geschnitten (statt Bogen-Aufkleber aus PP/Papier). " +
+      '<button type="button" class="ps-link" data-act="tovinyl">Zu Vinyl-Aufklebern wechseln</button></p>'; }
+  function tierHintHtml() { return vinylHintHtml() + tierHintCore(); }
+  function tierHintCore() { var h = S.tierHint, sp = S.splitHint, co = S.ctype === "company"; if (!S.price) return "";
     var spH = sp ? '<p class="ps-tierhint">💡 Tipp: <b>' + sp.k + " × " + sp.t.toLocaleString("de-AT") + "\u00a0" + U() + "</b> getrennt bestellt kosten nur <b>" + eur(sp.sum) + "</b> " + (co ? "netto" : "inkl. USt") + " – " + eur(sp.save) + " weniger. " +
       (S.price.freight ? "Grund: Ab dieser Menge wird per Spedition statt per Paketdienst geliefert, das ist deutlich teurer." : "Grund: Bei dieser Menge ist die Produktion bzw. der Versand pro Stück teurer.") +
       ' <button type="button" class="ps-link" data-act="settier:' + sp.t + '">' + sp.t.toLocaleString("de-AT") + "\u00a0" + U() + " übernehmen</button> und " + sp.k + "× in den Warenkorb legen.</p>" : "";
@@ -3424,6 +3445,10 @@
     if (k === "psheet") { openSheet(); return; }
     if (k === "remember") { rememberPop(); return; }
     if (k === "cfglink") { var lk = ""; try { lk = cfgLink(S.prod.key, cfgPack()); } catch (e2) {} if (!lk) return; copyText(lk).then(function () { toast("Link kopiert – damit öffnet jeder genau diese Konfiguration"); }, function () { window.prompt("Link kopieren:", lk); }); return; }
+    if (k === "tovinyl") { var vh = S.vinylHint; if (!vh) return; S.vinylHint = null;
+      pickProduct("sticker-vinyl", function () { Object.keys(vh.sel).forEach(function (s) { if (S.prod.props.some(function (pr) { return pr.slug === s && pr.options.some(function (o) { return o.slug === vh.sel[s]; }); })) S.sel[s] = vh.sel[s]; });
+        S.custom = { w: String(vh.w), h: String(vh.h) }; S.copies = vh.n; S.mot = { n: 1, split: [], files: [], i: 0 }; fixSel(); S.presetBase = Object.assign({}, S.sel); render(); loadPrice(); toast("Vinyl-Aufkleber " + vh.w + " × " + vh.h + " mm, " + vh.n.toLocaleString("de-AT") + " Stk. übernommen"); });
+      return; }
     if (k === "settier") { var tn = +v; if (tn > 0) { S.copies = tn; S.tierHint = null; var qx2 = document.getElementById("psQty"); if (qx2) qx2.value = ""; render(); loadPrice(); toast(tn.toLocaleString("de-AT") + "\u00a0Stück übernommen"); } return; }
     if (k === "xmall") { var xs = t.closest(".xm-sec"); if (xs) xs.classList.add("open"); t.remove(); return; }   // Weihnachtsabteilung (Handy): alle Ideen eines Themas
     if (k === "cwarn") { warnPop(v); return; }
