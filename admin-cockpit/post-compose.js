@@ -305,7 +305,7 @@ function saveDraft(silent){
   C.initial=sigNow();
   var sv=$("mcSaved"); if(sv) sv.textContent="Entwurf gespeichert "+new Date().toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
   if(!silent) F.toast("Als Entwurf gespeichert");
-  M.store.ver++; if(F.current==="post") F.render(); else F.renderNav();
+  M.store.ver++; if(F.current==="post"&&!C.open) F.render(); else F.renderNav();
 }
 function deleteDraft(id){ if(!id) return; saveDrafts(loadDrafts().filter(function(x){ return x.id!==id; })); }
 function saveIfMeaningful(silent){
@@ -313,7 +313,7 @@ function saveIfMeaningful(silent){
   var d=data(), sigLen=htmlToText(getSig(composeAcct()).html).replace(/\s+/g,"").length;
   if(dirty()&&(d.to||d.subject||d.text.replace(/\s+/g,"").length>sigLen+2)) saveDraft(silent);
 }
-function hide(){ clearTimeout(C.autoT); C.open=false; vvFit(); var h=host(); h.hidden=true; h.innerHTML=""; document.body.classList.remove("mc-open"); if(F.current==="post") F.render(); }
+function hide(){ clearTimeout(C.autoT); C.open=false; vvFit(); var h=host(); h.hidden=true; h.innerHTML=""; document.body.classList.remove("mc-open"); if(F.current==="post"||F._mcDeferred){ F._mcDeferred=false; F.render(); } }
 function closeCompose(){ if(!C.open) return; saveIfMeaningful(false); hide(); }
 M.closeCompose=closeCompose;
 M.composeOpen=function(){ return C.open; };
@@ -477,6 +477,9 @@ F.action("compose",function(){ F.compose({}); });
 F.css([
 "#mcompose{z-index:65}",
 "body.mc-open{overflow:hidden}",
+/* Beim Schreiben keine Unschärfe/Brechung hinter dem Fenster: jede Eingabe ließ die Grafik den ganzen Hintergrund neu filtern – das Cockpit fror ein (Simon 26.11.2026) */
+"body.mc-open #mcompose,body.mc-open *:not(#mcompose *){-webkit-backdrop-filter:none!important;backdrop-filter:none!important}",
+"body.mc-open #mcompose{background:rgba(5,7,12,.62)}",
 ".mcd{width:min(880px,100%);position:relative;gap:12px}",
 ".mchead{display:flex;align-items:center;gap:10px;min-width:0}",
 ".mchead h2{font-size:19px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",

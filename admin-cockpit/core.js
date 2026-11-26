@@ -221,6 +221,8 @@ FSC.whenIdle = function(fn,ms){ setTimeout(function(){ if(window.requestIdleCall
 FSC.render = function(){
   if(rsT){ cancelAnimationFrame(rsT); rsT=0; } if(rnT){ cancelAnimationFrame(rnT); rnT=0; }
   FSC.renderNav();
+  /* Mail wird gerade geschrieben: Seite darunter nicht neu aufbauen (Abrufe, Entwurf-Speichern, 3-Min-Abgleich ließen das Cockpit beim Tippen hängen, Simon 26.11.2026) – beim Schließen nachholen */
+  if(document.body.classList.contains("mc-open")&&!FSC._forceRender){ FSC._mcDeferred=true; return; }
   var main=document.getElementById("main");
   if(!FSC.D){ main.innerHTML='<div class="loading">'+(FSC.loadErr?FSC.esc(FSC.loadErr)+' <button class="btn" data-act="reload">Erneut versuchen</button>':'Lade deine Daten …')+'</div>'; return; }
   var v=FSC.views.find(function(x){return x.id===FSC.current;})||FSC.views[0];
