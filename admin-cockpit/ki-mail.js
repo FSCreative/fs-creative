@@ -19,7 +19,7 @@ M.kiBar=function(m){
     '<button type="button" class="btn'+(r.busy==="sum"?" busy":"")+'" data-act="kimsum:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="sum"?"Fasse zusammen …":"Zusammenfassen")+'</button>'+
     (sent?'':'<button type="button" class="btn'+(r.busy==="reply"?" busy":"")+'" data-act="kimreply:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="reply"?"Schreibe Vorschlag …":"Antwort vorschlagen")+'</button>')+
     '<button type="button" class="btn icon" data-act="kimask:'+esc(m.id)+'" title="Im Assistenten zu dieser Mail fragen" aria-label="Assistent fragen">?</button></div>';
-  bar+=offerHtml(m,r,sent);
+  bar+=offerHtml(m,r,sent&&!custMail(m));   /* Formular-Benachrichtigung kommt von der eigenen Adresse (zählt als „gesendet“) */
   var s=r.sum, cc=s&&s.isLead&&M.custOf?M.custOf(m):null, canL=!!(cc&&cc.canLead&&F.actions.mlead);   /* mögliche Anfrage von Unbekannt → als Lead übernehmen */
   if(s) bar+='<div class="kisum"><div class="row-between"><b>Zusammenfassung</b><button type="button" class="link" data-act="kimsumx:'+esc(m.id)+'">Ausblenden</button></div><p>'+esc(s.summary)+'</p>'+
     ((s.points||[]).length?'<ul>'+s.points.map(function(p){ return '<li>'+esc(p)+'</li>'; }).join("")+'</ul>':'')+
