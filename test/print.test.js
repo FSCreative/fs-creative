@@ -1732,6 +1732,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const txt = async b => { const o = path.join(os.tmpdir(), "fsc-cv-" + process.pid + ".pdf"); fs.writeFileSync(o, b); try { return require("child_process").execFileSync("pdftotext", ["-layout", o, "-"]).toString(); } catch (e) { return null; } finally { fs.rmSync(o, { force: true }); } };
     const tx = await txt(r.all); if (tx != null) { const pg = tx.split("\f"); assert.ok(/Seite 8[\s\S]*Seite 1/.test(pg[0]) && /Seite 2[\s\S]*Seite 7/.test(pg[1]) && /Seite 3/.test(pg[2]) && /Seite 6/.test(pg[5]), JSON.stringify(pg.slice(0, 3))); }
     await assert.rejects(PST.coverSpread(Buffer.from(await (async () => { const x = await PDFDocument.create(); for (let i = 0; i < 6; i++) x.addPage([216 * MMP, 303 * MMP]); return x.save(); })()), { w: 210, h: 297, bleed: 3, spine: 3 }), /mindestens 8 Seiten/);
+    // nur Umschlag außen (Bücher laut Vorlage): 1 Bogen N | 1, dann 2 … N−1
+    const r1 = await PST.coverSpread(Buffer.from(await d.save()), { w: 210, h: 297, bleed: 3, spine: 3, spreads: 1 }), a1 = await PDFDocument.load(r1.all);
+    assert.strictEqual(a1.getPageCount(), 7); assert.ok(Math.abs(a1.getPage(0).getWidth() / MMP - 429) < 0.05 && Math.abs(a1.getPage(1).getWidth() / MMP - 216) < 0.05);
+    // Entscheidung je Ausführung laut Print.com-Vorlage (Simon 26.11.2026: „nicht bei allen Zeitschriften“)
+    const tp = (fronts, w, inner) => ({ template: { pages: fronts.map((fw, i) => ({ metadata: { overlayType: "FRONT_PAGE" }, number: i + 1, plano_width: fw, plano_height: 210 })).concat(Array.from({ length: inner }, (_, i) => ({ metadata: { overlayType: "PAGE" }, number: fronts.length + i + 1, plano_width: w, plano_height: 210 }))) } });
+    assert.deepStrictEqual(PST.sheetSpreads(tp([299, 299], 148, 28)), { spreads: 2, total: 30 }, "Klebebindung: Umschlag außen + innen als Bogen");
+    assert.deepStrictEqual(PST.sheetSpreads(tp([213], 105, 30)), { spreads: 1, total: 31 }, "Buch: nur außen");
+    assert.deepStrictEqual(PST.sheetSpreads(tp([148], 148, 31)), { spreads: 0, total: 32 }, "geheftet: Leserichtungs-PDF bleibt");
+    assert.deepStrictEqual(PST.sheetSpreads(tp([52], 52, 1)), { spreads: 0, total: 2 }, "Karten: normal");
+    assert.deepStrictEqual(PST.sheetSpreads(null), { spreads: 0, total: 0 });
   });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }

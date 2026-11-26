@@ -2177,8 +2177,8 @@ module.exports = function (D) {
      beider Seiten den Rücken (Hintergrund läuft durch, keine weiße Kante); breiter: Mitte bleibt weiß (Rückentext müsste eigens gestaltet werden). */
   async function coverSpread(buf, o) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
-    const src = await PDFDocument.load(buf, { updateMetadata: false }), N = src.getPageCount();
-    if (N < 8 || N % 2) throw bad("Für einen Umschlag-Bogen braucht die PDF mindestens 8 Seiten und eine gerade Seitenzahl (hat " + N + ")");
+    const src = await PDFDocument.load(buf, { updateMetadata: false }), N = src.getPageCount(), two = o.spreads !== 1;   // spreads 1 = nur Umschlag außen (z. B. Bücher laut Vorlage)
+    if (N < (two ? 8 : 4) || N % 2) throw bad("Für einen Umschlag-Bogen braucht die PDF mindestens " + (two ? 8 : 4) + " Seiten und eine gerade Seitenzahl (hat " + N + ")");
     const W = o.w * MM_PT, H = o.h * MM_PT, b = (o.bleed == null ? 3 : o.bleed) * MM_PT, S = Math.max(0, +o.spine || 0) * MM_PT;
     const trimOf = sp => { const v = vbox(sp); let t = null; try { const tb = sp.getTrimBox(); if (tb && tb.width > 1 && (Math.abs(tb.width - v.right + v.left) > 0.5 || Math.abs(tb.height - v.top + v.bottom) > 0.5)) t = { x: tb.x, y: tb.y }; } catch (e) {}
       if (!t) t = { x: v.left + (v.right - v.left - W) / 2, y: v.bottom + (v.top - v.bottom - H) / 2 };   // ohne TrimBox: Endformat mittig
@@ -2197,9 +2197,9 @@ module.exports = function (D) {
       pg.setTrimBox(b, b, 2 * W + S, H); pg.setBleedBox(0, 0, PW, PH);
     }
     await spread(N - 1, 0);          // außen: Rückseite links, Titel rechts
-    await spread(1, N - 2);          // innen: innen vorne links, innen hinten rechts
-    const cover = Buffer.from(await out.save());
-    const inner = await PDFDocument.create(); (await inner.copyPages(src, Array.from({ length: N - 4 }, (_, i) => i + 2))).forEach(p => inner.addPage(p));
+    if (two) await spread(1, N - 2); // innen: innen vorne links, innen hinten rechts
+    const cover = Buffer.from(await out.save()), skip = two ? 2 : 1;
+    const inner = await PDFDocument.create(); (await inner.copyPages(src, Array.from({ length: N - 2 * skip }, (_, i) => i + skip))).forEach(p => inner.addPage(p));
     const all = await PDFDocument.load(cover); (await all.copyPages(inner, inner.getPageIndices())).forEach(p => all.addPage(p));
     return { cover, inner: Buffer.from(await inner.save()), all: Buffer.from(await all.save()), pages: N, size: { w: r2(PW / MM_PT), h: r2(PH / MM_PT) } };
   }
@@ -2208,6 +2208,28 @@ module.exports = function (D) {
     try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(o.product.sku) + "/price", { sku: o.product.sku, options: Object.assign({}, o.pcOptions, { copies: o.copies }), deliveryPromise: 0 });
       const v = +((pr && pr.options && pr.options.spinewidth) || (pr && pr.includes && pr.includes.spinewidth)); if (v >= 0 && isFinite(v)) return { mm: v, src: "Print.com" }; } catch (e) { log("Rückenbreite", o.nr, e.message); }
     return null;
+  }
+  /* Übergabe an Print.com (Simon 26.11.2026): braucht diese Ausführung den Umschlag als Bogen? Nicht pauschal je Produkt („nicht bei allen Zeitschriften“),
+     sondern laut Print.com-Druckvorlage (printjobs/templates) mit den Optionen der Preisabfrage (inkl. planoWidth/-Height, spinewidth):
+     führende Seiten mit overlayType FRONT_PAGE, die breiter sind als die Innenseiten = Umschlag-Bögen (Klebebindung 2: außen + innen, Bücher 1: nur außen).
+     Geheftet, Wire-O usw. haben ein schmales FRONT_PAGE → bleibt die Leserichtungs-PDF. Ergebnis je Ausführung 12 h gemerkt. */
+  const SHEET_CACHE = new Map();
+  async function coverPlan(o) {
+    const opt = Object.assign({}, o.pcOptions, { copies: o.copies }), key = o.product.sku + "|" + JSON.stringify(Object.keys(opt).filter(k => k !== "copies" && k !== "urgency").sort().map(k => [k, opt[k]]));
+    const c = SHEET_CACHE.get(key); if (c && Date.now() - c.at < 12 * 3600e3) return c.v;
+    const pr = await pcApi("POST", "/products/" + encodeURIComponent(o.product.sku) + "/price", { sku: o.product.sku, options: opt, deliveryPromise: 0 });
+    const po = Object.assign({}, opt, (pr && pr.options) || {}); delete po.copies; delete po.urgency;
+    const sz = o.size || {}; if (!po.planoWidth && sz.w > 0) Object.assign(po, { planoWidth: String(sz.w), planoHeight: String(sz.h), width: po.width || String(sz.w), height: po.height || String(sz.h) });
+    const sp = +(po.spinewidth != null ? po.spinewidth : pr && pr.includes && pr.includes.spinewidth);
+    const tpl = await pcApi("POST", "/printjobs/templates", { sku: o.product.sku, options: po }, { base: "https://platform.print.com" });
+    const v = Object.assign(sheetSpreads(tpl), { spine: sp >= 0 && isFinite(sp) ? sp : null });
+    SHEET_CACHE.set(key, { at: Date.now(), v }); return v;
+  }
+  function sheetSpreads(tpl) {
+    const pages = (tpl && tpl.template && Array.isArray(tpl.template.pages) ? tpl.template.pages : []).map(p => ({ t: String((p.metadata || {}).overlayType || ""), w: +p.plano_width || 0 }));
+    const body = pages.filter(p => p.t !== "FRONT_PAGE").map(p => p.w), wInner = body.length ? Math.min.apply(null, body) : 0;
+    let spreads = 0; while (spreads < pages.length && pages[spreads].t === "FRONT_PAGE" && wInner > 0 && pages[spreads].w > wInner * 1.5) spreads++;
+    return { spreads: Math.min(spreads, 2), total: pages.length };
   }
   const coverSpreadOk = o => !!o && !!o.product && (String((o.pcOptions || {}).binding || "") === "bounded" || /bounded|hardcover|book/i.test(String(o.product.sku || ""))) && !(Array.isArray(o.motifs) && o.motifs.length > 1);
   // „Rand spiegeln“ ausschalten: wieder die Kunden-PDF (src) ohne Beschnitt – Format-Prüfung neu, übrige Hinweise (Sonderfarben, Schriften …) bleiben
@@ -3297,6 +3319,7 @@ module.exports = function (D) {
     if (o.cover && o.cover.fileId && fm.id === o.fileId) buf = await withCover(buf, o).catch(e => { log("Umschlag zusammenführen", o.nr, e.message); return buf; });
     buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
     buf = await rotateForPrint(buf, fm, o).catch(e => { log("Seiten drehen", o.nr, e.message); return buf; });
+    if (o.pcSheet && o.pcSheet.spreads && fm.id === o.fileId && o.size) buf = await coverSpread(buf, { w: o.size.w, h: o.size.h, bleed: o.bleed == null ? 3 : +o.bleed, spine: o.pcSheet.spine, spreads: o.pcSheet.spreads }).then(r => r.all).catch(e => { log("Umschlag-Bogen", o.nr, e.message); return buf; });
     buf = await FONTFIX.embedStdFonts(buf, { allowNear: (o.fontOk || {})[fm.id] || null }).then(r => { if (r.replaced.length) log("Schriften eingebettet", o.nr, r.replaced.map(x => x.name + " → " + x.with).join(", ")); return r.buf; }).catch(e => { log("Schriften einbetten", o.nr, e.message); return buf; });
     buf = await dropUnusedFonts(buf).catch(e => { log("Schriften bereinigen", o.nr, e.message); return buf; });
     buf = await stripExtrasForPrint(buf).catch(e => { log("Beigaben entfernen", o.nr, e.message); return buf; });
@@ -3384,6 +3407,18 @@ module.exports = function (D) {
     if (!(o.status === "paid" || o.status === "invoice_requested" || (o.status === "problem" && !o.printcom.orderNumber))) throw new Error(o.nr + ": Status „" + (STATUS_DE[o.status] || o.status) + "“ – kann nicht bestellt werden");
     if (redoOpen(o)) throw new Error(o.nr + ": wartet auf neue Druckdaten vom Kunden (Druckdaten abgelehnt)");
     const fm = o.noFile ? null : await store.fileMeta(o.fileId); if (!fm && !o.noFile) throw new Error(o.nr + ": Druckdatei fehlt");
+    // Umschlag als Bogen, wenn die Print.com-Vorlage dieser Ausführung es verlangt (Klebebindung …) – Umwandlung erst beim Ausliefern (pcVariant)
+    if (fm && !o.noFile && +(o.sel || {}).pages > 0 && !(Array.isArray(o.motifs) && o.motifs.length > 1)) {
+      try {
+        const pl = await coverPlan(o), N = +fm.pages || 0;
+        if (pl.spreads && pl.spine != null && N > 0 && pl.total === N - pl.spreads) {
+          o.pcSheet = { spreads: pl.spreads, spine: pl.spine, at: nowIso() };
+          hist(o, "Umschlag als Bogen für Print.com (laut Vorlage): " + (pl.spreads === 2 ? "außen + innen" : "außen") + ", Rücken " + String(pl.spine).replace(".", ",") + " mm");
+          await store.putOrder(o);
+        } else if (pl.spreads) { delete o.pcSheet; hist(o, "Achtung: Print.com-Vorlage will den Umschlag als Bogen, Seitenzahl passt aber nicht (Datei " + N + ", Vorlage " + pl.total + " + " + pl.spreads + ") – Datei unverändert gesendet"); }
+        else delete o.pcSheet;
+      } catch (e) { log("Umschlag-Vorlage", o.nr, e.message); hist(o, "Print.com-Vorlage (Umschlag) nicht abrufbar: " + clip(e.message, 120)); }
+    }
     const c = o.customer, base = cfg().publicUrl;
     let big = !!(fm && fm.bytes > BIG_FILE); if (!big && Array.isArray(o.motifs)) for (const m of o.motifs) { const mm = m.fileId && await store.fileMeta(m.fileId).catch(() => null); if (mm && mm.bytes > BIG_FILE) { big = true; break; } }
     const fbase = big ? "https://" + (process.env.PRINT_FILES_HOST || process.env.RAILWAY_PUBLIC_DOMAIN || "fs-creative-production.up.railway.app") : base;   // RAILWAY_PUBLIC_DOMAIN ist live nicht gesetzt (13.11.2026)
@@ -7469,6 +7504,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { addBleed, coverSpread, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;
