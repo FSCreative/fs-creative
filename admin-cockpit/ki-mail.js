@@ -61,9 +61,10 @@ function offerHtml(m,r,sent){
   if(sent||(r.offerHide&&!r.offer)) return "";
   var o=r.offer, hint=looksPrintMail(m);
   if(!o&&!hint&&r.busy!=="offer") return "";
+  if(!o&&hint&&!r.busy&&!r.autoTried&&!r.err){ r.autoTried=true; setTimeout(function(){ offerRun(m.id,false,true); },0); }   /* Simon 26.11.2026: Vorschlag soll schon da sein – beim Öffnen automatisch erstellen (Server merkt ihn sich) */
   if(!o) return '<div class="mofr"><div class="mofr-h"><div><b>Druckanfrage erkannt</b><span>Antwort mit fertig eingestelltem Shop-Link und Preis vorschlagen</span></div>'+
     '<button type="button" class="btn pri'+(r.busy==="offer"?" busy":"")+'" data-act="kimoffer:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="offer"?"Stelle Ausführung ein …":"Antwort mit Link vorschlagen")+'</button></div></div>';
-  if(!o.items||!o.items.length) return '<div class="mofr"><div class="mofr-h"><div><b>Kein Shop-Produkt erkannt</b><span>'+(o.isPrint?"Für diese Anfrage passt kein Standardprodukt – eher ein eigenes Angebot.":"Die Mail ist keine Druckanfrage für den Shop.")+'</span></div><button type="button" class="link" data-act="kimofferx:'+esc(m.id)+'">Ausblenden</button></div></div>';
+  if(!o.items||!o.items.length) return '<div class="mofr"><div class="mofr-h"><div><b>Kein Shop-Angebot möglich</b><span>'+esc((o.reasons||[]).join(" ")||(o.isPrint?"Für diese Anfrage passt kein Standardprodukt – eher ein eigenes Angebot.":"Die Mail ist keine Druckanfrage für den Shop."))+'</span></div><button type="button" class="link" data-act="kimofferre:'+esc(m.id)+'">Neu versuchen</button><button type="button" class="link" data-act="kimofferx:'+esc(m.id)+'">Ausblenden</button></div></div>';
   return '<div class="mofr"><div class="mofr-h"><div><b>Antwortvorschlag mit Shop-Link</b><span>'+(o.company?"Firma – Preise netto, mit 20 % USt":"Privat – Preise inkl. 20 % USt")+'</span></div><button type="button" class="link" data-act="kimofferx:'+esc(m.id)+'">Ausblenden</button></div>'+
     o.items.map(function(it){ return '<div class="mofr-it"><b>'+esc(it.title)+'</b>'+((it.labels||[]).length?'<span class="mofr-l">'+it.labels.slice(0,6).map(function(l){ return esc(l[0])+": "+esc(l[1]); }).join(" · ")+'</span>':'')+
       it.variants.map(function(v){ return '<div class="mofr-v"><span>'+(v.label?esc(v.label)+' · ':'')+(v.sep>1?v.sep+' × ':'')+String(v.copies).replace(/\B(?=(\d{3})+(?!\d))/g,".")+' Stk.'+(v.motifs>1?' · '+v.motifs+' Motive':'')+(v.sep>1?' je Motiv':'')+'</span><b class="num">'+(o.company?F.eur(v.net)+' netto':F.eur(v.gross))+'</b><a href="'+esc(v.link)+'" target="_blank" rel="noopener">Link öffnen</a></div>'; }).join("")+
@@ -80,12 +81,12 @@ function offerOpen(m,text){
   else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"AW: "+String(m.subject||"").replace(/^((re|aw|wg|fw|fwd)\s*:\s*)+/i,""),text:text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
   F.toast("Antwort mit Shop-Link vorbereitet – prüfen und senden");
 }
-function offerRun(id,again){
+function offerRun(id,again,auto){
   var m=M.find&&M.find(id); if(!m) return;
   var r=MS[id]=MS[id]||{}; if(again) r.offer=null; r.offerHide=false; r.busy="offer"; r.err=""; rr();
   F.api("/admin/api/print/mailsuggest",{body:{mail:mailPayload(m)}}).then(function(j){
     r.busy=""; if(!j||!j.ok){ r.err=(j&&j.error)||"Vorschlag fehlgeschlagen"; rr(); return; }
-    r.offer=j; rr(); if(j.text) offerOpen(m,j.text);
+    r.offer=j; rr(); if(j.text&&!auto) offerOpen(m,j.text);
   }).catch(function(e){ r.busy=""; r.err=e.message; rr(); });
 }
 F.action("kimoffer",function(id){ offerRun(id,false); });

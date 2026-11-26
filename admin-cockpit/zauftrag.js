@@ -137,14 +137,32 @@ function listView(l){
 }
 
 /* ---------- Aufgaben-Dialog ---------- */
-var DR=null;
+var DR=null, OFB=false;
+/* Druckanfrage (Kontaktformular/Druckshop) → Antwortvorschlag mit Shop-Link, vom Server beim Eingang erstellt (t.offer) – Klick öffnet die Antwort-Mail, nichts wird gesendet (Simon 26.11.2026) */
+function th(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,"."); }
+function offerBlock(t){
+  var o=t.offer, re='<button type="button" class="btn sm" data-act="tkoffer:'+esc(t.id)+'"'+(OFB?' disabled':'')+'>'+(OFB?"Erstelle …":o?"Neu erstellen":"Vorschlag erstellen")+'</button>';
+  if(!o) return '<div class="tk-of"><div class="tk-ofh"><b>Antwort mit Shop-Link</b>'+re+'</div><span class="mu">'+(OFB?"Die KI stellt die Ausführung ein …":"Noch kein Vorschlag erstellt.")+'</span></div>';
+  if(!o.ok) return '<div class="tk-of bad"><div class="tk-ofh"><b>Kein Shop-Angebot möglich</b>'+re+'</div><span>'+esc((o.reasons||[]).join(" ")||"Keine Druckanfrage für den Shop erkannt.")+'</span></div>';
+  return '<div class="tk-of"><div class="tk-ofh"><b>Antwort mit Shop-Link</b><span class="mu">'+(o.company?"Firma · netto + 20 % USt":"Privat · inkl. 20 % USt")+'</span></div>'+
+    (o.items||[]).map(function(i){ return '<div class="tk-ofi"><b>'+esc(i.title)+'</b>'+(i.variants||[]).map(function(v){ return '<div class="tk-ofv"><span>'+(v.label?esc(v.label)+' · ':'')+(v.sep>1?v.sep+' × ':'')+th(v.copies)+' Stk.'+(v.motifs>1?' · '+v.motifs+' Motive':'')+'</span><b>'+(o.company?F.eur(v.net)+' netto':F.eur(v.gross))+'</b><a href="'+esc(v.link)+'" target="_blank" rel="noopener">Link</a></div>'; }).join("")+((i.notes||[]).length?'<small class="mu">'+i.notes.map(esc).join(" ")+'</small>':'')+'</div>'; }).join("")+
+    ((o.reasons||[]).length?'<small class="mu">'+o.reasons.map(esc).join(" ")+'</small>':'')+
+    '<div class="tk-ofh"><button type="button" class="btn primary sm" data-act="tkofferuse:'+esc(t.id)+'">Antwort mit Link</button>'+re+'</div></div>';
+}
+F.action("tkoffer",function(id){ OFB=true; var el=document.getElementById("tkOffer"), t0=A().tasks.find(function(x){ return x.id===id; }); if(el&&t0) el.innerHTML=offerBlock(t0);
+  F.api("/admin/api/auftraege/offer",{body:{id:id}}).then(function(j){ OFB=false; var t=A().tasks.find(function(x){ return x.id===id; }); if(j&&j.ok&&t){ t.offer=j.offer; if(DR&&DR.id===id) DR.offer=j.offer; } else F.toast((j&&j.error)||"Vorschlag fehlgeschlagen",true); var e2=document.getElementById("tkOffer"); if(e2&&t) e2.innerHTML=offerBlock(t); }).catch(function(e){ OFB=false; F.toast(e.message,true); }); });
+F.action("tkofferuse",function(id){ var t=A().tasks.find(function(x){ return x.id===id; }), o=t&&t.offer, s=(t&&t.offerSrc)||{}; if(!o||!o.text) return;
+  var to=s.email||((String(t.notes||"").match(/[^\s·<>@]+@[^\s·<>@]+\.[a-z]{2,}/i)||[""])[0]);
+  F.closeModal(); F.compose({title:"Antworten",to:to,subject:"AW: Ihre Anfrage"+(s.topic?" – "+s.topic:""),text:o.text}); F.toast("Antwort mit Shop-Link vorbereitet – prüfen und senden"); });
+F.css(".tk-of{border:1px solid color-mix(in srgb,var(--glow) 35%,var(--line));border-radius:12px;padding:10px 12px;display:grid;gap:6px;background:var(--sunk);font-size:13.5px;margin-bottom:10px;min-width:0;overflow-wrap:anywhere}.tk-of.bad{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}"+
+  ".tk-ofh{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}.tk-ofi{display:grid;gap:3px;border-top:1px solid var(--line);padding-top:6px}.tk-ofv{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}.tk-ofv b{font-weight:600}");
 function openTask(id,status,pre){
   var t=id?A().tasks.find(function(x){ return x.id===id; }):null; if(id&&!t){ F.toast("Aufgabe nicht gefunden",true); return; }
   DR=t?JSON.parse(JSON.stringify(t)):Object.assign({id:"",title:"",projectId:UI.tkProj||"",status:status||"offen",prio:"normal",due:"",notes:"",checklist:[],comments:[]},pre||{});
   var P0=proj(DR.projectId), lead0=(DR.leadId&&leads().find(function(l){ return l.id===DR.leadId; }))||(P0&&leadOf(P0));
   var projs=A().projects.filter(function(p){ return p.status!=="abgeschlossen"||p.id===DR.projectId; });
   F.modal('<form class="tk-dlg" data-form="tksave"><div class="tk-dh"><h2>'+(t?"Aufgabe bearbeiten":"Neue Aufgabe")+'</h2>'+F.btnClose()+'</div>'+
-    (t&&t.print?printBlock(t):'')+
+    (t&&t.print?printBlock(t):'')+(t&&!t.print&&(t.offer||t.offerSrc||/^Anfrage:/.test(t.title||""))?'<div id="tkOffer">'+offerBlock(t)+'</div>':'')+
     '<label class="fl">Titel<input class="f" name="title" required maxlength="200" value="'+esc(DR.title)+'"'+(t?"":" autofocus")+' placeholder="z. B. Startseite Entwurf an Kunden schicken"></label>'+
     '<div class="tk-g3"><label class="fl">Auftrag<select class="f" name="projectId"><option value="">— ohne Auftrag —</option>'+projs.map(function(p){ return '<option value="'+esc(p.id)+'"'+(DR.projectId===p.id?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select></label>'+
     (DR.print?'<div class="fl">Status<input type="hidden" name="status" value="'+esc(DR.status)+'"><span class="tk-ro">'+esc((COLS.find(function(c){ return c[0]===DR.status; })||[,""])[1])+' <small class="mu">(von der Druck-Seite)</small></span></div>':

@@ -5229,6 +5229,13 @@ async function handleAdmin(req, res, u, p) {
     try { const d = await railwayCosts(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify({ configured: true, error: String(e.message || e).slice(0, 200), projects: {} }), TYPES[".json"]); }
   }
+  if (p === "/admin/api/auftraege/offer" && req.method === "POST") {   // Antwortvorschlag mit Shop-Link für einen Auftrag (neu) erstellen
+    let body = ""; req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on("end", async () => { let b = {}; try { b = JSON.parse(body || "{}"); } catch (e) {}
+      try { const o = await taskOffer(String(b.id || "")); send(res, 200, JSON.stringify({ ok: true, offer: o }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+      catch (e) { send(res, 400, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"], { "Cache-Control": "no-store" }); } });
+    return;
+  }
   if (p === "/admin/api/auftraege") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     if (req.method === "GET") return J(200, Object.assign({ ok: true }, auftraegeView(readAuftraege())));
@@ -5444,6 +5451,22 @@ function makeLead(d) {
     topic: LEAD_TOPICS.indexOf(d.topic) >= 0 ? d.topic : "Etwas anderes", entwurf: !!d.entwurf, message: clip(d.message, 5000), source: clip(d.source, 200) };
 }
 // Speichert den Lead (leads.json), legt ein To-Do an; notify (Standard): Push „lead“ + Mail an LEAD_TO
+const TASK_PRINT_RX = /flyer|folder|visitenkarte|plakat|poster|banner|roll-?up|aufkleber|sticker|etikett|gutschein|einladung|brosch|katalog|kalender|magazin|speisekarte|briefpapier|kuvert|shirt|pullover|hoodie|textil|\bstk\b|stück|auflage|g\/m|grammatur/i;
+// Antwortvorschlag mit Shop-Link für einen Auftrag (Anfrage aus Kontaktformular/Druckshop): gleiche Logik wie im Postfach (print-shop.js mailSuggest),
+// Ergebnis am Auftrag (offer) – inkl. Grund, wenn nichts erkannt wurde. Gesendet wird nie automatisch.
+async function taskOffer(id, src) {
+  if (!PRINT || !PRINT.mailSuggest) return null;
+  const A0 = readAuftraege(), t0 = A0.tasks.find(x => x.id === id); if (!t0) throw new Error("Auftrag nicht gefunden");
+  const s = src || t0.offerSrc || { email: (String(t0.notes || "").match(/[^\s·<>@]+@[^\s·<>@]+\.[a-z]{2,}/i) || [""])[0], name: "", topic: "", message: String(t0.notes || "") };
+  let offer;
+  try { const r = await PRINT.mailSuggest({ from: s.email || "", fromName: s.name || "", subject: "Anfrage" + (s.topic ? " " + s.topic : ""), text: [s.company ? "Firma: " + s.company : "", s.message || ""].filter(Boolean).join("\n") });
+    offer = { at: Date.now(), ok: !!r.text, text: r.text || "", company: !!r.company, items: (r.items || []).map(i => ({ title: i.title, variants: (i.variants || []).map(v => ({ label: v.label || "", copies: v.copies, net: v.net, gross: v.gross, link: v.link, motifs: v.motifs || 0, sep: v.sep || 0 })), notes: i.notes || [] })), reasons: r.reasons || [], missing: r.missing || [] }; }
+  catch (e) { offer = { at: Date.now(), ok: false, text: "", items: [], reasons: [e.message] }; }
+  const A = readAuftraege(), t = A.tasks.find(x => x.id === id); if (!t) return offer;
+  t.offer = offer; t.offerSrc = { email: s.email || "", name: s.name || "", topic: s.topic || "", company: s.company || "", message: String(s.message || "").slice(0, 6000) }; t.updated = Date.now(); writeAuftraege(A);
+  try { COCKPIT_MEMO.stale(); } catch (e) {}
+  return offer;
+}
 async function saveLead(lead, opt) {
   const notify = !opt || opt.notify !== false;
   // Simon 26.11.2026: „Anfragen sollen nur zu den Aufträgen kommen und nicht zu den Leads“ – Formular/Chat-KI legen nur die Aufgabe an;
@@ -5458,6 +5481,8 @@ async function saveLead(lead, opt) {
   try { const tk = addTask(Object.assign({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(),
     notes: tkClip([lead.name, lead.company, lead.email, lead.phone, lead.source].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }, asLead ? { leadId: lead.id } : {}));
     taskId = tk.id; if (!asLead) stored = true; } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
+  // Druckanfrage (Thema Druck bzw. klingt nach Drucksachen) → Antwortvorschlag mit Shop-Link gleich beim Eingang erstellen und am Auftrag speichern (Simon 26.11.2026)
+  if (taskId && (/druck|print/i.test(String(lead.topic || "")) || TASK_PRINT_RX.test(String(lead.message || "")))) taskOffer(taskId, { email: lead.email, name: lead.name, company: lead.company, topic: lead.topic, message: lead.message }).catch(e => console.error("Anfrage → Angebotsvorschlag:", e.message));
   if (!notify) return { stored, mailed: false, taskId };
   if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Anfrage: " + (lead.company || lead.name), body: [lead.topic, lead.company && lead.company !== lead.name ? lead.name : "", lead.entwurf ? "Gratis-Entwurf" : ""].filter(Boolean).join(" · ") + "\n" + String(lead.message || "").replace(/\s+/g, " ").slice(0, 140), url: asLead ? "/admin#kunden/lead:" + encodeURIComponent(lead.id) : "/admin#auftraege", tag: "lead-" + lead.id }).catch(() => {});   // Deep-Link: Kundenakte bzw. Aufträge (core.js openHash)
   let mailed = false;
