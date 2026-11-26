@@ -4245,7 +4245,8 @@ module.exports = function (D) {
     if (lamVals.some(v => rx.test(v))) return null;
     const mattLam = lamVals.some(v => /matt|soft_?touch/i.test(v) && !/gloss|gl(ä|a)nz/i.test(v)); if (lamVals.length && !mattLam) return null;   // glänzende Folie schützt schon
     const pr = (prod.props || []).find(p => /finish|lamin/i.test(p.slug) && !/spot/i.test(p.slug) && p.options.some(o => rx.test(o.slug + " " + o.name))); if (!pr) return null;
-    return { prop: pr.slug, opts: pr.options.filter(o => rx.test(o.slug + " " + o.name)),
+    const two = /^(44|4\/4)$|beidseit|double/i.test(String(sel.printtype || "") + " " + val("printtype")), sideRank = o => (/double|beidseit|zweiseit/i.test(o.slug + " " + o.name) ? 0 : 1) * (two ? 1 : -1);   // beidseitig bedruckt → beidseitig kratzfest zuerst
+    return { prop: pr.slug, opts: pr.options.filter(o => rx.test(o.slug + " " + o.name)).sort((a, b) => sideRank(a) - sideRank(b)),
       why: (mattLam ? "Mattes Papier mit normaler matter Folie ist empfindlich" : hasCov ? "Der Umschlag aus mattem Papier ist ohne Folienkaschierung empfindlich" : "Mattes Papier ohne Folienkaschierung ist empfindlich") + " – es kann zu Kratzern und Abrieb kommen." };
   }
   const VIN_FIN = { geen: "no_laminate", single_sided_gloss_lamination: "monomeer_gloss_lamination_oraguard_200", single_sided_matt_lamination: "monomeer_matt_lamination_oraguard_200" };

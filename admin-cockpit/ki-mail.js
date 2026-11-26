@@ -53,7 +53,8 @@ F.action("kimreply",function(id){
 var PR_PROD=/flyer|folder|visitenkarte|plakat|poster|banner|roll-?up|aufkleber|sticker|pickerl|etikett|postkarte|einladung|brosch|katalog|kalender|magazin|speisekarte|men[üu]karte|briefpapier|kuvert|notizbl|block|schild|forex|dibond|leinwand|beachflag|fahne|kundenstopper|aufsteller|klappkarte|gutschein|eintrittskarte|tischaufsteller|türhänger|lesezeichen|geschenkband|bierdeckel|untersetzer/i;
 var PR_ASK=/anfrage|angebot|preis|kosten|kostet|bräucht|brauch|benötig|bestell|druck|stk\b|stück|auflage|wie viel|wieviel|möglich/i;
 function looksPrintMail(m){
-  if(!m||/@fs-creative\.at$/i.test(String(m.from||""))) return false;
+  if(!m) return false;
+  if(/@fs-creative\.at$/i.test(String(m.from||""))&&!(m.replyTo&&!/@fs-creative\.at/i.test(String(m.replyTo)))) return false;   /* eigene Mails nicht – außer Formular-Benachrichtigungen („Neue Anfrage …“ mit Antwort-an Kunde) */
   var t=String(m.subject||"")+"\n"+String(m.body||m.preview||"").replace(/<[^>]*>/g," ").slice(0,5000);
   return PR_PROD.test(t)&&PR_ASK.test(t);
 }
