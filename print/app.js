@@ -2819,7 +2819,7 @@
       var warns = [], okNotes = [], edgeFree = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
         // Randanalyse: Pixel zwischen Endformat und Sicherheitslinie, die deutlich vom typischen Randton abweichen
-        if (!shapeNow()) try { var wc = document.createElement("canvas"); wc.width = W; wc.height = H; var wx = wc.getContext("2d"); wx.fillStyle = "#fff"; wx.fillRect(0, 0, W, H); wx.drawImage(cv, 0, 0); var data = wx.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        if (!shapeNow()) try { var wc = document.createElement("canvas"); wc.width = W; wc.height = H; var wx = wc.getContext("2d"); wx.fillStyle = "#fff"; wx.fillRect(0, 0, W, H); wx.drawImage(cv, 0, 0); var data = wx.getImageData(0, 0, W, H).data, lab = res.length > 1 ? pgLabel(idx, res.length) + ": " : "";
           var px = function (xx, yy) { var o = (yy * W + xx) * 4; return [data[o], data[o + 1], data[o + 2]]; };
           var dist = function (a, b2) { return Math.abs(a[0] - b2[0]) + Math.abs(a[1] - b2[1]) + Math.abs(a[2] - b2[2]); };
           var b0 = Math.ceil(bp) + 1, s0 = Math.floor(sp) - 1, hit = 0, sideNames = [];
@@ -2864,7 +2864,7 @@
             for (ii = 0; ii < H; ii += 3) for (dd = 0; dd < ring; dd++) { tt += 2; if (!wht(px(dd, ii))) nw++; if (!wht(px(W - 1 - dd, ii))) nw++; }
             if (tt && nw / tt < 0.005) edgeFree.push(idx); }
         } catch (e) {}
-        var dp = r.deep || {}, lab2 = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        var dp = r.deep || {}, lab2 = res.length > 1 ? pgLabel(idx, res.length) + ": " : "";   // mehrseitig: „Seite 3“ statt „Rückseite“ (Simon 26.11.2026)
         if (f.original === "jpg" || f.original === "png" || (f.checks || []).some(function (c) { return /Auflösung|dpi/.test(c.text || ""); })) dp.imgs = null;   // Auflösung steht schon in der Server-Prüfung – nicht doppelt/widersprüchlich
         if (dp.imgs && dp.imgs.length) { var lo = Math.min.apply(null, dp.imgs), D0 = +S.prod.dpi || 300, fq = D0 / 300;   // gleiche Grenzen wie die Prüfung am Server: Großformat (Banner, D0 100 dpi) braucht weniger Auflösung – wird aus der Ferne betrachtet
           if (lo < Math.round(150 * fq)) warns.push("!" + lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen " + D0 + " dpi).");
@@ -2883,7 +2883,7 @@
             fo.y.forEach(function (fy) { var Y = bp + fy * pxmm; x.beginPath(); x.moveTo(0, Y); x.lineTo(W, Y); x.stroke(); });
             foldTags(x, fo, trim, idx % 2, pxmm, bp, Math.max(11, Math.round(W / 70))); }
           x.restore(); }
-        var sn = S.price && S.price.folds ? (idx ? "Innenseite" : "Außenseite") : (idx ? "Rückseite" : "Vorderseite");
+        var sn = res.length > 2 || pagesNeeded() ? pgLabel(idx, res.length) : S.price && S.price.folds ? (idx ? "Innenseite" : "Außenseite") : (idx ? "Rückseite" : "Vorderseite");
         return '<figure><img src="' + cv.toDataURL("image/png") + '" alt="Vorschau ' + sn + '"><figcaption>' + (res.length > 1 ? sn : "Seite 1") + (r.b ? "" : " · ohne Beschnitt") + "</figcaption></figure>"; });
       var html = '<div class="ps-pfv-g">' + out.join("") + "</div>", wh = warns.length ? '<ul class="ps-checks">' + warns.map(function (w) { return '<li class="' + (w[0] === "!" ? "error" : "warn") + '">' + esc(w.replace(/^!/, "")) + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li class="ok">Randanalyse: keine Inhalte zu nah am Rand gefunden.</li></ul>';
       if (res.length && edgeFree.length === res.length && res.every(function (r) { return !(r.b > 0); }) && (f.checks || []).some(function (c) { return /keinen Beschnitt|ohne Beschnitt/.test(c.text || ""); })) {
@@ -2919,12 +2919,19 @@
     var np = +f.pages || 1, pg = adjPg(f), pl = f.place ? pagePl(f.place, pg) : null, mode = pl ? pl.mode : "", rot = pl ? (((+pl.rotate || 0) % 360) + 360) % 360 : 0, sc = Math.round(((pl && pl.scale) || 1) * 100), gaps = !!pl && (mode === "fit" || sc < 100);
     var canReset = S.adjOrig && S.adjOrig.src === f.src && S.adjOrig.file.fileId !== f.fileId;
     var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
-    var now = !pl ? "deine Datei, unverändert" : (mode === "fit" ? "ganz sichtbar" : "randlos gefüllt") + (sc !== 100 ? " · " + sc + " %" : "") + (rot ? " · " + rot + "° gedreht" : "") + (gaps ? (pl.bg === "white" ? " · freie Flächen weiß" : " · freie Flächen mit Randfarben gefüllt") : "");
+    var now = !pl ? "deine Datei, unverändert" : (mode === "auto" ? "alle Seiten eingepasst" : mode === "fit" ? "ganz sichtbar" : "randlos gefüllt") + (sc !== 100 ? " · " + sc + " %" : "") + (rot ? " · " + rot + "° gedreht" : "") + (gaps ? (pl.bg === "white" ? " · freie Flächen weiß" : " · freie Flächen mit Randfarben gefüllt") : "");
     // Am Handy zugeklappt (Simon 17.11.2026: zu viele Knöpfe für Laien) – ein Tipp öffnet „Anpassen“
     var narrow = false; try { narrow = window.matchMedia("(max-width: 760px)").matches; } catch (e) {}
     if (narrow && !S.adjOpen && !S.fixByUs) return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><button type="button" class="ps-btn small" data-act="adjopen" style="width:100%;justify-content:space-between;display:flex"><span><b>' + (hot ? "Format selbst anpassen" : "Anpassen") + "</b> · " + esc(now) + "</span><span aria-hidden=\"true\">▾</span></button></div>";
     if (narrow && S.fixByUs && !S.adjOpen) return "";
-    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht – so passt du es an:" : "Anpassen") + '</b>' + (np > 1 ? '<div class="row" role="group" aria-label="Gilt für"><span class="pd-muted small">Gilt für:</span>' + [0].concat(Array.from({ length: np }, function (_, k) { return k + 1; })).map(function (n) { return '<button type="button" class="ps-btn small' + (pg === n ? " on" : "") + '" data-act="adjpg:' + n + '" aria-pressed="' + (pg === n) + '">' + (n ? "Seite " + n : "Alle Seiten") + "</button>"; }).join("") + "</div>" : "") + '<p class="pd-muted small">Jetzt' + (np > 1 ? (pg ? " (Seite " + pg + ")" : " (alle Seiten)") : "") + ': ' + esc(now) + '</p><div class="row">' +
+    /* Mehrseitige Dateien (Broschüren, Kalender, Blöcke …): ein Klick passt alle Seiten ans Format an (Simon 26.11.2026) – je Seite: fast gleiches
+       Seitenverhältnis → aufs Format inkl. Beschnitt füllen, sonst ganz einpassen mit weißem Rand. Seitenwahl ab 9 Seiten als Auswahlliste statt Knopfreihe. */
+    var multi = np > 2 || (np > 1 && !!pagesNeeded()), auto = '';
+    if (multi) auto = '<div class="ps-adj-all' + (hot ? " hot" : "") + '"><button type="button" class="ps-btn' + (mode === "auto" ? " on" : " primary") + '" data-act="adj:auto" aria-pressed="' + (mode === "auto") + '">' + (mode === "auto" ? "✓ Alle " + np + " Seiten eingepasst" : "Alle " + np + " Seiten einpassen") + '</button>' +
+      '<p class="pd-muted small">Für Dateien, die etwas größer oder kleiner sind als das Format (z. B. A5, US-Letter oder 230 × 320 mm statt A4): Jede Seite wird proportional angepasst – passt das Seitenverhältnis fast, füllt sie das Format bis in den Beschnitt (am Rand werden ca. ' + String(S.prod.bleed || 3).replace(".", ",") + ' mm abgeschnitten), sonst wird sie ganz eingepasst und der Rest bleibt weiß. Texte am Rand bitte in der Vorschau kontrollieren.' + (canReset ? " Mit „Zurücksetzen“ kommst du zu deiner Datei 1:1 zurück." : "") + "</p></div>";
+    var pgSel = np > 1 ? '<div class="row" role="group" aria-label="Gilt für"><span class="pd-muted small">Gilt für:</span>' + (np > 8 ? '<select class="ps-adj-pg" data-adjpg aria-label="Seite wählen">' + [0].concat(Array.from({ length: np }, function (_, k) { return k + 1; })).map(function (n) { return '<option value="' + n + '"' + (pg === n ? " selected" : "") + ">" + (n ? "Seite " + n : "Alle Seiten") + "</option>"; }).join("") + "</select>"
+      : [0].concat(Array.from({ length: np }, function (_, k) { return k + 1; })).map(function (n) { return '<button type="button" class="ps-btn small' + (pg === n ? " on" : "") + '" data-act="adjpg:' + n + '" aria-pressed="' + (pg === n) + '">' + (n ? "Seite " + n : "Alle Seiten") + "</button>"; }).join("")) + "</div>" : "";
+    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht – so passt du es an:" : "Anpassen") + '</b>' + auto + pgSel + '<p class="pd-muted small">Jetzt' + (np > 1 ? (pg ? " (Seite " + pg + ")" : " (alle Seiten)") : "") + ': ' + esc(now) + '</p><div class="row">' +
       b("fill", "Randlos füllen", mode === "fill", "Füllt das ganze Format bis in den Beschnitt – was übersteht, wird abgeschnitten") + b("fit", "Ganz zeigen", mode === "fit", "Das ganze Motiv bleibt sichtbar – freie Flächen werden mit den Randfarben gefüllt (oder weiß)") + '<span class="sep" aria-hidden="true"></span>' +
       b("rl", "↺", null, "Um 90° nach links drehen") + b("rr", "↻", null, "Um 90° nach rechts drehen") + "</div>" +
       '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (canReset ? b("reset", '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Zurücksetzen', null, "Zurück zu deiner Datei vor dem Anpassen") : "") + "</div>" +
@@ -2935,8 +2942,8 @@
     var f = S.file; if (!f || !f.adj || S.adjBusy) return; var pg = adjPg(f), pl = Object.assign({ mode: "fill", rotate: 0, scale: 1 }, pagePl(f.place, pg), ch);
     if (!S.adjOrig || S.adjOrig.src !== f.src) S.adjOrig = { src: f.src, file: f };   // Stand vor dem ersten Anpassen – für „Zurücksetzen“
     S.adjBusy = true; var box = document.getElementById("psAdj"); if (box) box.classList.add("busy");
-    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale, bg: pl.bg === "white" ? "white" : "mirror", page: pg || undefined }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
-      S.file = j; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast(j.blocked ? "Angepasst – bitte die Hinweise prüfen" : "Angepasst ✓"); }).catch(function () { S.adjBusy = false; toast("Keine Verbindung", true); render(); });
+    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale, bg: pl.bg === "white" ? "white" : "mirror", page: ch.fresh ? undefined : pg || undefined, fresh: ch.fresh || undefined }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
+      S.file = j; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast(j.blocked ? "Angepasst – bitte die Hinweise prüfen" : ch.fresh ? "Alle " + (+j.pages || "") + " Seiten eingepasst ✓ – bitte die Vorschau kontrollieren" : "Angepasst ✓"); }).catch(function () { S.adjBusy = false; toast("Keine Verbindung", true); render(); });
   }
   // ── Druck auf dem Produkt: Produktfoto mit Motiv/Logo in der Druckfläche (Textil, Werbeartikel, Taschen) bzw. Blatt-Vorschau (Papier) ──
   var PMK = {};
@@ -3421,6 +3428,7 @@
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
     if (k === "adjpg") { S.adjPg = +v || 0; render(); return; }
     if (k === "adj" && S.file) { var pl0 = pagePl(S.file.place, adjPg(S.file));
+      if (v === "auto") { S.adjPg = 0; adjApply({ mode: "auto", scale: 1, rotate: pl0.rotate || 0, bg: "white", fresh: true }); return; }   // „Alle Seiten einpassen“ (Simon 26.11.2026)
       if (v === "reset") { if (S.adjOrig && S.adjOrig.src === S.file.src) { S.file = S.adjOrig.file; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast("Zurückgesetzt – deine Datei wie vor dem Anpassen"); } else adjApply({ mode: "fill", scale: 1, rotate: 0, bg: "mirror" }); return; }
       adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : { rotate: (pl0.rotate || 0) + 90 }); return; }
     if (k === "nobleed" && S.file) { var f1 = S.file; t.disabled = true; t.textContent = "Wird ausgeschaltet …";
@@ -3504,6 +3512,7 @@
     if (t.matches("select[data-prop]")) { setProp(t.getAttribute("data-prop"), t.value); return; }
     if (t.matches("select[data-cartq]")) { var cx = S.cart.filter(function (x) { return x.id === t.getAttribute("data-cartq"); })[0]; if (!cx) return; cx.copies = +t.value; cx.n = +t.value; cx.price = null; S.cartErr = {}; cartSave(); requoteCart(); render(); return; }
     if (t.matches("select[data-copies]")) { S.copies = +t.value; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
+    if (t.matches("select[data-adjpg]")) { S.adjPg = +t.value || 0; render(); return; }   // Anpassen: Seite wählen (mehrseitige Dateien)
     if (t.matches("select[data-urgency]")) { S.urgency = t.value; S.dday = ""; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
     if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }

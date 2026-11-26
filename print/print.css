@@ -1452,6 +1452,10 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 .ps-adj.busy{opacity:.55;pointer-events:none}
 .ps-adj .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .ps-adj .sep{width:1px;height:22px;background:var(--ps-line2);margin:0 2px}
+.ps-adj-all{display:grid;gap:6px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ps-accent,#2870ed) 7%,transparent);border:1px solid color-mix(in srgb,var(--ps-accent,#2870ed) 25%,transparent)}
+.ps-adj-all .ps-btn{justify-self:start;font-weight:700}
+.ps-adj-all p{margin:0}
+.ps-adj-pg{min-height:34px;border-radius:10px;padding:4px 8px;border:1px solid var(--ps-line2);background:var(--ps-card);color:inherit;font:inherit}
 .ps-adj .ps-btn.on{background:var(--ps-chipon);color:var(--ps-chipon-t);border-color:var(--ps-focus)}
 .ps-adj-s{display:flex;align-items:center;gap:10px;flex:1;min-width:220px}
 .ps-adj-s input{flex:1;accent-color:currentColor}

@@ -349,6 +349,20 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(p2.j.place.pages && p2.j.place.pages["2"] && p2.j.place.pages["2"].scale === 0.8 && (p2.j.place.scale || 1) === 1 && !p2.j.place.pages["1"], JSON.stringify(p2.j.place));
     assert.ok(p2.j.checks.some(c => /Seite 2/.test(c.text)), JSON.stringify(p2.j.checks));
     const pAll = await post("/print/api/file/fit", { fileId: p2.j.fileId, token: p2.j.token, mode: "fill", rotate: 0, scale: 0.9 }); assert.ok(pAll.j.place && !pAll.j.place.pages && pAll.j.place.scale === 0.9, JSON.stringify(pAll.j.place));
+    // „Alle Seiten einpassen“ (Simon 26.11.2026): je Seite fast gleiches Seitenverhältnis → füllen, stark abweichend → einpassen mit Weiß; alle Seiten, Schrift bleibt Vektor
+    for (const [w, h, want] of [[100, 67, "gefüllt"], [97, 65, "gefüllt"], [85, 85, "ganz eingepasst"], [60, 40, "gefüllt"]]) {
+      const up = await upload(await pdfOf(w, h, 2), "abw.pdf", BC); assert.strictEqual(up.status, 200, JSON.stringify(up.j)); assert.strictEqual(up.j.adj, true);
+      const au = await post("/print/api/file/fit", { fileId: up.j.fileId, token: up.j.token, mode: "auto", rotate: 0, scale: 1, bg: "white", page: 2, fresh: true }); assert.strictEqual(au.status, 200, JSON.stringify(au.j));
+      assert.ok(au.j.place.mode === "auto" && !au.j.place.pages, JSON.stringify(au.j.place));
+      assert.ok(au.j.checks.some(c => c.level === "ok" && /alle Seiten eingepasst/.test(c.text) && new RegExp("2 Seiten [^,–]*" + want).test(c.text)), w + "×" + h + ": " + JSON.stringify(au.j.checks));
+      assert.ok(!au.j.checks.some(c => /passt nicht zum gewählten Format|gebraucht werden/.test(c.text)), "Format-Hinweis weg: " + JSON.stringify(au.j.checks));
+      const doc = await require("pdf-lib").PDFDocument.load(Buffer.from(await (await fetch(B + "/print/api/file/" + au.j.fileId + "?t=" + au.j.token + "&pdf=1")).arrayBuffer()));
+      assert.strictEqual(doc.getPageCount(), 2);
+      for (const pg of doc.getPages()) { const s = pg.getSize(), tb = pg.getTrimBox(), bb = pg.getBleedBox(); assert.deepStrictEqual([mm(s.width), mm(s.height)], [91, 61]); assert.deepStrictEqual([mm(tb.x), mm(tb.y), mm(tb.width), mm(tb.height)], [3, 3, 85, 55]); assert.deepStrictEqual([mm(bb.width), mm(bb.height)], [91, 61]); }
+      const raw = Buffer.from(await doc.save({ useObjectStreams: false })).toString("latin1"); assert.ok(/\/Font/.test(raw), "Schrift erhalten (nicht gerastert)");
+      // danach Größe ändern: bleibt „auto“ (je Seite), Skalierung wird übernommen
+      const sc = await post("/print/api/file/fit", { fileId: au.j.fileId, token: au.j.token, mode: "auto", rotate: 0, scale: 0.9 }); assert.ok(sc.j.place.mode === "auto" && sc.j.place.scale === 0.9, JSON.stringify(sc.j.place));
+    }
     const txt = await upload(Buffer.from("hallo welt ".repeat(30)), "x.txt", BC); assert.strictEqual(txt.status, 415);
   });
   await t("Warenkorb-Link: neuer Link bzw. alte Links (Kurzlink, ID) mit neuem Stand überschreiben", async () => {
