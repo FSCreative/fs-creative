@@ -78,7 +78,7 @@ function pasteClean(html){
   return sanitize(out.innerHTML);
 }
 M.pasteClean=pasteClean;
-function textToHtml(t){ return esc(String(t||"")).replace(/\r?\n/g,"<br>"); }
+function textToHtml(t){ return esc(String(t||"")).replace(/\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)]/g,function(u){ return '<a href="'+u+'">'+u+'</a>'; }).replace(/\r?\n/g,"<br>"); }   /* URLs als klickbare Links (Simon 26.11.2026: „Links auch als Links“) */
 function htmlToText(html){ try{ var d=new DOMParser().parseFromString('<body>'+String(html||"").replace(/<br\s*\/?>/gi,"\n").replace(/<\/(p|div|li|tr|h\d|blockquote)>/gi,"$&\n")+'</body>',"text/html"); return (d.body.textContent||"").replace(/\n{3,}/g,"\n\n").trim(); }catch(e){ return String(html||"").replace(/<[^>]+>/g," "); } }
 M.htmlToText=htmlToText;
 

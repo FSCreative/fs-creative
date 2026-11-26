@@ -105,7 +105,7 @@ function threadHead(c){
 function msgsHtml(){
   var vs=(TH.conv&&TH.conv.vSeen)||0, out=(TH.msgs||[]).map(function(m){ var cls=["v","me","ki","sys"].indexOf(m.from)>-1?m.from:"sys";
     var fl=m.file&&cls!=="sys";
-    return '<div class="ch-m '+cls+(fl?" file":"")+'">'+(cls==="ki"?'<span class="ki-t">KI</span><br>':'')+(fl?fileHtml(m.file):esc(m.text))+(cls!=="sys"?'<small>'+esc(fmtT(m.at))+(cls==="me"?' · <span class="ch-rd'+(m.id<=vs?" ok":"")+'">'+(m.id<=vs?"✓✓ Gelesen":"✓ Zugestellt")+'</span>':'')+'</small>':'')+'</div>'; }).join("");
+    return '<div class="ch-m '+cls+(fl?" file":"")+'">'+(cls==="ki"?'<span class="ki-t">KI</span><br>':'')+(fl?fileHtml(m.file):esc(m.text).replace(/\bhttps:\/\/(www\.)?fs-creative\.at\/[^\s<>"]*[^\s<>".,;:!?)]/g,function(u){ return '<a href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'; }))+(cls!=="sys"?'<small>'+esc(fmtT(m.at))+(cls==="me"?' · <span class="ch-rd'+(m.id<=vs?" ok":"")+'">'+(m.id<=vs?"✓✓ Gelesen":"✓ Zugestellt")+'</span>':'')+'</small>':'')+'</div>'; }).join("");
   if(TH.conv&&TH.conv.typing) out+='<div class="ch-ty">KI schreibt …</div>';
   return out||'<div class="ch-m sys">Noch keine Nachrichten.</div>';
 }

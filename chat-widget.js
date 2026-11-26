@@ -17,6 +17,8 @@ function api(path,body){
   return fetch(path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",cache:"no-store"}:{credentials:"same-origin",cache:"no-store"})
     .then(function(r){ return r.json().catch(function(){ return {ok:false,error:"HTTP "+r.status}; }); });
 }
+/* Links auf fs-creative.at in KI-/Simon-Nachrichten klickbar (fertig eingestellte Shop-Links, Simon 26.11.2026) – nur eigene Adressen, Rest bleibt Text */
+function linkText(el,t){ var rx=/https:\/\/(?:www\.)?fs-creative\.at\/[^\s<>"]*[^\s<>".,;:!?)]/g, s=String(t||""), i=0, m; while((m=rx.exec(s))){ if(m.index>i) el.appendChild(d.createTextNode(s.slice(i,m.index))); var a=d.createElement("a"); a.href=m[0]; a.textContent=m[0]; a.target="_blank"; a.rel="noopener"; el.appendChild(a); i=m.index+m[0].length; } if(i<s.length) el.appendChild(d.createTextNode(s.slice(i))); }
 function h(tag,cls,text){ var e=d.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
 var KI_AV="/logos/ki-avatar.svg", SV_BACK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>', SV_DOWN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 var SV_BIG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg>', SV_SMALL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14h6v6M10 14l-7 7M20 10h-6V4M14 10l7-7"/></svg>';
@@ -69,7 +71,7 @@ var CSS='.fscc-print{position:fixed;right:90px;bottom:calc(29px + var(--fscc-tb,
 '.fscc-endr{display:flex;justify-content:center}.fscc-end{border:0;background:none;color:var(--text-dim,#a1a1aa);font:inherit;font-size:12.5px;text-decoration:underline;cursor:pointer;padding:2px 6px}.fscc-end.sure{color:#ff6961;font-weight:700;text-decoration:none}'+
 '.fscc-cv .bd{flex:none;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#ff453a;color:#fff;font:700 12px/20px system-ui,-apple-system,sans-serif;text-align:center;align-self:center}.fscc-cv.ended span{opacity:.75}.fscc-all .bd{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#ff453a;color:#fff;font:700 12px/20px system-ui,sans-serif}'+
 '.fscc-p.ended .fscc-row,.fscc-p.ended .fscc-nm{opacity:.45;pointer-events:none;filter:grayscale(1)}.fscc-cl{display:none;text-align:center;font-size:13px;color:var(--text-dim,#a1a1aa);padding:2px 4px 4px}.fscc-p.ended .fscc-cl{display:grid;gap:8px}.fscc-cl .fscc-new{padding:11px}'+
-'@media(prefers-reduced-motion:reduce){.fscc-b,.fscc-p{transition:none}}';
+'@media(prefers-reduced-motion:reduce){.fscc-b,.fscc-p{transition:none}}.fscc-m a{color:inherit;text-decoration:underline;overflow-wrap:anywhere;word-break:break-all}';
 
 /* Abstand zur mobilen Tab-Leiste (index.html und Landingpages haben unten .tabbar) */
 function tabbar(){ var t=d.querySelector(".tabbar"), hgt=0; if(t){ var cs=W.getComputedStyle(t); if(cs.display!=="none"&&cs.position==="fixed") hgt=t.getBoundingClientRect().height; } d.documentElement.style.setProperty("--fscc-tb",hgt?Math.round(hgt+4)+"px":"0px"); }
@@ -221,7 +223,7 @@ function paint(){
   msgs.forEach(function(m){ var who=m.from==="v"||m.from==="me"||m.from==="ki"?m.from:"sys", b=h("div","fscc-m "+who), isNew=!painted[m.id]&&!first; painted[m.id]=1;
     if(who==="sys"){ b.appendChild(d.createTextNode(m.text)); L.appendChild(b); return; }
     if(m.from==="me") b.appendChild(h("span","who","Simon"));
-    if(m.file){ b.classList.add("file"); b.appendChild(fileEl(m.file)); } else b.appendChild(d.createTextNode(m.text));
+    if(m.file){ b.classList.add("file"); b.appendChild(fileEl(m.file)); } else if(who==="v") b.appendChild(d.createTextNode(m.text)); else linkText(b,m.text);
     L.appendChild(row(who,b,(m.from==="ki"?"KI · Angaben unverbindlich · ":"")+fmt(m.at)+(m.id===lastV&&meSeen>=m.id?" · ✓✓ Gelesen":""),isNew)); });
   if(first) msgs.forEach(function(m){ painted[m.id]=1; });
   if(typing){ var ty=h("div","fscc-ty"); ty.setAttribute("aria-label",(tyWho==="me"?"Simon":"Der Assistent")+" schreibt"); ty.appendChild(h("i")); ty.appendChild(h("i")); ty.appendChild(h("i")); var tr=row(tyWho==="me"?"me":"ki",ty,""); L.appendChild(tr); }
