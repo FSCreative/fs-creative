@@ -4294,6 +4294,11 @@ module.exports = function (D) {
       const q = clip(it.search, 120), wish = clip(it.wish, 600); if (q.length < 3) continue;
       let keys = []; try { const sr = await aiSearch(q); keys = sr.keys || []; } catch (e) { log("Mail-Vorschlag Suche:", e.message); }
       const cands = []; for (const k of keys.slice(0, 5)) { const p = await findProduct(k, st).catch(() => null); if (p) cands.push(p); }
+      // Textilien: die Produktsuche liefert nur wenige Treffer – alle Modelle derselben Unterkategorie dazu, damit nach Material/Grammatur/Farbe gewählt wird (Simon 26.11.2026)
+      if (cands[0] && cands[0].kind === "textile") { try {
+        const pub = publicCatalog(await catalog(false), st, await catalogAll().catch(() => null)), me = pub.find(x => x.key === cands[0].key), sub = me && me.cat ? me.cat.main + "|" + me.cat.sub : "";
+        for (const x of pub.filter(y => sub && y.cat && y.cat.main + "|" + y.cat.sub === sub && !cands.some(c => c.key === y.key)).slice(0, 10)) { const p = await findProduct(x.key, st).catch(() => null); if (p && p.kind === "textile") cands.push(p); }
+      } catch (e) { log("Mail-Vorschlag Textil-Kandidaten:", e.message); } }
       if (!cands.length) { out.missing.push(q); continue; }
       const sys = "Du stellst im Konfigurator eines Online-Druckshops die Ausführung ein, die ein Kunde per Mail anfragt. Wähle das passendste Produkt (key genau aus der Liste) anhand der Eigenschaften (Material, Grammatur, Schnitt, Kapuze ja/nein, verfügbare Farbe, Format …) und je Eigenschaft (prop = slug) die passende Option (option = slug, genau aus der Liste; Farben auf die nächstliegende Farboption abbilden, z. B. Anthrazit → anthracite…). " +
         "Textilien (Produkt mit „Veredelung (textile.method)“): textile = je gewünschter Veredelung eine Position (z. B. 5 Stück bedruckt + 5 Stück bestickt → 2 Einträge): method = key, positions = passende Positions-slugs (z. B. vorne links Brust → positions_chest, hinten oben/Rücken → positions_back), sizes = Größen-slugs mit Stückzahl (Größen nicht genannt → alles in M, z. B. unisex_m, und als Annahme nennen), label = kurzer deutscher Name der Position (z. B. „Logo-Druck Brust + Rücken“). Ist eine Position mit der Methode nicht möglich, nimm nur die möglichen und sag es in assumptions. Bei anderen Produkten textile = []. " +
