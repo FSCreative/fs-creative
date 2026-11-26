@@ -5976,7 +5976,7 @@ if (require.main === module) setInterval(() => SEO.tick().catch(() => {}), 30 * 
 // ── WhatsApp nur lesen (whatsapp.js): Cloud API mit Coexistence – Webhook /api/whatsapp/webhook, Cockpit „Chat“ → WhatsApp, Push-Thema „wa“ ──
 const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
-const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""), printProducts: q => (PRINT && PRINT.chatProducts ? PRINT.chatProducts(q) : Promise.resolve("")),
+const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""), printProducts: q => (PRINT && PRINT.chatProducts ? PRINT.chatProducts(q) : Promise.resolve("")), printKnowledge: () => (PRINT && PRINT.shopKnowledge ? PRINT.shopKnowledge() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? Object.assign(l, { taskId: r.taskId || "", isLead: !!(opt && opt.lead === true) }) : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 // ── Reklamationen (claims.js): Erkennung in neuen Mails (nach den Mail-Regeln) und Besucher-Chats, Cockpit „Reklamationen“ ──
