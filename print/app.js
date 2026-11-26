@@ -2845,7 +2845,7 @@
           else if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
           /* Hintergrund endet vor dem Ende des Beschnitts (Simon 24.11.2026, Aquarena Spare Ribs: oben/rechts fehlte der Beschnitt) – alle 4 Seiten, zwei Tiefen im Beschnitt.
              Nicht melden, wenn der Kunde die Datei selbst kleiner gemacht hat (Anpassen: eingepasst/verkleinert) – dann gewollt. */
-          var selfSmall = f.place && !f.place.orig && (f.place.mode === "fit" || (+f.place.scale || 1) < 0.999);
+          var selfSmall = f.place && !f.place.orig && (f.place.mode === "fit" || f.place.mode === "auto" || (+f.place.scale || 1) < 0.999);   // „Alle Seiten einpassen“: weißer Rand gewollt
           if (r.b > 0 && !selfSmall) { var wsd = [], whp = function (p2) { return p2[0] > 245 && p2[1] > 245 && p2[2] > 245; }, ib = Math.round(bp) + 2;
             [["links", function (k, dd2) { return [dd2, k]; }, H], ["rechts", function (k, dd2) { return [W - 1 - dd2, k]; }, H], ["oben", function (k, dd2) { return [k, dd2]; }, W], ["unten", function (k, dd2) { return [k, H - 1 - dd2]; }, W]].forEach(function (sd) {
               var wo2 = 0, tot2 = 0; for (var kk = Math.round(sp); kk < sd[2] - sp; kk += 5) { tot2++; var inn = sd[1](kk, ib), iP = px(inn[0], inn[1]); if (whp(iP)) continue;
