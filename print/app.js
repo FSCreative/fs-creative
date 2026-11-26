@@ -1851,7 +1851,10 @@
   var UR_ORD = ["standard", "quick", "urgent"];
   function urState() {
     var p = S.prod, b = dlBase(), D = {}, all = !!b;
-    p.urgency.forEach(function (u) { var dt = u.slug === S.urgency ? S.price && (S.price.defDate || S.price.deliveryDate) : b && (DLT[b + "|@u|" + u.slug] || {}).date; if (dt) D[u.slug] = dt; else all = false; });
+    /* frühester möglicher Tag je Stufe (auch mit schnellerem Versand) – nicht nur der Standardtag: sonst zeigte Express „früher“, obwohl Standard
+       denselben Tag mit Priority-Versand günstiger schafft (Simon 26.11.2026, Broschüre 04.12.: Standard 198 €, Express 262 €) */
+    var first = function (days, dt) { var m = dt || ""; (days || []).forEach(function (x) { if (x && x.d && (!m || x.d < m)) m = x.d; }); return m; };
+    p.urgency.forEach(function (u) { var me = u.slug === S.urgency, o = me ? S.price : b && DLT[b + "|@u|" + u.slug], dt = o && first(o.days, me ? (o.defDate || o.deliveryDate) : o.date); if (dt) D[u.slug] = dt; else all = false; });
     var hid = [];
     if (all) p.urgency.forEach(function (u) { var i = UR_ORD.indexOf(u.slug); if (i > 0 && UR_ORD.slice(0, i).some(function (c) { return D[c] && D[c] <= D[u.slug]; })) hid.push(u.slug); });
     else if (S.urLast && S.urLast.key === p.key) hid = S.urLast.hid.filter(function (x) { return x !== S.urgency; });   // bis die neuen Termine da sind: letzte Einschätzung
