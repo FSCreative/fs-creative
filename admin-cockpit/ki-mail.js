@@ -52,9 +52,12 @@ F.action("kimreply",function(id){
    genau prüft der Server (KI liest die Mail, Produktsuche, Optionen, Preis vom Shop, gekürzter Link). Nie automatisch senden. */
 var PR_PROD=/flyer|folder|visitenkarte|plakat|poster|banner|roll-?up|aufkleber|sticker|pickerl|etikett|postkarte|einladung|brosch|katalog|kalender|magazin|speisekarte|men[üu]karte|briefpapier|kuvert|notizbl|block|schild|forex|dibond|leinwand|beachflag|fahne|kundenstopper|aufsteller|klappkarte|gutschein|eintrittskarte|tischaufsteller|türhänger|lesezeichen|geschenkband|bierdeckel|untersetzer/i;
 var PR_ASK=/anfrage|angebot|preis|kosten|kostet|bräucht|brauch|benötig|bestell|druck|stk\b|stück|auflage|wie viel|wieviel|möglich/i;
+/* Formular-Benachrichtigung („Neue Anfrage: …“ von der eigenen Adresse): Kunden-Adresse steht im Antwort-an bzw. in der Tabelle „E-Mail“ */
+function custMail(m){ var rt=String(m.replyTo||""); if(rt&&!/@fs-creative\.at/i.test(rt)) return rt; if(!/^neue anfrage/i.test(String(m.subject||""))) return "";
+  var t=String(m.body||m.preview||""), x=t.match(/E-?Mail<\/b>\s*<\/td>\s*<td>\s*([^<\s]+@[^<\s]+)/i)||t.replace(/<[^>]*>/g," ").match(/E-?Mail:?\s+([^\s@]+@[^\s@]+\.[a-z]{2,})/i); return x&&!/@fs-creative\.at/i.test(x[1])?x[1]:""; }
 function looksPrintMail(m){
   if(!m) return false;
-  if(/@fs-creative\.at$/i.test(String(m.from||""))&&!(m.replyTo&&!/@fs-creative\.at/i.test(String(m.replyTo)))) return false;   /* eigene Mails nicht – außer Formular-Benachrichtigungen („Neue Anfrage …“ mit Antwort-an Kunde) */
+  if(/@fs-creative\.at$/i.test(String(m.from||""))&&!custMail(m)) return false;   /* eigene Mails nicht – außer Formular-Benachrichtigungen („Neue Anfrage …“ mit Kunden-Adresse) */
   var t=String(m.subject||"")+"\n"+String(m.body||m.preview||"").replace(/<[^>]*>/g," ").slice(0,5000);
   return PR_PROD.test(t)&&PR_ASK.test(t);
 }
@@ -78,7 +81,8 @@ function offerHtml(m,r,sent){
 }
 function offerOpen(m,text){
   /* Simon 26.11.2026: „In Antwort übernehmen“ öffnet immer das Antwort-Fenster (an den Absender, „AW: …“) mit dem fertigen Entwurf – nichts wird gesendet */
-  if(M.reply) M.reply(m,"",text,"AW: ");
+  var cm=/@fs-creative\.at$/i.test(String(m.from||""))?custMail(m):"";
+  if(M.reply) M.reply(m,"",text,"AW: ",cm);
   else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"AW: "+String(m.subject||"").replace(/^((re|aw|wg|fw|fwd)\s*:\s*)+/i,""),text:text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
   F.toast("Antwort mit Shop-Link vorbereitet – prüfen und senden");
 }
