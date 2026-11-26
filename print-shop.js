@@ -4270,7 +4270,7 @@ module.exports = function (D) {
       it.variants.forEach(v => L.push("  " + (v.label ? v.label + ": " : "") + (v.sep > 1 ? v.sep + " Motive à " + thd(v.copies) + " Stück, je Motiv eine Position: " : thd(v.copies) + " Stück" + (v.motifs > 1 ? " (" + v.motifs + " Motive, Gesamtmenge berechnet, ohne Aufpreis je Motiv)" : "") + ": ") + pr(v) + (v.date ? ", Lieferung voraussichtlich " + dateDe(v.date) : "") + " – Link: " + v.link));
       (it.notes || []).forEach(x => L.push("  Empfehlung: " + x));
       (it.alts || []).forEach(a => a.variants.forEach(v => L.push("  Alternative " + a.title + ": " + thd(v.copies) + " Stück " + pr(v) + " – Link: " + v.link)));
-      (it.assumptions || []).forEach(x => L.push("  Annahme: " + x));
+      (it.assumptions || []).forEach(x => L.push("  Annahme: " + x + (/^Gerechnet mit/.test(x) ? " (so dem Kunden sagen, NICHT nach der Grammatur fragen)" : "")));
       (it.files || []).forEach(x => L.push("  Druckdaten: " + x));
     });
     if ((r.missing || []).length) L.push("Nicht im Shop: " + r.missing.join(", ") + " (dafür macht Simon ein Angebot)");
@@ -4318,13 +4318,26 @@ module.exports = function (D) {
       const sel = {}; ((pick && pick.sel) || []).forEach(x => { const pr = prod.props.find(y => y.slug === x.prop); if (pr && pr.options.some(o => o.slug === x.option)) sel[pr.slug] = x.option; });
       // Grammatur „ca. N g“ nicht genau verfügbar: Gutscheine/Karten/Tickets → nächst stärkere gleiche Papierart (Simon 26.11.2026: ca. 200 g → 250 g matt), sonst die nächstliegende
       { const gm = String(wish + " " + q).match(/(\d{2,3})\s*(?:g\b|g\/m|gr\b|gramm)/i), mp = prod.props.find(x => x.slug === "material");
-        if (gm && mp) { const want = +gm[1], wOf = o => +((String(o.slug).match(/^(\d{2,3})gr?_/) || [])[1] || 0), kindOf = o => String(o.slug).replace(/^\d{2,3}gr?_/, ""); let cur = mp.options.find(o => o.slug === sel.material);
-          const SPEC = /yupo|teslin|synaps|polyart|folie|_pp_|\bpp\b|kraft|natur|recycl|struktur|uncoated|bankpost|biotop|recystar|metallic|transparent/i, specOk = o => !SPEC.test(o.slug + " " + o.name) || SPEC.test(String(wish + " " + q));   // Spezialpapiere nur, wenn der Kunde sie nennt
-          if (cur && !specOk(cur)) { const std = mp.options.filter(o => wOf(o) && specOk(o) && /silk|_mc|bilderdruck/i.test(o.slug + " " + o.name)); if (std.length) { const pref = /gl(ä|a)nz|gloss/i.test(String(wish)) ? std.filter(o => !/silk|matt/i.test(o.slug + " " + o.name)) : std.filter(o => /silk|matt/i.test(o.slug + " " + o.name)); cur = (pref.length ? pref : std).slice().sort((a, b) => Math.abs(wOf(a) - want) - Math.abs(wOf(b) - want))[0]; sel.material = cur.slug; gramNote = "Ich habe " + cur.name + " eingestellt (klassisches Druckpapier)."; } }
-          if (!cur || wOf(cur) !== want) { const same = mp.options.filter(o => wOf(o) && specOk(o) && (!cur || kindOf(o) === kindOf(cur) || (/matt|silk/i.test(o.slug + o.name) && /matt|silk/i.test(String(wish)))));
-            const pool = same.length ? same : mp.options.filter(o => wOf(o)), card = /gutschein|karte|ticket|eintritt|coupon|los\b/i.test(wish + " " + q + " " + subj);
-            const up = pool.filter(o => wOf(o) >= want).sort((a, b) => wOf(a) - wOf(b))[0], near = pool.slice().sort((a, b) => Math.abs(wOf(a) - want) - Math.abs(wOf(b) - want))[0], best = (card && up) || near;
-            if (best && best.slug !== sel.material) { sel.material = best.slug; gramNote = "Genau " + want + " g gibt es hier nicht – ich habe " + best.name + " eingestellt" + (card && up ? ", das ist für Gutscheine bzw. Karten schön stabil." : "."); } } } }
+        const wOf = o => +((String(o.slug).match(/^(\d{2,3})gr?_/) || [])[1] || 0), kindOf = o => String(o.slug).replace(/^\d{2,3}gr?_/, "");
+        const card = /gutschein|karte|ticket|eintritt|coupon|los\b/i.test(wish + " " + q + " " + subj) || /card|karte/i.test(prod.key + " " + prod.title);
+        const paper = !!mp && mp.options.filter(o => wOf(o)).length >= 3 && mp.options.some(o => /_mc|silk|bilderdruck/i.test(o.slug + " " + o.name));
+        const defW = !gm && paper ? (card ? 250 : 170) : 0, want = gm ? +gm[1] : defW;   // Simon 26.11.2026: ohne Angabe 170 g (Karten/Gutscheine 250 g+), nicht 130 g
+        const SPEC = /yupo|teslin|synaps|polyart|folie|_pp_|\bpp\b|kraft|natur|recycl|struktur|uncoated|bankpost|biotop|recystar|metallic|transparent/i, specOk = o => !SPEC.test(o.slug + " " + o.name) || SPEC.test(String(wish + " " + q));   // Spezialpapiere nur, wenn der Kunde sie nennt
+        if (want && mp) { let cur = mp.options.find(o => o.slug === sel.material) || mp.options.find(o => o.slug === (st0.sel || {}).material);
+          if (defW) {   // keine Grammatur genannt: Standard-Bilderdruck, matt bei „matt“, glänzend bei „glänzend“, sonst wie die Shop-Auswahl
+            const isM = o => /silk|matt/i.test(o.slug + " " + o.name) && !/gesatineerd|gl(ä|a)nz|gloss/i.test(o.slug + " " + o.name);
+            const std = mp.options.filter(o => wOf(o) && specOk(o) && /silk|_mc|bilderdruck|gesatineerd/i.test(o.slug + " " + o.name));
+            const wantM = /matt/i.test(wish + " " + q) ? true : /gl(ä|a)nz|gloss/i.test(wish + " " + q) ? false : !!(cur && isM(cur));
+            const pool0 = std.filter(o => isM(o) === wantM), pool = pool0.length ? pool0 : std;
+            if (!(card && cur && wOf(cur) >= 250 && specOk(cur) && isM(cur) === wantM)) {
+              const best = pool.filter(o => wOf(o) >= want).sort((a, b) => wOf(a) - wOf(b))[0] || pool.slice().sort((a, b) => Math.abs(wOf(a) - want) - Math.abs(wOf(b) - want))[0];
+              if (best) { sel.material = best.slug; gramNote = "Gerechnet mit " + best.name + " – eine andere Papierstärke lässt sich im Link direkt wählen."; out._defGram = true; } }
+          } else {
+            if (cur && !specOk(cur)) { const std = mp.options.filter(o => wOf(o) && specOk(o) && /silk|_mc|bilderdruck/i.test(o.slug + " " + o.name)); if (std.length) { const pref = /gl(ä|a)nz|gloss/i.test(String(wish)) ? std.filter(o => !/silk|matt/i.test(o.slug + " " + o.name)) : std.filter(o => /silk|matt/i.test(o.slug + " " + o.name)); cur = (pref.length ? pref : std).slice().sort((a, b) => Math.abs(wOf(a) - want) - Math.abs(wOf(b) - want))[0]; sel.material = cur.slug; gramNote = "Ich habe " + cur.name + " eingestellt (klassisches Druckpapier)."; } }
+            if (!cur || wOf(cur) !== want) { const same = mp.options.filter(o => wOf(o) && specOk(o) && (!cur || kindOf(o) === kindOf(cur) || (/matt|silk/i.test(o.slug + o.name) && /matt|silk/i.test(String(wish)))));
+              const pool = same.length ? same : mp.options.filter(o => wOf(o));
+              const up = pool.filter(o => wOf(o) >= want).sort((a, b) => wOf(a) - wOf(b))[0], near = pool.slice().sort((a, b) => Math.abs(wOf(a) - want) - Math.abs(wOf(b) - want))[0], best = (card && up) || near;
+              if (best && best.slug !== sel.material) { sel.material = best.slug; gramNote = "Genau " + want + " g gibt es hier nicht – ich habe " + best.name + " eingestellt" + (card && up ? ", das ist für Gutscheine bzw. Karten schön stabil." : "."); } } } } }
       const isCu = sx => prod.kind === "banner" || (!!prod.custom && sx.size === "custom");
       const custom = isCu(sel) && pick && pick.width > 0 && pick.height > 0 ? { w: pick.width, h: pick.height } : st0.custom;
       const urgency = pick && (prod.urgency || []).some(u => u.slug === pick.urgency) ? pick.urgency : undefined;
@@ -4405,6 +4418,7 @@ module.exports = function (D) {
       const filesU = files.map(x => clip(x, 300)).filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 4);
       out.items.push({ key: prod.key, title: prod.title, labels: R.labels, variants: R.variants, assumptions: asm, notes, alts, files: filesU, bleed: prod.bleed || 0, dpi: prod.dpi || 300 });
     }
+    if (out._defGram) out.questions = out.questions.filter(x => !/grammatur|papierst|papierdicke|g\/m|gramm|\d+\s*g\b/i.test(x)); delete out._defGram;   // Standard 170 g gesetzt → nicht nach der Grammatur fragen
     // Simon 26.11.2026: „wichtig auch auf die Fragen der Kunden eingehen“ – jede Frage aus der Mail beantworten (mit den berechneten Preisen/Terminen und den Shop-Fakten)
     out.answers = []; out.coversDelivery = false;
     if (!opt.noAnswers) try {
