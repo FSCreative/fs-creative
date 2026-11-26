@@ -1103,7 +1103,7 @@
   function vinylKick() {
     S.vinylHint = null; var p = S.prod, my = ++vinSeq, s = S.sel || {}, n = +S.copies || 0;
     if (!p || p.key !== "aufkleber" || !S.price || !n || (S.mot && S.mot.n > 1) || !prodByKey("sticker-vinyl")) return;
-    if (/transpar/i.test(s.material || "") || String(s.printtype || "40") !== "40" || (s.personalize && s.personalize !== "none") || s.type_glue === "detachable" || !(s.finish in VIN_FIN)) return;
+    if ((s.shape && s.shape !== "rectangle_sticker") || (s.custom_shape && s.custom_shape !== "clean_cut") || /transpar/i.test(s.material || "") || String(s.printtype || "40") !== "40" || (s.personalize && s.personalize !== "none") || s.type_glue === "detachable" || !(s.finish in VIN_FIN)) return;
     var sz = sizeOf(); if (!sz || Math.min(sz.w, sz.h) < 50) return;   // Vinyl ab 50 × 50 mm
     var sel = { material: "monomeer_white_gloss_orajet_3162", finish: VIN_FIN[s.finish], custom_shape: "clean_cut_stickers", size: "custom", printtype: "40", application_side: "outside", number_of_contour_lines: "no_contour_lines" };
     api("/print/api/price", { product: "sticker-vinyl", sel: sel, copies: n, custom: { w: String(sz.w), h: String(sz.h) }, urgency: "standard", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }).then(function (j) {
@@ -1114,7 +1114,7 @@
   }
   function vinylHintHtml() { var h = S.vinylHint, co = S.ctype === "company"; if (!h || !S.price || !S.prod || S.prod.key !== "aufkleber" || h.n !== +S.copies) return "";
     return '<p class="ps-tierhint ps-tiermore ps-vinyl">💧 Günstiger und wasserfest: <b>Vinyl-Aufkleber</b> in gleicher Größe (' + h.w + " × " + h.h + " mm, " + h.n.toLocaleString("de-AT") + " Stk.) kosten nur <b>" + eur(h.total) + "</b> " + (co ? "netto" : "inkl. USt") + " statt " + eur(h.cur) + " – " + eur(h.cur - h.total) + " weniger. " +
-      "Material: Klebefolie weiß glänzend, wasser- und UV-beständig, auf Kontur geschnitten (statt Bogen-Aufkleber aus PP/Papier). " +
+      "Material: Klebefolie weiß glänzend, wasser- und UV-beständig, einzeln rechteckig zugeschnitten (statt Bogen-Aufkleber aus PP/Papier). " +
       '<button type="button" class="ps-link" data-act="tovinyl">Zu Vinyl-Aufklebern wechseln</button></p>'; }
   function tierHintHtml() { return vinylHintHtml() + tierHintCore(); }
   function tierHintCore() { var h = S.tierHint, sp = S.splitHint, co = S.ctype === "company"; if (!S.price) return "";
