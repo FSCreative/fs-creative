@@ -187,12 +187,12 @@ function quoteHtml(m,kind){
   return '<div><br></div>'+head+'<blockquote type="cite">'+orig+'</blockquote>';
 }
 function uniq(a){ var seen={}; return a.filter(function(x){ var k=String(x).toLowerCase(); if(!x||seen[k]) return false; seen[k]=1; return true; }); }
-M.reply=function(m,kind){
+M.reply=function(m,kind,lead,subjPre){   /* lead: vorbefüllter Text (z. B. Antwortvorschlag mit Shop-Link), subjPre: „AW: “ statt „Re: “ */
   if(!m) return;
   if(kind==="fwd"){ openCompose("Weiterleiten","","Fwd: "+stripRe(m.subject),quoteHtml(m,"fwd"),{account:M.accOf(m),source:srcOf(m,"fwd"),fwdFrom:m}); return; }
   var mine=M.myAddrs(), to=M.isSent(m)?(m.to||""):(m.replyTo||m.from||""), cc="";
   if(kind==="all"){ cc=uniq([].concat(m.toList||[],m.ccList||[]).map(function(a){ return a.address; }).filter(function(a){ return a&&!mine[a.toLowerCase()]&&a.toLowerCase()!==to.toLowerCase(); })).join(", "); }
-  openCompose(kind==="all"?"Allen antworten":"Antworten",to,"Re: "+stripRe(m.subject),quoteHtml(m,"reply"),{cc:cc,inReplyTo:m.messageId||"",account:M.accOf(m),source:srcOf(m,"reply")});
+  openCompose(kind==="all"?"Allen antworten":"Antworten",to,(subjPre||"Re: ")+stripRe(m.subject),quoteHtml(m,"reply"),{cc:cc,inReplyTo:m.messageId||"",account:M.accOf(m),source:srcOf(m,"reply"),lead:lead||null});
 };
 M.quickReply=function(m){
   var ta=document.getElementById("mqr"); if(!ta||!m) return; var txt=(ta.value||"").trim(); if(!txt){ ta.focus(); return; }

@@ -72,8 +72,10 @@ function offerHtml(m,r,sent){
     '<div class="row wrap"><button type="button" class="btn pri" data-act="kimofferuse:'+esc(m.id)+'">In Antwort übernehmen</button><button type="button" class="link" data-act="kimofferre:'+esc(m.id)+'">Neu erstellen</button></div></div>';
 }
 function offerOpen(m,text){
-  if(window.innerWidth>900&&(document.getElementById("mqr")||F.current==="post")){ F.UI.mqr=text; F.UI.mqrFor=m.id; F.UI.mfocusQr=true; rr(); F.toast("Antwort mit Shop-Link eingefügt – prüfen und senden (Signatur und Zitat werden angehängt)"); }
-  else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"Re: "+String(m.subject||"").replace(/^(re|aw)\s*:\s*/i,""),text:text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
+  /* Simon 26.11.2026: „In Antwort übernehmen“ öffnet immer das Antwort-Fenster (an den Absender, „AW: …“) mit dem fertigen Entwurf – nichts wird gesendet */
+  if(M.reply) M.reply(m,"",text,"AW: ");
+  else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"AW: "+String(m.subject||"").replace(/^((re|aw|wg|fw|fwd)\s*:\s*)+/i,""),text:text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
+  F.toast("Antwort mit Shop-Link vorbereitet – prüfen und senden");
 }
 function offerRun(id,again){
   var m=M.find&&M.find(id); if(!m) return;
