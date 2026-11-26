@@ -19,6 +19,7 @@ M.kiBar=function(m){
     '<button type="button" class="btn'+(r.busy==="sum"?" busy":"")+'" data-act="kimsum:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="sum"?"Fasse zusammen …":"Zusammenfassen")+'</button>'+
     (sent?'':'<button type="button" class="btn'+(r.busy==="reply"?" busy":"")+'" data-act="kimreply:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="reply"?"Schreibe Vorschlag …":"Antwort vorschlagen")+'</button>')+
     '<button type="button" class="btn icon" data-act="kimask:'+esc(m.id)+'" title="Im Assistenten zu dieser Mail fragen" aria-label="Assistent fragen">?</button></div>';
+  bar+=offerHtml(m,r,sent);
   var s=r.sum, cc=s&&s.isLead&&M.custOf?M.custOf(m):null, canL=!!(cc&&cc.canLead&&F.actions.mlead);   /* mögliche Anfrage von Unbekannt → als Lead übernehmen */
   if(s) bar+='<div class="kisum"><div class="row-between"><b>Zusammenfassung</b><button type="button" class="link" data-act="kimsumx:'+esc(m.id)+'">Ausblenden</button></div><p>'+esc(s.summary)+'</p>'+
     ((s.points||[]).length?'<ul>'+s.points.map(function(p){ return '<li>'+esc(p)+'</li>'; }).join("")+'</ul>':'')+
@@ -47,6 +48,52 @@ F.action("kimreply",function(id){
     else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"Re: "+String(m.subject||"").replace(/^(re|aw)\s*:\s*/i,""),text:j.text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
   }).catch(function(e){ r.busy=""; r.err=e.message; rr(); });
 });
+/* Druckanfrage per Mail → Antwortvorschlag mit fertig eingestelltem Shop-Link (Simon 26.11.2026). Erkennung hier nur grob (Wörter),
+   genau prüft der Server (KI liest die Mail, Produktsuche, Optionen, Preis vom Shop, gekürzter Link). Nie automatisch senden. */
+var PR_PROD=/flyer|folder|visitenkarte|plakat|poster|banner|roll-?up|aufkleber|sticker|pickerl|etikett|postkarte|einladung|brosch|katalog|kalender|magazin|speisekarte|men[üu]karte|briefpapier|kuvert|notizbl|block|schild|forex|dibond|leinwand|beachflag|fahne|kundenstopper|aufsteller|klappkarte|gutschein|eintrittskarte|tischaufsteller|türhänger|lesezeichen|geschenkband|bierdeckel|untersetzer/i;
+var PR_ASK=/anfrage|angebot|preis|kosten|kostet|bräucht|brauch|benötig|bestell|druck|stk\b|stück|auflage|wie viel|wieviel|möglich/i;
+function looksPrintMail(m){
+  if(!m||/@fs-creative\.at$/i.test(String(m.from||""))) return false;
+  var t=String(m.subject||"")+"\n"+String(m.body||m.preview||"").replace(/<[^>]*>/g," ").slice(0,5000);
+  return PR_PROD.test(t)&&PR_ASK.test(t);
+}
+function offerHtml(m,r,sent){
+  if(sent||(r.offerHide&&!r.offer)) return "";
+  var o=r.offer, hint=looksPrintMail(m);
+  if(!o&&!hint&&r.busy!=="offer") return "";
+  if(!o) return '<div class="mofr"><div class="mofr-h"><div><b>Druckanfrage erkannt</b><span>Antwort mit fertig eingestelltem Shop-Link und Preis vorschlagen</span></div>'+
+    '<button type="button" class="btn pri'+(r.busy==="offer"?" busy":"")+'" data-act="kimoffer:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="offer"?"Stelle Ausführung ein …":"Antwort mit Link vorschlagen")+'</button></div></div>';
+  if(!o.items||!o.items.length) return '<div class="mofr"><div class="mofr-h"><div><b>Kein Shop-Produkt erkannt</b><span>'+(o.isPrint?"Für diese Anfrage passt kein Standardprodukt – eher ein eigenes Angebot.":"Die Mail ist keine Druckanfrage für den Shop.")+'</span></div><button type="button" class="link" data-act="kimofferx:'+esc(m.id)+'">Ausblenden</button></div></div>';
+  return '<div class="mofr"><div class="mofr-h"><div><b>Antwortvorschlag mit Shop-Link</b><span>'+(o.company?"Firma – Preise netto, mit 20 % USt":"Privat – Preise inkl. 20 % USt")+'</span></div><button type="button" class="link" data-act="kimofferx:'+esc(m.id)+'">Ausblenden</button></div>'+
+    o.items.map(function(it){ return '<div class="mofr-it"><b>'+esc(it.title)+'</b>'+((it.labels||[]).length?'<span class="mofr-l">'+it.labels.slice(0,6).map(function(l){ return esc(l[0])+": "+esc(l[1]); }).join(" · ")+'</span>':'')+
+      it.variants.map(function(v){ return '<div class="mofr-v"><span>'+Number(v.copies).toLocaleString("de-AT")+' Stk.</span><b class="num">'+(o.company?F.eur(v.net)+' netto':F.eur(v.gross))+'</b><a href="'+esc(v.link)+'" target="_blank" rel="noopener">Link öffnen</a></div>'; }).join("")+
+      ((it.assumptions||[]).length?'<span class="mofr-a">'+it.assumptions.map(esc).join("<br>")+'</span>':'')+'</div>'; }).join("")+
+    ((o.missing||[]).length?'<div class="mofr-a">Nicht im Shop gefunden: '+o.missing.map(esc).join(", ")+'</div>':'')+
+    '<div class="row wrap"><button type="button" class="btn pri" data-act="kimofferuse:'+esc(m.id)+'">In Antwort übernehmen</button><button type="button" class="link" data-act="kimofferre:'+esc(m.id)+'">Neu erstellen</button></div></div>';
+}
+function offerOpen(m,text){
+  if(window.innerWidth>900&&(document.getElementById("mqr")||F.current==="post")){ F.UI.mqr=text; F.UI.mqrFor=m.id; F.UI.mfocusQr=true; rr(); F.toast("Antwort mit Shop-Link eingefügt – prüfen und senden (Signatur und Zitat werden angehängt)"); }
+  else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"Re: "+String(m.subject||"").replace(/^(re|aw)\s*:\s*/i,""),text:text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
+}
+function offerRun(id,again){
+  var m=M.find&&M.find(id); if(!m) return;
+  var r=MS[id]=MS[id]||{}; if(again) r.offer=null; r.offerHide=false; r.busy="offer"; r.err=""; rr();
+  F.api("/admin/api/print/mailsuggest",{body:{mail:mailPayload(m)}}).then(function(j){
+    r.busy=""; if(!j||!j.ok){ r.err=(j&&j.error)||"Vorschlag fehlgeschlagen"; rr(); return; }
+    r.offer=j; rr(); if(j.text) offerOpen(m,j.text);
+  }).catch(function(e){ r.busy=""; r.err=e.message; rr(); });
+}
+F.action("kimoffer",function(id){ offerRun(id,false); });
+F.action("kimofferre",function(id){ offerRun(id,true); });
+F.action("kimofferuse",function(id){ var m=M.find&&M.find(id), o=MS[id]&&MS[id].offer; if(m&&o&&o.text) offerOpen(m,o.text); });
+F.action("kimofferx",function(id){ if(MS[id]){ MS[id].offer=null; MS[id].offerHide=true; } rr(); });
+F.css(".mofr{border:1px solid color-mix(in srgb,var(--glow) 35%,var(--line));border-radius:12px;padding:12px 14px;display:grid;gap:10px;background:var(--sunk);font-size:14px;line-height:1.45;min-width:0;overflow-wrap:anywhere}"+
+  ".mofr-h{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.mofr-h>div{display:grid;gap:2px;min-width:0;flex:1 1 220px}.mofr-h span{font-size:12.5px;color:var(--ink-3)}"+
+  ".mofr-it{display:grid;gap:4px;border-top:1px solid var(--line);padding-top:8px}.mofr-l,.mofr-a{font-size:12.5px;color:var(--ink-3)}"+
+  ".mofr-v{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.mofr-v span{min-width:80px}.mofr-v b{font-weight:600}.mofr-v a{font-size:13px}"+
+  ".mofr .row{display:flex;gap:8px;align-items:center}"+
+  "@media (max-width:900px){.mofr .btn{min-height:42px}}");
+
 /* KI-Aufgabe: Mail verknüpft (mailRef wie bei „Als Aufgabe“ in zauftrag.js), Kunde und laufender Auftrag, wenn der Absender bekannt ist */
 F.action("kimtodo",function(id){
   var m=M.find&&M.find(id), s=MS[id]&&MS[id].sum; if(!m||!s||!F.addTodo) return;

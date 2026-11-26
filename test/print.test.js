@@ -1539,6 +1539,31 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.ok(g1.invoice.sentAt); assert.ok(g2.invoice.sentAt, "sentAt auch an der zweiten Position");
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
   });
+  await t("Mail-Antwortvorschlag: Standardanfrage → Produkt + Optionen + Menge → Preis vom Shop, gekürzter Konfig-Link, Firma netto mit 20 % USt, nie senden", async () => {
+    const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-mo-")), env0 = {};
+    ["PRINTCOM_API_KEY", "PRINTCOM_BASE", "PRINT_ANCHORS_FILE", "DATABASE_URL"].forEach(k => { env0[k] = process.env[k]; });
+    Object.assign(process.env, { PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", PRINT_ANCHORS_FILE: "off" }); delete process.env.DATABASE_URL;
+    try {
+      const calls = [], sent = [];
+      const ki = { printDesignOn: () => true, printDesign: async (sys, user) => { calls.push(user);
+        if (/Produktsuche eines/.test(sys)) return { json: { keys: ["flyer"], hint: "" }, eur: 0.001 };
+        if (/Lies die Mail/.test(sys)) return { json: { isPrintRequest: true, company: true, formal: true, salutation: "Frau Muster", items: [{ search: "Flyer A5", wish: "A5, beidseitig", quantities: [500, 1000] }], questions: [] }, eur: 0.002 };
+        return { json: { key: "flyer", sel: [{ prop: "gibtsnicht", option: "x" }], quantities: [500, 1000], width: 0, height: 0, urgency: "standard", assumptions: [] }, eur: 0.002 }; } };
+      const PS = require(path.join(dir, "print-shop.js"))({ DATA_DIR: ddir, ki, mailSend: async m => { sent.push(m); } });
+      const r = await PS.mailSuggest({ from: "anna@beispiel-firma.test", fromName: "Anna Muster", subject: "Anfrage Flyer", text: "Hallo, wir bräuchten 500 bzw. 1000 Flyer A5 beidseitig. Was kostet das? Lg Anna Muster, Beispiel GmbH" });
+      assert.ok(r.ok && r.isPrint, JSON.stringify(r)); assert.strictEqual(r.items.length, 1, JSON.stringify(r));
+      const it = r.items[0]; assert.strictEqual(it.key, "flyer"); assert.deepStrictEqual(it.variants.map(v => v.copies), [500, 1000]);
+      it.variants.forEach(v => { assert.ok(v.net > 0 && Math.abs(v.gross - Math.round(v.net * 120) / 100) < 0.02, "20 % USt auch für Firmen: " + JSON.stringify(v)); assert.ok(/^https:\/\/www\.fs-creative\.at\/print\/l\/[a-z0-9]+$/.test(v.link), v.link); });
+      assert.ok(/^Sehr geehrte Frau Muster,/.test(r.text), r.text.slice(0, 80));
+      assert.ok(/500 Stück: [\d.,]+ € netto \([\d.,]+ € inkl\. 20 % USt\)/.test(r.text), r.text);
+      assert.ok(/voraussichtlich am/.test(r.text) && !/m²|Gutschein|Rabatt|persönlich geprüft/.test(r.text), r.text);
+      assert.strictEqual(sent.length, 0, "nichts gesendet");
+      const n0 = calls.length, r2 = await PS.mailSuggest({ from: "anna@beispiel-firma.test", fromName: "Anna Muster", subject: "Anfrage Flyer", text: "Hallo, wir bräuchten 500 bzw. 1000 Flyer A5 beidseitig. Was kostet das? Lg Anna Muster, Beispiel GmbH" });
+      assert.strictEqual(calls.length, n0, "gleiche Mail → aus dem Zwischenspeicher"); assert.strictEqual(r2.text, r.text);
+      const T = PS._test.mailOfferText({ formal: false, salutation: "Max", company: false, items: [{ title: "Visitenkarten", labels: [["Papier", "350 g matt"]], variants: [{ copies: 250, net: 20, gross: 24, link: "https://www.fs-creative.at/print/l/abc", date: "2026-12-03" }], assumptions: ["Menge nicht angegeben – 250 Stück angenommen"] }], questions: ["Hochformat oder Querformat?"], missing: ["Sonderanfertigung"] });
+      assert.ok(/^Hallo Max,/.test(T) && /250 Stück: 24,00 € inkl\. 20 % USt/.test(T) && !/netto/.test(T) && /Hinweis: Menge nicht angegeben/.test(T) && /- Hochformat oder Querformat\?/.test(T) && /Für Sonderanfertigung mache ich dir gerne ein eigenes Angebot/.test(T) && /voraussichtlich am 3\. Dezember 2026/.test(T), T);
+    } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
+  });
   await t("Warenkorb-Erinnerung: 1 Tag, 5 Tage, nach 10 Tagen „wird gelöscht“ mit Nicht-löschen; nach 14 Tagen weg, behalten bis 3 Monate; Druckdaten bleiben solange", async () => {
     const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-cr-")), env0 = {};
     ["PRINT_ANCHORS_FILE", "DATABASE_URL"].forEach(k => { env0[k] = process.env[k]; }); process.env.PRINT_ANCHORS_FILE = "off"; delete process.env.DATABASE_URL;
