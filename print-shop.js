@@ -4313,7 +4313,15 @@ module.exports = function (D) {
       try { const r = await ki.printDesign(sys, "Kundenwunsch: " + q + (wish ? " – " + wish : "") + ((it.quantities || []).length ? "\nGenannte Mengen (gesamt): " + it.quantities.join(", ") : "") + (+it.motifs > 1 ? "\nVerschiedene Motive: " + it.motifs + " (werden im Shop als Motive in einer Bestellung aufgeteilt – nicht als Annahme erwähnen)" : "") + "\n\n" + cands.map(moProdText).join("\n\n"), MO_PICK, { cache: false }); pick = r.json; eurK += r.eur || 0; }
       catch (e) { log("Mail-Vorschlag Ausführung:", e.message); }
       const prod = (pick && cands.find(p => p.key === pick.key)) || cands[0], st0 = startOf(prod) || {};
+      let gramNote = "";
       const sel = {}; ((pick && pick.sel) || []).forEach(x => { const pr = prod.props.find(y => y.slug === x.prop); if (pr && pr.options.some(o => o.slug === x.option)) sel[pr.slug] = x.option; });
+      // Grammatur „ca. N g“ nicht genau verfügbar: Gutscheine/Karten/Tickets → nächst stärkere gleiche Papierart (Simon 26.11.2026: ca. 200 g → 250 g matt), sonst die nächstliegende
+      { const gm = String(wish + " " + q).match(/(\d{2,3})\s*(?:g\b|g\/m|gr\b|gramm)/i), mp = prod.props.find(x => x.slug === "material");
+        if (gm && mp) { const want = +gm[1], wOf = o => +((String(o.slug).match(/^(\d{2,3})gr?_/) || [])[1] || 0), cur = mp.options.find(o => o.slug === sel.material), kindOf = o => String(o.slug).replace(/^\d{2,3}gr?_/, "");
+          if (!cur || wOf(cur) !== want) { const same = mp.options.filter(o => wOf(o) && (!cur || kindOf(o) === kindOf(cur) || (/matt|silk/i.test(o.slug + o.name) && /matt|silk/i.test(String(wish)))));
+            const pool = same.length ? same : mp.options.filter(o => wOf(o)), card = /gutschein|karte|ticket|eintritt|coupon|los\b/i.test(wish + " " + q + " " + subj);
+            const up = pool.filter(o => wOf(o) >= want).sort((a, b) => wOf(a) - wOf(b))[0], near = pool.slice().sort((a, b) => Math.abs(wOf(a) - want) - Math.abs(wOf(b) - want))[0], best = (card && up) || near;
+            if (best && best.slug !== sel.material) { sel.material = best.slug; gramNote = "Genau " + want + " g gibt es hier nicht – ich habe " + best.name + " eingestellt" + (card && up ? ", das ist für Gutscheine bzw. Karten schön stabil." : "."); } } } }
       const isCu = sx => prod.kind === "banner" || (!!prod.custom && sx.size === "custom");
       const custom = isCu(sel) && pick && pick.width > 0 && pick.height > 0 ? { w: pick.width, h: pick.height } : st0.custom;
       const urgency = pick && (prod.urgency || []).some(u => u.slug === pick.urgency) ? pick.urgency : undefined;
@@ -4375,7 +4383,7 @@ module.exports = function (D) {
       };
       let R = await priceFor(prod, sel, false);
       if (!R.variants.length) { out.missing.push(prod.title); out.reasons.push("„" + prod.title + "“: Für diese Ausführung/Menge liefert der Shop keinen Preis (" + (lastPriceErr || "keine gültige Kombination") + ")."); continue; }
-      const usedSel = R.n.sel, asm = ((pick && pick.assumptions) || []).map(x => clip(x, 220)).filter(Boolean).slice(0, 3);
+      const usedSel = R.n.sel, asm = ((pick && pick.assumptions) || []).map(x => clip(x, 220)).filter(x => x && !(gramNote && /\d\s*g\b|g\/m|gramm/i.test(x))).slice(0, 3); if (gramNote) asm.unshift(gramNote);
       if (Object.keys(sel).some(k => usedSel[k] !== sel[k])) asm.push("Nicht jede gewünschte Option ist in dieser Kombination bestellbar – die nächstpassende Ausführung ist eingestellt.");
       // Shop-Hinweise wie im Konfigurator (Simon 26.11.2026: „bei matten Sachen usw. Warnhinweise gleich checken und richtig einbauen“) – generisch für alle Produkte
       const notes = [], alts = [], files = [];
