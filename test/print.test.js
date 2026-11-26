@@ -1251,6 +1251,31 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const u3 = await upload(await pdfOf(91, 61, 2), "m3.pdf", BC);
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 38.4, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
   });
+  await t("Cockpit: PDF in Motive aufteilen (6 Seiten → 3 Motive je vorne/hinten), Einkauf neu, Kundenpreis bleibt, an Print.com als designs, rückgängig", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "aufteilen@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
+    const up = await upload(await pdfOf(91, 61, 6), "kartenset.pdf", BC); assert.ok(/6 Seite\(n\).*2 benötigt/.test(JSON.stringify(up.j.checks)), JSON.stringify(up.j.checks));
+    const r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: up.j.fileId, fileToken: up.j.token, expectedGross: 38.4 })] }, base), { "x-forwarded-for": "203.0.113.78" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const mpid = r.j.checkoutUrl.split("/").pop(); M.payments[mpid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mpid });
+    const o0 = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order, gross0 = o0.price.gross;
+    const ls = await admin("/admin/api/print/op", { op: "splitmotifs", id: r.j.orderId, list: true, confirm: true }); assert.strictEqual(ls.ok, true, JSON.stringify(ls));
+    assert.strictEqual(ls.pages, 6); assert.strictEqual(ls.per, 2); assert.strictEqual(ls.motifs, 3); assert.deepStrictEqual(ls.copies, [84, 83, 83]); assert.strictEqual(ls.can, true);
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "splitmotifs", id: r.j.orderId, per: 4, confirm: true })).ok, false, "6 Seiten nicht durch 4 teilbar");
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "splitmotifs", id: r.j.orderId, copies: [100, 100, 100], confirm: true })).ok, false, "Summe ≠ Auflage");
+    const sp = await admin("/admin/api/print/op", { op: "splitmotifs", id: r.j.orderId, copies: [150, 50, 50], confirm: true }); assert.strictEqual(sp.ok, true, JSON.stringify(sp));
+    const o1 = (await admin("/admin/api/print/order?id=" + r.j.orderId)).order;
+    assert.strictEqual(o1.motifs.length, 3); assert.deepStrictEqual(o1.variants, [{ copies: 150 }, { copies: 50 }, { copies: 50 }]); assert.strictEqual(o1.pageMap[2].page, "5–6"); assert.strictEqual(o1.fileKind, "motifs");
+    assert.strictEqual(o1.price.gross, gross0, "Kundenpreis unverändert"); assert.ok(o1.splitUndo && /in 3 Motive aufgeteilt/.test(JSON.stringify(o1.history)), "Verlauf + Rückgängig");
+    assert.ok(!JSON.stringify(o1.fileChecks).includes("2 benötigt"), "Seitenzahl-Hinweis weg: " + JSON.stringify(o1.fileChecks));
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "splitmotifs", id: r.j.orderId, confirm: true })).ok, false, "nicht doppelt aufteilen");
+    // rückgängig und erneut aufteilen
+    const ud = await admin("/admin/api/print/op", { op: "splitundo", id: r.j.orderId, confirm: true }); assert.strictEqual(ud.ok, true, JSON.stringify(ud)); assert.ok(!ud.order.motifs && ud.order.fileId === o0.fileId && !ud.order.splitUndo);
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "splitmotifs", id: r.j.orderId, copies: [150, 50, 50], confirm: true })).ok, true);
+    const pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl));
+    const pcb = M.orders[M.orders.length - 1].items[0]; assert.ok(Array.isArray(pcb.designs) && pcb.designs.length === 3, JSON.stringify(pcb).slice(0, 300)); assert.deepStrictEqual(pcb.designs.map(d => d.copies), [150, 50, 50]);
+    for (const d of pcb.designs) { const fr = await fetch(B + new URL(d.fileUrl).pathname); assert.strictEqual(fr.status, 200); const { PDFDocument } = require("pdf-lib"); assert.strictEqual((await PDFDocument.load(Buffer.from(await fr.arrayBuffer()))).getPageCount(), 2, "je Motiv 2 Seiten"); }
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "splitundo", id: r.j.orderId, confirm: true })).ok, false, "nach der Bestellung bei Print.com nicht mehr");
+  });
   await t("Mehr Motive als Print.com je Position erlaubt (maxDesigns): an der Kasse abgelehnt, ältere Bestellungen auf mehrere Positionen aufgeteilt", async () => {
     const base = { customer: Object.assign({}, cust, { email: "motive2@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
     const ups = []; for (let i = 0; i < 3; i++) ups.push(await upload(await pdfOf(91, 61, 2), "mx" + i + ".pdf", BC));

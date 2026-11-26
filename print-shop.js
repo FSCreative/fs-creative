@@ -7271,6 +7271,82 @@ module.exports = function (D) {
           return J(res, 200, { ok: true, order: o, warn });
         }
         // Format eines Auftrags ändern (Simon 18.11.2026): neues Endformat aus den Produktoptionen, Einkaufspreis neu, Kundenpreis bleibt; Datei neu geprüft
+        /* PDF in Motive aufteilen (Simon 26.11.2026, D-261126-T6FB: 36-seitige A6-PDF = 18 Karten je vorne/hinten, bestellt als 1 Motiv × 18):
+           Datei (Original, falls gespeichert) in N Motive à „Seiten je Motiv“ zerlegen, jedes Motiv wie ein Shop-Upload prüfen/platzieren, Auflage verteilen,
+           optional Format mit ändern. Kundenpreis bleibt; Einkauf/Marge neu. Rückgängig: op "splitundo" (alter Stand in o.splitUndo). Nur vor der Übergabe an Print.com. */
+        if (op === "splitmotifs" || op === "splitundo") {
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
+          if (op === "splitundo") {
+            const u = o.splitUndo; if (!u) throw new Error("Nichts rückgängig zu machen");
+            if (!canRedate(o)) throw new Error("Schon bei Print.com bestellt – nicht mehr änderbar");
+            Object.assign(o, { fileId: u.fileId, fileName: u.fileName, fileKind: u.fileKind, fileChecks: u.fileChecks, sel: u.sel, pcOptions: u.pcOptions, size: u.size, sides: u.sides, labels: u.labels, bleed: u.bleed, motifs: u.motifs || undefined, variants: u.variants || undefined, pageMap: u.pageMap || undefined });
+            o.price.purchase = u.purchase; o.price.margin = u.margin; delete o.splitUndo;
+            if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
+            hist(o, "Aufteilung in Motive rückgängig gemacht (Cockpit)"); stamp(o); await store.putOrder(o); return J(res, 200, { ok: true, order: o });
+          }
+          if ((prod.kind || "flat") !== "flat") throw new Error("Nur bei Drucksachen ohne Seitenzahl möglich (Karten, Flyer, Aufkleber …)");
+          if (Array.isArray(o.motifs) && o.motifs.length > 1) throw new Error("Die Bestellung hat schon mehrere Motive");
+          if (!o.fileId) throw new Error("Keine Druckdatei");
+          const fm = await store.fileMeta(o.fileId); if (!fm) throw new Error("Druckdatei fehlt");
+          const srcId = fm.src && (await store.fileMeta(fm.src).catch(() => null)) ? fm.src : o.fileId;
+          const srcBuf = await store.fileData(srcId); if (!srcBuf || !(srcBuf[0] === 0x25 && srcBuf[1] === 0x50)) throw new Error("Nur mit einer PDF-Datei möglich");
+          const info = await pdfInfoX(srcBuf); if (!info || info.encrypted) throw new Error("PDF kann nicht gelesen werden");
+          const pr = (prod.props || []).find(x => x.slug === "size"), cur = String((o.sel || {}).size || ""), sh = shipOf(o), cust = Object.assign({}, o.customer, { disc: [] }), pm = o.pcOptions && o.pcOptions.printingmethod ? String(o.pcOptions.printingmethod) : undefined;
+          const norm = (slug, motN) => normalizeSel(prod, { sel: Object.assign({}, o.sel, slug ? { size: slug } : {}), copies: o.copies, urgency: o.urgency, custom: o.custom, motifs: motN, wish: o.price.wish || "" });
+          // passendes Format zur Seitengröße der Datei vorschlagen (Endformat oder inkl. Beschnitt, hoch oder quer)
+          const nearMm = (a, b, t) => Math.abs(a - b) <= t, fitsBox = (m, w, h, t) => m && ((nearMm(m.w, w, t) && nearMm(m.h, h, t)) || (nearMm(m.w, h, t) && nearMm(m.h, w, t)));
+          const sizeOpts = []; if (pr) for (const x of pr.options) { try { const nx = normalizeSel(prod, { sel: Object.assign({}, o.sel, { size: x.slug }), copies: o.copies }); if (!nx.excluded && nx.size && String(nx.sel.size) === x.slug) sizeOpts.push({ slug: x.slug, name: x.name, w: nx.size.w, h: nx.size.h }); } catch (e) { /* Kombination nicht möglich */ } }
+          const bl = +prod.bleed || 0, sugg = info.media ? (sizeOpts.find(x => fitsBox(info.media, x.w, x.h, 1.2) || fitsBox(info.media, x.w + 2 * bl, x.h + 2 * bl, 1.2)) || null) : null;
+          const slug = b.size ? String(b.size) : (b.list ? (sugg ? sugg.slug : cur) : cur);
+          if (slug !== cur && !sizeOpts.some(x => x.slug === slug)) throw new Error("Dieses Format gibt es für das Produkt nicht");
+          const n1 = norm(slug, 0); if (n1.pages) throw new Error("Produkt mit Seitenzahl (Broschüre …) – hier gibt es keine Motive");
+          const per = Math.max(1, parseInt(b.per, 10) || +n1.sides || 1), pages = info.pages || 0;
+          if (!(pages > per)) throw new Error("Die Datei hat nur " + pages + " Seite(n) – nichts aufzuteilen");
+          if (pages % per) throw new Error("Die Datei hat " + pages + " Seiten – nicht teilbar durch " + per + " Seiten je Motiv");
+          const N = pages / per; if (N > MAX_MOTIFS) throw new Error("Höchstens " + MAX_MOTIFS + " Motive möglich (Datei ergäbe " + N + ")");
+          if (prod.maxDesigns && N > prod.maxDesigns) throw new Error("Print.com erlaubt bei diesem Produkt höchstens " + prod.maxDesigns + " Motive je Auflage");
+          if (o.copies < N) throw new Error("Auflage " + o.copies + " reicht nicht für " + N + " Motive (mindestens 1 Stück je Motiv)");
+          let copies = Array.isArray(b.copies) && b.copies.length === N ? b.copies.map(x => Math.max(1, parseInt(x, 10) || 0)) : Array.from({ length: N }, (x, i) => Math.floor(o.copies / N) + (i < o.copies % N ? 1 : 0));
+          if (copies.reduce((a, x) => a + x, 0) !== o.copies) throw new Error("Die Stückzahlen je Motiv (" + copies.reduce((a, x) => a + x, 0) + ") ergeben nicht die Auflage (" + o.copies + ")");
+          const n = norm(slug, N); n.fresh = true;
+          if (n.excluded || (slug && String(n.sel.size) !== slug)) throw new Error("Diese Kombination bietet Print.com nicht an");
+          const q = await quote(prod, n, sh.country, sh.zip, cust);
+          const pu = o.price.purchase || {}, oldTotal = +pu.total || 0, total = +(q.purchase && q.purchase.total) || 0;
+          const fees = ["checkFee", "designFee", "linkAdd"].reduce((a, k) => a + (o.price[k] ? +o.price[k].gross || 0 : 0), 0), paidProd = r2((o.price.gross || 0) - fees);   // bezahlter Produktpreis ohne Datencheck/Grafik
+          const curName = ((pr && pr.options.find(x => x.slug === cur)) || {}).name || cur, newName = ((pr && pr.options.find(x => x.slug === slug)) || {}).name || slug;
+          const summary = { pages, per, motifs: N, copies, size: slug, sizeName: newName, curSize: cur, curSizeName: curName, suggested: sugg ? sugg.slug : null, sizes: sizeOpts.map(x => ({ slug: x.slug, name: x.name })),
+            media: info.media || null, buy: total, oldBuy: oldTotal, shopNet: q.net, shopGross: q.gross, paidGross: o.price.gross, paidProduct: paidProd, fees: r2(fees), diff: r2(q.gross - paidProd), src: srcId !== o.fileId };
+          if (b.list) return J(res, 200, Object.assign({ ok: true, can: canRedate(o) }, summary));
+          if (!canRedate(o)) throw new Error("Schon bei Print.com bestellt – nicht mehr änderbar");
+          // je Motiv eine eigene PDF (Seiten i·per … i·per+per−1) – geprüft/platziert wie ein normaler Shop-Upload für dieses Format
+          const { PDFDocument } = require("pdf-lib"), src = await PDFDocument.load(srcBuf, { updateMetadata: false }), base = String(fm.name || "druck.pdf").replace(/\.pdf$/i, "");
+          const list = [];
+          for (let i = 0; i < N; i++) {
+            const d = await PDFDocument.create(), pgs = await d.copyPages(src, Array.from({ length: per }, (x, k) => i * per + k)); pgs.forEach(x => d.addPage(x));
+            const part = Buffer.from(await d.save());
+            const meta = await handleUpload(part, base + " – Motiv " + (i + 1) + ".pdf", { product: prod.key, sel: n.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, motifs: N });   // Gesamtauflage (Staffel), Motivzahl wie beim Shop-Upload
+            meta.orderId = o.id; await store.putFile(meta).catch(() => {});
+            list.push({ fm: meta, copies: copies[i] });
+          }
+          const doc = await PDFDocument.create(), pageMap = []; let pg = 1;
+          for (let i = 0; i < list.length; i++) { const s2 = await PDFDocument.load(await store.fileData(list[i].fm.id)); const pp = await doc.copyPages(s2, s2.getPageIndices()); pp.forEach(x => doc.addPage(x));
+            pageMap.push({ page: pp.length > 1 ? pg + "–" + (pg + pp.length - 1) : String(pg), title: "Motiv " + (i + 1) + " (" + list[i].copies + " Stk.)", motif: i + 1, copies: list[i].copies }); pg += pp.length; }
+          const t0 = list[0].fm, checks = [{ level: "ok", text: list.length + " Motive aus „" + clip(fm.name || "druck.pdf", 80) + "“ (" + pages + " Seiten, je " + per + ") aufgeteilt: " + pageMap.map(p => "Seite " + p.page + " = " + p.title).join(", ") + "." }]
+            .concat(...list.map((x, i) => (x.fm.checks || []).filter(c => c.level !== "ok").map(c => ({ level: c.level, text: "Motiv " + (i + 1) + ": " + c.text }))));
+          const comb = await newFile("motifs", "motive.pdf", Buffer.from(await doc.save()), { product: t0.product, sel: t0.sel, size: t0.size, bleed: t0.bleed, sides: t0.sides, pages: pg - 1 }, checks, { pageMap, motifFiles: list.map(x => x.fm.id), orderId: o.id, from: o.fileId });
+          o.splitUndo = { at: nowIso(), fileId: o.fileId, fileName: o.fileName, fileKind: o.fileKind, fileChecks: o.fileChecks, sel: o.sel, pcOptions: o.pcOptions, size: o.size, sides: o.sides, labels: o.labels, bleed: o.bleed, motifs: o.motifs || null, variants: o.variants || null, pageMap: o.pageMap || null, purchase: o.price.purchase, margin: o.price.margin };
+          o.fileHistory = (o.fileHistory || []).concat([{ at: nowIso(), old: o.fileId, new: comb.id, motif: null, name: comb.name, by: "Cockpit (in " + N + " Motive aufgeteilt)" }]).slice(-30);
+          o.motifs = list.map((x, i) => ({ motif: i + 1, copies: x.copies, fileId: x.fm.id, fileName: x.fm.name })); o.variants = o.motifs.map(m => ({ copies: m.copies })); o.pageMap = pageMap;
+          o.fileId = comb.id; o.fileName = comb.name; o.fileKind = "motifs"; o.fileChecks = checks;
+          o.sel = n.sel; o.pcOptions = n.pcOpts; o.labels = n.labels; o.size = n.size; o.sides = n.sides; o.bleed = prod.bleed;
+          o.price.purchase = Object.assign({}, q.purchase); if (!pu.actual) o.price.margin = r2((o.price.margin || 0) - (total - oldTotal));
+          if (o.proof && o.proof.status !== "approved") o.proof.stale = true;
+          const errs = checks.filter(c => c.level === "error").length;
+          hist(o, "PDF in " + N + " Motive aufgeteilt (Cockpit): je " + per + " Seite(n), " + copies.join("/") + " Stk." + (slug !== cur ? " · Format " + curName + " → " + newName : "") + " · Einkauf " + eur(total) + (Math.abs(total - oldTotal) > 0.004 ? " (" + (total > oldTotal ? "+" : "−") + eur(Math.abs(total - oldTotal)) + ")" : "") + " · Kundenpreis unverändert" + (Math.abs(summary.diff) > 0.004 ? " (Shop-Preis jetzt " + eur(q.gross) + ")" : "") + (errs ? " · " + errs + " Prüfhinweis(e)" : ""));
+          stamp(o); await store.putOrder(o);
+          return J(res, 200, Object.assign({ ok: true, order: o }, summary));
+        }
         if (op === "format") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           const prod = await findProduct(o.product.key, null, true); if (!prod) throw new Error("Produkt nicht mehr im Katalog");
