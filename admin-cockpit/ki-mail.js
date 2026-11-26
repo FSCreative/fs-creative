@@ -67,6 +67,9 @@ function offerHtml(m,r,sent){
   return '<div class="mofr"><div class="mofr-h"><div><b>Antwortvorschlag mit Shop-Link</b><span>'+(o.company?"Firma – Preise netto, mit 20 % USt":"Privat – Preise inkl. 20 % USt")+'</span></div><button type="button" class="link" data-act="kimofferx:'+esc(m.id)+'">Ausblenden</button></div>'+
     o.items.map(function(it){ return '<div class="mofr-it"><b>'+esc(it.title)+'</b>'+((it.labels||[]).length?'<span class="mofr-l">'+it.labels.slice(0,6).map(function(l){ return esc(l[0])+": "+esc(l[1]); }).join(" · ")+'</span>':'')+
       it.variants.map(function(v){ return '<div class="mofr-v"><span>'+(v.sep>1?v.sep+' × ':'')+String(v.copies).replace(/\B(?=(\d{3})+(?!\d))/g,".")+' Stk.'+(v.motifs>1?' · '+v.motifs+' Motive':'')+(v.sep>1?' je Motiv':'')+'</span><b class="num">'+(o.company?F.eur(v.net)+' netto':F.eur(v.gross))+'</b><a href="'+esc(v.link)+'" target="_blank" rel="noopener">Link öffnen</a></div>'; }).join("")+
+      ((it.notes||[]).length?'<span class="mofr-n">'+it.notes.map(esc).join("<br>")+'</span>':'')+
+      (it.alts||[]).map(function(al){ return '<span class="mofr-a"><b>Alternative:</b> '+esc(al.title)+'</span>'+al.variants.map(function(v){ return '<div class="mofr-v"><span>'+String(v.copies).replace(/\B(?=(\d{3})+(?!\d))/g,".")+' Stk.</span><b class="num">'+(o.company?F.eur(v.net)+' netto':F.eur(v.gross))+'</b><a href="'+esc(v.link)+'" target="_blank" rel="noopener">Link öffnen</a></div>'; }).join(""); }).join("")+
+      ((it.files||[]).length?'<span class="mofr-a"><b>Druckdatei:</b> '+it.files.map(esc).join(" · ")+'</span>':'')+
       ((it.assumptions||[]).length?'<span class="mofr-a">'+it.assumptions.map(esc).join("<br>")+'</span>':'')+'</div>'; }).join("")+
     ((o.missing||[]).length?'<div class="mofr-a">Nicht im Shop gefunden: '+o.missing.map(esc).join(", ")+'</div>':'')+
     '<div class="row wrap"><button type="button" class="btn pri" data-act="kimofferuse:'+esc(m.id)+'">In Antwort übernehmen</button><button type="button" class="link" data-act="kimofferre:'+esc(m.id)+'">Neu erstellen</button></div></div>';
@@ -91,7 +94,7 @@ F.action("kimofferuse",function(id){ var m=M.find&&M.find(id), o=MS[id]&&MS[id].
 F.action("kimofferx",function(id){ if(MS[id]){ MS[id].offer=null; MS[id].offerHide=true; } rr(); });
 F.css(".mofr{border:1px solid color-mix(in srgb,var(--glow) 35%,var(--line));border-radius:12px;padding:12px 14px;display:grid;gap:10px;background:var(--sunk);font-size:14px;line-height:1.45;min-width:0;overflow-wrap:anywhere}"+
   ".mofr-h{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.mofr-h>div{display:grid;gap:2px;min-width:0;flex:1 1 220px}.mofr-h span{font-size:12.5px;color:var(--ink-3)}"+
-  ".mofr-it{display:grid;gap:4px;border-top:1px solid var(--line);padding-top:8px}.mofr-l,.mofr-a{font-size:12.5px;color:var(--ink-3)}"+
+  ".mofr-it{display:grid;gap:4px;border-top:1px solid var(--line);padding-top:8px}.mofr-l,.mofr-a{font-size:12.5px;color:var(--ink-3)}.mofr-n{font-size:12.5px;color:var(--warn);font-weight:600}"+
   ".mofr-v{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.mofr-v span{min-width:80px}.mofr-v b{font-weight:600}.mofr-v a{font-size:13px}"+
   ".mofr .row{display:flex;gap:8px;align-items:center}"+
   "@media (max-width:900px){.mofr .btn{min-height:42px}}");

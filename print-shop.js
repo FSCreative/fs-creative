@@ -4192,6 +4192,9 @@ module.exports = function (D) {
         L.push("", thd(v.copies) + " Stück" + (v.motifs > 1 ? " (" + v.motifs + " Motive à " + (v.copies % v.motifs ? "ca. " : "") + thd(Math.round(v.copies / v.motifs)) + " Stück – berechnet wird die Gesamtmenge, ohne Aufpreis je Motiv)" : "") + ": " + pr + ", inkl. Versand innerhalb Österreichs", v.link);
         if (v.date && (!dmin || v.date < dmin)) dmin = v.date;
       });
+      (it.notes || []).forEach(a => L.push("", "Hinweis: " + a));
+      (it.alts || []).forEach(al => { L.push("", "Alternative – " + al.title + ":"); al.variants.forEach(v => L.push(thd(v.copies) + " Stück: " + (r.company ? eurDe(v.net) + " netto (" + eurDe(v.gross) + " inkl. 20 % USt)" : eurDe(v.gross) + " inkl. 20 % USt"), v.link)); });
+      if ((it.files || []).length) L.push("", sie ? "Für die Druckdatei wichtig:" : "Für die Druckdatei wichtig:", ...it.files.map(x => "- " + x));
       (it.assumptions || []).forEach(a => L.push("Hinweis: " + a));
       L.push("");
     });
@@ -4206,6 +4209,28 @@ module.exports = function (D) {
     if ((r.missing || []).length) L.push("", "Für " + r.missing.join(", ") + (sie ? " erstelle ich Ihnen gerne ein eigenes Angebot." : " mache ich dir gerne ein eigenes Angebot."));
     L.push("", sie ? "Bei Fragen erreichen Sie mich gerne jederzeit." : "Bei Fragen melde dich gerne jederzeit.");
     return L.join("\n").replace(/\n{3,}/g, "\n\n");
+  }
+  /* Hinweise wie im Konfigurator (print/app.js mattInfo / vinylKick), serverseitig für den Mail-Vorschlag:
+     mattes Papier ohne Kratzschutz → kratzfeste matte Folienkaschierung empfehlen (nur wenn mit dem Papier möglich – das prüft priceFor mit dem Preis). */
+  function mattAdvice(prod, sel) {
+    if (!prod || prod.kind === "textile" || prod.kind === "promo") return null;
+    const fx = prod.fixed || {}, val = s => { const v = sel[s] != null ? sel[s] : fx[s]; if (v == null) return ""; const pr = (prod.props || []).find(x => x.slug === s), o = pr && pr.options.find(x => x.slug === String(v)); return String(v) + " " + (o ? o.name : ""); };
+    const cov = val("cover_material"), hasCov = !!cov.trim() && !/^(none|selfcover|none_cover)(\s|$)/i.test(cov.trim()), surf = hasCov ? cov : val("material");
+    if (!(/silk|\bmatt/i.test(surf) && /papier|paper|silk|bilderdruck|terraprint/i.test(surf) && !/gesatineerd|gl(ä|a)nz|gloss|folie|foil|lamin|kaschier|vinyl|pvc/i.test(surf))) return null;
+    const rx = /scratch|kratzfest/i, lamVals = Object.keys(Object.assign({}, fx, sel)).filter(s => /finish|lamin/i.test(s) && !/spot|products|calendar/i.test(s)).map(val).filter(v => /lamin|kaschier|cellophan/i.test(v));
+    if (lamVals.some(v => rx.test(v))) return null;
+    const mattLam = lamVals.some(v => /matt|soft_?touch/i.test(v) && !/gloss|gl(ä|a)nz/i.test(v)); if (lamVals.length && !mattLam) return null;   // glänzende Folie schützt schon
+    const pr = (prod.props || []).find(p => /finish|lamin/i.test(p.slug) && !/spot/i.test(p.slug) && p.options.some(o => rx.test(o.slug + " " + o.name))); if (!pr) return null;
+    return { prop: pr.slug, opts: pr.options.filter(o => rx.test(o.slug + " " + o.name)),
+      why: (mattLam ? "Mattes Papier mit normaler matter Folie ist empfindlich" : hasCov ? "Der Umschlag aus mattem Papier ist ohne Folienkaschierung empfindlich" : "Mattes Papier ohne Folienkaschierung ist empfindlich") + " – es kann zu Kratzern und Abrieb kommen." };
+  }
+  const VIN_FIN = { geen: "no_laminate", single_sided_gloss_lamination: "monomeer_gloss_lamination_oraguard_200", single_sided_matt_lamination: "monomeer_matt_lamination_oraguard_200" };
+  async function vinylAdvice(prod, n) {   // Bogen-Aufkleber (aufkleber) → Vinyl-Aufkleber gleicher Größe, wenn mind. 5 % günstiger (wie vinylKick im Shop)
+    const s = (n && n.sel) || {}; if (!prod || prod.key !== "aufkleber" || !n || !n.size) return null;
+    if ((s.shape && s.shape !== "rectangle_sticker") || (s.custom_shape && s.custom_shape !== "clean_cut") || /transpar/i.test(s.material || "") || String(s.printtype || "40") !== "40" || (s.personalize && s.personalize !== "none") || s.type_glue === "detachable" || !(s.finish in VIN_FIN)) return null;
+    if (Math.min(n.size.w, n.size.h) < 50) return null;
+    const vp = await findProduct("sticker-vinyl", await settings()).catch(() => null); if (!vp) return null;
+    return { prod: vp, sel: { material: "monomeer_white_gloss_orajet_3162", finish: VIN_FIN[s.finish], custom_shape: "clean_cut_stickers", size: "custom", printtype: "40", application_side: "outside", number_of_contour_lines: "no_contour_lines" }, custom: { w: String(n.size.w), h: String(n.size.h) } };
   }
   async function mailSuggest(mail) {
     mail = mail || {};
@@ -4245,31 +4270,52 @@ module.exports = function (D) {
       const motWant = Math.max(1, Math.min(MAX_MOTIFS, Math.round(+it.motifs || 1))), motMaxP = (prod.kind || "flat") === "flat" ? Math.min(MAX_MOTIFS, +prod.maxDesigns > 0 ? +prod.maxDesigns : MAX_MOTIFS) : 1;
       const motSep = motWant > motMaxP ? motWant : 0, motN = motSep ? 1 : motWant;   // Produkt erlaubt nicht so viele Motive je Auflage → je Motiv eine Position (Menge je Motiv)
       if (motSep) qs = qs.map(n => moNearest(prod, Math.max(1, Math.round(n / motSep)))).filter((x, i, a) => x > 0 && a.indexOf(x) === i);
-      const variants = []; let labels = null, usedSel = null;
-      for (const copies of qs) {
-        const tries = [sel, Object.assign({}, st0.sel || {}, sel), st0.sel || {}];
-        for (let ti = 0; ti < tries.length; ti++) {
-          try {
-            const n = normalizeSel(prod, Object.assign({ sel: tries[ti], copies, custom, urgency }, motN > 1 ? { motifs: motN } : {}));
-            const qt = await quote(prod, n, "AT", "", { company: out.company });
-            const c = { s: n.sel, q: n.copies, u: n.urgency || urgency || "standard" }; if (custom && isCu(n.sel)) c.c = custom;
-            if (motN > 1) { const per = Math.floor(n.copies / motN), sp = Array.from({ length: motN }, (x, i) => per + (i < n.copies - per * motN ? 1 : 0)); c.mo = { n: motN, sp, f: [] }; }
-            const long = cfgLink(prod.key, c); let link = long; try { link = await shortMake(long); } catch (e) {}
-            variants.push(Object.assign({ copies: n.copies, net: qt.net, gross: qt.gross, date: qt.deliveryDate || "", link }, motN > 1 ? { motifs: motN } : {}, motSep ? { sep: motSep } : {}));
-            if (!labels) { labels = (n.labels || []).filter(l => l && l[1] != null && String(l[1]).trim() && !/^(ohne|keine?|nein|offen geliefert|standard|nicht personalisiert)$/i.test(String(l[1]).trim())); usedSel = n.sel; }
-            break;
-          } catch (e) { if (ti === tries.length - 1) log("Mail-Vorschlag Preis " + prod.key + ":", e.message); }
+      // Preise + Links je Menge für eine Auswahl (gleiche Logik wie der Konfigurator: normalizeSel + quote); strict = genau diese Auswahl (für Empfehlungen/Alternativen)
+      const priceFor = async (P, selX, strict, cuX) => {
+        const vs = []; let lab = null, used = null; const s0 = P === prod ? st0 : (startOf(P) || {}), cuY = cuX || (P === prod ? custom : s0.custom), isCuP = sx => P.kind === "banner" || (!!P.custom && sx.size === "custom");
+        for (const copies of qs) {
+          const tries = strict ? [selX] : [selX, Object.assign({}, s0.sel || {}, selX), s0.sel || {}];
+          for (let ti = 0; ti < tries.length; ti++) {
+            try {
+              const n = normalizeSel(P, Object.assign({ sel: tries[ti], copies, custom: cuY, urgency: P === prod ? urgency : undefined }, motN > 1 ? { motifs: motN } : {}));
+              const qt = await quote(P, n, "AT", "", { company: out.company });
+              const c = { s: n.sel, q: n.copies, u: n.urgency || urgency || "standard" }; if (cuY && isCuP(n.sel)) c.c = cuY;
+              if (motN > 1) { const per = Math.floor(n.copies / motN), sp = Array.from({ length: motN }, (x, i) => per + (i < n.copies - per * motN ? 1 : 0)); c.mo = { n: motN, sp, f: [] }; }
+              const long = cfgLink(P.key, c); let link = long; try { link = await shortMake(long); } catch (e) {}
+              vs.push(Object.assign({ copies: n.copies, net: qt.net, gross: qt.gross, date: qt.deliveryDate || "", link }, motN > 1 ? { motifs: motN } : {}, motSep ? { sep: motSep } : {}));
+              if (!lab) { lab = (n.labels || []).filter(l => l && l[1] != null && String(l[1]).trim() && !/^(ohne|keine?|nein|offen geliefert|standard|nicht personalisiert)$/i.test(String(l[1]).trim())); used = n; }
+              break;
+            } catch (e) { if (ti === tries.length - 1 && !strict) log("Mail-Vorschlag Preis " + P.key + ":", e.message); }
+          }
+          if (strict && !vs.length) break;
         }
+        return { variants: vs, labels: lab || [], n: used };
+      };
+      let R = await priceFor(prod, sel, false);
+      if (!R.variants.length) { out.missing.push(prod.title); continue; }
+      const usedSel = R.n.sel, asm = ((pick && pick.assumptions) || []).map(x => clip(x, 220)).filter(Boolean).slice(0, 3);
+      if (Object.keys(sel).some(k => usedSel[k] !== sel[k])) asm.push("Nicht jede gewünschte Option ist in dieser Kombination bestellbar – die nächstpassende Ausführung ist eingestellt.");
+      // Shop-Hinweise wie im Konfigurator (Simon 26.11.2026: „bei matten Sachen usw. Warnhinweise gleich checken und richtig einbauen“) – generisch für alle Produkte
+      const notes = [], alts = [], files = [];
+      const mt = mattAdvice(prod, usedSel);
+      if (mt) {
+        let rec = null; for (const o of mt.opts) { const r = await priceFor(prod, Object.assign({}, usedSel, { [mt.prop]: o.slug }), true); if (r.variants.length === R.variants.length) { rec = r; break; } }
+        if (rec) { alts.push({ title: "Wie angefragt, ohne Kratzschutz", variants: R.variants.slice(0, 1) }); R = rec;
+          notes.push(mt.why + " Deshalb habe ich die kratzfeste matte Folienkaschierung gleich eingestellt – sie ist deutlich widerstandsfähiger."); }
       }
-      if (!variants.length) { out.missing.push(prod.title); continue; }
-      const asm = ((pick && pick.assumptions) || []).map(x => clip(x, 220)).filter(Boolean).slice(0, 3);
-      if (usedSel && Object.keys(sel).some(k => usedSel[k] !== sel[k])) asm.push("Nicht jede gewünschte Option ist in dieser Kombination bestellbar – die nächstpassende Ausführung ist eingestellt.");
-      out.items.push({ key: prod.key, title: prod.title, labels: labels || [], variants, assumptions: asm, bleed: prod.bleed || 0, dpi: prod.dpi || 300 });
+      const vin = await vinylAdvice(prod, R.n, out.company).catch(() => null);
+      if (vin) { const vr = await priceFor(vin.prod, vin.sel, true, vin.custom).catch(() => null), cur = out.company ? R.variants[0].net : R.variants[0].gross;
+        if (vr && vr.variants.length && (out.company ? vr.variants[0].net : vr.variants[0].gross) <= cur * 0.95) alts.push({ title: "Günstiger und wasserfest: Vinyl-Aufkleber in gleicher Größe (Klebefolie weiß glänzend, wasser- und UV-beständig, einzeln zugeschnitten)", variants: vr.variants }); }
+      try { spotNeedsOf(prod, R.n.sel).forEach(x => { if (x && x[1]) files.push(x[1] + " – in der Druckdatei als Sonderfarbe „" + x[0] + "“ anlegen"); }); } catch (e) {}
+      (prod.props || []).forEach(pr => { const o = pr.options.find(y => y.slug === R.n.sel[pr.slug]); if (o && o.file) files.push(o.file); });
+      (prod.specs || []).forEach(x => { if (x && x[3]) files.push(x[3]); });
+      const filesU = files.map(x => clip(x, 300)).filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 4);
+      out.items.push({ key: prod.key, title: prod.title, labels: R.labels, variants: R.variants, assumptions: asm, notes, alts, files: filesU, bleed: prod.bleed || 0, dpi: prod.dpi || 300 });
     }
     // Simon 26.11.2026: „wichtig auch auf die Fragen der Kunden eingehen“ – jede Frage aus der Mail beantworten (mit den berechneten Preisen/Terminen und den Shop-Fakten)
     out.answers = []; out.coversDelivery = false;
     try {
-      const facts = out.items.map(it => it.title + " (" + (it.labels || []).map(l => l[0] + ": " + l[1]).join(", ") + "): " + it.variants.map(v => (v.sep > 1 ? v.sep + " Motive à " + v.copies + " Stk. (je Motiv eine Position) " : v.copies + " Stk." + (v.motifs > 1 ? " (" + v.motifs + " Motive, Gesamtmenge berechnet, ohne Aufpreis je Motiv)" : "") + " ") + (out.company ? eurDe(v.net) + " netto / " : "") + eurDe(v.gross) + " inkl. 20 % USt, Lieferung voraussichtlich " + dateDe(v.date)).join("; ") + ((it.assumptions || []).length ? " – Annahmen: " + it.assumptions.join(" ") : "")).join("\n");
+      const facts = out.items.map(it => it.title + " (" + (it.labels || []).map(l => l[0] + ": " + l[1]).join(", ") + "): " + it.variants.map(v => (v.sep > 1 ? v.sep + " Motive à " + v.copies + " Stk. (je Motiv eine Position) " : v.copies + " Stk." + (v.motifs > 1 ? " (" + v.motifs + " Motive, Gesamtmenge berechnet, ohne Aufpreis je Motiv)" : "") + " ") + (out.company ? eurDe(v.net) + " netto / " : "") + eurDe(v.gross) + " inkl. 20 % USt, Lieferung voraussichtlich " + dateDe(v.date)).join("; ") + ((it.assumptions || []).length ? " – Annahmen: " + it.assumptions.join(" ") : "") + ((it.notes || []).length ? " – Hinweise: " + it.notes.join(" ") : "") + ((it.alts || []).length ? " – Alternativen: " + it.alts.map(a => a.title).join("; ") : "") + ((it.files || []).length ? " – Druckdaten-Hinweise: " + it.files.join(" ") : "")).join("\n");
       const sa = "Du schreibst als Simon Felder (FS Creative, Online-Druckshop in Österreich) in der Ich-Form den Teil seiner Antwortmail, der konkret auf die Fragen und Anliegen des Kunden eingeht. Produkt, Ausführung, Preise und Link stehen schon darüber in der Mail (siehe „Steht schon in der Mail“) – nicht wiederholen. Nie „Simon“ in der dritten Person, nie „Entwurf“, nichts Internes. Kurz und sicher formulieren, nicht absichern ohne Grund. " +
         "answers: für JEDE Frage bzw. jedes Anliegen in der Mail (z. B. Lieferzeit/Termin, Druckdaten/Gestaltung, Material/Papier, Versand, Bezahlung/Rechnung, Muster, Farben, Format) einen kurzen Absatz (1–3 Sätze), " + "freundlich, natürlich, im Ton eines kleinen österreichischen Betriebs, " + (out.formal ? "per Sie" : "per du") + ", ohne Anrede und ohne Grußformel; der Absatz darf mit einem Stichwort beginnen (z. B. „Lieferzeit: …“). Keine Frage in der Mail → leere Liste. " +
         "Termine nur als „voraussichtlich“ und mit Hinweis auf den Paketdienst; Firmenpreise netto plus 20 % USt. Was nicht in den Fakten steht, nicht zusagen: dann „kläre ich gerne“ bzw. „gebe ich Ihnen gerne Bescheid“ oder unter questions nachfragen. Nicht fragen, ob Firma oder Privat. coversDelivery: true, wenn ein Absatz Lieferzeit/Termin behandelt. " +
@@ -7703,6 +7749,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { mailSuggest, shopKnowledge, incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { mailOfferText, mailSuggest, addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { mailSuggest, shopKnowledge, incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { mailOfferText, mailSuggest, mattAdvice, addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;
