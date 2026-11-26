@@ -1718,6 +1718,21 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     // Weiß-Ansicht: Ersatzfarbe der White-Separation wird Pink
     const sc = await FI.spotScan(await mk(["White", "Thrucut"], true)); assert.strictEqual(sc.recolor(s => s === "White", [1, 0, 0.6]), 1);
   });
+  await t("Umschlag als Druckbogen (Klebebindung): außen N | Rücken | 1, innen 2 | Rücken | N−1, dann Innenseiten 3 … N−2 – Bogenmaß, Trim-/BleedBox, Vektoren", async () => {
+    const { PDFDocument, StandardFonts, rgb } = require("pdf-lib"), MMP = 72 / 25.4;
+    const PST = require(path.join(ROOT, "print-shop.js"))({ DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "fsc-cover-")) })._test;
+    const d = await PDFDocument.create(), f = await d.embedFont(StandardFonts.Helvetica);
+    for (let i = 1; i <= 8; i++) { const p = d.addPage([216 * MMP, 303 * MMP]); p.drawRectangle({ x: 0, y: 0, width: 216 * MMP, height: 303 * MMP, color: rgb(i / 10, 0.2, 0.4) }); p.drawText("Seite " + i, { x: 40, y: 400, size: 30, font: f }); p.setTrimBox(3 * MMP, 3 * MMP, 210 * MMP, 297 * MMP); }
+    const r = await PST.coverSpread(Buffer.from(await d.save()), { w: 210, h: 297, bleed: 3, spine: 3 });
+    assert.deepStrictEqual(r.size, { w: 429, h: 303 }); assert.strictEqual(r.pages, 8);
+    const all = await PDFDocument.load(r.all), cov = await PDFDocument.load(r.cover), inn = await PDFDocument.load(r.inner);
+    assert.strictEqual(all.getPageCount(), 6); assert.strictEqual(cov.getPageCount(), 2); assert.strictEqual(inn.getPageCount(), 4);
+    const p0 = all.getPage(0), tb = p0.getTrimBox(); assert.ok(Math.abs(p0.getWidth() / MMP - 429) < 0.05 && Math.abs(tb.width / MMP - 423) < 0.05 && Math.abs(tb.x / MMP - 3) < 0.05);
+    assert.ok(Math.abs(all.getPage(2).getWidth() / MMP - 216) < 0.05, "Innenseiten unverändert 216 mm");
+    const txt = async b => { const o = path.join(os.tmpdir(), "fsc-cv-" + process.pid + ".pdf"); fs.writeFileSync(o, b); try { return require("child_process").execFileSync("pdftotext", ["-layout", o, "-"]).toString(); } catch (e) { return null; } finally { fs.rmSync(o, { force: true }); } };
+    const tx = await txt(r.all); if (tx != null) { const pg = tx.split("\f"); assert.ok(/Seite 8[\s\S]*Seite 1/.test(pg[0]) && /Seite 2[\s\S]*Seite 7/.test(pg[1]) && /Seite 3/.test(pg[2]) && /Seite 6/.test(pg[5]), JSON.stringify(pg.slice(0, 3))); }
+    await assert.rejects(PST.coverSpread(Buffer.from(await (async () => { const x = await PDFDocument.create(); for (let i = 0; i < 6; i++) x.addPage([216 * MMP, 303 * MMP]); return x.save(); })()), { w: 210, h: 297, bleed: 3, spine: 3 }), /mindestens 8 Seiten/);
+  });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }
   console.log((fail ? "FEHLER: " : "OK: ") + pass + " bestanden, " + fail + " fehlgeschlagen");

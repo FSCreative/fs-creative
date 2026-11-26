@@ -2169,6 +2169,47 @@ module.exports = function (D) {
     }
     return Buffer.from(await out.save());
   }
+  /* Umschlag als Druckbogen (Simon 26.11.2026, Klebebindung D-261126-HTT6): Print.com will bei Klebebindung/Softcover den Umschlag als Bogen –
+     laut Print.com-Vorlage (printjobs/templates) Seite 1 = Umschlag außen [Rückseite | Rücken | Vorderseite], Seite 2 = Umschlag innen
+     [innen vorne | Rücken | innen hinten], je (2 × Endformatbreite + Rücken) × Höhe + Beschnitt, danach die Innenseiten einzeln.
+     Aus einer Leserichtungs-PDF (1 … N inkl. Umschlag): außen = N | 1, innen = 2 | N−1, Innenteil = 3 … N−2. Vektoren/Schriften bleiben (embedPage).
+     Jede Umschlagseite wird samt ihrem Beschnitt gezeichnet, an der Rückenmitte abgeschnitten – bis 2 × Beschnitt Rückenbreite füllt so der Beschnitt
+     beider Seiten den Rücken (Hintergrund läuft durch, keine weiße Kante); breiter: Mitte bleibt weiß (Rückentext müsste eigens gestaltet werden). */
+  async function coverSpread(buf, o) {
+    const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
+    const src = await PDFDocument.load(buf, { updateMetadata: false }), N = src.getPageCount();
+    if (N < 8 || N % 2) throw bad("Für einen Umschlag-Bogen braucht die PDF mindestens 8 Seiten und eine gerade Seitenzahl (hat " + N + ")");
+    const W = o.w * MM_PT, H = o.h * MM_PT, b = (o.bleed == null ? 3 : o.bleed) * MM_PT, S = Math.max(0, +o.spine || 0) * MM_PT;
+    const trimOf = sp => { const v = vbox(sp); let t = null; try { const tb = sp.getTrimBox(); if (tb && tb.width > 1 && (Math.abs(tb.width - v.right + v.left) > 0.5 || Math.abs(tb.height - v.top + v.bottom) > 0.5)) t = { x: tb.x, y: tb.y }; } catch (e) {}
+      if (!t) t = { x: v.left + (v.right - v.left - W) / 2, y: v.bottom + (v.top - v.bottom - H) / 2 };   // ohne TrimBox: Endformat mittig
+      if ((v.right - v.left) < W - MM_PT || (v.top - v.bottom) < H - MM_PT || (v.right - v.left) > W + 2 * b + 3 * MM_PT) throw bad("Seitengröße passt nicht zum Endformat – zuerst einpassen");
+      return t; };
+    const out = await PDFDocument.create(), PW = 2 * W + S + 2 * b, PH = H + 2 * b, mid = b + W + S / 2;
+    async function spread(li, ri) {
+      const pg = out.addPage([PW, PH]);
+      for (const [idx, x0, clipX, clipW] of [[li, b, 0, mid], [ri, b + W + S, mid, PW - mid]]) {
+        const sp = src.getPage(idx); if (!sp.node.Contents()) continue;
+        const v = vbox(sp), t = trimOf(sp), emb = await out.embedPage(sp, v);
+        pg.pushOperators(pushGraphicsState(), rectangle(clipX, 0, clipW, PH), clip(), endPath());
+        pg.drawPage(emb, { x: x0 - (t.x - v.left), y: b - (t.y - v.bottom) });
+        pg.pushOperators(popGraphicsState());
+      }
+      pg.setTrimBox(b, b, 2 * W + S, H); pg.setBleedBox(0, 0, PW, PH);
+    }
+    await spread(N - 1, 0);          // außen: Rückseite links, Titel rechts
+    await spread(1, N - 2);          // innen: innen vorne links, innen hinten rechts
+    const cover = Buffer.from(await out.save());
+    const inner = await PDFDocument.create(); (await inner.copyPages(src, Array.from({ length: N - 4 }, (_, i) => i + 2))).forEach(p => inner.addPage(p));
+    const all = await PDFDocument.load(cover); (await all.copyPages(inner, inner.getPageIndices())).forEach(p => all.addPage(p));
+    return { cover, inner: Buffer.from(await inner.save()), all: Buffer.from(await all.save()), pages: N, size: { w: r2(PW / MM_PT), h: r2(PH / MM_PT) } };
+  }
+  // Rückenbreite laut Print.com: der Preis-Aufruf liefert sie mit (options.spinewidth bzw. includes.spinewidth, z. B. 3 mm bei 44 S. 150 g)
+  async function spineOf(o) {
+    try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(o.product.sku) + "/price", { sku: o.product.sku, options: Object.assign({}, o.pcOptions, { copies: o.copies }), deliveryPromise: 0 });
+      const v = +((pr && pr.options && pr.options.spinewidth) || (pr && pr.includes && pr.includes.spinewidth)); if (v >= 0 && isFinite(v)) return { mm: v, src: "Print.com" }; } catch (e) { log("Rückenbreite", o.nr, e.message); }
+    return null;
+  }
+  const coverSpreadOk = o => !!o && !!o.product && (String((o.pcOptions || {}).binding || "") === "bounded" || /bounded|hardcover|book/i.test(String(o.product.sku || ""))) && !(Array.isArray(o.motifs) && o.motifs.length > 1);
   // „Rand spiegeln“ ausschalten: wieder die Kunden-PDF (src) ohne Beschnitt – Format-Prüfung neu, übrige Hinweise (Sonderfarben, Schriften …) bleiben
   async function noBleedFile(fm, extra, srcId) {
     srcId = srcId || fm.src; const sm = await store.fileMeta(srcId), data = sm && await store.fileData(srcId);
@@ -6752,6 +6793,19 @@ module.exports = function (D) {
         await store.putFile({ id: fid + "th", kind: "proxy", of: fid, createdAt: nowIso(), orderId: o.id, bytes: out.length }, out);
         return J(res, 200, { ok: true });
       }
+      // Umschlag als Druckbogen (Klebebindung/Softcover): Info (Rückenbreite laut Print.com) und PDF-Download – ändert nichts an der Bestellung
+      if ((p === "/admin/api/print/coverinfo" || p === "/admin/api/print/coverpdf") && req.method === "GET") {
+        const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
+        if (!coverSpreadOk(o)) return J(res, 400, { ok: false, error: "Nur für Klebebindung/Softcover mit einer Druckdatei" });
+        const sz = o.size || {}, bleed = o.bleed == null ? 3 : +o.bleed;
+        if (p === "/admin/api/print/coverinfo") { const sp = await spineOf(o); return J(res, 200, { ok: true, spine: sp ? sp.mm : null, spineSrc: sp ? sp.src : "", size: sz, bleed, pages: +(o.sel || {}).pages || null, sheet: sp ? { w: r2(2 * sz.w + sp.mm + 2 * bleed), h: r2(sz.h + 2 * bleed) } : null }); }
+        const spine = parseFloat(String(u.searchParams.get("spine") || "").replace(",", ".")); if (!(spine >= 0 && spine <= 80)) return J(res, 400, { ok: false, error: "Rückenbreite fehlt (mm)" });
+        const part = String(u.searchParams.get("part") || "all"); if (["all", "cover", "inner"].indexOf(part) < 0) return J(res, 400, { ok: false, error: "part" });
+        const buf = await fileBufCached(o.fileId); if (!buf) return J(res, 404, { ok: false, error: "Druckdatei fehlt" });
+        let r; try { r = await coverSpread(buf, { w: sz.w, h: sz.h, bleed, spine }); } catch (e) { return J(res, 400, { ok: false, error: e.message }); }
+        const nm = o.nr + (part === "cover" ? "-Umschlag-Bogen" : part === "inner" ? "-Innenteil" : "-Printcom-Umschlag+Innenteil") + ".pdf";
+        return D.send(res, 200, r[part], "application/pdf", { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + "; filename=\"" + nm + "\"", "Cache-Control": "private, no-store" });
+      }
       if (p === "/admin/api/print/file" && req.method === "GET") {
         // ?dl=1 = herunterladen statt ansehen, ?src=1 = Originaldatei des Kunden (vor Umwandlung/Beschnitt) – Wunsch Simon 06.11.2026 für den Datencheck
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return D.send(res, 404, "Datei nicht gefunden");
@@ -7415,6 +7469,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { addBleed, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { addBleed, coverSpread, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;
