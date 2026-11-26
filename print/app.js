@@ -155,7 +155,7 @@
     return '<div class="ps-cfgbar"><button type="button" class="ps-cfgb' + (on ? " on" : "") + '" data-act="cfgsave" aria-pressed="' + on + '"><span aria-hidden="true">' + (on ? "♥" : "♡") + "</span>" + (on ? "Gemerkt" : "Merken") + '</button><button type="button" class="ps-cfgb" data-act="cfgshare"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Teilen</button></div>'; }
   function cfgBarUpd() { [].forEach.call(document.querySelectorAll(".ps-cfgbar"), function (b) { b.outerHTML = cfgBarHtml(); }); }
   function savedCard(x) { var url = cfgLink(x.product, x.c);
-    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + ""].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
+    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || +x.copies || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + ""].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
       (x.gross != null ? '<small>beim Merken ' + eur(x.gross) + " · aktueller Preis beim Öffnen</small>" : "") + '</div><div class="ac"><a class="ps-btn primary small" href="' + esc(url) + '">Öffnen</a><button type="button" class="ps-link" data-act="savshare:' + esc(x.id) + '">Teilen</button><button type="button" class="ps-link" data-act="savdel:' + esc(x.id) + '">Entfernen</button></div></div>'; }
 
   // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
@@ -296,7 +296,7 @@
       }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
     });
   }
-  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + ""].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
+  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || +x.copies || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + ""].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { return x.fileId ? '<button type="button" class="ps-ci-pvb" data-act="cpages:' + esc(x.id) + '" title="Alle Seiten ansehen" aria-label="Alle Seiten ansehen">' + itemThumb0(x) + '<i class="ps-ci-pvz" aria-hidden="true">⤢</i></button>' : itemThumb0(x); }
   function itemThumb0(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
     var mp = (x.motifs || []).filter(function (m) { return m.preview; }).slice(0, 4);   // mehrere Motive: aufgefächerter Stapel aller Motive
@@ -3303,7 +3303,7 @@
   }
   function cartAside() {
     var co = S.ctype === "company", t = cartTotals();
-    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + "</span><b>" + (x.price ? eur(itemTotal(x, co)) : "…") + "</b></li>"; }).join("") +
+    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || +x.copies || 0).toLocaleString("de-AT") + "\u00a0" + (x.unit || "Stk.") + "</span><b>" + (x.price ? eur(itemTotal(x, co)) : "…") + "</b></li>"; }).join("") +
       svcList().map(function (s0) { return "<li><span>" + (s0.v === "graphic" ? "Grafikaufbereitung" : "Profi-Datencheck") + "</span><b>" + eur(co ? s0.g / (1 + s0.r / 100) : s0.g) + "</b></li>"; }).join("") + "</ul>" +
       '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p>' +
       (S.step === 5 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next4">Weiter zur Kasse →</button>' : S.step === 6 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + "Zahlungspflichtig bestellen</button>" : "") + "</aside>";   // Button-Lösung (§ 8 FAGG): Beschriftung muss die Zahlungspflicht nennen
@@ -3374,7 +3374,7 @@
   /* Zusammenfassung rechts (Handy: darunter) – Positionen, Summen, Gutschein, Bestellknopf (Button-Lösung § 8 FAGG), Vertrauenszeilen */
   function coAside(money, vch, dl) {
     var co = S.ctype === "company";
-    return '<aside class="ps-price ps-co-aside" id="psPrice" aria-live="polite"><h3>Deine Bestellung</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + "<small>" + (+x.n || 0).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small></span><b>" + (x.price ? eur(itemTotal(x, co)) : "…") + "</b></li>"; }).join("") + "</ul>" +
+    return '<aside class="ps-price ps-co-aside" id="psPrice" aria-live="polite"><h3>Deine Bestellung</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + "<small>" + (+x.n || +x.copies || 0).toLocaleString("de-AT") + "\u00a0" + esc(x.unit || "Stk.") + "</small></span><b>" + (x.price ? eur(itemTotal(x, co)) : "…") + "</b></li>"; }).join("") + "</ul>" +
       '<div class="ps-co-ship"><span>Versand</span><b>gratis</b></div><div class="ps-sum ps-co-sum">' + money + "</div>" + vch +
       '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : "Zahlungspflichtig bestellen") + "</button>" +
       '<ul class="ps-co-trust"><li>🔒 ' + (S.payment === "invoice" ? "Rechnung mit 14 Tagen Zahlungsziel" : "Sicher bezahlen über Mollie") + "</li>" + (dl ? "<li>🚚 Voraussichtlich bei dir am " + esc(dl) + "</li>" : "") + "<li>✓ " + (anyCheck() ? "Persönlicher Datencheck vor dem Druck" + (S.cart.every(function (x) { return itemCheck(x) !== "self"; }) ? "" : " (gewählte Positionen)") : "Automatischer Datencheck") + "</li><li>💬 Fragen? Wir helfen im Chat</li></ul></aside>";
@@ -3506,7 +3506,7 @@
     if (k === "cfgsave") { cfgSave(); return; }
     if (k === "cfgshare") { cfgShare(); return; }
     if (k === "savdel") { savDel(v); return; }
-    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0" + (sx.unit || "Stk.") + (sx.sum ? " · " + sx.sum : "")); return; }
+    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || +sx.copies || 0).toLocaleString("de-AT") + "\u00a0" + (sx.unit || "Stk.") + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "stuview") { S.stuView = v === "1" ? 1 : 0; document.querySelectorAll(".ps-stu [data-act^=stuview]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "stuview:" + v)); }); var sp9 = document.getElementById("psStuPages"); if (sp9) { sp9.removeAttribute("data-3d"); if (!S.stuView) sp9.innerHTML = '<div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div>'; } studioPaint(); return; }
     if (k === "pfvbg") { S.pfvBg = v === "1"; var sp0 = document.getElementById("psStuPages"); if (sp0) sp0.classList.toggle("tr", S.pfvBg); document.querySelectorAll(".ps-stu [data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
