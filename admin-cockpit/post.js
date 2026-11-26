@@ -876,7 +876,7 @@ function readerHtml(){
       '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an '+esc(addr)+'">&lt;'+esc(addr)+'&gt;</button>':'')+'</div>'+(toLine?'<div class="rto">'+toLine+'</div>':'')+'</div>'+
       '<div class="rdate">'+esc(m.date?new Date(m.date).toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"")+'<span>'+esc(relTime(m.date))+'</span></div></div>'+
     (trashed||dbox?'':custRow(m))+
-    inviteHtml(m)+bounceHtml(m)+attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
+    inviteHtml(m)+bounceHtml(m)+attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+(M.claimBar&&!trashed?M.claimBar(m):'')+body+convHtml+
     (m.body||m.preview?'':'<div class="notice"><span>Kein Textinhalt im Abruf. Die vollständige Nachricht findest du im Webmail.</span><button type="button" class="btn" data-act="mwebmail">In Webmail öffnen</button></div>')+
     qr+
     (!trashed&&!dbox?'<div class="mrbar" role="toolbar" aria-label="Antworten"><button type="button" class="pri" data-act="mx:reply">'+ic("reply")+'<span>Antworten</span></button><button type="button" data-act="mx:replyall" aria-label="Allen antworten">'+ic("replyall")+'<span>Allen</span></button><button type="button" data-act="mx:forward">'+ic("forward")+'<span>Weiterleiten</span></button></div>':'')+

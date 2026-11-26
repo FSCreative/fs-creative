@@ -48,6 +48,7 @@ const FEATURES = {
   chat:      { label: "Website-Chat: KI antwortet, wenn du offline bist (und legt Leads an)", essential: false },
   printdesign: { label: "Druckshop: KI-Assistent im Designer (Texte, Vorlage, Farben – Tageslimit je Kunde)", essential: false },
   marketing: { label: "Marketing: Posts, Reels, Captions und Hashtags für deine Apps erstellen", essential: false },
+  claims:    { label: "Reklamationen in Mails und Chats erkennen (nur Kandidaten nach Stichwort-Vorfilter)", essential: false },
 };
 const DEFAULT_SENDERS = ["railway", "google", "adobe", "world4you", "a1.net", "a1 telekom", "magenta", "drei.at", "cloudflare", "anthropic", "openai", "apple", "microsoft", "github", "figma", "notion", "hetzner", "canva", "envato", "paypal", "rechnung", "invoice", "receipt"].join("\n");
 
@@ -407,6 +408,22 @@ module.exports = function createKi(deps) {
     const x0 = payClean(jsonOf(msg));
     keys.forEach(k => { C.pay[k] = { at: Date.now(), x: x0 }; }); saveCache();
     return x0;
+  }
+  /* Reklamationen erkennen (claims.js): nur Kandidaten, die der Stichwort-Vorfilter durchgelassen hat, gesammelt in einem Aufruf (Haiku, wenig Aufwand).
+     items: [{ key, kind: "mail"|"chat", from, subject, text }] → [{ key, isClaim, confidence 0–1, reason, problem, category, orderNr, invoiceNr, customer }] */
+  const CLAIM_SYSTEM = "Du prüfst für FS Creative (Druckshop, Grafik, Webdesign, Fotobox in Vorarlberg) eingehende Kundennachrichten. " +
+    "Eine Reklamation liegt vor, wenn der Kunde einen Mangel an einer bereits erhaltenen oder bezahlten Leistung/Lieferung beanstandet: Druckfehler, falsche Farben, falsches Format/Produkt, Beschädigung, fehlende Teile oder Menge, stark verspätete oder nicht angekommene Lieferung, falsch verrechnete Rechnung, Wunsch nach Nachdruck/Gutschrift/Erstattung wegen eines Mangels. " +
+    "KEINE Reklamation: neue Anfragen, Angebote, Bestellungen, Fragen zum Liefertermin ohne Beschwerde, Korrekturwünsche an einem Entwurf vor dem Druck, Newsletter, Systemmails, Rechnungen von Lieferanten, Mahnungen an FS Creative, Werbung. " +
+    "Sei streng: im Zweifel isClaim=false und niedrige confidence. Bestellnummern haben die Form D-JJMMTT-XXXX, Rechnungsnummern RE-1234. problem = ein kurzer deutscher Satz, was beanstandet wird (leer, wenn keine Reklamation). reason = kurze Begründung.";
+  const CLAIM_SCHEMA = obj({ results: { type: "array", items: obj({ key: S.str, isClaim: S.bool, confidence: S.num, reason: S.str, problem: S.str,
+    category: en(["druck", "farbe", "format", "beschaedigt", "fehlt", "falsch", "lieferung", "rechnung", "sonstiges"]), orderNr: S.str, invoiceNr: S.str, customer: S.str }) } });
+  async function claimCheck(items) {
+    const list = (items || []).slice(0, 12).map(x => ({ key: clip(x.key, 80), kind: x.kind === "chat" ? "chat" : "mail", from: clip(x.from, 200), subject: clip(x.subject, 200), text: clip(String(x.text || "").replace(/\s+/g, " "), 2500) }));
+    if (!list.length) return [];
+    const msg = await claude("claims", { system: CLAIM_SYSTEM, model: "haiku", effort: "low", maxTokens: 3000, background: true, schema: CLAIM_SCHEMA,
+      messages: [{ role: "user", content: "Prüfe jede Nachricht einzeln und gib für jeden key ein Ergebnis zurück.\n\n" + list.map(x => "<nachricht key=\"" + x.key + "\" art=\"" + x.kind + "\">\nVon: " + x.from + "\nBetreff: " + x.subject + "\n" + x.text + "\n</nachricht>").join("\n\n") }] });
+    const out = (jsonOf(msg).results || []).filter(r => r && list.some(x => x.key === r.key));
+    return out.map(r => ({ key: r.key, isClaim: !!r.isClaim, confidence: Math.max(0, Math.min(1, +r.confidence || 0)), reason: clip(r.reason, 300), problem: clip(r.problem, 300), category: r.category || "sonstiges", orderNr: clip(r.orderNr, 30).toUpperCase(), invoiceNr: clip(r.invoiceNr, 20).toUpperCase(), customer: clip(r.customer, 120) }));
   }
   function payClean(x) {
     const d = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? v : "";
@@ -957,5 +974,5 @@ module.exports = function createKi(deps) {
     try { return jsonOf(await claude("chat", { system, system2: state, messages, maxTokens: 2000, effort: "low", schema, cache: true })); }
     catch (e) { if (!e || e.kiCode !== "max_tokens") throw e; return jsonOf(await claude("chat", { system, system2: state, messages, maxTokens: 3000, effort: "low", schema, cache: true })); }
   }
-  return { handle, configured, status, ping, health, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign"), marketingGen, marketingVision, marketingOn: () => configured() && featureOn("marketing") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor, leadSkip, callUsd, gate, overLimit, limitEur, bestAtt, modelFor } };
+  return { handle, configured, status, ping, health, chatReply, claimCheck, claimsOn: () => configured() && featureOn("claims") && !overLimit(), printDesign, printDesignOn: () => configured() && featureOn("printdesign"), marketingGen, marketingVision, marketingOn: () => configured() && featureOn("marketing") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor, leadSkip, callUsd, gate, overLimit, limitEur, bestAtt, modelFor } };
 };

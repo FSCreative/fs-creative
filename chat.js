@@ -136,6 +136,7 @@ module.exports = function (D) {
   };
 
   // ───────────────────────── Zustand im Arbeitsspeicher ─────────────────────────
+  const HOOKS = {};                 // visitor: (Unterhaltung, Nachricht) → z. B. Reklamations-Erkennung
   const CONVS = new Map();          // id → Unterhaltung (Kopfdaten)
   const BUSY = new Map();           // id → KI schreibt gerade
   const VTYP = new Map(), ATYP = new Map(), TYP_MS = 6000;   // „schreibt …“ (Wunsch Simon 04.11.2026): Besucher bzw. Simon hat zuletzt getippt (id → Zeit)
@@ -165,12 +166,14 @@ module.exports = function (D) {
     const m = await store.addMsg(c, file ? { at: nowIso(), from, text, file } : { at: nowIso(), from, text });
     c.lastId = m.id; c.updated = m.at; c.last = { from, text: text.slice(0, 160), at: m.at }; if (from === "me") c.meAt = m.at;
     if (from === "v") c.unread = (c.unread || 0) + 1;
-    await store.putConv(c); bump(); return m;
+    await store.putConv(c); bump();
+    if (from === "v" && HOOKS.visitor) { const cs = summary(c); setImmediate(() => { try { HOOKS.visitor(cs, m); } catch (e) {} }); }   // Reklamationen erkennen (claims.js)
+    return m;
   }
   const pubMsg = m => m.file ? { id: m.id, at: m.at, from: m.from, text: m.text, file: { id: m.file.id, name: m.file.name, type: m.file.type, size: m.file.size } } : { id: m.id, at: m.at, from: m.from, text: m.text };
   const fileKind = f => f.type === "application/pdf" ? "PDF" : "Bild";
   const msgText = m => m.file ? "[" + (m.from === "v" ? "Kunde" : "Simon") + " hat Datei " + m.file.name + " (" + fileKind(m.file) + ") gesendet" + (m.from === "v" && /^image\//.test(m.file.type || "") ? " – die letzten Bilder siehst du unten mit" : "") + "]" : m.text;   // Bilder des Besuchers bekommt die KI zusätzlich als Bild (withImages)
-  const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", human: c.human || "", typing: BUSY.has(c.id), vSeen: c.vSeen || 0, vSeenAt: c.vSeenAt || "" });
+  const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", taskId: c.taskId || "", human: c.human || "", typing: BUSY.has(c.id), vSeen: c.vSeen || 0, vSeenAt: c.vSeenAt || "" });
 
   // ───────────────────────── KI ─────────────────────────
   const ME_QUIET = intEnv("CHAT_ME_QUIET_MS", 12 * 3600000);   // hat Simon selbst geschrieben, antwortet die KI 12 h lang nicht mehr (auch wenn er offline ist) – Simon 18.11.2026
@@ -236,7 +239,7 @@ module.exports = function (D) {
     // die KI-Produktsuche läuft nur, wenn der Text nach Druck klingt (Simon 16.11.2026: sonst kostet jede Chat-Antwort eine zweite KI-Anfrage)
     let prodCtx = ""; if (D.printProducts) { const vq = msgs.filter(m => m.from === "v" && !m.file).slice(-2).map(m => m.text).join(" ").slice(-160); if (looksPrint(vq)) prodCtx = await D.printProducts(vq).catch(() => ""); }
     const state = (isOnline() ? "Simon ist gerade ONLINE und kann bei handoff sofort übernehmen. " : "Simon ist gerade NICHT online. ") + (weekend() ? "Es ist Wochenende (Freitag ab 16 Uhr bis Montag früh): Simon ist nur sporadisch erreichbar – persönliche Antworten und der Profi-Datencheck können bis Montag dauern; sag das ehrlich, statt „1–2 Werktage“ zu versprechen. " : "") + "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
-      (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + cartText(c) + (D.printPrices ? D.printPrices() : "") + prodCtx;
+      ((c.leadId || c.taskId) ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + cartText(c) + (D.printPrices ? D.printPrices() : "") + prodCtx;
     day.n++; c.aiCount = (c.aiCount || 0) + 1; store.setMeta("chat_ai_day", day).catch(() => {});
     let x;
     try { x = await ki.chatReply(SYSTEM_FULL, state, conv, SCHEMA); }
@@ -254,11 +257,11 @@ module.exports = function (D) {
     if (x && x.handoff === true && isOnline() && cur.ai !== "on") { cur.human = nowIso(); cur.unread = Math.max(1, cur.unread || 0); }   // Übergabe: ab jetzt antwortet Simon
     if (reply) await addMsg(cur, "ki", reply); else await store.putConv(cur);
     if (cur.human && isOnline()) { bump(); await sysOnce(cur, "handoff", T_HANDOFF); }
-    if (!cur.leadId && (cur.email || cur.phone) && cur.request && (cur.name || (x && x.ready)) && D.saveLead) {
+    if (!cur.leadId && !cur.taskId && (cur.email || cur.phone) && cur.request && (cur.name || (x && x.ready)) && D.saveLead) {
       try {
         const r = await D.saveLead({ name: cur.name || "Chat-Besucher #" + cur.no, email: cur.email, phone: cur.phone, company: "", topic: cur.topic || "Etwas anderes", entwurf: false,
           message: cur.request + "\n\n— aufgenommen im Website-Chat von der KI (Seite " + (cur.page || "–") + "). Verlauf im Cockpit unter „Chat“.", source: "Website-Chat (KI)" }, { notify: true });
-        if (r && r.id) { cur.leadId = r.id; await sysOnce(cur, "lead", we(T_LEAD)); }
+        if (r && r.id) { if (r.isLead) cur.leadId = r.id; else cur.taskId = r.taskId || r.id; await sysOnce(cur, "lead", we(T_LEAD)); }   // Anfrage → nur Aufgabe in „Aufträge“ (Simon 26.11.2026)
       } catch (e) { log("Lead anlegen:", e.message); }
     }
   }
@@ -499,7 +502,7 @@ module.exports = function (D) {
           const L = { name: line(d.name, 120), email: line(d.email, 160), phone: line(d.phone, 60), company: line(d.company, 160), topic: TOPICS.indexOf(d.topic) > -1 ? d.topic : (c.topic || "Etwas anderes"), entwurf: false, message: clean(d.message, 5000), source: "Website-Chat" };
           if (!L.name && !L.company) return J(res, 400, { ok: false, error: "Name fehlt" });
           if (L.email && !okEmail(L.email)) return J(res, 400, { ok: false, error: "E-Mail ungültig" });
-          const r = await D.saveLead(L, { notify: false });
+          const r = await D.saveLead(L, { notify: false, lead: true });   // „Als Lead“ von Hand: hier bewusst ein Lead
           if (!r || !r.id) return J(res, 500, { ok: false, error: "Lead konnte nicht gespeichert werden" });
           c.leadId = r.id; if (L.name && !c.name) c.name = L.name; if (L.email) c.email = L.email; if (L.phone) c.phone = L.phone; await store.putConv(c); bump();
           return J(res, 200, { ok: true, leadId: r.id, conv: summary(c) });
@@ -510,5 +513,9 @@ module.exports = function (D) {
     } catch (e) { log("Admin:", e.message); return J(res, 500, { ok: false, error: String(e.message || e).slice(0, 200) }); }
   }
 
-  return { handlePublic, handleAdmin, online, _test: { history, aiActive, SYSTEM, looksPrint, withImages } };
+  // Für Reklamationen (claims.js): Kopfdaten + Besucher-Texte einer Unterhaltung, Unterhaltungen der letzten Tage
+  async function claimConv(id) { await loadAll(); const c = CONVS.get(String(id || "")); if (!c) return null; const ms = await store.msgs(c.id, 0, 300);
+    return { conv: summary(c), msgs: ms.map(pubMsg) }; }
+  async function recentConvs(days) { await loadAll(); const lim = Date.now() - (days || 30) * 86400000; return Array.from(CONVS.values()).filter(c => Date.parse(c.updated || c.created) >= lim).map(summary); }
+  return { handlePublic, handleAdmin, online, onVisitor: fn => { HOOKS.visitor = fn; }, claimConv, recentConvs, _test: { history, aiActive, SYSTEM, looksPrint, withImages } };
 };

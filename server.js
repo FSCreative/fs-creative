@@ -4326,6 +4326,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/print/") === 0) return guard(res, PRINT.handleAdmin(req, res, u, p));
   // Website-Chat – Cockpit-Seite admin-cockpit/zchat.js, Logik in chat.js
   if (p.indexOf("/admin/api/chat/") === 0) return guard(res, CHAT.handleAdmin(req, res, u, p));
+  // Reklamationen – Cockpit-Seite admin-cockpit/zclaims.js, Logik in claims.js
+  if (p === "/admin/api/claims") return guard(res, CLAIMS.handle(req, res, u));
   // VIW Cloud (Nextcloud über WebDAV) – Cockpit-Seite admin-cockpit/zviw.js, Logik in viw-cloud.js
   if (p.indexOf("/admin/api/viw/") === 0) return guard(res, VIW.handleAdmin(req, res, u, p));
   // Marketing (Marken, Gewinnspiel-Auslosung mit Video) – Cockpit-Seite admin-cockpit/zmarketing.js, Logik in marketing.js / mkt-render.js
@@ -5444,14 +5446,20 @@ function makeLead(d) {
 // Speichert den Lead (leads.json), legt ein To-Do an; notify (Standard): Push „lead“ + Mail an LEAD_TO
 async function saveLead(lead, opt) {
   const notify = !opt || opt.notify !== false;
-  const leads = readLeads(); leads.push(lead);
-  let stored = false;
-  try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
+  // Simon 26.11.2026: „Anfragen sollen nur zu den Aufträgen kommen und nicht zu den Leads“ – Formular/Chat-KI legen nur die Aufgabe an;
+  // ein Lead entsteht nur noch, wenn Simon ihn ausdrücklich anlegt (opt.lead, z. B. „Als Lead“ im Chat)
+  const asLead = !!(opt && opt.lead === true);
+  let stored = false, taskId = "";
+  if (asLead) {
+    const leads = readLeads(); leads.push(lead);
+    try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
+  }
   try { COCKPIT_MEMO.stale(); } catch (e) {}
-  try { addTask({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(), leadId: lead.id,
-    notes: tkClip([lead.email, lead.phone, /chat/i.test(lead.source || "") ? lead.source : ""].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }); } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
-  if (!notify) return { stored, mailed: false };
-  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Lead: " + (lead.company || lead.name), body: [lead.topic, lead.company && lead.company !== lead.name ? lead.name : "", lead.entwurf ? "Gratis-Entwurf" : ""].filter(Boolean).join(" · ") + "\n" + String(lead.message || "").replace(/\s+/g, " ").slice(0, 140), url: "/admin#kunden/lead:" + encodeURIComponent(lead.id), tag: "lead-" + lead.id }).catch(() => {});   // Deep-Link: öffnet direkt die Kundenakte (core.js openHash)
+  try { const tk = addTask(Object.assign({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(),
+    notes: tkClip([lead.name, lead.company, lead.email, lead.phone, lead.source].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }, asLead ? { leadId: lead.id } : {}));
+    taskId = tk.id; if (!asLead) stored = true; } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
+  if (!notify) return { stored, mailed: false, taskId };
+  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Anfrage: " + (lead.company || lead.name), body: [lead.topic, lead.company && lead.company !== lead.name ? lead.name : "", lead.entwurf ? "Gratis-Entwurf" : ""].filter(Boolean).join(" · ") + "\n" + String(lead.message || "").replace(/\s+/g, " ").slice(0, 140), url: asLead ? "/admin#kunden/lead:" + encodeURIComponent(lead.id) : "/admin#auftraege", tag: "lead-" + lead.id }).catch(() => {});   // Deep-Link: Kundenakte bzw. Aufträge (core.js openHash)
   let mailed = false;
   if (MAIL.url && MAIL.token) {
     const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);
@@ -5466,7 +5474,7 @@ async function saveLead(lead, opt) {
       clearTimeout(t); mailed = r.ok;
     } catch (e) {}
   }
-  return { stored, mailed };
+  return { stored, mailed, taskId };
 }
 function handleAnfrage(req, res) {
   const json = (status, obj) => send(res, status, JSON.stringify(obj), TYPES[".json"], { "Cache-Control": "no-store" });
@@ -5969,8 +5977,17 @@ if (require.main === module) setInterval(() => SEO.tick().catch(() => {}), 30 * 
 const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""), printProducts: q => (PRINT && PRINT.chatProducts ? PRINT.chatProducts(q) : Promise.resolve("")),
-  saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
+  saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? Object.assign(l, { taskId: r.taskId || "", isLead: !!(opt && opt.lead === true) }) : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+// ── Reklamationen (claims.js): Erkennung in neuen Mails (nach den Mail-Regeln) und Besucher-Chats, Cockpit „Reklamationen“ ──
+const CLAIMS = require("./claims.js")({ send, body: sevBody, ki: KI, print: () => PRINT, chat: () => CHAT,
+  getMeta: k => process.env.DATABASE_URL ? FIN.init().then(() => FIN.getMeta(k)) : Promise.resolve(null),
+  setMeta: (k, v) => process.env.DATABASE_URL ? FIN.init().then(() => FIN.setMeta(k, v)) : Promise.resolve(),
+  snapshot: () => mailSnapshot(), push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+if (require.main === module) {
+  const nm0 = ON_NEW_MAIL; ON_NEW_MAIL = d => { if (nm0) nm0(d); setTimeout(() => CLAIMS.onMail(d).catch(() => {}), 3000); };   // nach den Mail-Regeln (die verschieben z. B. Print.com-Mails)
+  CHAT.onVisitor(conv => CLAIMS.onVisitor(conv));
+}
 FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it => PRINT.placeOrder(it.payload.orderId, "Zur Prüfung").then(o => ({ orderNumber: o.printcom.orderNumber })), valid: it => PRINT.proposalValid(it.payload.orderId) });
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
 // laufende Druckaufträge: Status/Tracking fragt PRINT.tick() stündlich (höchstens alle ~2 h, plus Webhook) – eigener 30-min-Takt entfällt (Simon 16.11.2026)

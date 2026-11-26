@@ -15,6 +15,7 @@ var GL=':root[data-theme="glas"] ';
 var ST=null, VER="", SEL=null, TH=null, DRAFT={}, busy=false, beatT=null, ticks=0, compFor=null, sending=false, UPQ=[], upBusy=false;
 var FMAX=15*1024*1024, FTYPES={"image/jpeg":1,"image/png":1,"image/webp":1,"application/pdf":1};
 var MODE=F.ls("fsc_chat_mode")==="wa"?"wa":"web";
+F.chatSel=function(){ return SEL; };   /* Reklamationen (zclaims.js): gewählte Unterhaltung */
 F.chatMode=function(){ return MODE; };
 F.css('.ch-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.ch-top h1{font-size:26px}.ch-top p{margin:2px 0 0;color:var(--ink-3);font-size:13.5px}'+
   '.ch-st{display:inline-flex;align-items:center;gap:12px;padding:10px 18px 10px 12px;border-radius:99px;border:2px solid var(--line);background:var(--panel);font-weight:700;font-size:16px;color:var(--ink);cursor:pointer;min-height:52px}'+
@@ -84,7 +85,7 @@ function threadHead(c){
   return '<div class="ch-hd"><button type="button" class="btn icon ch-back" data-act="chback" aria-label="Zurück zur Liste">'+F.svg("chevL")+'</button><div class="t"><b>'+esc(nameOf(c))+'</b><span>'+esc([c.email,c.phone].filter(Boolean).join(" · ")||"keine Kontaktdaten")+(c.page?' · auf '+esc(c.page):'')+'</span></div>'+
     '<div class="acts"><span class="muted small">KI übernimmt</span><div class="seg" role="group" aria-label="KI übernimmt">'+[["auto","Auto"],["on","An"],["off","Aus"]].map(function(o){ return '<button type="button" data-act="chai:'+o[0]+'" aria-pressed="'+(c.ai===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>'+
     (c.leadId?'<button type="button" class="btn" data-act="lead:'+esc(c.leadId)+'" title="Kundenakte öffnen">Lead ✓</button>':'<button type="button" class="btn" data-act="chlead">Als Lead</button>')+
-    '<button type="button" class="btn" data-act="'+(c.closed?"chreopen":"chclose")+'">'+(c.closed?"Wieder öffnen":"Beenden")+'</button><button type="button" class="btn danger" data-act="chdel" aria-label="Unterhaltung löschen">Löschen</button></div></div>'+
+    (F.actions.rkfromchat?'<button type="button" class="btn" data-act="rkfromchat" title="Als Reklamation anlegen">'+(F.claimOfConv&&F.claimOfConv(c.id)?"Reklamation ✓":"Reklamation")+'</button>':'')+'<button type="button" class="btn" data-act="'+(c.closed?"chreopen":"chclose")+'">'+(c.closed?"Wieder öffnen":"Beenden")+'</button><button type="button" class="btn danger" data-act="chdel" aria-label="Unterhaltung löschen">Löschen</button></div></div>'+
     '<div class="ch-info"><span>'+esc(aiTxt(c))+'</span>'+(c.aiCount?'<span>KI-Antworten: '+c.aiCount+'/'+((ST&&ST.aiConvMax)||15)+'</span>':'')+(c.request?'<span>Anliegen: '+esc(c.request)+'</span>':'')+(TH&&TH.pages&&TH.pages.length>1?'<span>Seiten: '+esc(TH.pages.join(", "))+'</span>':'')+'</div>';
 }
 function msgsHtml(){

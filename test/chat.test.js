@@ -181,20 +181,21 @@ async function startServer(dir, env) {
     const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.strictEqual(conv.aiCount, 2); assert.strictEqual(conv.request, "Neue Website");
   });
 
-  await t("Kontaktdaten + Anliegen → Lead automatisch (Quelle „Website-Chat (KI)“), Bestätigung an den Besucher, Nutzung unter „chat“ geloggt", async () => {
+  await t("Kontaktdaten + Anliegen → nur Aufgabe in „Aufträge“ (kein Lead, Simon 26.11.2026), Bestätigung an den Besucher, Nutzung unter „chat“ geloggt", async () => {
     const before = leads().length;
     await pj("/chat/api/send", { cid: A, text: "Max Muster, max@example.com – Website für meine Tischlerei" });
     const p = await waitFor(async () => { const x = await pj("/chat/api/poll?c=" + A + "&after=" + lastId); return x.msgs.some(m => m.from === "sys" && /angekommen/.test(m.text)) && x; });
     assert.ok(p, "Bestätigung im Chat"); lastId = p.msgs[p.msgs.length - 1].id;
-    const L = leads(); assert.strictEqual(L.length, before + 1); const l = L[L.length - 1];
-    assert.strictEqual(l.source, "Website-Chat (KI)"); assert.strictEqual(l.email, "max@example.com"); assert.strictEqual(l.topic, "Website"); assert.ok(/Tischlerei/.test(l.message)); assert.ok(/^lead_/.test(l.id));
-    assert.strictEqual(l.name, "Max <b>M</b>", "vom Besucher eingegebener Name bleibt");
-    const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.strictEqual(conv.leadId, l.id); assert.strictEqual(conv.email, "max@example.com");
-    const auf = JSON.parse(fs.readFileSync(path.join(dir, "auftraege.json"), "utf8")); assert.ok(auf.tasks.some(x => x.leadId === l.id && /^Anfrage: /.test(x.title)), "Anfrage als Aufgabe (Aufträge)");
+    assert.strictEqual(leads().length, before, "kein Lead");
+    const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.ok(!conv.leadId); assert.strictEqual(conv.email, "max@example.com");
+    const auf = JSON.parse(fs.readFileSync(path.join(dir, "auftraege.json"), "utf8")), tk = auf.tasks.find(x => /^Anfrage: Max <b>M<\/b> – Website/.test(x.title));
+    assert.ok(tk, "Anfrage als Aufgabe (Aufträge)"); assert.ok(!tk.leadId); assert.ok(/max@example\.com/.test(tk.notes) && /Tischlerei/.test(tk.notes) && /Website-Chat \(KI\)/.test(tk.notes));
+    assert.strictEqual(conv.taskId, tk.id);
     const u = JSON.parse(fs.readFileSync(path.join(dir, "ki-usage.json"), "utf8")); const mk = Object.keys(u.months).pop(); assert.ok(u.months[mk].chat && u.months[mk].chat.calls === 3 && u.months[mk].chat.model === "claude-sonnet-5-5");
     await sleep(300); await pj("/chat/api/send", { cid: A, text: "Danke!" });
     await waitFor(async () => (await adm("/admin/api/chat/conv?id=" + A)).conv.aiCount === 4);
-    assert.strictEqual(leads().length, before + 1, "kein zweiter Lead");
+    assert.strictEqual(leads().length, before, "kein Lead");
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, "auftraege.json"), "utf8")).tasks.filter(x => /^Anfrage: Max <b>M<\/b>/.test(x.title)).length, 1, "keine zweite Aufgabe");
     assert.ok(/bereits an Simon übermittelt/.test(JSON.stringify(mock.calls[mock.calls.length - 1].body.system)));
   });
 
