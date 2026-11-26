@@ -4232,12 +4232,32 @@ module.exports = function (D) {
     const vp = await findProduct("sticker-vinyl", await settings()).catch(() => null); if (!vp) return null;
     return { prod: vp, sel: { material: "monomeer_white_gloss_orajet_3162", finish: VIN_FIN[s.finish], custom_shape: "clean_cut_stickers", size: "custom", printtype: "40", application_side: "outside", number_of_contour_lines: "no_contour_lines" }, custom: { w: String(n.size.w), h: String(n.size.h) } };
   }
-  async function mailSuggest(mail) {
-    mail = mail || {};
+  /* Website-Chat (Simon 26.11.2026: „mach das auch für Anfragen im Chat“): gleiche Logik wie der Mail-Vorschlag (Produkt, Optionen, Motive, Shop-Hinweise,
+     Preis + Termin vom Shop, gekürzter Link) – als Faktenblock für die Chat-KI, die damit selbst antwortet. Ohne Antwort-Runde (die Chat-KI beantwortet die Fragen). */
+  async function chatOffer(text) {
+    if (!cfg().pcKey || !D.ki || !D.ki.printDesignOn || !D.ki.printDesignOn()) return "";
+    const r = await mailSuggest({ subject: "Website-Chat", text: clip(text, 3000) }, { noAnswers: true });
+    if (!r || !r.isPrint || !(r.items || []).length) return (r && r.questions && r.questions.length) ? "\n\nFEHLENDE ANGABEN für ein fertiges Angebot (kurz nachfragen): " + r.questions.join(" | ") : "";
+    const pr = v => r.company ? eurDe(v.net) + " netto (" + eurDe(v.gross) + " inkl. 20 % USt)" : eurDe(v.gross) + " inkl. 20 % USt";
+    const L = ["", "", "FERTIG KONFIGURIERT im Druckshop (live berechnet, Preise inkl. Versand in Österreich" + (r.company ? ", Firma: netto + 20 % USt nennen" : "") + ") – nenne Preis, voraussichtlichen Liefertermin und den Link genau so:"];
+    r.items.forEach(it => {
+      L.push("- " + it.title + ((it.labels || []).length ? " (" + it.labels.slice(0, 6).map(l => l[0] + ": " + l[1]).join(", ") + ")" : ""));
+      it.variants.forEach(v => L.push("  " + (v.sep > 1 ? v.sep + " Motive à " + thd(v.copies) + " Stück, je Motiv eine Position: " : thd(v.copies) + " Stück" + (v.motifs > 1 ? " (" + v.motifs + " Motive, Gesamtmenge berechnet, ohne Aufpreis je Motiv)" : "") + ": ") + pr(v) + (v.date ? ", Lieferung voraussichtlich " + dateDe(v.date) : "") + " – Link: " + v.link));
+      (it.notes || []).forEach(x => L.push("  Empfehlung: " + x));
+      (it.alts || []).forEach(a => a.variants.forEach(v => L.push("  Alternative " + a.title + ": " + thd(v.copies) + " Stück " + pr(v) + " – Link: " + v.link)));
+      (it.assumptions || []).forEach(x => L.push("  Annahme: " + x));
+      (it.files || []).forEach(x => L.push("  Druckdaten: " + x));
+    });
+    if ((r.missing || []).length) L.push("Nicht im Shop: " + r.missing.join(", ") + " (dafür macht Simon ein Angebot)");
+    if ((r.questions || []).length) L.push("Wesentliche fehlende Angaben (kurz nachfragen, z. B. Menge): " + r.questions.join(" | "));
+    return L.join("\n");
+  }
+  async function mailSuggest(mail, opt) {
+    mail = mail || {}; opt = opt || {};
     const ki = D.ki; if (!ki || !ki.printDesignOn || !ki.printDesignOn()) throw Object.assign(new Error("KI für den Druckshop ist aus (Einstellungen → KI)"), { status: 503 });
     const subj = clip(mail.subject, 300), html = String(mail.html || "").replace(/<(style|script)[\s\S]*?<\/\1>/gi, "").replace(/<(br|\/p|\/div|\/li|\/tr)[^>]*>/gi, "\n");
     const body = clip(mail.text || html.replace(/<[^>]*>?/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/[ \t]+/g, " "), 6000).replace(/\n\s*\n\s*\n+/g, "\n\n");
-    const ck = crypto.createHash("sha1").update(subj + "\n" + body).digest("hex"), hit = MO_CACHE.get(ck); if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.r;
+    const ck = crypto.createHash("sha1").update((opt.noAnswers ? "c|" : "") + subj + "\n" + body).digest("hex"), hit = MO_CACHE.get(ck); if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.r;
     const s0 = "Du hilfst Simon (FS Creative, Online-Druckshop in Österreich) bei Kundenmails. Lies die Mail und erkenne, ob es eine Anfrage für Drucksachen ist, die man im Druckshop bestellen kann. " +
       "items: je gewünschtem Produkt ein Eintrag (max. 4): search = kurzer deutscher Suchbegriff für die Produktsuche (z. B. „Flyer A5“, „Visitenkarten“, „Aufkleber rund“, „PVC-Banner“), wish = alle Angaben dazu knapp (Format/Maße, Papier/Material, Grammatur, Seiten, Farbe, ein-/beidseitig, Veredelung, Falz, Konfektion, Termin), quantities = Gesamtstückzahl je gewünschter Variante (mehrere Varianten → mehrere Zahlen; keine genannt → leer), motifs = Anzahl verschiedener Motive/Designs/Sorten (z. B. „2 Motive je 500 Stück“ → quantities [1000], motifs 2; „Visitenkarten für 3 Mitarbeiter je 250“ → quantities [750], motifs 3; sonst 1). " +
       "company: true nur, wenn klar eine Firma anfragt (Firmenname, GmbH, UID, Firmen-Signatur); Vereine, Schulen, Privatpersonen → false. formal: false nur, wenn der Kunde selbst duzt. salutation: Anrede für die Antwort, z. B. „Frau Muster“ oder „Herr Beispiel“ (bei formal) bzw. Vorname (bei du), unbekannt → leer. " +
@@ -4314,7 +4334,7 @@ module.exports = function (D) {
     }
     // Simon 26.11.2026: „wichtig auch auf die Fragen der Kunden eingehen“ – jede Frage aus der Mail beantworten (mit den berechneten Preisen/Terminen und den Shop-Fakten)
     out.answers = []; out.coversDelivery = false;
-    try {
+    if (!opt.noAnswers) try {
       const facts = out.items.map(it => it.title + " (" + (it.labels || []).map(l => l[0] + ": " + l[1]).join(", ") + "): " + it.variants.map(v => (v.sep > 1 ? v.sep + " Motive à " + v.copies + " Stk. (je Motiv eine Position) " : v.copies + " Stk." + (v.motifs > 1 ? " (" + v.motifs + " Motive, Gesamtmenge berechnet, ohne Aufpreis je Motiv)" : "") + " ") + (out.company ? eurDe(v.net) + " netto / " : "") + eurDe(v.gross) + " inkl. 20 % USt, Lieferung voraussichtlich " + dateDe(v.date)).join("; ") + ((it.assumptions || []).length ? " – Annahmen: " + it.assumptions.join(" ") : "") + ((it.notes || []).length ? " – Hinweise: " + it.notes.join(" ") : "") + ((it.alts || []).length ? " – Alternativen: " + it.alts.map(a => a.title).join("; ") : "") + ((it.files || []).length ? " – Druckdaten-Hinweise: " + it.files.join(" ") : "")).join("\n");
       const sa = "Du schreibst als Simon Felder (FS Creative, Online-Druckshop in Österreich) in der Ich-Form den Teil seiner Antwortmail, der konkret auf die Fragen und Anliegen des Kunden eingeht. Produkt, Ausführung, Preise und Link stehen schon darüber in der Mail (siehe „Steht schon in der Mail“) – nicht wiederholen. Nie „Simon“ in der dritten Person, nie „Entwurf“, nichts Internes. Kurz und sicher formulieren, nicht absichern ohne Grund. " +
         "answers: für JEDE Frage bzw. jedes Anliegen in der Mail (z. B. Lieferzeit/Termin, Druckdaten/Gestaltung, Material/Papier, Versand, Bezahlung/Rechnung, Muster, Farben, Format) einen kurzen Absatz (1–3 Sätze), " + "freundlich, natürlich, im Ton eines kleinen österreichischen Betriebs, " + (out.formal ? "per Sie" : "per du") + ", ohne Anrede und ohne Grußformel; der Absatz darf mit einem Stichwort beginnen (z. B. „Lieferzeit: …“). Keine Frage in der Mail → leere Liste. " +
@@ -7749,6 +7769,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { mailSuggest, shopKnowledge, incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { mailOfferText, mailSuggest, mattAdvice, addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { mailSuggest, chatOffer, shopKnowledge, incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { mailOfferText, mailSuggest, mattAdvice, addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

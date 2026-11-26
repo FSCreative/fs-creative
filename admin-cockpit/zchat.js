@@ -81,10 +81,24 @@ function listHtml(){
     return '<button type="button" class="ch-c'+(c.closed?" closed":"")+'" data-act="chopen:'+esc(c.id)+'" title="'+esc(nameOf(c)+(c.page?" · "+c.page:""))+'"'+(c.id===SEL?' aria-current="true"':'')+'><span class="ch-av" aria-hidden="true">'+esc(initials(c))+'</span><span class="t"><b>'+esc(nameOf(c))+'</b><span>'+(l.from==="me"?"Du: ":l.from==="ki"?"KI: ":"")+esc(l.text||"")+'</span><em>'+esc(c.page||"")+(c.leadId?" · Lead":"")+(c.closed?" · beendet":"")+'</em></span>'+
       '<span class="r"><span>'+esc(fmtT(c.updated))+'</span>'+(c.unread?'<span class="ch-badge" aria-label="'+c.unread+' ungelesen">'+c.unread+'</span>':c.typing?'<span>schreibt …</span>':'')+'</span></button>'; }).join("");
 }
+/* Druckanfrage im Chat → Antwortvorschlag mit Shop-Link (gleiche Logik wie im Postfach, /admin/api/print/mailsuggest) – kommt ins Antwortfeld, nie automatisch senden (Simon 26.11.2026) */
+var OFFER_BUSY=false, CH_PR=/flyer|folder|visitenkarte|plakat|poster|banner|roll-?up|aufkleber|sticker|pickerl|etikett|karte|einladung|brosch|katalog|kalender|magazin|speisekarte|briefpapier|kuvert|block|schild|forex|dibond|beachflag|fahne|kundenstopper|aufsteller|druck|stück|stk\b|auflage/i;
+function chVisText(){ return ((TH&&TH.id===SEL&&TH.msgs)||[]).filter(function(m){ return m.from==="v"&&!m.file; }).map(function(m){ return String(m.text||""); }).join("\n").slice(-3000); }
+function chPrintish(){ return CH_PR.test(chVisText()); }
+F.action("choffer",function(){
+  var id=SEL, c=TH&&TH.conv||{}; if(!id||OFFER_BUSY) return; OFFER_BUSY=true; paintThread();
+  F.api("/admin/api/print/mailsuggest",{body:{mail:{subject:"Website-Chat",from:c.email||"",fromName:c.name||"",text:chVisText()}}}).then(function(j){
+    OFFER_BUSY=false; if(!j||!j.ok){ paintThread(); F.toast((j&&j.error)||"Vorschlag fehlgeschlagen",true); return; }
+    if(!j.text){ paintThread(); F.toast(j.isPrint?"Kein passendes Shop-Produkt gefunden – eher ein eigenes Angebot":"Keine Druckanfrage für den Shop erkannt",true); return; }
+    DRAFT[id]=j.text; if(SEL===id){ var ta=document.getElementById("chText"); if(ta){ ta.value=j.text; grow(ta); ta.focus(); } }
+    paintThread(); F.toast("Antwort mit Shop-Link im Antwortfeld – prüfen und senden");
+  }).catch(function(e){ OFFER_BUSY=false; paintThread(); F.toast(e.message,true); });
+});
 function threadHead(c){
   return '<div class="ch-hd"><button type="button" class="btn icon ch-back" data-act="chback" aria-label="Zurück zur Liste">'+F.svg("chevL")+'</button><div class="t"><b>'+esc(nameOf(c))+'</b><span>'+esc([c.email,c.phone].filter(Boolean).join(" · ")||"keine Kontaktdaten")+(c.page?' · auf '+esc(c.page):'')+'</span></div>'+
     '<div class="acts"><span class="muted small">KI übernimmt</span><div class="seg" role="group" aria-label="KI übernimmt">'+[["auto","Auto"],["on","An"],["off","Aus"]].map(function(o){ return '<button type="button" data-act="chai:'+o[0]+'" aria-pressed="'+(c.ai===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>'+
     (c.leadId?'<button type="button" class="btn" data-act="lead:'+esc(c.leadId)+'" title="Kundenakte öffnen">Lead ✓</button>':'<button type="button" class="btn" data-act="chlead">Als Lead</button>')+
+    (chPrintish()?'<button type="button" class="btn pri" data-act="choffer"'+(OFFER_BUSY?' disabled':'')+' title="Antwort mit fertig eingestelltem Shop-Link, Preis und Termin vorschlagen – landet im Antwortfeld, nichts wird gesendet">'+(OFFER_BUSY?'Stelle ein …':'Antwort mit Link')+'</button>':'')+
     (F.actions.rkfromchat?'<button type="button" class="btn" data-act="rkfromchat" title="Als Reklamation anlegen">'+(F.claimOfConv&&F.claimOfConv(c.id)?"Reklamation ✓":"Reklamation")+'</button>':'')+'<button type="button" class="btn" data-act="'+(c.closed?"chreopen":"chclose")+'">'+(c.closed?"Wieder öffnen":"Beenden")+'</button><button type="button" class="btn danger" data-act="chdel" aria-label="Unterhaltung löschen">Löschen</button></div></div>'+
     '<div class="ch-info"><span>'+esc(aiTxt(c))+'</span>'+(c.aiCount?'<span>KI-Antworten: '+c.aiCount+'/'+((ST&&ST.aiConvMax)||15)+'</span>':'')+(c.request?'<span>Anliegen: '+esc(c.request)+'</span>':'')+(TH&&TH.pages&&TH.pages.length>1?'<span>Seiten: '+esc(TH.pages.join(", "))+'</span>':'')+'</div>';
 }
