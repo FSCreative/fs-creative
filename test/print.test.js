@@ -992,6 +992,18 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/S1 Brust links, S2 Rücken/.test(it.customerReference), it.customerReference);
     assert.strictEqual((await fetch(B + new URL(it.fileUrl).pathname)).status, 200);
   });
+  await t("Textil: Druckart je Position (vorne Transfer, hinten Siebdruck) → Print.com je Position, printingmethod der höheren Druckart, Mindestmengen je Druckart", async () => {
+    const TM = { product: "tshirt-basic", sel: { color_textile: "black_tshirt_fotl_original" }, textile: { method: "transfer", pm: { positions_back: "screen1" }, positions: ["positions_chest", "positions_back"], sizes: { m: 30 } } };
+    const r = await post("/print/api/price", TM); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const o = lastPrice("t-shirt-budget-5").body.options;
+    assert.deepStrictEqual([o.positions_chest, o.positions_back, o.printingmethod], ["transfer", "1pms", "screen_printing"]);
+    assert.ok(r.j.labels.some(l => l[0] === "Druck" && /Brust links: Transferdruck · Rücken: Siebdruck 1-farbig/.test(l[1])), JSON.stringify(r.j.labels));
+    assert.strictEqual((await post("/print/api/price", Object.assign({}, TM, { textile: Object.assign({}, TM.textile, { sizes: { m: 10 } }) }))).status, 400, "Siebdruck-Position erst ab 25");
+    assert.strictEqual((await post("/print/api/price", Object.assign({}, TM, { textile: Object.assign({}, TM.textile, { pm: { positions_back: "gibtsnicht" } }) }))).status, 400, "unbekannte Druckart");
+    assert.strictEqual((await post("/print/api/price", Object.assign({}, TM, { textile: Object.assign({}, TM.textile, { pm: { positions_xyz: "screen1" } }) }))).status, 400, "unbekannte Position");
+    const plain = await post("/print/api/price", Object.assign({}, TM, { textile: { method: "transfer", positions: ["positions_chest", "positions_back"], sizes: { m: 30 } } })); assert.strictEqual(plain.status, 200);
+    const o2 = lastPrice("t-shirt-budget-5").body.options; assert.deepStrictEqual([o2.positions_chest, o2.positions_back, o2.printingmethod], ["transfer", "transfer", "heat_transfer"], "ohne pm wie bisher");
+  });
   await t("Sortiment: Print.com-Kategorien (Import im Hintergrund), Haupt-/Untergruppe freischalten + Einzel-Ausnahme, allgemeines Produkt mit freier Menge und eigener Größe", async () => {
     await admin("/admin/api/print/sortiment", { op: "import" });
     let st; for (let i = 0; i < 100; i++) { st = await admin("/admin/api/print/sortiment"); if (!st.job.running && st.imported) break; await new Promise(r => setTimeout(r, 100)); }

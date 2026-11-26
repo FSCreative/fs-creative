@@ -187,7 +187,7 @@ function texArea(slug, name, key) {
   return [100, 100];
 }
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
-  { key: "embroidery", label: "Stick (nur Brust)", pm: "embroidering", val: "embroidery", min: 1, only: /^positions_chest/ }];
+  { key: "embroidery", label: "Stick (Brust, je nach Modell auch Ärmel)", pm: "embroidering", val: "embroidery", min: 1 }];
 // bei „alle Optionen“ nicht anbieten: braucht eigene Dateien/Stanzformen/Daten oder betrifft Verpackung & Palettenlieferung
 // Nur rein technische Angaben ausblenden – echte Optionen (Stanzung, Rillung, Veredelung, Bündelung, Excel-Personalisierung, Palette …) zeigt der Shop immer
 const AUTO_SKIP = /^(flexibleprintingmethod|delivery|provide_label|designs)$/;
@@ -681,7 +681,10 @@ module.exports = function (D) {
       sizes = ((by.textile_sizes && by.textile_sizes.options) || []).filter(o => o && o.slug != null).map(o => ({ slug: String(o.slug), name: (L.textile_sizes && L.textile_sizes[o.slug]) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : String(o.slug).replace(/^unisex_/, "").toUpperCase()).replace(/^Unisexe\b/i, "Unisex") }));
       positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: texArea(x[0], sku + " " + (c.title || "") + " " + ((pd && pd.titleSingle) || ""), c.key), opts: by[x[0]].options.map(o => String(o.slug)) }));
       const pm = by.printingmethod && Array.isArray(by.printingmethod.options) ? by.printingmethod.options.map(o => String(o.slug)) : null;
-      methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);
+      methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1).map(p => p.slug) })).filter(m => m.positions.length);
+      methods.forEach(m => { if (m.key === "embroidery") { const g = [];   // Stick nur dort, wo Print.com ihn je Position anbietet (Brust, je nach Modell Ärmel – nie Rücken)
+        m.positions.forEach(s => { const w = /sleeve/.test(s) ? "Ärmel" : /chest/.test(s) ? "Brust" : (positions.find(p => p.slug === s) || {}).title; if (w && g.indexOf(w) < 0) g.push(w); });
+        m.label = "Stick (" + (g.length === 1 ? "nur " + g[0] : g.join("/")) + ")"; } });
       // Mützen, Schals, Schürzen, Socken & Co.: keine Druckpositionen/Größen wie bei Shirts → als Werbeartikel (Logo auf der Druckfläche) anbieten statt gar nicht
       if (!sizes.length || !methods.length) { if (c.generic && !c.kind && !c.__asPromo) return parseProduct(Object.assign({}, c, { kind: "promo", __asPromo: true }), sku, pd); throw new Error("Textil-Eigenschaften (Größen/Druckpositionen) fehlen"); }
       // Höchstmenge aus den echten Mengenbereichen je Druckverfahren (Simon 10.11.2026: Shirts waren auf 100 begrenzt, weil die Vorschlagsliste 5–100 genommen wurde)
@@ -1140,25 +1143,37 @@ module.exports = function (D) {
       const t = objOf(input.textile);
       const m = prod.methods.find(x => x.key === String(t.method || prod.methods[0].key)); if (!m) throw bad("Ungültige Druckart");
       const want = Array.isArray(t.positions) ? t.positions.map(String) : [];
-      if (want.some(p => m.positions.indexOf(p) < 0)) throw bad("Diese Druckposition ist mit der gewählten Druckart nicht möglich");
-      positions = prod.positions.filter(p => want.indexOf(p.slug) > -1).map(p => ({ slug: p.slug, title: p.title, area: p.area }));
+      // Druckart je Position (Simon 26.11.2026: „vorne Stick, hinten Druck“) – t.pm = { positions_chest: "embroidery", … }; ohne Eintrag gilt t.method
+      const pmIn = objOf(t.pm), mOf = slug => { const k = pmIn[slug] != null && pmIn[slug] !== "" ? String(pmIn[slug]) : m.key, x = prod.methods.find(y => y.key === k); if (!x) throw bad("Ungültige Druckart"); return x; };
+      if (Object.keys(pmIn).some(k => !prod.positions.some(p => p.slug === k))) throw bad("Ungültige Druckposition");
+      if (want.some(p => mOf(p).positions.indexOf(p) < 0)) throw bad("Diese Druckposition ist mit der gewählten Druckart nicht möglich");
+      positions = prod.positions.filter(p => want.indexOf(p.slug) > -1).map(p => ({ slug: p.slug, title: p.title, area: p.area, m: mOf(p.slug) }));
       if (!positions.length) throw bad("Bitte mindestens eine Druckposition wählen");
       const sz = objOf(t.sizes);
       if (Object.keys(sz).some(k => !prod.sizes.some(x => x.slug === k))) throw bad("Ungültige Größe");
       const list = prod.sizes.map(x => ({ slug: x.slug, name: x.name, n: Math.max(0, Math.min(100000, parseInt(sz[x.slug], 10) || 0)) })).filter(x => x.n > 0);
       copies = list.reduce((a, x) => a + x.n, 0);
       if (!copies) throw bad("Bitte die Stückzahl je Größe eingeben");
-      if (copies < m.min) throw bad(m.label.replace(/ \(.*$/, "") + " ist ab " + m.min + " Stück möglich");
       if (copies > prod.maxCopies) throw bad("Maximal " + prod.maxCopies + " Stück pro Bestellung");
-      const mq = m.pm && (prod.qty || []).find(r => r.pm === m.pm), mMax = mq && (mq.ranges || []).length ? Math.max.apply(null, mq.ranges.map(x => +x.max || 0)) : 0;
-      if (mMax && copies > mMax) throw bad(m.label.replace(/ \(.*$/, "") + " ist bis " + mMax.toLocaleString("de-AT") + " Stück möglich – für mehr bitte eine andere Druckart wählen");
-      const mr = mq && (mq.ranges || []).find(x => copies >= +x.min && copies <= +x.max), st = mr && +mr.step > 1 ? +mr.step : 0;   // z. B. Transferdruck ab 100 Stück nur in 5er-Schritten
-      if (st && (copies - +mr.min) % st) { const lo = copies - (copies - +mr.min) % st, hi = Math.min(+mr.max, lo + st); throw bad(m.label.replace(/ \(.*$/, "") + ": ab " + (+mr.min).toLocaleString("de-AT") + " Stück nur in " + st + "er-Schritten – z. B. " + lo.toLocaleString("de-AT") + " oder " + hi.toLocaleString("de-AT") + " Stück (Größen bitte so verteilen)"); }
-      if (m.pm) extra.printingmethod = m.pm; positions.forEach(p => { extra[p.slug] = m.val; }); extra.textile_sizes = list[0].slug;   // Preis hängt nicht von der Größe ab
+      const used = positions.map(p => p.m).filter((x, i, a) => a.indexOf(x) === i), short = x => x.label.replace(/ \(.*$/, "");
+      used.forEach(um => {   // Mindest-/Höchstmengen und Schritte gelten je verwendeter Druckart
+        if (copies < um.min) throw bad(short(um) + " ist ab " + um.min + " Stück möglich");
+        const mq = um.pm && (prod.qty || []).find(r => r.pm === um.pm), mMax = mq && (mq.ranges || []).length ? Math.max.apply(null, mq.ranges.map(x => +x.max || 0)) : 0;
+        if (mMax && copies > mMax) throw bad(short(um) + " ist bis " + mMax.toLocaleString("de-AT") + " Stück möglich – für mehr bitte eine andere Druckart wählen");
+        const mr = mq && (mq.ranges || []).find(x => copies >= +x.min && copies <= +x.max), st = mr && +mr.step > 1 ? +mr.step : 0;   // z. B. Transferdruck ab 100 Stück nur in 5er-Schritten
+        if (st && (copies - +mr.min) % st) { const lo = copies - (copies - +mr.min) % st, hi = Math.min(+mr.max, lo + st); throw bad(short(um) + ": ab " + (+mr.min).toLocaleString("de-AT") + " Stück nur in " + st + "er-Schritten – z. B. " + lo.toLocaleString("de-AT") + " oder " + hi.toLocaleString("de-AT") + " Stück (Größen bitte so verteilen)"); }
+      });
+      // gemischt: printingmethod der „höchsten“ Druckart (Stick vor Sieb vor Transfer) – Print.com rechnet je Position nach positions_*
+      const PMR = ["embroidering", "screen_printing", "heat_transfer"], rk = x => { const i = PMR.indexOf(x.pm); return i < 0 ? 9 : i; }, pmM = used.filter(x => x.pm).sort((a, b) => rk(a) - rk(b))[0], mixed = used.length > 1;
+      if (pmM) extra.printingmethod = pmM.pm; positions.forEach(p => { extra[p.slug] = p.m.val; }); extra.textile_sizes = list[0].slug;   // Preis hängt nicht von der Größe ab
       sel.druck = m.key; sel.positionen = positions.map(p => p.slug); sel.groessen = list.map(x => x.slug + ":" + x.n).join(",");
+      if (mixed) sel.druckarten = positions.map(p => p.slug + ":" + p.m.key).join(",");
       fileSel = { pos: positions.map(p => p.slug) };
-      tex = { method: m.key, methodLabel: m.label, positions: positions.map((p, i) => ({ slug: p.slug, title: p.title, area: p.area, page: i + 1 })), sizes: list };
-      more.push(["Druck", m.label], ["Druckpositionen", positions.map(p => p.title).join(", ")], ["Größen", list.map(x => x.name + " × " + x.n).join(", ")]);
+      const pmMap = {}; positions.forEach(p => { if (p.m !== m) pmMap[p.slug] = p.m.key; });
+      const dLbl = mixed ? positions.map(p => p.title + ": " + short(p.m)).join(" · ") : m.label;
+      tex = Object.assign({ method: m.key, methodLabel: dLbl, positions: positions.map((p, i) => ({ slug: p.slug, title: p.title, area: p.area, page: i + 1, method: p.m.key, methodLabel: short(p.m) })), sizes: list }, Object.keys(pmMap).length ? { pm: pmMap } : {});
+      more.push(["Druck", dLbl], ["Druckpositionen", positions.map(p => p.title).join(", ")], ["Größen", list.map(x => x.name + " × " + x.n).join(", ")]);
+      positions = positions.map(p => ({ slug: p.slug, title: p.title, area: p.area }));
     } else {
       copies = parseInt(input.copies, 10);
       if (!(copies > 0 && copies <= 1e6)) throw bad("Ungültige Auflage");
@@ -2862,7 +2877,7 @@ module.exports = function (D) {
     const nf = Object.assign({}, f, { id: "f" + crypto.randomBytes(12).toString("hex"), createdAt: nowIso(), orderId: null, copyOf: f.id }); await store.putFile(nf, data);
     const sel = Object.assign({}, o.sel || {}); delete sel.custom;
     const C = prod.custom, k = C && C.unit === "cm" ? 10 : 1, custom = o.custom && o.custom.w && C ? { w: String(o.custom.w / k), h: String(o.custom.h / k) } : undefined;
-    const textile = o.textile ? { method: o.textile.method, positions: (o.textile.positions || []).map(x => x.slug), sizes: (o.textile.sizes || []).reduce((a, x) => { a[x.slug] = x.n; return a; }, {}) } : undefined;
+    const textile = o.textile ? { method: o.textile.method, pm: o.textile.pm || undefined, positions: (o.textile.positions || []).map(x => x.slug), sizes: (o.textile.sizes || []).reduce((a, x) => { a[x.slug] = x.n; return a; }, {}) } : undefined;
     const fl = (o.labels || []).find(l => /format|größe/i.test(l[0]));
     return { product: prod.key, sel, copies: o.copies, urgency: o.urgency || "standard", pm: "auto", custom, textile, id: "r" + Date.now().toString(36) + crypto.randomBytes(2).toString("hex"), title: prod.title, img: "", icon: prod.icon || "",
       tiers: (prod.tiers || []).slice(0, 30), fileId: nf.id, fileToken: sig("file", nf.id), fileName: (f.kind === "design" ? "Eigene Gestaltung" : f.name || "Druckdatei") + " (wie " + o.nr + ")", preview: "",
