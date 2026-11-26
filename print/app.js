@@ -2720,7 +2720,11 @@
   var STU = {};
   /* Seitenbeschriftung (Simon 12.11.2026): Sets/Kartensets ohne Bindung = je Seite ein Motiv → „Motiv 1 vorne / hinten“ statt „Seite 1 / 2“;
      Broschüren, Bücher, Kalender (mit Bindung) bleiben bei Seitenzahlen; beidseitige Einzelprodukte Vorder-/Rückseite */
-  function setLike() { return !!pagesNeeded() && !S.prod.props.some(function (pr) { return /bind|wire|staple|heft/i.test(pr.slug) && !/binder-filler/i.test(pr.slug); }); }
+  /* Broschüren geheftet/Klebebindung/Wire-O, Magazine, Bücher, Kalender, Blöcke: immer Seitenzahlen – Print.com liefert bei geheftet keine „Bindung“-Option,
+     dort stand fälschlich „Motiv 1 vorne / hinten“ (Simon 26.11.2026) → zusätzlich an Produkt (Schlüssel/Titel) bzw. eigenem Umschlag erkennen */
+  function setLike() { if (!pagesNeeded()) return false; var p = S.prod;
+    if (/magazin|brosch|booklet|book|buch|kalender|calendar|stapled|bound|wire|notebook|notizbuch|block|heft|katalog|catalog|zeitung|newspaper/i.test((p.key || "") + " " + (p.title || ""))) return false;
+    return !p.props.some(function (pr) { return (/bind|wire|staple|heft|cover_material|loop_stitch|squarefold/i.test(pr.slug)) && !/binder-filler/i.test(pr.slug); }); }
   function pgLabel(i, n) {
     if (n === 2 && sides() === 2 && !pagesNeeded()) return sideNames()[i];
     if (setLike()) return sides() === 2 ? "Motiv " + (Math.floor(i / 2) + 1) + (i % 2 ? " hinten" : " vorne") : "Motiv " + (i + 1);
