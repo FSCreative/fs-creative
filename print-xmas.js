@@ -232,7 +232,7 @@ function cardHtml(it, x, sea, i) {
 // Produkte aus dem Sortiment (Deko wie Radio, Kassette, Fondue, Zuckerstange, Stiefel, Feuer usw. bewusst ohne Punkt). Geprüft 03.11.2026.
 const HOTSPOTS = {
   hero: [["telescopic-boxes", 54.2, 36.4], ["christmas-baubles", 64.2, 50.2], ["tissue-paper", 64.6, 69], ["christmas-stocking", 60, 78.5],
-    ["ceramic-tiles", 78.3, 57.5], ["postcards", 84.2, 64]],   // Hero „Kevin allein zu Haus“ (27.11.2026); Stülpschachteln erscheinen erst, wenn sie im Shop wieder freigeschaltet sind
+    ["ceramic-tiles", 78.3, 57.5], ["postcards", 84.2, 64, "Geschenkkarten", "663hQ3MnRkofUsYcV1YdyI/196b8f6725a87c01d33f6c46e457ae23/2026-EOY-decorating-kit-card.jpg"]],   // 4./5. Feld: eigener Name/Foto für den Punkt (Simon 27.11.2026: „Geschenkkarten“)   // Hero „Kevin allein zu Haus“ (27.11.2026); Stülpschachteln erscheinen erst, wenn sie im Shop wieder freigeschaltet sind
   planen: [["hexagon-pen-holder", 58.1, 36.4], ["wire-o-desk-calendars", 75.4, 38.3], ["sticky-notes", 64, 64.2], ["ribbon", 73.3, 86.2],
     ["budget-pen-contour", 58.8, 9.5], ["diaries", 55.5, 84.5], ["desk-pads", 72.5, 68.5], ["sticky-notes", 93.5, 41]],
   karten: [["luxurious-postcards", 63.5, 51]],
@@ -249,14 +249,15 @@ function hotspotsHtml(id, ratio, posX, data, shown, prefer, allowed) {
   if (!list.length) return "";
   const itemFor = k => { const own = prefer && prefer.items.find(i => i[0] === k); if (own) return own; for (const t of THEMES) { const i = t.items.find(z => z[0] === k); if (i) return i; } return null; };
   return '<div class="xm-hsl" data-ratio="' + ratio + '" data-px="' + posX + '">' + list.map(h => { const it = itemFor(h[0]); if (!it) return ""; const x = data[h[0]];
-    return '<a class="xm-hs" href="/print?produkt=' + encodeURIComponent(h[0]) + '" data-prod="' + escH(h[0]) + '" data-x="' + h[1] + '" data-y="' + h[2] + '" aria-label="' + escH(it[1]) + '"><i aria-hidden="true"></i>' +
-      '<span class="xm-hsc"><img src="' + escH(img(it[2], 300)) + '" width="160" height="120" alt="" loading="lazy" decoding="async"><b>' + escH(it[1]) + "</b>" + (x && x.gross > 0 ? "<small>" + priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() + "</small>" : "") + "</span></a>"; }).join("") + "</div>";
+    const nm = h[3] || it[1], ph = h[4] || it[2];
+    return '<a class="xm-hs" href="/print?produkt=' + encodeURIComponent(h[0]) + '" data-prod="' + escH(h[0]) + '" data-x="' + h[1] + '" data-y="' + h[2] + '" aria-label="' + escH(nm) + '"><i aria-hidden="true"></i>' +
+      '<span class="xm-hsc"><img src="' + escH(img(ph, 300)) + '" width="160" height="120" alt="" loading="lazy" decoding="async"><b>' + escH(nm) + "</b>" + (x && x.gross > 0 ? "<small>" + priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() + "</small>" : "") + "</span></a>"; }).join("") + "</div>";
 }
 // Punkte für das Kopfbild als Daten (Startseiten-Kachel im Shop rendert sie selbst): nur Produkte, die auf der Weihnachtsseite als Vorschlag stehen
 function heroSpots(data, shown) {
   data = data || {}; const allowed = {}; pick(data, shown).forEach(x => x.items.forEach(i => { allowed[i[0]] = i; }));
   return (HOTSPOTS.hero || []).filter(h => allowed[h[0]] && !OFF[h[0]]).map(h => { const it = allowed[h[0]], x = data[h[0]];
-    return { k: h[0], x: h[1], y: h[2], name: it[1], photo: PROXY + it[2] + "?fm=webp&w=300&q=75", price: x && x.gross > 0 ? priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; });
+    return { k: h[0], x: h[1], y: h[2], name: h[3] || it[1], photo: PROXY + (h[4] || it[2]) + "?fm=webp&w=300&q=75", price: x && x.gross > 0 ? priceHtml(x).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; });
 }
 // Weitere Folien für den Startseiten-Slider im Shop (nach „Weihnachten“): Themen mit eigenem Banner und Produktpunkten – derzeit „Planen fürs neue Jahr“
 const SLIDES = ["planen"];
@@ -265,7 +266,7 @@ function teaserSlides(data, shown) {
   return pick(data, shown).filter(x => SLIDES.indexOf(x.t.slug) > -1 && x.t.banner).map(x => { const allowed = {}; x.items.forEach(i => { allowed[i[0]] = i; });
     return { slug: x.t.slug, title: x.t.title, text: x.t.text, n: x.items.length, img: x.t.banner[0], ratio: x.t.banner[1],
       hs: (HOTSPOTS[x.t.slug] || []).filter(h => allowed[h[0]] && !OFF[h[0]]).map(h => { const it = allowed[h[0]], d = data[h[0]];
-        return { k: h[0], x: h[1], y: h[2], name: it[1], photo: PROXY + it[2] + "?fm=webp&w=300&q=75", price: d && d.gross > 0 ? priceHtml(d).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; }) }; });
+        return { k: h[0], x: h[1], y: h[2], name: h[3] || it[1], photo: PROXY + (h[4] || it[2]) + "?fm=webp&w=300&q=75", price: d && d.gross > 0 ? priceHtml(d).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "" }; }) }; });
 }
 // Am Handy je Thema zuerst nur so viele Karten (Rest über „Alle … zeigen“), am Computer alle
 const MOB = 6;
