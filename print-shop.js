@@ -1313,8 +1313,26 @@ module.exports = function (D) {
   const INFLIGHT = new Map();
   // Wunsch-Liefertag (Datumsleiste): Versand dieses Tages statt der Standardwahl – nur wenn Print.com den Tag für diese Produktionszeit anbietet
   function pickDay(v, wish) { const d = wish && Array.isArray(v.days) ? v.days.find(x => x.d === wish) : null; if (!d || d.d === v.deliveryDate) return v;
-    return Object.assign({}, v, { shipping: d.ship, total: r2(v.product + d.ship), deliveryDate: d.d, carrier: d.carrier, method: d.method, wish: d.d, def: v.deliveryDate }); }
-  async function purchase(prod, n, country, postcode) { return pickDay(await purchase0(prod, n, country, postcode), n.wish); }
+    return Object.assign({}, v, { shipping: d.ship, total: r2(v.product + d.ship), deliveryDate: d.d, pcDate: d.pc || d.d, carrier: d.carrier, method: d.method, wish: d.d, def: v.deliveryDate }); }
+  /* Puffer-Werktag (Simon 27.11.2026): Kunden sehen überall den Print.com-Termin + 1 Werktag – pünktlich = Pluspunkt, zu spät = besser so.
+     Ab hier sind deliveryDate/days[].d Kundentermine; der echte Print.com-Tag steht in pcDate bzw. days[].pc und geht beim Bestellen an Print.com.
+     PRINT_DAY_BUFFER = Anzahl Werktage (Standard 1, 0 = aus). Werktag = Mo–Fr ohne österreichische Feiertage. */
+  const AT_HOL = {};
+  function atHolidays(y) { if (AT_HOL[y]) return AT_HOL[y];
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const em = Math.floor((h + l - 7 * m + 114) / 31), ed = ((h + l - 7 * m + 114) % 31) + 1, easter = Date.UTC(y, em - 1, ed), iso = t => new Date(t).toISOString().slice(0, 10);
+    const set = new Set(["01-01", "01-06", "05-01", "08-15", "10-26", "11-01", "12-08", "12-25", "12-26"].map(x => y + "-" + x).concat([1, 39, 50, 60].map(o => iso(easter + o * 864e5))));
+    return (AT_HOL[y] = set); }
+  function workdayAfter(d, n) { if (!/^\d{4}-\d\d-\d\d$/.test(String(d || "")) || !(n > 0)) return d; let t = Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
+    for (let left = n; left > 0;) { t += 864e5; const x = new Date(t), s = x.toISOString().slice(0, 10), wd = x.getUTCDay(); if (wd !== 0 && wd !== 6 && !atHolidays(x.getUTCFullYear()).has(s)) left--; }
+    return new Date(t).toISOString().slice(0, 10); }
+  const dayBuffer = () => { const v = process.env.PRINT_DAY_BUFFER; return v === undefined || v === "" ? 1 : Math.max(0, Math.min(5, parseInt(v, 10) || 0)); };
+  function custShift(v) { const n = dayBuffer(); if (!v || !n) return v;
+    const days = {}; (v.days || []).forEach(x => { const d = workdayAfter(x.d, n); if (!days[d] || x.ship < days[d].ship) days[d] = Object.assign({}, x, { d, pc: x.d }); });
+    return Object.assign({}, v, { deliveryDate: workdayAfter(v.deliveryDate, n), pcDate: v.deliveryDate, earliest: workdayAfter(v.earliest, n), days: Object.values(days).sort((a, b) => a.d.localeCompare(b.d)) }); }
+  // Termin für Print.com: neue Bestellungen tragen pcDate (echter Print.com-Tag); ältere (vor dem Puffer) haben nur den Print.com-Tag selbst
+  const pcWishDate = o => { const pu = (o.price && o.price.purchase) || {}; return pu.pcDate || (o.price && (o.price.wish || pu.deliveryDate)); };
+  async function purchase(prod, n, country, postcode) { return pickDay(custShift(await purchase0(prod, n, country, postcode)), n.wish); }
   const NOPRICE = new Map();   // echte Preis-Ablehnungen („no supplier prices“) je Anfrage, 10 min – spart wiederholte Anfragen ohne Logistik-Angabe
   async function purchase0(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
@@ -3481,7 +3499,7 @@ module.exports = function (D) {
         return Object.assign({ sku: o.product.sku, customerReference: clip(o.nr + " · Motiv " + (one ? ch[0].idx + 1 : (ch[0].idx + 1) + "–" + (ch[ch.length - 1].idx + 1)), 120), options: Object.assign({}, o.pcOptions, { copies: n }) },
           one ? { fileUrl: pcFileUrl(fbase, ch[0].fileId) } : { designs: ch.map(m => ({ fileUrl: pcFileUrl(fbase, m.fileId), copies: m.copies })) },
           { fileOptions: { isProduction: true }, approveDesign: true, senderAddress: sender, shipments: [{ address: addr, copies: n }] }); });
-      const pw0 = o.price && (o.price.wish || (o.price.purchase && o.price.purchase.deliveryDate)), pm0 = o.price && o.price.purchase && o.price.purchase.method, wish0 = pw0 && pm0 && pw0 > today() ? { deliveryDate: pw0, method: pm0 } : null;
+      const pw0 = o.price && pcWishDate(o), pm0 = o.price && o.price.purchase && o.price.purchase.method, wish0 = pw0 && pm0 && pw0 > today() ? { deliveryDate: pw0, method: pm0 } : null;
       if (wish0) items.forEach(it => Object.assign(it.shipments[0], wish0));
       hist(o, o.motifs.length + " Motive auf " + items.length + " Positionen aufgeteilt (Print.com: höchstens " + mx + " je Position)");
       return { o, fm, items, wish: wish0, split: items.length };
@@ -3493,7 +3511,7 @@ module.exports = function (D) {
         senderAddress: sender, shipments: [{ address: addr, copies: o.copies }] })];
     // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit).
     // Auch ohne angeklickten Tag den bezahlten Termin/Versand mitgeben (23.11.2026: Express 25.11. per UPS bezahlt, ohne Angabe nahm Print.com den billigsten Standardversand)
-    const pw = o.price && (o.price.wish || (o.price.purchase && o.price.purchase.deliveryDate)), pm = o.price && o.price.purchase && o.price.purchase.method, wish = pw && pm && pw > today() ? { deliveryDate: pw, method: pm } : null;
+    const pw = o.price && pcWishDate(o), pm = o.price && o.price.purchase && o.price.purchase.method, wish = pw && pm && pw > today() ? { deliveryDate: pw, method: pm } : null;
     if (wish) items.forEach(it => Object.assign(it.shipments[0], wish));
     return { o, fm, items, wish };
   }
@@ -3664,7 +3682,7 @@ module.exports = function (D) {
       return { u, n, q: await quote(prod, n, sh.country, sh.zip, cust) }; } catch (e) { errs.push((URGENCY_DE[u] || u) + ": " + clip(e.message, 160)); return null; } }));
     const by = {};
     rs.filter(Boolean).forEach(({ u, n, q }) => (q.days || []).forEach(dd => { if (!(dd.d > today())) return; const pd = ((q.purchase && q.purchase.days) || []).find(x => x.d === dd.d); if (!pd) return;
-      const c = { d: dd.d, u, net: dd.net, gross: dd.gross, ship: pd.ship, method: pd.method, carrier: pd.carrier, product: q.purchase.product, def: q.purchase.def || q.purchase.deliveryDate, pcOpts: n.pcOpts, labels: n.labels };
+      const c = { d: dd.d, pc: pd.pc || "", u, net: dd.net, gross: dd.gross, ship: pd.ship, method: pd.method, carrier: pd.carrier, product: q.purchase.product, def: q.purchase.def || q.purchase.deliveryDate, pcOpts: n.pcOpts, labels: n.labels };
       if (!by[dd.d] || c.gross < by[dd.d].gross - 0.004) by[dd.d] = c; }));
     const days = Object.values(by).sort((a, b) => a.d.localeCompare(b.d)), curD = (o.price && (o.price.wish || o.price.deliveryDate)) || "";
     const cur = days.find(x => x.d === curD) || null, cheap = l => l.slice().sort((a, b) => a.gross - b.gross)[0] || null;
@@ -3678,7 +3696,7 @@ module.exports = function (D) {
   function applyChoice(o, ch, by) {
     const pu = (o.price && o.price.purchase) || {}, oldTotal = +pu.total || 0, total = r2(ch.product + ch.ship), from = (o.price.wish || o.price.deliveryDate || ""), fromU = o.urgency;
     o.urgency = ch.u; o.pcOptions = ch.pcOpts; if (Array.isArray(ch.labels) && ch.labels.length) o.labels = ch.labels;
-    o.price.purchase = Object.assign({}, pu, { product: ch.product, shipping: ch.ship, total, method: ch.method, carrier: ch.carrier, deliveryDate: ch.d, wish: ch.d === ch.def ? undefined : ch.d });
+    o.price.purchase = Object.assign({}, pu, { product: ch.product, shipping: ch.ship, total, method: ch.method, carrier: ch.carrier, deliveryDate: ch.d, pcDate: ch.pc || undefined, wish: ch.d === ch.def ? undefined : ch.d });
     if (ch.d === ch.def) delete o.price.wish; else o.price.wish = ch.d;
     o.price.deliveryDate = ch.d;
     if (!pu.actual) o.price.margin = r2((o.price.margin || 0) - (total - oldTotal));
@@ -4555,7 +4573,7 @@ module.exports = function (D) {
       txt: "Kalender mit eigenen Fotos oder deinem Firmendesign: Wire-O-Wandkalender und Tischkalender, Wandkalender mit Rückendrahtheftung, Abreißkalender, Buchkalender, Hardcover-Kalender, Schreibtischkalender und Würfelkalender – als Fotokalender, Werbekalender für Kundschaft oder Vereinskalender, Lieferung in ganz Österreich vom Druckshop von FS Creative aus dem Montafon (Vorarlberg).",
       faq: [["Wo kann ich in Österreich einen Kalender drucken lassen?", "Online im Druckshop von FS Creative aus Gaschurn im Montafon (Vorarlberg): Wand-, Tisch-, Abreiß-, Buch- und Würfelkalender, Preis sofort online, Versand in ganz Österreich inklusive."],
         ["Kann ich einen Abreißkalender drucken lassen?", "Ja – Abreißkalender mit eigenem Design gibt es direkt im Shop; Format, Papier und Menge wählst du im Konfigurator, der Preis steht sofort da."],
-        ["Bis wann muss ich Kalender für Weihnachten bestellen?", "Den voraussichtlichen Liefertermin zeigt der Konfigurator vor der Bestellung – meist 6 bis 11 Werktage nach der Freigabe deiner Daten. Für Weihnachten am besten bis Ende November bestellen."]] },
+        ["Bis wann muss ich Kalender für Weihnachten bestellen?", "Den voraussichtlichen Liefertermin zeigt der Konfigurator vor der Bestellung – meist 7 bis 12 Werktage nach der Freigabe deiner Daten. Für Weihnachten am besten bis Ende November bestellen."]] },
     { id: "brochure", slug: "broschueren-drucken", main: "paper-print", sub: "brochures-magazines", rx: /broschür|magazin|buch|bücher|heft/i,
       h: "Broschüren, Magazine & Bücher drucken", h1: "Broschüren, Magazine & Bücher drucken – geheftet, geklebt oder mit Wire-O",
       title: "Broschüren & Magazine drucken in Österreich | FS Creative", desc: "Broschüren drucken: geheftet, mit Klebebindung oder Wire-O, Magazine, Bücher und Hardcover – Seitenzahl und Papier frei wählbar, Versand in ganz Österreich inklusive.",
@@ -4825,7 +4843,7 @@ module.exports = function (D) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), groups = publicGroups(pub), P = await pubState();
     const items = ((P && P.items) || []).slice(0, 30), low = it => it.rows.slice().sort((a, b) => a.gross - b.gross)[0];
     const faq = [["Was kostet der Versand?", "Nichts extra: Alle Preise sind Endpreise inklusive 20 % USt und Versand innerhalb Österreichs."],
-      ["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum siehst du vor der Bestellung im Konfigurator – meist 6 bis 11 Werktage nach der Freigabe deiner Daten."],
+      ["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum siehst du vor der Bestellung im Konfigurator – meist 7 bis 12 Werktage nach der Freigabe deiner Daten."],
       ["Welche Druckdaten brauche ich?", "Am besten ein PDF im Endformat plus Beschnitt (meist 3 mm). JPG und PNG in hoher Auflösung gehen auch. Jede Datei wird automatisch geprüft – oder du gestaltest direkt im Online-Designer."],
       ["Kann ich als Firma auf Rechnung bestellen?", "Ja. Firmen sehen Nettopreise und können auch auf Rechnung bestellen, Privatkunden bezahlen sicher online."]];
     const art = '<article class="ps-seo-home" style="padding:28px 0 8px"><h2>Online drucken in Österreich</h2><p>Flyer, Visitenkarten, Plakate, Broschüren, Aufkleber, Banner und Werbeartikel: online gestalten oder Druckdaten hochladen, den Preis sofort sehen und bestellen. Alle Preise inklusive 20 % USt und Versand innerhalb Österreichs – vom Druckshop von FS Creative aus Gaschurn im Montafon.</p>' +
@@ -4879,7 +4897,7 @@ module.exports = function (D) {
     else q.push(["Welche Druckdaten brauche ich?", "Am besten ein PDF (oder JPG/PNG in hoher Auflösung) im Endformat plus " + String(bl).replace(".", ",") + " mm Beschnitt rundum; wichtige Texte und Logos mindestens " + String(sf).replace(".", ",") + " mm vom Rand." + (des ? " Du kannst " + x.title + " auch direkt im Browser gestalten – ohne Grafikprogramm." : "")]);
     if (des && kind === "flat") q.push(["Kann ich einen QR-Code auf " + x.title + " drucken?", "Ja, gratis: Im Online-Designer oder mit dem kostenlosen QR-Code-Generator (" + SITE + "/print/qr-code-generator) einen QR-Code für Link, Visitenkarte (vCard), WLAN, E-Mail oder Telefon erstellen – er wird als scharfe Vektorgrafik gedruckt und läuft nie ab. Es fallen keine Zusatzkosten an."]);
     q.push(["Werden meine Druckdaten geprüft?", "Ja. Jede Datei wird vor dem Druck automatisch geprüft (Format, Beschnitt, Auflösung, Farben) – du siehst das Ergebnis sofort. Auf Wunsch gibt es zusätzlich den Profi-Datencheck, bei dem wir deine Daten persönlich kontrollieren."]);
-    q.push(["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum zeigt der Konfigurator vor der Bestellung – meist 6 bis 11 Werktage nach der Freigabe deiner Daten. Der Versand innerhalb Österreichs ist im Preis enthalten."]);
+    q.push(["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum zeigt der Konfigurator vor der Bestellung – meist 7 bis 12 Werktage nach der Freigabe deiner Daten. Der Versand innerhalb Österreichs ist im Preis enthalten."]);
     q.push(["Kann ich als Firma auf Rechnung bestellen?", "Ja. Firmen können auch auf Rechnung bestellen, Preise werden für Firmen netto angezeigt. Privatkunden bezahlen sicher online."]);
     return own.length ? [q[0]].concat(own, q.slice(1)) : q;
   }
@@ -7864,6 +7882,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { mailSuggest, chatOffer, shopKnowledge, incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { mailOfferText, mailSuggest, mattAdvice, addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { mailSuggest, chatOffer, shopKnowledge, incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, claimOrders, _test: { workdayAfter, custShift, pcWishDate, mailOfferText, mailSuggest, mattAdvice, addBleed, coverSpread, sheetSpreads, spotNeedsOf, spotCheck, spotReview, spotFixForPrint, cartRemindDue, crGet, cleanupFiles, taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

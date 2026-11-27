@@ -28,7 +28,7 @@ function copyApp() {
 const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
 async function startServer(dir, env) {
   const port = 5300 + Math.floor(Math.random() * 600);
-  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x", PRINT_ANCHORS_FILE: "off" }, env);
+  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x", PRINT_ANCHORS_FILE: "off", PRINT_DAY_BUFFER: "0" }, env);   // Puffer-Werktag eigens getestet
   ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN", "RAILWAY_API_TOKEN", "CF_API_TOKEN", "ANTHROPIC_API_KEY", "DATABASE_URL", "PRINT_SECRET"].forEach((k) => { if (!(k in env)) delete e[k]; });
   Object.keys(env).forEach(k => { if (env[k] === undefined) delete e[k]; });
   const srv = cp.spawn(process.execPath, ["server.js"], { cwd: dir, env: e, stdio: ["ignore", "pipe", "pipe"] });
@@ -1497,6 +1497,18 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       const home = await from(null); assert.deepStrictEqual(home.from, shop.from, "Startseite ohne sel = Shop-Karten (gleicher Eintrag)");
       const fresh = await from({ flyer: { __copies: 100 } }); assert.ok(fresh.from.flyer && fresh.from.flyer.gross > shop.from.flyer.gross, "Gegenprobe: andere Auswahl rechnet neu " + JSON.stringify(fresh));
     } finally { M.price.salesPrice = sp0; await admin("/admin/api/print/settings", {}); }
+  });
+  await t("Puffer-Werktag: Kunde sieht Print.com-Termin + 1 Werktag (Wochenende/Feiertag übersprungen), Print.com bekommt den echten Tag", async () => {
+    const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-buf-")), b0 = process.env.PRINT_DAY_BUFFER; delete process.env.PRINT_DAY_BUFFER;
+    try { const T = require(path.join(dir, "print-shop.js"))({ DATA_DIR: ddir })._test;
+      assert.strictEqual(T.workdayAfter("2026-11-26", 1), "2026-11-27"); assert.strictEqual(T.workdayAfter("2026-11-27", 1), "2026-11-30", "Fr -> Mo");
+      assert.strictEqual(T.workdayAfter("2026-12-07", 1), "2026-12-09", "8.12. Feiertag"); assert.strictEqual(T.workdayAfter("2026-04-03", 1), "2026-04-07", "Ostermontag 2026");
+      const v = T.custShift({ deliveryDate: "2026-12-04", earliest: "2026-12-03", days: [{ d: "2026-12-03", ship: 5 }, { d: "2026-12-04", ship: 5 }] });
+      assert.strictEqual(v.deliveryDate, "2026-12-07"); assert.strictEqual(v.pcDate, "2026-12-04"); assert.deepStrictEqual(v.days.map(x => [x.d, x.pc]), [["2026-12-04", "2026-12-03"], ["2026-12-07", "2026-12-04"]]);
+      assert.strictEqual(T.pcWishDate({ price: { wish: "2026-12-07", purchase: { deliveryDate: "2026-12-07", pcDate: "2026-12-04" } } }), "2026-12-04");
+      assert.strictEqual(T.pcWishDate({ price: { purchase: { deliveryDate: "2026-12-04" } } }), "2026-12-04", "alte Bestellung ohne Puffer unverändert");
+      process.env.PRINT_DAY_BUFFER = "0"; assert.strictEqual(T.custShift({ deliveryDate: "2026-12-04" }).deliveryDate, "2026-12-04", "0 = aus");
+    } finally { if (b0 === undefined) delete process.env.PRINT_DAY_BUFFER; else process.env.PRINT_DAY_BUFFER = b0; try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
   });
   // ── 3) Druckshop-Modul direkt (ohne server.js): Doppelversand, Rechnungs-Index, Aufgaben-Info, Ablehnen mit versendeter Rechnung ──
   await t("Rechnung vor dem Bestellen schon versendet (Status 200): bei Print.com bestellt, aber KEINE zweite Rechnungsmail, sentAt gesetzt", async () => {
