@@ -2607,3 +2607,12 @@ html.light .ps-kft{color:#c2410c}
 .ps-mpop-c h3{margin:0 0 10px;font-size:18px}
 .ps-mpop-c p{margin:0 0 10px;font-size:14.5px;line-height:1.5}
 .ps-mpop-b{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:14px}
+/* Nur für Simon (im Cockpit angemeldet): Position ohne Datei + Warenkorb-Link (27.11.2026) */
+.ps-adm-add{width:100%;margin-top:8px;border-style:dashed}
+.ps-ci-need{display:block;margin-top:4px;color:#b45309;font-weight:600;font-size:13px}
+.ps-ci-up{padding:6px 12px;font-size:13px;margin:0 0 6px}
+.ps-adm-cl{margin-top:18px;padding:14px 16px;border:1px dashed var(--ps-line2);border-radius:12px}
+.ps-adm-cl b{display:block;margin-bottom:4px}
+.ps-adm-cl p{margin:0 0 10px;font-size:13px;opacity:.8}
+.ps-adm-cl input{width:100%;min-height:42px;border-radius:10px;border:1px solid var(--ps-line2);background:var(--ps-field);color:inherit;padding:8px 12px;font-size:15px;margin-bottom:8px;box-sizing:border-box}
+.ps-adm-out{margin-top:10px;word-break:break-all;font-size:14px}

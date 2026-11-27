@@ -32,6 +32,17 @@ const XP = {
     properties: [{ slug: "material", title: "Material", locked: false, required: true, options: [opt("1.5mm_corrugated_cardboard", "Wellpappe")] },
       { slug: "printingmethod", title: "Druckverfahren", locked: false, required: true, options: [opt("digital_die_cut", "Digital")] },
       copies([5, 25], [{ printingmethod: "digital_die_cut", summary: [50, 75, 100, 250, 500, 1000, 2000], options: [{ min: 50, max: 300, steps: 25 }, { min: 300, max: 2050, steps: 50 }] }]), urgency] },
+  // echte Daten 27.11.2026 (Stülpschachteln): Liste 5/25 als Typ „lfp_uv“ (Verfahren gibt es nicht), druckbar ab 50; Fertigstellung + Verpackungsextras sind Pflicht (je eine Option), ohne sie kein Preis
+  "telescopic-boxes": { sku: "telescopic-boxes", bleed: "4", category: ["packaging-bags", "gift-packaging", "wine-packaging"], excludes: [], needs: ["custom_shape", "packaging_extras"], maxDesigns: 1,
+    properties: [{ slug: "summary_image", title: "summary image", locked: false, required: false, type: "checkbox", options: [opt("telescopic-boxes", undefined, { nullable: true })] },
+      { slug: "size", title: "Größe (Breite x Länge x Höhe) - Innenmaß", locked: false, required: true, options: [opt("telescopic-box-330_x_85_x_85_mm", "330 x 85 x 85 mm (Flaschenkarton)", { width: 1140, height: 780 }), opt("telescopic-box-300_x_300_x_100_mm", "300 x 300 x 100 mm", { width: 1425, height: 1085 })] },
+      { slug: "material", title: "Material", locked: false, required: true, options: [opt("1.5mm_corrugated_cardboard", "1,5 mm E-Wellpappe (Weiß/Weiß)")] },
+      Object.assign(copies([], [{ printingmethod: "digital_die_cut", summary: [50, 75, 100, 125, 150, 175, 200, 225, 250, 500, 1000, 2000], options: [{ min: 50, max: 300, steps: 25 }, { min: 300, max: 2050, steps: 50 }] }]), { options: [{ slug: 5, nullable: false, type: "lfp_uv" }, { slug: 25, nullable: false, type: "lfp_uv" }], viewMode: { reseller: "copies-new" }, copiesInSummary: { lfp_uv: 5 }, copyLimit: { lfp_uv: 1000 } }),
+      { slug: "printtype", title: "Druck", locked: false, required: true, options: [opt("44", "4/4-farbig"), opt("40", "4/0-farbig")] },
+      { slug: "printingmethod", title: "Druckmethode", locked: false, required: true, options: [opt("digital_die_cut", "Canon Colorado 1640")] },
+      { slug: "urgency", title: "Dringlichkeit", locked: false, required: true, options: [opt("standard", "Standard"), opt("quick", "Schnell"), opt("urgent", "Eilig"), opt("moderate", "Moderat")] },
+      { slug: "custom_shape", title: "Fertigstellung", locked: false, required: true, options: [opt("custom_shape_packaging", "custom shape packaging")] },
+      { slug: "packaging_extras", title: "Verpackungsextras", locked: false, required: true, options: [opt("packaging_plate", "Verpackung Platten")] }] },
   // bedruckt nur mit Personalisierung aus Excel (die der Shop nie mitschickt; ohne Angabe nimmt der Druckpartner „none“ an)
   "growing-paper-envelopes": { sku: "growing-paper-envelopes", bleed: 3, category: ["paper-print", "cards-envelopes"], implied: { personalize: "none" },
     excludes: [[{ property: "personalize", options: ["none"] }, { property: "printtype", options: ["10_black"] }], [{ property: "personalize", options: ["personalize_from_excel"] }, { property: "printtype", options: ["00"] }]],
@@ -63,7 +74,7 @@ const XP = {
     properties: [{ slug: "calendar_type", title: "Typ", locked: false, required: true, options: [opt("q100", "3-Monatskalender"), opt("q104", "4-Monatskalender")] },
       { slug: "printingmethod", title: "Druckverfahren", locked: false, required: true, options: [opt("offset", "Offset")] }, copies([100, 250, 500]), urgency] }
 };
-const XL = [{ sku: "magnetic-gift-boxes", titlePlural: "Magnet Geschenkboxen", active: true }, { sku: "slider-boxes", titlePlural: "Schiebeschachteln", active: true }, { sku: "growing-paper-envelopes", titlePlural: "Briefumschläge aus Saatpapier", active: true },
+const XL = [{ sku: "magnetic-gift-boxes", titlePlural: "Magnet Geschenkboxen", active: true }, { sku: "slider-boxes", titlePlural: "Schiebeschachteln", active: true }, { sku: "telescopic-boxes", titlePlural: "Stülpschachteln", active: true }, { sku: "growing-paper-envelopes", titlePlural: "Briefumschläge aus Saatpapier", active: true },
   { sku: "hangtags", titlePlural: "Hängeetiketten $& $' Gold", active: true }, { sku: "labels-on-roll", titlePlural: "Aufkleber auf Rolle", active: true }, { sku: "christmas-baubles", titlePlural: "Christbaumkugeln", active: true }, { sku: "month-calendars", titlePlural: "Monatskalender 2026", active: true }];
 
 function copyApp() {
@@ -157,6 +168,20 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
     await t("Auflagen nur innerhalb der Mengen-Bereiche (Liste 5/25, druckbar ab 50) → Start mit Preis", async () => {
       const p = await prod("slider-boxes"); assert.ok(p.tiers.length && p.tiers.every(n => n >= 50), "Auflagen " + p.tiers.join("/"));
       assert.ok(p.tiers.indexOf(p.start.copies) > -1); const r = await post("/print/api/price", { product: p.key, copies: p.start.copies, sel: p.start.sel, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    });
+    await t("Stülpschachteln (echte Daten): Auflagen ab 50, Pflicht-Angaben Fertigstellung/Verpackung werden mitgeschickt → Startausführung hat einen Preis", async () => {
+      const p = await prod("telescopic-boxes"); assert.ok(p && p.tiers.length && p.tiers.every(n => n >= 50), "Auflagen " + (p && p.tiers.join("/")));
+      const n0 = M.log.length, r = await post("/print/api/price", { product: p.key, copies: p.start.copies, sel: p.start.sel, country: "AT" });
+      const sent = M.log.slice(n0).filter(l => /telescopic-boxes\/price$/.test(l.path)).map(l => l.body.options);
+      assert.strictEqual(r.status, 200, JSON.stringify(r.j) + " gesendet: " + JSON.stringify(sent));
+      assert.ok(sent.length && sent.every(o => o.copies >= 50), "nie unter 50 angefragt: " + JSON.stringify(sent));
+    });
+    await t("Warenkorb-Link mit Position ohne Datei (von Simon im Shop zusammengestellt): Link geht, Position kommt mit „Druckdatei folgt“ zurück, bestellen erst mit Datei", async () => {
+      const p = await prod("telescopic-boxes"), j = await admin("/admin/api/print/cartlink", { items: [{ product: p.key, sel: p.start.sel, copies: p.start.copies, title: "Stülpschachteln", needFile: true, fileId: "x", fileToken: "y", fm: { a: 1 } }] });
+      assert.ok(j.ok && j.url, JSON.stringify(j)); const u = new URL(j.url);
+      const r = await (await fetch(B + "/print/api/cartremind?id=" + encodeURIComponent(u.searchParams.get("wk")) + "&t=" + encodeURIComponent(u.searchParams.get("t")))).json();
+      assert.ok(r.ok && r.items.length === 1 && r.items[0].needFile === true && r.items[0].fileId === "" && !r.items[0].fm, JSON.stringify(r));
+      const bad = await admin("/admin/api/print/cartlink", { items: [{ product: p.key, copies: 50 }] }); assert.ok(!bad.ok, "ohne Datei und ohne needFile: abgelehnt");
     });
     const NONE = /^(__none|none|no|geen|without.*|no_.*|0)$/;
     await t("Nie mitgeschickte Personalisierung zählt als „ohne“: Saatpapier-Kuverts starten unbedruckt mit Preis, bedruckt = nicht lieferbar, „personalize“ wird nie gesendet", async () => {

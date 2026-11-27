@@ -135,6 +135,8 @@
   function savedLocal(v) { try { if (v) { localStorage.setItem("fsc-print-saved", JSON.stringify(v.slice(0, 30))); return v; } var l = JSON.parse(localStorage.getItem("fsc-print-saved") || "[]"); return Array.isArray(l) ? viaUs(l) : []; } catch (e) { return []; } }
   function savedList() { return S.me ? (S.me.saved || []) : savedLocal(); }
   function cfgSavedNow() { if (!S.prod) return null; var code = cfgPack(); return savedList().filter(function (x) { return x.product === S.prod.key && x.c === code; })[0] || null; }
+  // Im Cockpit angemeldet? (nur Komfort-Knöpfe für Simon – der Server prüft jede Admin-Aktion selbst)
+  function adminProbe() { if (S.isAdmin !== undefined) return; S.isAdmin = false; fetch("/admin/api/version", { credentials: "same-origin", cache: "no-store", redirect: "manual" }).then(function (r) { if (r.ok && r.type !== "opaqueredirect" && !r.redirected && /json/.test(r.headers.get("content-type") || "")) { S.isAdmin = true; render(); } }).catch(function () {}); }
   function copyText(t) { if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t); return new Promise(function (ok, no) { var a = document.createElement("textarea"); a.value = t; a.setAttribute("readonly", ""); a.style.position = "fixed"; a.style.opacity = "0"; document.body.appendChild(a); a.select(); var r = false; try { r = document.execCommand("copy"); } catch (e) {} a.remove(); r ? ok() : no(); }); }
   function shareLink(url, title, text) {
     if (navigator.share && (navigator.maxTouchPoints > 0 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))) { navigator.share({ title: title, text: text, url: url }).catch(function () {}); return; }
@@ -229,17 +231,17 @@
     var pr = S.price || {}, pv = S.previews && S.previews[0];
     var it = JSON.parse(JSON.stringify(cfgOf()));
     Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, unit: S.prod.unit || "", tiers: (S.prod.tiers || []).slice(0, 30), img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
-      fileId: S.file.noFile ? "" : S.file.fileId, fileToken: S.file.noFile ? "" : S.file.token, noFile: S.file.noFile ? true : undefined, fileName: S.file.noFile ? "Unbedruckt – keine Druckdaten nötig" : S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
+      fileId: S.file.noFile || S.file.needFile ? "" : S.file.fileId, fileToken: S.file.noFile || S.file.needFile ? "" : S.file.token, noFile: S.file.noFile ? true : undefined, needFile: S.file.needFile ? true : undefined, fileName: S.file.noFile ? "Unbedruckt – keine Druckdaten nötig" : S.file.needFile ? "Druckdatei folgt" : S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), bleedOk: !!S.file.bleedOk, checks: (S.file.checks || []).filter(function (c) { return c.level !== "ok"; }).map(function (c) { return { level: c.level, text: String(c.text || "").slice(0, 400) }; }).slice(0, 10), at: Date.now() });
-    if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.thumb || (f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "") }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
+    if (S.mot.n > 1 && motOk() && !S.file.needFile) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.thumb || (f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "") }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
     if (offerOn() && S.offer.fee && S.offer.fee.net > 0) { var fe = S.offer.fee; it.designFee = { net: fe.net, gross: fe.gross, vat: Math.round((fe.gross - fe.net) * 100) / 100 }; }
     // Gestaltung im Warenkorb änderbar (Wunsch Simon 06.11.2026): Designer-Stand als Entwurf auf dem Server (nicht in der Merkliste), Position merkt sich den Link;
     // kommt der Kunde über „Gestaltung ändern“, ersetzt die neue Fassung die alte Position statt eine zweite anzulegen
     if (coverNeed() && S.cover) { it.coverId = S.cover.fileId; it.coverToken = S.cover.token; it.coverName = S.cover.name; }
-    if (!it.motifs && S.file && !S.file.noFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30), adj: !!F0.adj, place: F0.place || null, pvk: F0.pvk || "" }; }   // adj/place: „Anpassen“ auch beim erneuten Öffnen aus dem Warenkorb
+    if (!it.motifs && S.file && !S.file.noFile && !S.file.needFile) { var F0 = S.file; it.fm = { kind: F0.kind, name: F0.name, pages: F0.pages, bytes: F0.bytes, size: F0.size, bleed: F0.bleed, blocked: !!F0.blocked, needBack: !!F0.needBack, bleedOk: !!F0.bleedOk, checks: (F0.checks || []).slice(0, 30), adj: !!F0.adj, place: F0.place || null, pvk: F0.pvk || "" }; }   // adj/place: „Anpassen“ auch beim erneuten Öffnen aus dem Warenkorb
     if (S.fixByUs && S.file && S.file.blocked) { it.fixByUs = true; it.check = S.check === "graphic" ? "graphic" : "pro"; }   // „Für mich richten lassen“: Position bleibt beim Profi-Datencheck
-    if (S.upWho === "pro" && S.file && !S.file.noFile && S.file.kind !== "design") { it.check = S.check === "graphic" ? "graphic" : "pro"; if (S.file.blocked) it.fixByUs = true; }   /* Profi-Datencheck beim Hochladen gewählt: nur diese Position; Pflicht (nicht entfernbar) nur bei gesperrter Datei */
+    if (S.upWho === "pro" && S.file && !S.file.noFile && !S.file.needFile && S.file.kind !== "design") { it.check = S.check === "graphic" ? "graphic" : "pro"; if (S.file.blocked) it.fixByUs = true; }   /* Profi-Datencheck beim Hochladen gewählt: nur diese Position; Pflicht (nicht entfernbar) nur bei gesperrter Datei */
     S.fixByUs = false; S.upWho = "";
     var rep = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit && x.product === it.product; })[0]; S.cartEdit = "";
     if (rep) { it.id = rep.id; S.cart = S.cart.map(function (x) { return x === rep ? it : x; }); } else S.cart.push(it); cartSave();
@@ -252,7 +254,7 @@
   var PRO_CHECK = 5, GRAPHIC_CHECK = 20;   // Datencheck: Profi (5 €) bzw. mit Grafikaufbereitung (20 €, Wunsch Simon 05.11.2026)
   // Datencheck je Position (Wunsch Simon 09.11.2026): x.check überschreibt die Auswahl für alle (S.check)
   var ckNorm = function (v) { return v === "pro" || v === "graphic" ? v : "self"; };
-  var itemCheck = function (x) { if (x && x.noFile) return "self"; var v = ckNorm(x && x.check ? x.check : S.check); return x && x.fixByUs && v === "self" ? "pro" : v; };   // Datei mit Fehlern („für mich richten“) nie ohne Datencheck   // unbedruckt: kein Datencheck
+  var itemCheck = function (x) { if (x && (x.noFile || x.needFile)) return "self"; var v = ckNorm(x && x.check ? x.check : S.check); return x && x.fixByUs && v === "self" ? "pro" : v; };   // Datei mit Fehlern („für mich richten“) nie ohne Datencheck   // unbedruckt: kein Datencheck
   var ckFee = function (v) { return v === "graphic" ? GRAPHIC_CHECK : v === "pro" ? PRO_CHECK : 0; };
   var checkFee = function () { return S.cart.reduce(function (a, x) { return a + ckFee(itemCheck(x)); }, 0); };
   var anyCheck = function () { return S.cart.some(function (x) { return itemCheck(x) !== "self"; }); };
@@ -278,7 +280,7 @@
       if (op === "keep") { setTimeout(function () { toast("Dein Warenkorb bleibt gespeichert" + (j.until ? " – bis " + new Date(j.until + "T12:00:00").toLocaleDateString("de-AT") : "") + "."); }, 1800); }
       var have = {}; S.cart.forEach(function (x) { have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] = 1; });
       // fertiger Warenkorb-Link aus dem Cockpit (j.link): ersetzt den Warenkorb – keine alten Stände/fremden Positionen (Simon 12.11.2026)
-      var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile) && (j.link || !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]) && prodByKey(x.product); });
+      var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile || x.needFile) && (j.link || !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]) && prodByKey(x.product); });
       if (j.link && dazu) add = add.filter(function (x) { return !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]; });
       if (j.link && !dazu && S.cart.length) toast("Dein Warenkorb wurde durch das Angebot ersetzt");
       S.cart = j.link && !dazu ? add : S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
@@ -320,13 +322,18 @@
     S.cart.forEach(function (x) {
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
-      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + (x.needFile ? '<span class="ps-ci-need">Druckdatei fehlt noch – bitte hochladen oder online gestalten</span>' : "") + '<span class="ps-ci-f">' + esc(x.needFile ? "" : x.fileName || "") + (x.fileId ? ' · <button type="button" class="ps-link" data-act="cpages:' + esc(x.id) + '">Alle Seiten ansehen</button>' : "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         (x.fileId ? ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? '<span class="ps-ci-sum"><b>' + eur(itemTotal(x, co)) + "</b><small>" + (co ? "netto" : "inkl. USt") + (x.designFee && !x.designFee.merge ? " · Druck " + eur(co ? x.price.net : x.price.gross) + " + " + (x.designFee.label || "Grafik") + " " + eur(co ? x.designFee.net : x.designFee.gross) : "") + "</small></span>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         (x.draft ? '<button type="button" class="ps-link" data-act="cartedit:' + esc(x.id) + '">Gestaltung ändern</button> ' : x.fileId && !x.textile ? '<button type="button" class="ps-link" data-act="cartstudio:' + esc(x.id) + '">Im Studio bearbeiten</button> ' : "") +
-        ((x.fileId || x.noFile) && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
+        (x.needFile ? '<button type="button" class="ps-btn primary ps-ci-up" data-act="cartup:' + esc(x.id) + '">Druckdatei hochladen</button> ' : "") +
+        ((x.fileId || x.noFile || x.needFile) && !x.textile && !x.draft ? '<button type="button" class="ps-link" data-act="cartcfg:' + esc(x.id) + '">Ausführung ändern</button> ' : "") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
-    h += svcRows(co) + "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Weiter zur Lieferung</button></div></div>' +
+    adminProbe();
+    h += svcRows(co) + "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Weiter zur Lieferung</button></div>' +
+      (S.isAdmin ? '<div class="ps-adm-cl"><b>Nur für dich: Warenkorb als Link</b><p>Alle Positionen kommen in einen Link für den Kunden. Wo „Druckdatei folgt“ steht, lädt der Kunde die Datei selbst hoch. Ein alter Link kann überschrieben werden, dann zeigt er den neuen Stand.</p>' +
+        '<input type="text" data-cl-repl placeholder="Alter Warenkorb-Link (optional – wird überschrieben)" value="' + esc(S.clRepl || "") + '"><button type="button" class="ps-btn primary" data-act="cartlinkmk"' + (S.clBusy ? " disabled" : "") + '>' + (S.clBusy ? "Wird erstellt …" : "Warenkorb-Link erstellen") + "</button>" +
+        (S.clLink ? '<div class="ps-adm-out"><a href="' + esc(S.clLink) + '" target="_blank" rel="noopener">' + esc(S.clLink) + '</a> <button type="button" class="ps-link" data-act="cartlinkcp">Kopieren</button></div>' : "") + "</div>" : "") + "</div>" +
       '<aside class="ps-price"><h3>Summe</h3>' + cartSumList(co) + '<div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
       '<p class="note">inkl. Versand innerhalb Österreichs · ' + (t.nGra ? "inkl. Grafikaufbereitung" + (t.nPro ? " und Profi-Datencheck" : "") : t.nPro ? "inkl. Profi-Datencheck" : "Datencheck kostenlos") + '. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Weiter zur Lieferung →</button></aside></div>';
     return h;
@@ -1271,6 +1278,7 @@
        S.step === 3 && S.file && !blk(S.file) ?'<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "";
     // Reihenfolge (06.11.2026): Preis → Liefertag → Weiter → Privat/Firma; alles Weitere aufklappbar
     var ph = priceHtml(false), hasSlot = ph.indexOf("<!--CTA-->") > -1;
+    adminProbe(); if (S.step === 2 && S.isAdmin && S.prod && !isLogo() && kind() !== "textile") cta += '<button type="button" class="ps-btn ps-adm-add" data-act="cartnofile"' + (S.price && !S.priceBusy ? "" : " disabled") + '>+ In den Warenkorb – Datei lädt der Kunde hoch</button>';
     if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + (hasSlot ? ph.replace("<!--CTA-->", cta + (S.step === 2 ? whoHtml() : "")) : ph + cta + (S.step === 2 ? whoHtml() : "")) + meHtml();
     var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + "\u00a0" + U() + "" + (szl ? " · " + szl : "");
       var u0 = p && unitOf(); if (u0 && u0.div > 0) sm = eur((S.ctype === "company" ? p.net : p.gross) / u0.div) + "/" + u0.unit + " · " + sm;
@@ -1355,7 +1363,8 @@
   function stepPush(n, mode) { if (!S.prod || n < 2) return; var st = history.state || {}; if (st.psStep === n && (st.psMode || "") === (mode || "")) return;
     try { if (!history.state && n === 2 && (/[?&]produkt=/.test(location.search) || /^\/print\/[a-z0-9-]+\/?$/.test(location.pathname))) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung (sonst neuer Eintrag – Zurück führt zur Startseite)
       else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", n === 2 && S.prod.slug ? "/print/" + S.prod.slug : location.href); } } catch (e) {} }   // Produkt gewählt → seine sprechende Adresse
-  function go(n, nopush) { if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
+  function go(n, nopush) { if (n >= 5 && S.cart.some(function (x) { return x.needFile; })) { toast("Bitte zuerst für jede Position die Druckdatei hochladen (Knopf „Druckdatei hochladen“ im Warenkorb)", true); if (S.step === 4) return; n = 4; }
+    if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
     if (!nopush) stepPush(n, n === 3 ? S.mode : ""); var up = n === 3 && S.step < 3; S.step = n; S.err = ""; render(); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); }
     }   // Textil: Designer öffnet sich nicht mehr von selbst, sondern über den großen Knopf „Im Shirt-Designer gestalten“ (Wunsch Simon 06.11.2026)
 
@@ -2823,7 +2832,7 @@
       S.prod.props.forEach(function (pr) { if (x.sel && pr.options.some(function (o) { return o.slug === x.sel[pr.slug]; })) S.sel[pr.slug] = x.sel[pr.slug]; });
       if (+x.copies > 0) S.copies = +x.copies; if (x.urgency) { S.urgency = x.urgency; S.dday = x.wish || ""; } if (x.custom && x.custom.w) S.custom = { w: x.custom.w, h: x.custom.h }; if (x.pm) S.pm = x.pm;
       fixSel(); loadPrice();
-      S.file = x.noFile ? noFileObj() : Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
+      S.file = x.noFile ? noFileObj() : x.needFile ? null : Object.assign({ kind: "upload", name: x.fileName || "Druckdatei", checks: x.checks || [] }, x.fm || {}, { fileId: x.fileId, token: x.fileToken });
       // mehrere Motive (Simon 17.11.2026: Position mit Motiven ließ sich nicht öffnen): Motive samt Dateien und Aufteilung wiederherstellen, Datei-Infos vom Server nachladen
       if (x.motifs && x.motifs.length > 1) {
         S.mot = { n: x.motifs.length, split: x.motifs.map(function (m) { return +m.copies || 0; }), i: 0, files: x.motifs.map(function (m) { return { file: { kind: "upload", name: m.fileName || "Druckdatei", fileId: m.fileId, token: m.fileToken, checks: [] }, previews: null, design: null, mode: "upload" }; }) };
@@ -2832,7 +2841,7 @@
           var mf = S.mot.files[i]; if (j && j.ok && mf && mf.file && mf.file.fileId === m.fileId) { mf.file = j; if (S.mot.i === i) { S.file = j; S.previews = null; } render(); } }).catch(function () {}); });
       }
       S.cover = x.coverId ? { fileId: x.coverId, token: x.coverToken, name: x.coverName || "Umschlag", kind: "upload", cover: true, checks: [] } : null;
-      S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.cartEdit = x.id; S.step = step || 3; render(); if (!x.noFile) pollPreflight();
+      S.previews = null; S.design = null; S.fileFront = null; S.mode = x.needFile ? "" : "upload"; S.cartEdit = x.id; S.step = step || 3; render(); if (!x.noFile && !x.needFile) pollPreflight();
       // Position ohne gespeicherte Datei-Infos (ältere Warenkörbe, Warenkorb-Links): Seiten, Prüfungen, „Anpassen“ vom Server nachladen
       if (!x.noFile && !x.fm && /^f[a-f0-9]{24}$/.test(x.fileId || "")) api("/print/api/file/" + x.fileId + "?t=" + encodeURIComponent(x.fileToken || ""), null, "GET").then(function (j) {
         if (j && j.ok && S.file && S.file.fileId === x.fileId) { S.file = j; S.previews = null; render(); } }).catch(function () {});
@@ -3313,7 +3322,7 @@
     if (!S.payment) S.payment = S.cat.payments.mollie ? "mollie" : (invOk ? "invoice" : "");
     if (S.payment === "invoice" && !invOk) S.payment = S.cat.payments.mollie ? "mollie" : "";
     /* Intern (Simon 17.11.2026): im Cockpit angemeldet → ohne Bezahlung direkt an Print.com (Server prüft die Anmeldung selbst) */
-    if (S.isAdmin === undefined) { S.isAdmin = false; fetch("/admin/api/version", { credentials: "same-origin", cache: "no-store", redirect: "manual" }).then(function (r) { if (r.ok && r.type !== "opaqueredirect" && !r.redirected && /json/.test(r.headers.get("content-type") || "")) { S.isAdmin = true; render(); } }).catch(function () {}); }
+    adminProbe();
     if (S.payment === "intern" && !S.isAdmin) S.payment = S.cat.payments.mollie ? "mollie" : (invOk ? "invoice" : "");
     var internPay = S.isAdmin ? '<label class="ps-radio"><input type="radio" name="pay" value="intern"' + (S.payment === "intern" ? " checked" : "") + '><span><b>Intern – ohne Bezahlung</b><small>Nur für dich (im Cockpit angemeldet): geht sofort an Print.com, keine Rechnung und keine Mails an den Kunden.</small></span></label>' : "";
     var lastDel = S.cart.reduce(function (m, x) { var d = x.price && x.price.deliveryDate; return d && d > m ? d : m; }, "");
@@ -3511,7 +3520,7 @@
     if (k === "stuview") { S.stuView = v === "1" ? 1 : 0; document.querySelectorAll(".ps-stu [data-act^=stuview]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "stuview:" + v)); }); var sp9 = document.getElementById("psStuPages"); if (sp9) { sp9.removeAttribute("data-3d"); if (!S.stuView) sp9.innerHTML = '<div class="ps-stu-load"><span class="ps-spin"></span> Seiten werden geladen …</div>'; } studioPaint(); return; }
     if (k === "pfvbg") { S.pfvBg = v === "1"; var sp0 = document.getElementById("psStuPages"); if (sp0) sp0.classList.toggle("tr", S.pfvBg); document.querySelectorAll(".ps-stu [data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); var pb = document.getElementById("psPfv"); if (pb) { pb.classList.toggle("tr", S.pfvBg); pb.querySelectorAll("[data-act^=pfvbg]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-act") === "pfvbg:" + v)); }); } return; }
     if (k === "cartstudio") { var cs0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cs0 && cs0.fileId) cartStudio(cs0); return; }
-    if (k === "cartcfg") { var cc0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cc0 && (cc0.fileId || cc0.noFile)) cartStudio(cc0, 2); return; }
+    if (k === "cartcfg") { var cc0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cc0 && (cc0.fileId || cc0.noFile || cc0.needFile)) cartStudio(cc0, 2); return; }
     if (k === "stucancel") {
       // Position aus dem Warenkorb geöffnet und Datei angepasst (Einpassen, Beschnitt …) → nicht stillschweigend verwerfen (Simon 17.11.2026)
       var ce1 = S.cartEdit && S.cart.filter(function (x) { return x.id === S.cartEdit; })[0], nx3 = document.querySelector('[data-act="next3"]');
@@ -3522,6 +3531,16 @@
     if (k === "cartday") { cartDay(v); return; }
     if (k === "svcdel") { var sx = S.cart.filter(function (x) { return x.id === v; })[0]; if (sx) { sx.check = "self"; if (S.check !== "self" && S.cart.every(function (x) { return x.check; })) {} cartSave(true); render(); toast("Datencheck-Leistung entfernt"); } return; }
     if (k === "pgmove") { var pm = v.split("|"); movePage(+pm[0], +pm[0] + (+pm[1])); return; }
+    if (k === "cartnofile") { if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
+      S.file = { needFile: true, kind: "none", fileId: "", token: "", name: "Druckdatei folgt", checks: [], pages: 0 }; motReset(); cartAdd(); S.clLink = ""; go(4); return; }
+    if (k === "cartup") { var cu0 = S.cart.filter(function (x) { return x.id === v; })[0]; if (cu0) cartStudio(cu0, 3); return; }
+    if (k === "cartlinkcp") { copyText(S.clLink).then(function () { toast("Link kopiert ✓"); }, function () { window.prompt("Link kopieren:", S.clLink); }); return; }
+    if (k === "cartlinkmk") { var ri = root.querySelector("[data-cl-repl]"); S.clRepl = ri ? ri.value.trim() : ""; S.clBusy = true; render();
+      var its = S.cart.map(function (x) { var y = JSON.parse(JSON.stringify(x)); delete y.preview; delete y.price; if (y.motifs) y.motifs.forEach(function (m) { delete m.preview; }); return y; });
+      fetch("/admin/api/print/cartlink", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ items: its, replace: S.clRepl ? [S.clRepl] : undefined }) }).then(function (r) { return r.json(); }).then(function (j) {
+        S.clBusy = false; if (!j.ok) { toast(j.error || "Link konnte nicht erstellt werden", true); render(); return; }
+        S.clLink = j.short || j.url; render(); copyText(S.clLink).then(function () { toast(j.replaced && j.replaced.length ? "Alter Link überschrieben – Link kopiert ✓" : "Warenkorb-Link erstellt und kopiert ✓"); }, function () { toast("Warenkorb-Link erstellt ✓"); });
+      }).catch(function () { S.clBusy = false; toast("Keine Verbindung zum Cockpit – bist du angemeldet?", true); render(); }); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
     if (k === "acresend") { api("/print/api/account/resend", { email: S.acct.email, purpose: v }).then(function () { S.acct.msg = "Neuer Code ist unterwegs."; S.acct.err = ""; render(); }); return; }

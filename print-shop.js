@@ -6112,7 +6112,7 @@ module.exports = function (D) {
         if (!CR_EMAIL.test(email)) return J(res, 400, { ok: false, error: "E-Mail ungültig" });
         const all0 = await crGet(), kept = all0.some(x => x.email === email && !x.done && x.keep);
         const all = all0.filter(x => !(x.email === email && !x.done));   // offener Eintrag dieser Adresse wird ersetzt (Änderung = Ablauf neu ab jetzt) bzw. gelöscht
-        if (b.on === true) { const items = (Array.isArray(b.items) ? b.items : []).slice(0, 20).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true));
+        if (b.on === true) { const items = (Array.isArray(b.items) ? b.items : []).slice(0, 20).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true || x.needFile === true));
           if (items.length) all.push(Object.assign({ id: "c" + crypto.randomBytes(9).toString("hex"), v: 2, at: nowIso(), email, firstName: clip(b.firstName, 60), items }, kept ? { keep: nowIso() } : {})); }
         await crSet(all); return J(res, 200, { ok: true });
       }
@@ -6942,7 +6942,7 @@ module.exports = function (D) {
       const it = ((all && all.items) || []).find(x => x.sku === sku); if (!it) { res.push({ sku, ok: false, why: "nicht im Sortiment" }); continue; }
       const r = { sku, title: it.title, at: nowIso() };
       try {
-        if (s.enabled[sku] === false && !opt.force) { r.ok = false; r.why = "von Hand ausgeblendet"; res.push(r); continue; }
+        if (s.enabled[sku] === false && !opt.force && !(s.auditHid && s.auditHid[sku])) { r.ok = false; r.why = "von Hand ausgeblendet"; res.push(r); continue; }
         let pd; for (let i = 0; ; i++) { try { pd = await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller", undefined, { low: true }); break; } catch (e) { if (i >= 2 || e.status !== 429) throw e; await new Promise(z => setTimeout(z, 8000 * (i + 1))); } }
         const g0 = catOf(sku, s, it.auto), ours = parseProduct(genericCfg(it, g0), sku, pd), b0 = stdInput(withStart(ours, ours, s)); if (!b0) throw new Error("keine Startausführung");
         let q = null, n = null;
@@ -7021,12 +7021,14 @@ module.exports = function (D) {
       // ohne E-Mail, keine Erinnerungen (kein v), 90 Tage gespeichert
       if (p === "/admin/api/print/cartlink" && req.method === "POST") {
         const b = await readJson(req, 400000).catch(() => ({}));
-        const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string") || x.noFile === true));
-        if (!items.length) return J(res, 400, { ok: false, error: "Keine Positionen mit Datei" });
-        for (const x of items) { if (x.noFile) continue; const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
+        // needFile: Position ohne Druckdatei (im Shop von Simon zusammengestellt, Simon 27.11.2026) – der Kunde lädt sie nach dem Öffnen hoch; bestellt werden kann sie erst mit Datei
+        const items = (Array.isArray(b.items) ? b.items : []).slice(0, 30).filter(x => x && typeof x.product === "string" && ((typeof x.fileId === "string" && typeof x.fileToken === "string" && x.fileId) || x.noFile === true || x.needFile === true));
+        if (!items.length) return J(res, 400, { ok: false, error: "Keine Positionen" });
+        items.forEach(x => { if (x.needFile) { x.needFile = true; x.fileId = ""; x.fileToken = ""; delete x.fm; delete x.motifs; delete x.draft; x.fileName = "Druckdatei folgt"; } });
+        for (const x of items) { if (x.noFile || x.needFile) continue; const fm = await store.fileMeta(x.fileId).catch(() => null); if (!fm) return J(res, 400, { ok: false, error: "Datei " + x.fileId + " nicht gefunden" }); }
         // Aufschlag je Position (z. B. Datenaufbereitung): nur hier im Cockpit signiert – an der Kasse wird die Signatur geprüft (Simon 24.11.2026)
         for (const x of items) { delete x.designFee; const n0 = x.linkFee && +x.linkFee.net;
-          if (!(n0 > 0) || x.noFile) { delete x.linkFee; continue; }
+          if (!(n0 > 0) || x.noFile || x.needFile) { delete x.linkFee; continue; }
           const net = Math.round(n0 * 100) / 100, label = x.linkFee.merge ? "" : clip(String(x.linkFee.label || "Datenaufbereitung"), 60);
           x.linkFee = { net, label, sig: sig("linkfee", [x.fileId, net, x.product, label].join(":")) }; x.designFee = { net, gross: Math.round(net * 120) / 100, vat: Math.round(net * 20) / 100, label, merge: !label || undefined }; }
         const all = await crGet();
