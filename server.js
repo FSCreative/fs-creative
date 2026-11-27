@@ -2248,7 +2248,10 @@ async function sevVoucherFromMail(pl) {
   let rule = voucherRule(pl); if (rule && !(await sevRulesOk())) rule = "";
   const zero = VOU_RULES_ZERO.indexOf(rule) > -1;
   const posIn = zero ? [] : (Array.isArray(pl.positions) ? pl.positions : []).filter(x => x && parseFloat(x.gross) > 0).slice(0, 10);
-  const pos = posIn.length ? posIn.map(x => { const r = isFinite(parseFloat(x.taxRate)) ? parseFloat(x.taxRate) : rate, g = Math.round(parseFloat(x.gross) * 100) / 100; return { r, g }; }) : [{ r: zero ? 0 : rate, g: gross }];
+  // Lieferantengutschrift (Simon 27.11.2026): Ausgabe-Beleg mit Minusbetrag – mindert Aufwand und Vorsteuer (steuer-calc normalisiert das Vorzeichen, B8);
+  // mit dem Geldeingang auf der Bank verbunden wie ein normaler Beleg. Nie als Einnahme-Beleg (der würde Umsatz und USt erhöhen).
+  const credit = pl.credit === true && pl.creditDebit !== "D", sg = credit ? -1 : 1;
+  const pos = (posIn.length ? posIn.map(x => { const r = isFinite(parseFloat(x.taxRate)) ? parseFloat(x.taxRate) : rate, g = Math.round(parseFloat(x.gross) * 100) / 100; return { r, g }; }) : [{ r: zero ? 0 : rate, g: gross }]).map(x => ({ r: x.r, g: sg * x.g }));
   const body = {
     voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(day), supplierName: String(pl.supplierName || "").slice(0, 200), description: String(pl.description || "").slice(0, 250),
       status: 50, taxType: "default", creditDebit: pl.creditDebit === "D" ? "D" : "C",   // D = Einnahme-Beleg (z. B. Provisionsgutschrift Paketshop)

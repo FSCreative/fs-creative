@@ -65,7 +65,7 @@ function eurOk(x){ return !x||!x.currency||x.currency==="EUR"; }
 function linesOf(x){ return ((x&&x.lines)||[]).filter(function(l){ return l.gross>0; }); }
 function initForm(it){
   var x=it.x||{}, eur=eurOk(x), lines=linesOf(x), r=lines.length===1?lines[0].rate:(x.tax>0?20:0);
-  it.f={supplier:x.supplier||"",date:x.invoiceDate||F.ymd(),gross:eur&&x.gross>0?(+x.gross).toFixed(2):"",
+  it.f={kind:x.isCreditNote?"cn":"inv",supplier:x.supplier||"",date:x.invoiceDate||F.ymd(),gross:eur&&x.gross>0?(+x.gross).toFixed(2):"",
     rate:lines.length>1&&eur?"mix":String(RATES.indexOf(r)>-1?r:20),cat:x.accountingTypeId||lastCat()||"",
     desc:String((x.description||"")+(x.invoiceNumber&&String(x.description||"").indexOf(x.invoiceNumber)<0?" · Nr. "+x.invoiceNumber:"")).replace(/^ · /,"").slice(0,200)};
   if(!it.f.desc) it.f.desc=String(it.name||"").replace(/\.[^.]+$/,"").slice(0,200);
@@ -89,7 +89,7 @@ function taxTxt(it){
 /* ---------- Passende Buchung (nur Vorschlag; verbunden wird erst mit Klick) ---------- */
 function loadSug(it){
   var g=num(it.f.gross); if(!(g>0)){ it.cands=[]; it.sel=""; paintMatch(it); return; }
-  var q="amount="+encodeURIComponent(g.toFixed(2))+"&date="+encodeURIComponent(it.f.date||"")+"&name="+encodeURIComponent(it.f.supplier||"")+"&desc="+encodeURIComponent(String(it.f.desc||"").slice(0,120))+"&cd=C", my=it.sugQ=q;
+  var q="amount="+encodeURIComponent(g.toFixed(2))+"&date="+encodeURIComponent(it.f.date||"")+"&name="+encodeURIComponent(it.f.supplier||"")+"&desc="+encodeURIComponent(String(it.f.desc||"").slice(0,120))+"&cd="+(it.f.kind==="cn"?"D":"C"), my=it.sugQ=q;
   it.cands=null; paintMatch(it);
   F.api("/admin/api/fin/suggest?"+q).then(function(j){
     if(it.sugQ!==my) return;
@@ -129,6 +129,7 @@ function fieldsHtml(it){
   var rateOpts=(it.x&&linesOf(it.x).length>1&&eurOk(it.x)?'<option value="mix"'+(f.rate==="mix"?' selected':'')+'>Mehrere ('+linesOf(it.x).map(function(l){ return l.rate+" %"; }).join(" / ")+')</option>':'')+
     RATES.map(function(r){ return '<option value="'+r+'"'+(String(r)===f.rate?' selected':'')+'>'+r+' %</option>'; }).join("");
   return '<div class="kq-f">'+
+    '<label class="fl kq-w">Art<select class="f"'+a+'"kind"><option value="inv">Rechnung (wir zahlen)</option><option value="cn"'+(f.kind==="cn"?' selected':'')+'>Gutschrift vom Lieferanten (Geld zurück)</option></select></label>'+
     '<label class="fl kq-w">Lieferant<input class="f"'+a+'"supplier" list="mvContacts" value="'+esc(f.supplier)+'" autocomplete="off"></label>'+
     '<label class="fl">Datum<input class="f"'+a+'"date" type="date" value="'+esc(f.date)+'"></label>'+
     '<label class="fl">Betrag brutto (€)<input class="f num"'+a+'"gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+esc(f.gross)+'"></label>'+
@@ -218,6 +219,7 @@ function save(it,draft){
   var body={uploadId:it.res.uploadId,mail:{filename:it.res.filename||x.filename||it.name},supplierName:String(f.supplier||"").trim(),date:f.date,description:String(f.desc||"").trim(),gross:g,
     taxRate:f.rate==="mix"?20:+f.rate,accountingTypeId:f.cat,open:!draft,confirm:true};
   if(f.rate==="mix") body.positions=linesOf(x).map(function(l){ return {gross:l.gross,taxRate:l.rate}; });
+  if(f.kind==="cn") body.credit=true;   /* Lieferantengutschrift: Ausgabe-Beleg mit Minusbetrag (Server) */
   if(x.deliveryFrom){ body.deliveryDate=x.deliveryFrom; if(x.deliveryTo) body.deliveryDateUntil=x.deliveryTo; }
   if(c) body.txId=c.id;
   try{ localStorage.setItem("fsc_sev_cat",f.cat); }catch(e){}
@@ -286,7 +288,7 @@ F.action("kqall",function(){
 });
 F.listen("input","[data-kq]",function(el){ var it=find(el.getAttribute("data-kq")), k=el.getAttribute("data-k"); if(!it||!it.f) return; it.f[k]=el.value; it.msg=""; paintSum(it);
   if(k==="gross"||k==="date"||k==="supplier"){ clearTimeout(SUGT[it.key]); SUGT[it.key]=setTimeout(function(){ loadSug(it); },600); } });
-F.listen("change","[data-kq]",function(el){ var it=find(el.getAttribute("data-kq")), k=el.getAttribute("data-k"); if(!it||!it.f) return; it.f[k]=el.value; paintSum(it); paintFoot(it); });
+F.listen("change","[data-kq]",function(el){ var it=find(el.getAttribute("data-kq")), k=el.getAttribute("data-k"); if(!it||!it.f) return; it.f[k]=el.value; paintSum(it); paintFoot(it); if(k==="kind") loadSug(it); });
 
 F.css([
 ".kidrop{border:2px dashed var(--line);border-radius:14px;padding:22px 14px;display:grid;gap:8px;justify-items:center;text-align:center;cursor:pointer}",

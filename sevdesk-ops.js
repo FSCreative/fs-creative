@@ -172,7 +172,7 @@ module.exports = function (D) {
     const accName = {}; ((snap && snap.accounts) || []).forEach(a => { accName[a.id] = a.name; });
     const invOpen = ((snap && snap.invoices) || []).filter(i => (i.status === 200 || i.status === 750) && i.open > 0.005);
     const vouOpen = vou.map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), cd: v.creditDebit, gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), supplier: v.supplierName || (v.supplier && sevName(v.supplier)) || "", desc: v.description || "" }))
-      .map(v => Object.assign(v, { open: r2(v.gross - v.paid) })).filter(v => v.open > 0.005 && v.type !== "RV");
+      .map(v => Object.assign(v, { neg: v.cd === "C" && v.gross < 0, open: r2(Math.abs(v.gross) - Math.abs(v.paid)) })).filter(v => v.open > 0.005 && v.type !== "RV");   // neg: Lieferantengutschrift (Ausgabe-Beleg mit Minusbetrag) – wird mit einem Geldeingang ausgeglichen
     const list = txs.filter(t => (parseInt(t.status, 10) || 0) === 100).map(t => {
       const amount = sevNum(t.amount), name = t.payeePayerName || "", purpose = String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim();
       const hay = (name + " " + purpose).toLowerCase(), hayNum = hay.replace(/[^a-z0-9]/g, "");
@@ -184,15 +184,15 @@ module.exports = function (D) {
         s += 2 * nameScore(i.contact, name + " " + purpose);
         if (s >= 2) sug.push({ kind: "invoice", id: i.id, label: (i.nr || "Entwurf") + " · " + i.contact, sub: "offen " + i.open.toFixed(2).replace(".", ",") + " €", open: i.open, score: r2(s) });
       });
-      else vouOpen.filter(v => v.cd === "C").forEach(v => {
+      else vouOpen.filter(v => v.cd === "C" && !v.neg).forEach(v => {
         let s = 0;
         if (Math.abs(v.open + amount) < 0.011) s += 3; else if (Math.abs(v.gross + amount) < 0.011) s += 2;
         s += 2 * nameScore(v.supplier, name + " " + purpose);
         if (s >= 2) sug.push({ kind: "voucher", id: v.id, label: (v.supplier || "Beleg") + (v.desc ? " · " + v.desc : ""), sub: "offen " + v.open.toFixed(2).replace(".", ",") + " € · " + (v.date ? sevDateDE(v.date) : ""), open: v.open, score: r2(s) });
       });
-      if (amount > 0) vouOpen.filter(v => v.cd === "D").forEach(v => {
+      if (amount > 0) vouOpen.filter(v => v.cd === "D" || v.neg).forEach(v => {
         let s = 0; if (Math.abs(v.open - amount) < 0.011) s += 3; s += 2 * nameScore(v.supplier, name + " " + purpose);
-        if (s >= 2) sug.push({ kind: "voucher", id: v.id, label: (v.supplier || "Einnahme-Beleg") + (v.desc ? " · " + v.desc : ""), sub: "offen " + v.open.toFixed(2).replace(".", ",") + " €", open: v.open, score: r2(s) });
+        if (s >= 2) sug.push({ kind: "voucher", id: v.id, label: (v.neg ? "Gutschrift " : "") + (v.supplier || "Einnahme-Beleg") + (v.desc ? " · " + v.desc : ""), sub: "offen " + v.open.toFixed(2).replace(".", ",") + " €", open: v.open, score: r2(s) });
       });
       sug.sort((a, b) => b.score - a.score);
       const acc = t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "";
@@ -202,7 +202,7 @@ module.exports = function (D) {
     }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
     return { ok: true, fetchedAt: new Date().toISOString(), transactions: list,
       openInvoices: invOpen.map(i => ({ id: i.id, nr: i.nr, contact: i.contact, open: i.open, date: i.date })),
-      openVouchers: vouOpen.map(v => ({ id: v.id, cd: v.cd, supplier: v.supplier, desc: v.desc, open: v.open, date: v.date })) };
+      openVouchers: vouOpen.map(v => ({ id: v.id, cd: v.cd, neg: v.neg || undefined, supplier: v.supplier, desc: v.desc, open: v.open, date: v.date })) };
   }
   function addDays(isoD, n) { const d = new Date(String(isoD).slice(0, 10) + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
   async function txById(id) { const j = await sev("GET", "/CheckAccountTransaction/" + id); const t = first(j); if (!t.id) throw new Error("Umsatz nicht gefunden"); return t; }

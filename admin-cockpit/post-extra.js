@@ -339,6 +339,7 @@ M.openVoucher=function(m,a,pre){
     '<p class="muted" style="margin:0">Wird als <b>offener Beleg</b> in deiner Buchhaltung angelegt – inkl. Datei. Unter Finanzen → Belege kannst du ihn prüfen und abschließen.</p>'+
     '<div class="att" style="justify-self:start"><a href="'+esc(pre.href||(M.attHref(m,a)+"&inline=1"))+'" target="_blank" rel="noopener" title="Anhang ansehen"'+(pvKind?' data-docview data-doctitle="'+esc(a.filename||"Anhang")+'"':'')+'><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
+    '<label class="fl">Art<select class="f" name="kind"><option value="inv">Rechnung (wir zahlen)</option><option value="cn"'+(pre.credit?" selected":"")+'>Gutschrift vom Lieferanten (Geld zurück, mindert Aufwand und Vorsteuer)</option></select></label>'+
     '<div class="grid2"><label class="fl">Lieferant<input class="f" name="supplier" list="mvContacts" value="'+esc(pre.supplier||m.fromName||m.from||"")+'"></label><label class="fl">Belegdatum<input class="f" name="date" type="date" required value="'+day+'"></label>'+
     '<label class="fl">Betrag brutto (€)<input class="f num" name="gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+(g?g.toFixed(2):"")+'"'+(g?'':' autofocus')+'></label><label class="fl">USt-Satz<select class="f" name="tax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===tr?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
     F.taxRuleSelect('name="rule" data-rate="[name=tax]"',pre.taxRule)+
@@ -368,16 +369,17 @@ var mvSugT=null, mvSugQ="";
 function mvLoadSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; var sel=f.tx, g=parseFloat(String(f.gross.value).replace(",","."));
   var fx=VOU&&VOU.pre&&VOU.pre.fx;
   if(!(g>0)&&!String(f.supplier.value||"").trim()&&!fx){ sel.innerHTML='<option value="">Betrag oder Lieferant eingeben, dann wird gesucht</option>'; return; }
-  var q="amount="+encodeURIComponent(g>0?g.toFixed(2):"")+"&date="+encodeURIComponent(f.date.value||"")+"&name="+encodeURIComponent(f.supplier.value||"")+"&desc="+encodeURIComponent(String(f.desc.value||"").slice(0,120))+"&cd=C"+(fx?"&fx="+encodeURIComponent(fx.amount)+"&cur="+encodeURIComponent(fx.cur||""):""), my=mvSugQ=q;
+  var q="amount="+encodeURIComponent(g>0?g.toFixed(2):"")+"&date="+encodeURIComponent(f.date.value||"")+"&name="+encodeURIComponent(f.supplier.value||"")+"&desc="+encodeURIComponent(String(f.desc.value||"").slice(0,120))+"&cd="+(f.kind&&f.kind.value==="cn"?"D":"C")+(fx?"&fx="+encodeURIComponent(fx.amount)+"&cur="+encodeURIComponent(fx.cur||""):""), my=mvSugQ=q;
   F.api("/admin/api/fin/suggest?"+q).then(function(j){ if(my!==mvSugQ||!document.body.contains(sel)) return;
     var cs=(j&&j.ok?(j.candidates||[]):[]).filter(function(c){ return c.type==="tx"; }).slice(0,6), top=cs[0], pick=top&&top.score>=60?top.id:"";
     sel.innerHTML='<option value="">Nicht verbinden (nur Beleg speichern)</option>'+cs.map(function(c){ return '<option value="'+esc(c.id)+'"'+(c.id===pick?" selected":"")+'>'+esc(F.de(c.date)+" · "+(c.name||c.purpose||"Umsatz").slice(0,40)+" · "+F.eur(c.amount)+((c.reasons||[]).indexOf("Betrag weicht ab")>-1?" (anderer Betrag)":""))+'</option>'; }).join("");
     if(!cs.length) sel.innerHTML='<option value="">Keine passende offene Buchung gefunden</option>';
   }).catch(function(){}); }
-function mvWireSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; ["gross","date","supplier"].forEach(function(n){ f[n].addEventListener("change",function(){ clearTimeout(mvSugT); mvSugT=setTimeout(mvLoadSug,250); }); }); mvLoadSug(); }
+function mvWireSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; ["gross","date","supplier","kind"].forEach(function(n){ f[n].addEventListener("change",function(){ clearTimeout(mvSugT); mvSugT=setTimeout(mvLoadSug,250); }); }); mvLoadSug(); }
 F.form("mvoucher",function(f){
   if(!VOU) return; var m=VOU.m, a=VOU.a, msg=document.getElementById("mvMsg"), btn=document.getElementById("mvSave");
   var body={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf(m),filename:a.filename},supplierName:f.supplier.value.trim(),date:f.date.value,description:f.desc.value.trim(),gross:parseFloat(String(f.gross.value).replace(",",".")),taxRate:parseFloat(f.tax.value),accountingTypeId:f.cat.value,taxRule:f.rule?f.rule.value:undefined};
+  if(f.kind&&f.kind.value==="cn") body.credit=true;   /* Lieferantengutschrift: Server legt den Ausgabe-Beleg mit Minusbetrag an */
   var pre=VOU.pre||{}; if(pre.extra) Object.keys(pre.extra).forEach(function(k){ if(!(k in body)) body[k]=pre.extra[k]; });
   if(body.positions){ var ps=0; body.positions.forEach(function(x){ ps+=+x.gross||0; }); if(Math.abs(ps-body.gross)>0.02) delete body.positions; }  /* Betrag geändert → eine Position mit dem gewählten Satz */
   if(!(body.gross>0)){ msg.textContent="Bitte den Rechnungsbetrag (brutto) eingeben."; f.gross.focus(); return; }
@@ -392,7 +394,7 @@ F.form("mvoucher",function(f){
     var done=VOU.pre&&VOU.pre.onDone; VOU=null; F.closeModal(); if(done) try{ done(j); }catch(e){}
     if(j.booked&&trash&&M.items){ var its=M.items([m]); if(its.length) F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(){ if(M.scheduleReload) M.scheduleReload(1500); }).catch(function(){}); }
     if(txSel&&!j.booked) F.toast("Beleg gespeichert – Buchung nicht verbunden: "+(j.bookError||j.openError||"unbekannter Fehler"),true);
-    else F.toast(j.booked?"Beleg gespeichert und mit Buchung verbunden"+(trash?" – Mail im Papierkorb":""):"Beleg gespeichert (offen)",false,"Belege öffnen",function(){ F.UI.fin="vou:open"; F.go("geld"); });
+    else F.toast(j.booked?(body.credit?"Gutschrift":"Beleg")+" gespeichert und mit Buchung verbunden"+(trash?" – Mail im Papierkorb":""):"Beleg gespeichert (offen)",false,"Belege öffnen",function(){ F.UI.fin="vou:open"; F.go("geld"); });
     if(F.current==="post") F.render(); F.load(true);
   }).catch(function(){ btn.disabled=false; msg.textContent="Keine Verbindung zum Server."; });
 });
