@@ -11,8 +11,8 @@ const PROXY = "/print/bild/" + SPACE;
 // Saison (Datum in Wien, MM-TT): sichtbar from…to (über den Jahreswechsel); „rechtzeitig zu Weihnachten“ = Zustellung spätestens am 23.12.
 const SEASON = { from: "10-15", to: "01-06", last: "12-23" };
 
-const HERO = { img: "2b1YaYbeItilwJpZriPgMS/e718edcaecdda38e992280aeef60aac2/2026_EOY-general-headerGeneral_bann.jpg", ratio: 600 / 261,
-  alt: "Weihnachtliche Drucksachen und Geschenke auf blauen Podesten: Kalender, Etiketten, Geschenkband, Weinflaschen mit Etikett und Christbaumkugel" };
+const HERO = { img: "6pKyo62KuBDbX5kun3dp1g/6bca69f84e94e77e0ac83dfd9a6a12af/App_header_3400x1480DE_Decoratin.jpg", ratio: 600 / 261,   // Simon 27.11.2026: aktueller Weihnachts-Hero („Kevin allein zu Haus“)
+  alt: "Weihnachtliche Drucksachen unter dem Christbaum: bedruckte Stülpschachtel mit Christbaumkugeln, Weihnachtsstrumpf, Seidenpapier, Keramikfliese und Weihnachtskarte vor einem Retro-Fernseher" };
 
 // Themen: slug (Sprungmarke), nav (kurz, Kachel), title, text, tile/banner (Bild, Seitenverhältnis), items: [Produkt-Key im Shop, Name auf der Karte, Weihnachtsbild, 1 = Querformat (doppelt breite Karte)]
 const THEMES = [
@@ -91,7 +91,9 @@ const THEMES = [
       ["cardboard-photo-frame", "Bilderrahmen aus Karton", "5NQEQY8GzJnJvHanXJrke7/45115687c02250c6af25375e4db8e368/EOY_2025_Products_cardboard_photo_frames_A.jpg"],
       ["wallpaper", "Tapete mit eigenem Motiv", "1K6EnRz0W7wXMw24BN17Tu/b8856dffa8caa2249fbfe45ddd48de60/EOY-2025-show-wallpaper.jpg", 1],
       ["hockers", "Sitzhocker", "7uUaM7SK0V68xJN5hBrf5r/e8c725812c47504eab1e4ae7e8fa23fe/Hocker_Catalogi_vierkant_40_cm.jpg"],
-      ["acrylic-photo-prints", "Fotos auf Acrylglas", "4lkEhAvRHJDODHB4SZpqoV/eb4c5063349700ec78d4c06f07ce7be4/Wall_deco_arcylic_B_close_def.jpg"]
+      ["acrylic-photo-prints", "Fotos auf Acrylglas", "4lkEhAvRHJDODHB4SZpqoV/eb4c5063349700ec78d4c06f07ce7be4/Wall_deco_arcylic_B_close_def.jpg"],
+      ["christmas-stocking", "Weihnachtsstrumpf mit Logo", "5eHhiwVN9xRnnoLhFjmyTW/2c4e9029bfc5047b5bf833149691076d/2026-EOY-decorating-kit-christmas-stocking.jpg"],
+      ["ceramic-tiles", "Keramikfliesen mit eigenem Motiv", "233w1AdUUdEpui55YYDr0c/e5e917d2135d7fc3a49e72bb0444fc90/2026-EOY-decorating-kit-tile.jpg"]
     ] },
   { slug: "verschenken", nav: "Verschenken", title: "Kleine Geschenke",
     text: "Adventskalender, Thermoflaschen, Duftkerzen, Spielkarten und Genuss-Sets mit Logo oder Namen – für dein Team, deine Kundschaft und Geschäftspartner.",
@@ -229,8 +231,8 @@ function cardHtml(it, x, sea, i) {
 // Produktpunkte auf den Aktionsbildern (nur Computer): [Produkt-Key, x, y] in Prozent des Originalbilds – nur eindeutig erkennbare
 // Produkte aus dem Sortiment (Deko wie Radio, Kassette, Fondue, Zuckerstange, Stiefel, Feuer usw. bewusst ohne Punkt). Geprüft 03.11.2026.
 const HOTSPOTS = {
-  hero: [["wire-o-desk-calendars", 70.8, 25], ["christmas-baubles", 73.8, 58.4], ["luxurious-labels", 86, 63], ["wine-hang-tags", 90.8, 53.6], ["labels-on-roll", 61.3, 79.5], ["ribbon", 58.3, 64], ["beer-mats", 79.8, 86.2],
-    ["tubes-giftset", 66.2, 57.6], ["budget-pen-contour", 69.4, 72.2], ["pillow-packs", 78.6, 73.4], ["acrylic-photo-prints", 79.4, 36.6]],
+  hero: [["telescopic-boxes", 54.2, 36.4], ["christmas-baubles", 64.2, 50.2], ["tissue-paper", 64.6, 69], ["christmas-stocking", 60, 78.5],
+    ["ceramic-tiles", 78.3, 57.5], ["postcards", 84.2, 64]],   // Hero „Kevin allein zu Haus“ (27.11.2026); Stülpschachteln erscheinen erst, wenn sie im Shop wieder freigeschaltet sind
   planen: [["hexagon-pen-holder", 58.1, 36.4], ["wire-o-desk-calendars", 75.4, 38.3], ["sticky-notes", 64, 64.2], ["ribbon", 73.3, 86.2],
     ["budget-pen-contour", 58.8, 9.5], ["diaries", 55.5, 84.5], ["desk-pads", 72.5, 68.5], ["sticky-notes", 93.5, 41]],
   karten: [["luxurious-postcards", 63.5, 51]],
