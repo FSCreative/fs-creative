@@ -161,7 +161,10 @@
       (x.gross != null ? '<small>beim Merken ' + eur(x.gross) + " · aktueller Preis beim Öffnen</small>" : "") + '</div><div class="ac"><a class="ps-btn primary small" href="' + esc(url) + '">Öffnen</a><button type="button" class="ps-link" data-act="savshare:' + esc(x.id) + '">Teilen</button><button type="button" class="ps-link" data-act="savdel:' + esc(x.id) + '">Entfernen</button></div></div>'; }
 
   // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
-  function cartLoad() { try { var c = JSON.parse(localStorage.getItem("fsc-print-cart") || "null"); if (c && Array.isArray(c.items) && Date.now() - (+c.at || 0) < 30 * 864e5) return viaUs(c.items); } catch (e) {} return []; }
+  /* Positionen aus einem Warenkorb-Link (Cockpit) haben keine ID/Titel – ohne ID ließ sich die Stückzahl im Warenkorb nicht umstellen (Simon 27.11.2026, Rümpelfix) */
+  function cartFix(a) { (a || []).forEach(function (x, i) { if (!x || typeof x !== "object") return; if (!x.id) x.id = Date.now().toString(36) + i + Math.random().toString(36).slice(2, 6);
+    var p = null; try { p = x.product ? prodByKey(x.product) : null; } catch (e) {} if (p) { if (!x.title) x.title = p.title; if (!x.unit && p.unit) x.unit = p.unit; } }); return a; }
+  function cartLoad() { try { var c = JSON.parse(localStorage.getItem("fsc-print-cart") || "null"); if (c && Array.isArray(c.items) && Date.now() - (+c.at || 0) < 30 * 864e5) return cartFix(viaUs(c.items)); } catch (e) {} return []; }
   function cartSave(noSync) {
     try { localStorage.setItem("fsc-print-cart", JSON.stringify({ at: Date.now(), items: S.cart })); } catch (e) { try { localStorage.setItem("fsc-print-cart", JSON.stringify({ at: Date.now(), items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) })); } catch (e2) {} }
     if (S.me && !noSync) api("/print/api/account/cart", { items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) });
@@ -280,7 +283,7 @@
       if (op === "keep") { setTimeout(function () { toast("Dein Warenkorb bleibt gespeichert" + (j.until ? " – bis " + new Date(j.until + "T12:00:00").toLocaleDateString("de-AT") : "") + "."); }, 1800); }
       var have = {}; S.cart.forEach(function (x) { have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies] = 1; });
       // fertiger Warenkorb-Link aus dem Cockpit (j.link): ersetzt den Warenkorb – keine alten Stände/fremden Positionen (Simon 12.11.2026)
-      var add = viaUs(j.items).filter(function (x) { return x && x.product && (x.fileId || x.noFile || x.needFile) && (j.link || !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]) && prodByKey(x.product); });
+      var add = cartFix(viaUs(j.items)).filter(function (x) { return x && x.product && (x.fileId || x.noFile || x.needFile) && (j.link || !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]) && prodByKey(x.product); });
       if (j.link && dazu) add = add.filter(function (x) { return !have[(x.fileId || "nofile:" + JSON.stringify(x.sel)) + "|" + x.product + "|" + x.copies]; });
       if (j.link && !dazu && S.cart.length) toast("Dein Warenkorb wurde durch das Angebot ersetzt");
       S.cart = j.link && !dazu ? add : S.cart.concat(add); cartSave(); if (j.email && !S.customer.email) S.customer.email = j.email;
