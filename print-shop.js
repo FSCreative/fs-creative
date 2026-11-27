@@ -3410,17 +3410,21 @@ module.exports = function (D) {
   function memo(map, k, buf) { map.set(k, buf); }   // gemeinsamer LRU (pdfLruNs), Grenzen siehe oben
   async function rotateForPrint(buf, fm, o) {
     const sz = o && o.size, b = +(o && o.bleed) || 0;
-    if (!sz || !(sz.w > 0) || !(sz.h > 0) || Math.abs(sz.w - sz.h) < 3 || (Array.isArray(o.pageMap) && o.pageMap.length) || /^(textile|promo)$/.test((o.product && o.product.kind) || "")) return buf;
+    if (!sz || !(sz.w > 0) || !(sz.h > 0) || Math.abs(sz.w - sz.h) < 3 || (Array.isArray(o.pageMap) && o.pageMap.some(p => p && p.pos)) || /^(textile|promo)$/.test((o.product && o.product.kind) || "")) return buf;
     const k = fm.id + ":" + buf.length; if (ROTATED.has(k)) return ROTATED.get(k);
     const { PDFDocument, degrees } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false, ignoreEncryption: true });
     const near = (a, x) => a >= x - 2 && a <= x + 2 * b + 2, MM = 25.4 / 72;
+    /* mehrere Motive (pageMap mit motif) wurden früher gar nicht gedreht – quer angelegte Motive kamen ungedreht zu Print.com, die Schnittkontur stand
+       über das bestellte Format hinaus (Simon 27.11.2026, Fensterbilder D-261127-4BWP/-FSJF). Nur Logo-PDFs (pageMap mit pos) bleiben ungedreht.
+       Einseitig gedruckt: jede Seite 90° (bei mehreren Motiven ist jede Seite eine Vorderseite) */
+    const one = (() => { try { return sidesOf(o.pcOptions || {}) === 1; } catch (e) { return false; } })();
     let changed = false;
     d.getPages().forEach((pg, i) => {
       let box; try { box = pg.getTrimBox(); } catch (e) { box = pg.getMediaBox(); }
       const rot = ((pg.getRotation().angle % 360) + 360) % 360, sw = rot % 180 ? box.height : box.width, sh = rot % 180 ? box.width : box.height, w = sw * MM, h = sh * MM;
       if (near(w, sz.w) && near(h, sz.h)) return;   // passt bereits
       if (!(near(w, sz.h) && near(h, sz.w))) return;   // anderes Format – nicht anfassen
-      pg.setRotation(degrees((rot + (i % 2 ? 270 : 90)) % 360)); changed = true;
+      pg.setRotation(degrees((rot + (i % 2 && !one ? 270 : 90)) % 360)); changed = true;
     });
     const out = changed ? await pdfSave(d) : buf;
     if (out !== buf) memo(ROTATED, k, out);
