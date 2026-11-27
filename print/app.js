@@ -1869,9 +1869,13 @@
     if (U(p) !== "m") return ""; var n = +S.copies || 0, roll = +((JSON.stringify(p.fixed || {}).match(/(\d+)_meters?_per_roll/) || [])[1]) || 0, sz = sizeOf(), rep = sz ? Math.max(sz.w, sz.h) : 0;
     return '<span class="ps-td">Die Menge ist in Metern: ' + n.toLocaleString("de-AT") + "\u00a0m Band" + (roll && n >= roll ? ", geliefert auf " + Math.ceil(n / roll) + " Rolle" + (Math.ceil(n / roll) === 1 ? "" : "n") + " à " + roll + "\u00a0m" : "") + "." + (rep >= 100 ? " Dein Motiv wiederholt sich alle " + (rep / 10).toLocaleString("de-AT") + "\u00a0cm (also ca. " + Math.floor(n * 1000 / rep).toLocaleString("de-AT") + "× auf der ganzen Länge)." : "") + "</span>";
   }
+  /* Große Auflagen direkt zur Auswahl (Simon 27.11.2026, Rümpelfix: Link mit 2.500 Stk., 5.000 fand der Kunde am Handy nur über „eigene Menge“):
+     5.000/10.000 dazu, wenn die Mengen-Bereiche des Druckpartners sie erlauben – gerechnet wird wie bei „eigene Menge“ */
+  function bigTiers(p) { if (!p || !p.qty || !p.qty.length || !p.tiers.length) return []; var top = Math.max.apply(null, p.tiers), r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; }));
+    return [1000, 2500, 5000, 10000].filter(function (n) { return n > top && r.some(function (g) { return n >= g.min && n <= g.max && (n - g.min) % (g.step || 1) === 0; }); }); }
   function amountHtml(p) {
-    var bt = bestTiers(p), inT = p.tiers.indexOf(S.copies) > -1;
-    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + " (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + "\u00a0" + U() + "", best: bt.indexOf(n) > -1 }; }));
+    var bt = bestTiers(p), tl = p.tiers.concat(bigTiers(p)), inT = tl.indexOf(S.copies) > -1;
+    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + "\u00a0" + U() + " (eigene Menge)" }]).concat(tl.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + "\u00a0" + U() + "", best: bt.indexOf(n) > -1 }; }));
     var sel = ddHtml("copies", "Auflage", qi, S.copies);
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
