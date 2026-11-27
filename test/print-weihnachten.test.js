@@ -42,7 +42,9 @@ const XP = {
       { slug: "printingmethod", title: "Druckmethode", locked: false, required: true, options: [opt("digital_die_cut", "Canon Colorado 1640")] },
       { slug: "urgency", title: "Dringlichkeit", locked: false, required: true, options: [opt("standard", "Standard"), opt("quick", "Schnell"), opt("urgent", "Eilig"), opt("moderate", "Moderat")] },
       { slug: "custom_shape", title: "Fertigstellung", locked: false, required: true, options: [opt("custom_shape_packaging", "custom shape packaging")] },
-      { slug: "packaging_extras", title: "Verpackungsextras", locked: false, required: true, options: [opt("packaging_plate", "Verpackung Platten")] }] },
+      { slug: "packaging_extras", title: "Verpackungsextras", locked: false, required: true, options: [opt("packaging_plate", "Verpackung Platten")] }],
+    propertyGroups: [{ slug: "g1", columnWidth: { reseller: "summary" }, properties: ["summary_image"] }, { slug: "g2", columnWidth: { reseller: "third" }, properties: ["size", "material"] }, { slug: "g3", columnWidth: { reseller: "third" }, properties: ["copies"] },
+      { slug: "g4", columnWidth: { reseller: "hidden" }, properties: ["printtype", "printingmethod", "urgency", "custom_shape", "packaging_extras"] }] },
   // bedruckt nur mit Personalisierung aus Excel (die der Shop nie mitschickt; ohne Angabe nimmt der Druckpartner „none“ an)
   "growing-paper-envelopes": { sku: "growing-paper-envelopes", bleed: 3, category: ["paper-print", "cards-envelopes"], implied: { personalize: "none" },
     excludes: [[{ property: "personalize", options: ["none"] }, { property: "printtype", options: ["10_black"] }], [{ property: "personalize", options: ["personalize_from_excel"] }, { property: "printtype", options: ["00"] }]],
@@ -175,6 +177,7 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
       const sent = M.log.slice(n0).filter(l => /telescopic-boxes\/price$/.test(l.path)).map(l => l.body.options);
       assert.strictEqual(r.status, 200, JSON.stringify(r.j) + " gesendet: " + JSON.stringify(sent));
       assert.ok(sent.length && sent.every(o => o.copies >= 50), "nie unter 50 angefragt: " + JSON.stringify(sent));
+      const nc = await admin("/admin/api/print/new", { skus: ["telescopic-boxes"] }); assert.ok(nc.ok && nc.items[0].ok, "Nachprüfung (wie Sortiments-Prüfung) findet einen Preis: " + JSON.stringify(nc));
     });
     await t("Warenkorb-Link mit Position ohne Datei (von Simon im Shop zusammengestellt): Link geht, Position kommt mit „Druckdatei folgt“ zurück, bestellen erst mit Datei", async () => {
       const p = await prod("telescopic-boxes"), j = await admin("/admin/api/print/cartlink", { items: [{ product: p.key, sel: p.start.sel, copies: p.start.copies, title: "Stülpschachteln", needFile: true, fileId: "x", fileToken: "y", fm: { a: 1 } }] });
@@ -237,7 +240,7 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
       assert.ok(/if \(lk\) \{ if \(!S\.cat \|\| e\.metaKey/.test(app) && /function prodByKey\(k\) \{ return \(\(S\.cat && S\.cat\.products\) \|\| \[\]\)/.test(app), "Klick auf Produktkarte, bevor der Shop geladen ist: normaler Link statt Fehler");
     });
     await t("Preise & Liefertermine: im Hintergrund geprüft und zwischengespeichert (nicht je Seitenaufruf), Produkte ohne Preis verschwinden", async () => {
-      let h = ""; for (let i = 0; i < 100; i++) { h = await (await fetch(B + "/print/weihnachten")).text(); if (/data-prod="hangtags"[\s\S]*?xm-p"/.test(h) && /Lieferung voraussichtlich ab/.test(h)) break; await sleep(150); }
+      let h = ""; for (let i = 0; i < 100; i++) { h = await (await fetch(B + "/print/weihnachten")).text(); if (/data-prod="hangtags"[\s\S]*?xm-p"/.test(h) && /Lieferung voraussichtlich ab/.test(h) && /Weihnachtsabteilung geprüft/.test(srv.out)) break; await sleep(150); }   // Hintergrund-Prüfung erst ganz fertig
       assert.ok(/data-prod="magnetic-gift-boxes"[^>]*>[\s\S]*?ab <b>[\d.,  ]+ €<\/b><small>für 500 Stk\./.test(h), "Preis zur Startausführung");
       assert.ok(/Lieferung voraussichtlich ab/.test(h), "Liefertermin");
       const n0 = M.log.filter(l => /\/price$/.test(l.path)).length; for (let i = 0; i < 3; i++) await fetch(B + "/print/weihnachten"); await sleep(200);

@@ -613,7 +613,7 @@ module.exports = function (D) {
     const L = c.optLabels || {}, T = c.titles || {}, only = c.only || {}, skip = c.skipOpts || {}, fo = c.fixedOpts || {}, autoExp = c.expose === "auto", expose = autoExp ? [] : (c.expose || []);
     const areaProp = c.areaProp !== undefined ? c.areaProp : kind === "promo" ? (by.printing_size ? "printing_size" : "size") : null;
     const manual = kind === "textile" ? /^(positions_|textile_sizes$|printingmethod$)/ : kind === "banner" ? /^(size|width|height)$/ : null;
-    const fixed = {}, auto = {}, exposed = [], areas = {};
+    const fixed = {}, auto = {}, exposed = [], areas = {}, omitAlt = {};   // omitAlt: versteckte Logistik-Angaben (z. B. Verpackungsextras in Print.com-Gruppe „hidden“) – nur für das Nachschicken nach echter Preis-Ablehnung
     // Reihenfolge/Sichtbarkeit wie in der Print.com-App: propertyGroups (Spalte „hidden“/„summary“ = nicht anzeigen), viewMode.reseller "hidden"
     const pOrder = [], pHidden = {};
     (Array.isArray(pd.propertyGroups) ? pd.propertyGroups : []).forEach(g => { const cw = String((g && ((g.columnWidth && g.columnWidth.reseller) || (g.viewMode && g.viewMode.reseller))) || ""); ((g && g.properties) || []).forEach(x => { const sl = x && typeof x === "object" ? x.slug : x; if (!sl) return; pOrder.push(String(sl)); if (/hidden|summary/.test(cw)) pHidden[sl] = 1; }); });
@@ -658,6 +658,7 @@ module.exports = function (D) {
       const grp = Array.isArray(p.parentOptions) ? p.parentOptions.filter(x => x && typeof x === "object" && x.slug != null).map(x => ({ slug: String(x.slug), name: String(x.name || x.slug) })).slice(0, 50) : [];
       if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, p.slug === "pages" ? 1200 : 160).map(o => optOut(p.slug, o))) }, grp.length > 1 ? { groups: grp } : {}));
       else if (fo[p.slug] !== undefined && opts.some(o => String(o.slug) === String(fo[p.slug]))) fixed[p.slug] = String(fo[p.slug]);
+      else if (OMITTABLE.test(p.slug) && !p.required) { const l = opts.map(x => String(x.slug)).filter(x => x !== NONE_OPT && !NONE_SLUG.test(x)); if (l.length) omitAlt[p.slug] = l.slice(0, 10); }
       else if (p.required) {   // Pflicht-Eigenschaft ohne Auswahl im Shop: passende Option wird je Auswahl so gewählt, dass keine Ausschlussregel greift
         const o = opts.filter(x => !x.nullable).concat(opts.filter(x => x.nullable)).map(x => String(x.slug));
         fixed[p.slug] = o[0]; if (o.length > 1) auto[p.slug] = o.slice(0, 40);
@@ -726,7 +727,7 @@ module.exports = function (D) {
     const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null && !/shape|complex|simple|die_?cut|thru_?cut|contour/i.test(String(fixed.custom_shape || "").replace(/^clean_cut$/, "")), safe: c.safe || 3, sku: String(sku),
       // Beschnitt immer mindestens 3 mm (Simon 24.11.2026: Print.com-Vorlagen verlangen 3 mm, die Produktdaten nannten teils 1,5 mm → leerer Streifen bei Print.com)
       bleed: kind === "textile" || kind === "promo" ? 0 : Math.max(3, +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 3), dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
-      props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, maxDesigns: +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
+      props: exposed, tiers, qty, urgency, fixed, auto, omitAlt, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, maxDesigns: +pd.maxDesigns > 0 ? Math.round(+pd.maxDesigns) : null, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       // Weißdruck (Print.com blendet „white_print“ aus): bei Druck „Farbe + Weiß“ (5/…) muss er mit, sonst gibt es keinen Preis (Acrylglas, Fotokacheln …)
       white: by.white_print && !exposed.some(x => x.slug === "white_print") && fixed.white_print == null ? (wo => ({ yes: wo.find(v => !NONE_SLUG.test(v)) || "", no: wo.find(v => NONE_SLUG.test(v)) || "" }))((by.white_print.options || []).map(o => String(o.slug))) : null,
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
@@ -1282,13 +1283,14 @@ module.exports = function (D) {
   function filledOf(prod, opts) {
     const o = Object.assign({}, opts), al = aliasOf(prod); let ch = false;
     // auch wählbare Logistik-Angaben (Bündelung, Palette … – seit 02.11. sichtbar), wenn „Ohne“ gewählt ist: wie bisher nur als Ausweich-Variante nach echter Ablehnung
-    const cand = Object.assign({}, prod.auto || {}); (prod.props || []).forEach(pr => { if (OMITTABLE.test(pr.slug) && !cand[pr.slug]) cand[pr.slug] = pr.options.map(x => x.slug).filter(x => x !== NONE_OPT && !NONE_SLUG.test(String(x))); });
+    const cand = Object.assign({}, prod.omitAlt || {}, prod.auto || {}); (prod.props || []).forEach(pr => { if (OMITTABLE.test(pr.slug) && !cand[pr.slug]) cand[pr.slug] = pr.options.map(x => x.slug).filter(x => x !== NONE_OPT && !NONE_SLUG.test(String(x))); });
     Object.keys(cand).filter(k => OMITTABLE.test(k) && o[k] === undefined).forEach(k => { const v = cand[k].find(x => !hitRules(prod.excludes, Object.assign({}, prod.implicit || {}, o, { [k]: x }), al)); if (v != null) { o[k] = v; ch = true; } });
     return ch ? o : null;
   }
   async function buyFilled(prod, n, opts, country, postcode, e0) {
-    const f = !n.excluded && e0 && e0.noPrice && filledOf(prod, opts); if (!f) throw e0;
-    let v; try { v = await purchase(prod, Object.assign({}, n, { pcOpts: f }), country, postcode); } catch (e) { throw e0; }
+    const f = !n.excluded && e0 && e0.noPrice && filledOf(prod, opts);
+    if (!f) { if (e0 && e0.noPrice) priceFail(prod, { pcOpts: opts }, "fill", "keine Logistik-Angabe zum Nachschicken (auto " + Object.keys(prod.auto || {}).join(",") + " · fixed " + Object.keys(prod.fixed || {}).join(",") + ")"); throw e0; }
+    let v; try { v = await purchase(prod, Object.assign({}, n, { pcOpts: f }), country, postcode); } catch (e) { PF.delete(prod.sku); priceFail(prod, { pcOpts: f }, "fill " + (e.status || "?"), e.message); throw e0; }   // Grund der Ausweich-Variante protokollieren (Stülpschachteln 27.11.2026)
     return { v, pcOpts: f };
   }
   // Fehler für die Weitergabe: „hart“ (kein 400) geht vor, sonst eine echte Preis-Ablehnung (für das Nachschicken), sonst der erste
